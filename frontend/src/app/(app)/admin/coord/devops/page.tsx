@@ -169,6 +169,7 @@ import { presentedFailureReason } from "@/components/operations/presentedFailure
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { isLiveMachine } from "@/components/admin/coord/machineHealth";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { fleetPartitionRatioLine } from "@/components/operations/fleetPartitionRatio";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
@@ -280,6 +281,13 @@ export default function CoordDevOpsPage() {
         answered: fleet.data !== null,
       }),
     [devices, fleet.loading, fleet.error, fleet.data]
+  );
+  // Coord's fleet-partition ratio, in words (`fleetPartitionRatio.ts`). Null
+  // until a body has been read; an older coord's absent block is an explicit
+  // UNKNOWN badge, never 0.
+  const partitionRatio = useMemo(
+    () => fleetPartitionRatioLine(fleet.data),
+    [fleet.data]
   );
 
   /**
@@ -553,6 +561,32 @@ export default function CoordDevOpsPage() {
                   label: `CI offline ${liveness.ciOffline}`,
                   tone: "default" as const,
                   "data-testid": "coord-devops-ci-offline-badge",
+                },
+              ]
+            : []),
+          // CI registrations coord's registrar has not refreshed recently:
+          // not a degradation (coord raises none), but not healthy either.
+          ...(liveness.ciUnrefreshed > 0
+            ? [
+                {
+                  key: "ci-unrefreshed",
+                  label: `not refreshed by the registrar ${liveness.ciUnrefreshed}`,
+                  tone: "default" as const,
+                  "data-testid": "coord-devops-ci-unrefreshed-badge",
+                },
+              ]
+            : []),
+          // Coord's own fleet-partition ratio over the rows that heartbeat,
+          // with its scope. Never a percentage over nothing, and never one
+          // while coord says the ratio is unknown.
+          ...(partitionRatio !== null
+            ? [
+                {
+                  key: "partition-ratio",
+                  label: partitionRatio.label,
+                  tone: partitionRatio.tone,
+                  title: partitionRatio.title,
+                  "data-testid": "coord-devops-partition-ratio-badge",
                 },
               ]
             : []),

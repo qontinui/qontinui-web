@@ -1,5 +1,6 @@
 "use client";
 
+import type { SendTimePinOptions } from "../../_shared/useSendTimePin";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 import {
   isPolicyWriteLevel,
@@ -57,14 +58,19 @@ import {
  * allowed. That is why this hook lives beside `AgentWriteAccessControl` rather
  * than on a settings page: they are two halves of one question, and the answer
  * is the more restrictive of them.
+ *
+ * `resolvePin` pins the read and the write to the project it names, asked as
+ * each is sent — the prompt-documents page passes the project its list shows.
  */
-export function usePolicyWritePolicy() {
-  // Read, write and read-back — with the refresh-vs-write race guard — are
-  // the shared tenant-band dial's; this hook adds only the domain's level
-  // vocabulary below.
+export function usePolicyWritePolicy(options: SendTimePinOptions = {}) {
+  // Read, write and read-back — with the refresh-vs-write race guard and the
+  // send-time pin — are the shared tenant-band dial's; this hook adds only the
+  // domain's level vocabulary below.
   const dial = useTenantFleetPolicyDial<PolicyWriteLevel>(
     POLICY_WRITE_DOMAIN,
-    "agent policy-write autonomy"
+    "agent policy-write autonomy",
+    "devices",
+    options
   );
   const { policy } = dial;
 

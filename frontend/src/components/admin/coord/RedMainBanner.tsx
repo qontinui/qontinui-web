@@ -8,7 +8,7 @@
  * holds read `block_reason_code: main-red`, and candidates rebased onto the
  * red base generally fail CI until the fix lands. It is NOT a land freeze —
  * coord still enqueues a main-red PR, and a candidate whose own CI is green
- * still lands (plan
+ * can still land once its merge gate clears (plan
  * 2026-09-12-red-main-fix-pr-opened-after-the-red-never-gets-a-probe-candidate
  * D4). This banner is the loud surface for that state on every coord console
  * page.
@@ -80,9 +80,12 @@
  * rebased CI, push baselines); the presentation headline is its own plain
  * sentence ({@link presentationHeadline}) — the main branch is failing its
  * checks, how many open pull requests are affected, and that the merge train
- * still lands one whose own checks pass — with each product term rendered
+ * can still land one whose own checks pass — with each product term rendered
  * through `GlossaryTerm`, and a `Provenance` chip saying where it came from
- * and when coord last confirmed it.
+ * and when coord last confirmed it. "Can still land", not "still lands":
+ * passing checks are necessary, not sufficient (an escalate-path or operator
+ * hold keeps a green pull request open), which is why the onboarding page and
+ * coord's PR-body notice both say a PR lands when its merge gate clears.
  *
  * A field added to the parsed row later renders nothing in presentation mode
  * until someone decides here how it may.
@@ -588,7 +591,7 @@ export function presentationHeadline(
   const lands: CaptionSegment[] = [
     `${affected}; the `,
     term("merge_train", "merge train"),
-    " still lands a pull request whose own checks pass.",
+    " can still land a pull request whose own checks pass.",
   ];
   if (f.baselineFreshness === "all_contradicted") {
     return [

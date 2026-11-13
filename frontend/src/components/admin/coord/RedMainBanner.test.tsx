@@ -1062,9 +1062,9 @@ describe("presentationHeadline", () => {
     };
     expect(plain(presentationHeadline(facts, now))).toBe(
       "qontinui/qontinui-web's main branch is failing its checks for 3 hours. " +
-        "3 open pull requests are affected; the merge train still lands a pull " +
-        "request whose own checks pass. 2 failing checks have since passed on a " +
-        "newer run (CI, lint)."
+        "3 open pull requests are affected; the merge train can still land a " +
+        "pull request whose own checks pass. 2 failing checks have since passed " +
+        "on a newer run (CI, lint)."
     );
     expect(
       plain(
@@ -1463,8 +1463,9 @@ describe("redMainRowView", () => {
     expect(view.workflows).toBeNull();
     expect(plain(view.headline)).toBe(
       "A repository's main branch is failing its checks for 1 hour. 1 open " +
-        "pull request is affected; the merge train still lands a pull request " +
-        "whose own checks pass. 2 failing checks have since passed on a newer run."
+        "pull request is affected; the merge train can still land a pull " +
+        "request whose own checks pass. 2 failing checks have since passed on a " +
+        "newer run."
     );
   });
 
@@ -1493,6 +1494,10 @@ describe("redMainRowView", () => {
       ]) {
         expect(words, `${freshness}: "${internal}"`).not.toContain(internal);
       }
+      // Never a land promise on checks alone: see the presentation-headline
+      // paragraph in RedMainBanner.tsx's module doc.
+      expect(words, freshness).toContain("can still land");
+      expect(words, freshness).not.toMatch(/still lands/i);
       const terms = captionSegments(view.headline).flatMap((segment) =>
         typeof segment === "string" ? [] : [segment.term]
       );
@@ -1509,8 +1514,8 @@ describe("redMainRowView", () => {
     expect(plain(view.headline)).toBe(
       "A repository's main branch: status UNKNOWN — the checks that failed " +
         "have since passed on a newer run, and the next push will settle it. " +
-        "1 open pull request is affected; the merge train still lands a pull " +
-        "request whose own checks pass."
+        "1 open pull request is affected; the merge train can still land a " +
+        "pull request whose own checks pass."
     );
     expect(
       captionSegments(view.headline).some(

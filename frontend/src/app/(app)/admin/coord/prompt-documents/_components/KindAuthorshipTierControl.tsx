@@ -18,6 +18,7 @@ import type {
   KindTierRow,
   KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { usePromptDocumentKindTiers } from "../_hooks/usePromptDocumentKindTiers";
 import {
   AGENT_WRITE_TIERS,
@@ -286,6 +287,7 @@ function clearTitle(row: KindTierRow): string {
 
 export function KindAuthorshipTierControl({
   canWrite,
+  resolvePin,
 }: {
   /**
    * Checked at the moment of every write; `false` sends nothing (the caller
@@ -294,6 +296,13 @@ export function KindAuthorshipTierControl({
    * it) nor a click that lands before another tab's switch is seen.
    */
   canWrite?: () => boolean;
+  /**
+   * The project every read and write of this control is sent in, asked for
+   * as each goes out — the prompt-documents page passes the project its list
+   * is pinned to, so a request in flight when another tab switches project
+   * stays in the page's. Omitted, each is sent in the project stored then.
+   */
+  resolvePin?: ResolvePin;
 } = {}) {
   const {
     data,
@@ -302,7 +311,7 @@ export function KindAuthorshipTierControl({
     error,
     setTier: writeTier,
     clearTier: writeClear,
-  } = usePromptDocumentKindTiers();
+  } = usePromptDocumentKindTiers({ resolvePin });
   const blocked = () => canWrite !== undefined && !canWrite();
   const setTier = (kind: string, tier: AgentWriteTier) =>
     blocked() ? Promise.resolve(false) : writeTier(kind, tier);

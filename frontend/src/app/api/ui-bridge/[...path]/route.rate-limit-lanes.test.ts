@@ -17,52 +17,25 @@
  * Every threshold is a LITERAL (20, 21, 60, 61, 96, 97, 160, 161, 432, 433),
  * never one of the module's constants, so a constant that drifts fails here.
  *
- * Harness: `route.audit-rl.test.ts`'s (an in-memory Redis, a frozen window).
- * Its mocked `UI_BRIDGE_ROUTES` lacks `POST /heartbeat`, so a heartbeat there
- * would 404 after the limiter; this file's mock carries it, as the real SDK's
- * does (`receiveHeartbeat`).
+ * What a request costs the limiter's database in Redis commands is counted
+ * here too, through the route (plan
+ * 2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-deployed-
+ * relay-bus-never-starts, Phase 4).
+ *
+ * Harness: the shared in-memory Redis (`@/test/rate-limit-redis-mock`, which
+ * records every command it receives) and `route.audit-rl.test.ts`'s frozen
+ * window. That file's mocked `UI_BRIDGE_ROUTES` lacks `POST /heartbeat`, so a
+ * heartbeat there would 404 after the limiter; this file's mock carries it,
+ * as the real SDK's does (`receiveHeartbeat`).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { makeMockRedis, notReadyRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest } from "./_rate-limit";
-
-/** In-memory ioredis stand-in (same shape as `route.audit-rl.test.ts`). */
-function makeMockRedis() {
-  const store = new Map<string, number>();
-  const pipelineApi = {
-    _ops: [] as Array<["incr" | "expire", string]>,
-    incr(key: string) {
-      this._ops.push(["incr", key]);
-      return this;
-    },
-    expire(key: string) {
-      this._ops.push(["expire", key]);
-      return this;
-    },
-    async exec(): Promise<unknown> {
-      const results: Array<[Error | null, unknown]> = [];
-      for (const [op, key] of this._ops) {
-        if (op === "incr") {
-          const next = (store.get(key) ?? 0) + 1;
-          store.set(key, next);
-          results.push([null, next]);
-        } else {
-          results.push([null, 1]);
-        }
-      }
-      this._ops = [];
-      return results;
-    },
-  };
-  const client = {
-    pipeline: () => ({ ...pipelineApi, _ops: [] }),
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-  return { client, store };
-}
 
 vi.mock("@/lib/ui-bridge/relay", () => {
   const fakeHandler = async () =>
@@ -518,31 +491,11 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
   it.each(LANES.map((l) => [l.lane, l] as const))(
     "(h) a Redis connection that is not ready yet: %s admits past its ceiling and reports its remaining budget as unknown",
     async (_name, lane) => {
-      // ioredis RESOLVES (never rejects) a pipeline sent on a connection that
-      // is not ready when `enableOfflineQueue` is false — every cold
-      // instance's first request, and every request while Redis is down.
-      const notWriteable = () =>
-        new Error(
-          "Stream isn't writeable and enableOfflineQueue options is false"
-        );
-      const pipeline = {
-        incr() {
-          return pipeline;
-        },
-        expire() {
-          return pipeline;
-        },
-        async exec() {
-          return [
-            [notWriteable(), null],
-            [notWriteable(), null],
-          ];
-        },
-      };
-      __setRedisClientForTest({
-        pipeline: () => pipeline,
-        on: () => undefined,
-      } as unknown as Parameters<typeof __setRedisClientForTest>[0]);
+      // With `enableOfflineQueue: false`, ioredis REJECTS a command sent on a
+      // connection that is not ready (and resolves a pipeline with an error
+      // per command): every cold instance's first request, and every request
+      // while Redis is down. `notReadyRedis` models both, as measured.
+      __setRedisClientForTest(notReadyRedis().client);
       await withFrozenWindow(async () => {
         expect(await burst(lane.limit + 1, lane.hit)).toEqual({
           200: lane.limit + 1,
@@ -658,4 +611,100 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
       }),
     ]);
   }, 60_000);
+
+  /**
+   * Plan 2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-
+   * deployed-relay-bus-never-starts, Phase 4 (D5). The provider bills per
+   * command, so a relay request costs the limiter's database one command,
+   * its INCR. The INCR that answers 1 also sends the key's EXPIRE, once per
+   * principal-lane-window. Tests (4) and (5) are in `_rate-limit.test.ts`.
+   */
+  describe("Redis commands per relay request", () => {
+    it("(1) 60 reads by one principal in one window send 61 commands: 60 INCR and 1 EXPIRE", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        expect(await burst(60, () => commandRead())).toEqual({ 200: 60 });
+      });
+      expect(redis.commands).toHaveLength(61);
+      expect(redis.commands.filter((c) => c.name === "incr")).toHaveLength(60);
+      expect(redis.commands.filter((c) => c.name === "expire")).toHaveLength(1);
+    });
+
+    it("(2) the one EXPIRE follows the INCR that answered 1, with a 70 s TTL", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        expect(await burst(60, () => commandRead())).toEqual({ 200: 60 });
+      });
+      // Where each EXPIRE sits in the command stream.
+      expect(
+        redis.commands.flatMap((c, i) => (c.name === "expire" ? [i] : []))
+      ).toEqual([1]);
+      // FROZEN_NOW's window is floor(1767225630000 / 60000) = 29453760.
+      expect(redis.commands.slice(0, 2)).toEqual([
+        {
+          name: "incr",
+          key: "bridge:rl:r:user-1:29453760",
+          via: "direct",
+          reply: 1,
+        },
+        {
+          name: "expire",
+          key: "bridge:rl:r:user-1:29453760",
+          seconds: 70,
+          via: "direct",
+          reply: 1,
+        },
+      ]);
+    });
+
+    it("(3) two lanes of one principal in one window: one EXPIRE per key, and none on the later INCRs", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        for (let n = 0; n < 10; n++) {
+          expect((await commandRead()).status).toBe(200);
+          expect((await heartbeat()).status).toBe(200);
+        }
+      });
+      const read = "bridge:rl:r:user-1:29453760";
+      const beat = "bridge:rl:t:h:user-1:29453760";
+      expect(redis.commands.map((c) => `${c.name} ${c.key}`)).toEqual([
+        `incr ${read}`,
+        `expire ${read}`,
+        `incr ${beat}`,
+        `expire ${beat}`,
+        ...Array.from({ length: 9 }, () => [
+          `incr ${read}`,
+          `incr ${beat}`,
+        ]).flat(),
+      ]);
+      expect(
+        redis.commands.filter((c) => c.name === "expire").map((c) => c.seconds)
+      ).toEqual([70, 70]);
+    });
+
+    it("(6) controls: the 21st write is refused RATE_LIMITED, and the 97th stream open TRANSPORT_RATE_LIMITED", async () => {
+      await withFrozenWindow(async () => {
+        expect(await burst(20, () => commandWrite())).toEqual({ 200: 20 });
+        const write = await commandWrite();
+        expect(write.status).toBe(429);
+        expect(await write.json()).toMatchObject({
+          success: false,
+          code: "RATE_LIMITED",
+          lane: "write",
+        });
+
+        expect(await burst(96, () => streamOpen())).toEqual({ 200: 96 });
+        const stream = await streamOpen();
+        expect(stream.status).toBe(429);
+        expect(await stream.json()).toMatchObject({
+          success: false,
+          code: "TRANSPORT_RATE_LIMITED",
+          lane: "transport:stream",
+        });
+      });
+    }, 60_000);
+  });
 });
