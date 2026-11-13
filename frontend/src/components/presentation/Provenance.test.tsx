@@ -157,6 +157,28 @@ describe("Provenance", () => {
     );
   });
 
+  it("wraps inside its container instead of holding one line", () => {
+    // Badge's base classes are `w-fit whitespace-nowrap shrink-0`; a chip that
+    // keeps them overflows a narrow cell (Phase 8 walk, coord finding
+    // c157a7b3: 289px of chip in a 215px twin-map fidelity cell). jsdom does no layout, so this pins the
+    // classes that make the chip wrap — remove them and it goes red.
+    presenting(<Provenance source="coord's live twin probe" asOf={NOW} />);
+    const el = chip();
+    expect(el).not.toBeNull();
+    const classes = (el as HTMLElement).className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        "max-w-full",
+        "shrink",
+        "whitespace-normal",
+        "flex-wrap",
+        "wrap-anywhere",
+      ])
+    );
+    expect(classes).not.toContain("whitespace-nowrap");
+    expect(classes).not.toContain("shrink-0");
+  });
+
   it("is findable by its source text", () => {
     presenting(<Provenance source="coord fleet health" asOf={NOW} />);
     expect(screen.getByText("source: coord fleet health")).toBeInTheDocument();
