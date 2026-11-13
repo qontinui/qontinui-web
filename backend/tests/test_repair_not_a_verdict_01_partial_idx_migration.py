@@ -21,7 +21,8 @@ Without a database (always runs):
 1. **Chain wiring.** ``revision`` / ``down_revision`` match the pins below, the
    parent names exactly one real sibling, and the docstring's ``Revises:`` header
    agrees with the assignment. The docstring's post-deploy identity check quotes
-   ``_EXPECTED_DEFINITION`` verbatim.
+   ``_EXPECTED_DEFINITION`` verbatim, and its hand-rebuild runbook takes the lock
+   under ``MIGRATION_LOCK_KEY``.
 2. **The upgrade path is what coord's merge classifier auto-lands**: one static
    ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` literal in an autocommit block, no
    other ``op.*`` call (so no non-concurrent ``op.create_index``), no ``get_bind``,
@@ -85,6 +86,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.db.migration_lock import MIGRATION_LOCK_KEY
 from tests._alembic_harness import (
     admin_database_url,
     backend_root,
@@ -117,22 +119,28 @@ _EXPECTED_DEFINITION = (
     "((payload ->> 'reason'::text) = 'not_a_verdict'::text))"
 )
 
-# The decided-set scan: the `decided_rows` CTE of the plan's Phase 1 candidate
-# statement, which Phase 3 will land in coord as
-# `REPAIR_NOT_A_VERDICT_HEADS_WITHOUT_RERUN_SQL` (not on coord's main as of
-# 2026-11-13). A literal copy on purpose: the index will serve coord only while
-# the two match, and this is what reddens if the revision's side moves. The
-# tenant authority clause is spelled here as a literal `IN` list of this test's
-# repos, the form Phase 1 measured. The statement binds `$1` (the tenant, which
-# only that clause reads) and `$2` (the optional repo).
+# The decided-set scan's WHERE, as the plan's candidate (plan Phase 1) and the
+# Phase 3 branch spell it. At that branch's 0fdf4e076a0a (read 2026-11-13) its
+# six conjuncts before the tenant authority clause read exactly as below. This
+# is NOT Phase 3's whole `decided_rows` CTE: the branch adds a `LEFT JOIN
+# LATERAL` reset probe and a `reset_at` column, which this copy leaves out. The
+# SELECT list is the plan candidate's, and the tenant authority clause is
+# spelled as a literal `IN` list of this test's repos, the form Phase 1
+# measured. The statement binds `$1` (the tenant, which only the authority
+# clause reads) and `$2` (the optional repo). Phase 3 will land the statement
+# in coord as `REPAIR_NOT_A_VERDICT_HEADS_WITHOUT_RERUN_SQL`; it is not on
+# coord's main as of 2026-11-13. A literal copy on purpose: the index will
+# serve coord only while the two WHEREs match, and this is what reddens if the
+# revision's side moves.
 #
-# RE-ANCHOR when Phase 3 lands: replace this copy with the scan as coord's commit
-# spells it and cite that commit here, the way
+# RE-ANCHOR when Phase 3 lands: replace this WHERE with the one coord's commit
+# spells and cite that commit here, the way
 # test_repair_rerun_01_partial_idx_migration.py anchors its `_RERUNS_SPENT_SQL`
 # copy to coord `57ef9eadd76a`. Plan 2026-11-13-not-a-verdict-rerun-behaviour-probe
-# Phase 4 owns that step. Until then this copy is anchored to the plan and to
+# Phase 4 owns that step. Until then this WHERE is anchored to the plan and to
 # Phase 3's qontinui-coord branch
-# agent/eb2155ed4152-d2980fe1/not-a-verdict-count-query-phase-3, not to coord.
+# agent/eb2155ed4152-d2980fe1/not-a-verdict-count-query-phase-3, not to coord's
+# main.
 _DECIDED_SCAN_SQL = (
     "SELECT e.repo, e.pr_number, e.payload->>'head_sha' AS head, e.created_at, "
     "COALESCE("
@@ -199,7 +207,15 @@ def _squash(sql: str) -> str:
 
 
 def _top_level_conjuncts(where: str) -> list[str]:
-    """``where`` split on the ``AND`` s outside any parentheses or quotes."""
+    """``where`` split on the ``AND`` s outside any parentheses or quotes.
+
+    Raises on an ``OR`` outside parentheses and quotes, found in the same walk.
+    Such a clause is not a conjunction: its pieces are not conjuncts, and a
+    partial-index predicate cannot be proved from them. Without the raise, an
+    ``OR`` appended to the scan's ``WHERE`` would leave every predicate conjunct
+    "found" and the always-run predicate test green. Both keywords match
+    case-insensitively.
+    """
     parts: list[str] = []
     depth = 0
     in_quote = False
@@ -214,7 +230,13 @@ def _top_level_conjuncts(where: str) -> list[str]:
             depth += 1
         elif not in_quote and ch == ")":
             depth -= 1
-        elif not in_quote and depth == 0 and squashed.startswith(" AND ", i):
+        elif not in_quote and depth == 0 and squashed[i : i + 4].upper() == " OR ":
+            raise ValueError(
+                f"a top-level OR at offset {i} of {squashed!r}: the clause is not "
+                "a conjunction, so a partial-index predicate cannot be proved "
+                "from its parts"
+            )
+        elif not in_quote and depth == 0 and squashed[i : i + 5].upper() == " AND ":
             parts.append(squashed[start:i].strip())
             start = i + len(" AND ")
             i = start
@@ -261,6 +283,13 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
     assert _EXPECTED_DEFINITION in source, (
         "the docstring's post-deploy check must quote _EXPECTED_DEFINITION verbatim"
     )
+    # The hand-rebuild runbook spells the migration lock's key; a key that drifts
+    # from the one every migrator takes would not serialize the rebuild with them.
+    for statement in ("pg_try_advisory_lock", "pg_advisory_unlock"):
+        assert f"{statement}({MIGRATION_LOCK_KEY})" in source, (
+            f"the docstring's runbook must call {statement} with MIGRATION_LOCK_KEY "
+            f"({MIGRATION_LOCK_KEY})"
+        )
 
 
 def test_the_upgrade_and_downgrade_paths_are_classifier_safe() -> None:

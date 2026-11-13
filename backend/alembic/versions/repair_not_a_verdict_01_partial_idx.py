@@ -102,9 +102,10 @@ load-bearing for correctness.
 The index is small, but the build is not:
 
 - ``CONCURRENTLY`` reads the whole ``coord.pr_events`` heap twice. The heap was
-  4.3 GB on 2026-11-04, when ``pr_events_mergeability_head_idx_01`` put a build
-  on a volume near its IOPS cap at 3 to 30+ minutes. Reads are slower for the
-  whole build.
+  4.3 GB on 2026-11-04. For a build on that volume, then near its IOPS cap,
+  ``pr_events_mergeability_head_idx_01`` estimated 3 to 30+ minutes by
+  arithmetic. That figure is an estimate, not a measurement. Reads are slower
+  for the whole build.
 - While it runs, the build holds back vacuum across the database (the xmin
   horizon) and blocks ``VACUUM coord.pr_events`` (``SHARE UPDATE EXCLUSIVE``).
 - A partial index gets no "safe" concurrent treatment, so other concurrent
@@ -149,7 +150,26 @@ definition, means:
    Never use a plain ``DROP INDEX``: its ACCESS EXCLUSIVE lock queues behind
    any long reader and stalls every coord read and write on the table behind
    it.
-4. Re-run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()`` by hand.
+4. Rebuild by hand under the migration lock, so that no migrator starts a
+   second build while yours runs. In ONE session, in autocommit mode:
+
+   a. Poll until this returns ``t``, sleeping between attempts outside any
+      transaction::
+
+          SELECT pg_try_advisory_lock(8173873295031625586);
+
+      The key is ``MIGRATION_LOCK_KEY`` in ``app/db/migration_lock.py``, the
+      lock every migrator takes. Never wait in the blocking
+      ``pg_advisory_lock``: a session blocked inside it holds a snapshot that
+      a live CONCURRENTLY build waits for, and the deadlock detector then
+      usually kills the build. Stop at the first ``t``, because each ``t``
+      takes the lock once more.
+   b. Run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()``. The
+      lock is session-level, so it survives the build's internal commits and
+      is held for the whole build.
+   c. Release it::
+
+          SELECT pg_advisory_unlock(8173873295031625586);
 
 The revision has no in-migration repair, on purpose. coord's migration
 classifier (``pr_merge/migration_classifier.rs``) is fail-closed: it rejects a
