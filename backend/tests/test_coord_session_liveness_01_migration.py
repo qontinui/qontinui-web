@@ -14,16 +14,19 @@ default and two CHECKs. What is pinned:
 3. the transaction shape the docstring promises: each table's DDL is its own
    lock-bounded group, every CHECK is added ``NOT VALID`` behind an existence
    test and validated inside an ``autocommit_block``, the ``unrecorded``
-   backfill runs inside one, each block opens with a session-level lock bound,
-   and ``SET DEFAULT`` precedes the status backfill, which precedes ``SET NOT
-   NULL`` -- read from the source statement by statement (so ANY statement but
-   an ``op.execute`` literal or an autocommit block fails) AND from the offline
-   ``--sql`` render, where an autocommit block is a ``COMMIT;``/``BEGIN;`` pair;
+   backfill runs inside one and takes its row locks in id order (the order
+   coord's identity stamp locks the same rows in), each block opens with a
+   session-level lock bound, and ``SET DEFAULT`` precedes the status backfill,
+   which precedes ``SET NOT NULL`` -- read from the source statement by
+   statement (so ANY statement but an ``op.execute`` literal or an autocommit
+   block fails) AND from the offline ``--sql`` render, where an autocommit block
+   is a ``COMMIT;``/``BEGIN;`` pair;
 4. nothing outside ``downgrade()`` carries a destructive token, so coord's
    alembic re-point (its E6 clause) can still move this revision -- read over
    E6's own region with a stricter rule (``_alembic_harness``
    ``destructive_words_outside_downgrade``, pinned in
-   ``test_alembic_harness_revision_scans.py``);
+   ``test_alembic_harness_revision_scans.py``), on a module E6 can lex (it has
+   no f-string, the scan's one named exception);
 5. no literal carries a ``:word`` bind parameter;
 6. ``downgrade()`` removes exactly what ``upgrade()`` added, one table at a
    time: an ``autocommit_block`` COMMITs the ``coord.session_handles`` group
@@ -34,20 +37,27 @@ default and two CHECKs. What is pinned:
    the vocabulary is refused by the named constraint, each of the six reasons
    is admitted, the downgrade restores the catalog, an upgrade over a
    pre-existing contradicting row FAILS LOUDLY and converges once the row is
-   repaired, and re-running every upgrade statement changes nothing.
+   repaired, and re-running every upgrade statement changes nothing;
+8. live: the backfill queues behind a stamp-shaped lock of the same rows
+   instead of deadlocking with it (40P01), in a race a heap-order backfill
+   loses deterministically.
 
-Structural tests always run; the live one self-skips without a test Postgres
-(``QONTINUI_TEST_PG=host:port`` or ``QONTINUI_TEST_PG_DSN``) and REPORTS the skip.
+Structural tests always run; the live ones self-skip without a test Postgres
+(``QONTINUI_TEST_PG=host:port`` or ``QONTINUI_TEST_PG_DSN``) and REPORT the skip.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+import psycopg2
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -197,9 +207,13 @@ _UPGRADE_KINDS: tuple[tuple[str, str], ...] = (
     ),
     ("comment last_seen", r"COMMENT ON COLUMN coord\.agent_sessions\.last_seen IS .*"),
     (
+        # Row locks in id order, the order coord's identity stamp takes them
+        # in: a heap-order form deadlocks (40P01) against a stamp post.
         "backfill unrecorded",
         r"UPDATE coord\.agent_sessions SET closed_reason = 'unrecorded' "
-        r"WHERE closed_at IS NOT NULL AND closed_reason IS NULL",
+        r"WHERE id IN \(SELECT id FROM coord\.agent_sessions "
+        r"WHERE closed_at IS NOT NULL AND closed_reason IS NULL "
+        r"ORDER BY id FOR NO KEY UPDATE\)",
     ),
     (
         f"validate {_REASON_CHECK}",
@@ -369,6 +383,34 @@ def test_upgrade_runs_one_table_at_a_time_with_every_check_validated_late() -> N
     assert shape == _UPGRADE_SHAPE
 
 
+def _backfill_sql() -> str:
+    """The revision's own ``unrecorded`` backfill, whitespace-collapsed, found
+    by its opening words so that a heap-order regression is still found."""
+    found = [
+        sql
+        for sql in statement_shape(_function("upgrade"))
+        if sql.startswith(
+            "UPDATE coord.agent_sessions SET closed_reason = 'unrecorded' "
+        )
+    ]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def test_the_unrecorded_backfill_takes_its_row_locks_in_id_order() -> None:
+    """coord's identity stamp locks a post's rows, closed ones included, ``FOR
+    UPDATE`` in session-id order (qontinui-coord ``session_identity_stamp.rs``
+    ``STAMP_LOCK_SQL``). A backfill that locked in heap order could hold a
+    higher id while waiting on a lower one a stamp holds, and deadlock (40P01)
+    with it, so the backfill takes its locks in the stamp's order, in the mode
+    its own UPDATE takes. The live test
+    ``test_live_the_backfill_queues_behind_a_stamp_post_instead_of_deadlocking``
+    runs the race."""
+    backfill = _backfill_sql()
+    assert "WHERE id IN (SELECT id FROM coord.agent_sessions " in backfill, backfill
+    assert backfill.endswith(" ORDER BY id FOR NO KEY UPDATE)"), backfill
+
+
 def test_offline_render_commits_each_table_before_backfill_and_validate() -> None:
     """Rendered offline, an ``autocommit_block`` is a bare ``COMMIT;`` before its
     statements and a ``BEGIN;`` after. So the framing must be exactly the
@@ -424,11 +466,20 @@ def test_nothing_outside_downgrade_carries_a_destructive_token() -> None:
     its rule is stricter than E6's: any word BEGINNING ``drop`` / ``delete`` /
     ``truncate``, in every name (so a bare ``drop_table(...)``,
     ``sa.schema.DropTable(...)`` or ``sa.delete(...)`` is caught) and in every
-    string or bytes literal that is not a docstring (so a later edit cannot slip
-    a token in by spelling it inside a comment body).
+    string or bytes literal that is not a docstring E6 also blanks (so a later
+    edit cannot slip a token in by spelling it inside a comment body).
     ``test_alembic_harness_revision_scans.py`` pins the region against E6's
     column-0 rule and the rule against one example of every form E6 lists.
+
+    The scan's one named exception is a module E6 cannot lex -- on source Python
+    accepts, one with an f-string quoting inside a replacement field -- where
+    E6 also reads docstrings and ``#`` comments. This revision carries no
+    f-string at all, and the first assertion keeps it that way.
     """
+    tree = ast.parse(_revision_source(), filename=str(_revision_path()))
+    assert not any(isinstance(node, ast.JoinedStr) for node in ast.walk(tree)), (
+        "an f-string can make E6 read prose this scan skips; see the harness"
+    )
     assert destructive_words_outside_downgrade(_revision_source()) == []
 
 
@@ -871,9 +922,132 @@ def test_live_backfills_constraints_refusal_and_up_down_up() -> None:
                 {"id": seed.closed_session},
             )
         before = _catalog(engine)
+        # Both lock bounds are skipped: SET LOCAL does nothing outside a
+        # transaction, and the session-level SET would ride this pooled
+        # connection into every later read of the test.
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             for call in upgrade_execute_calls(_revision_path()):
-                if call.sql is not None and call.sql != _LOCK_BOUND:
+                if call.sql is not None and call.sql not in (
+                    _LOCK_BOUND,
+                    _SESSION_LOCK_BOUND,
+                ):
                     conn.execute(text(call.sql))
         assert _catalog(engine) == before
         assert _reason(engine, seed.closed_session) == "rebind_reap"
+
+
+#: coord's identity stamp takes its row locks with this statement: the rows of
+#: one post on the posting device, in session-id order (qontinui-coord
+#: ``crates/coord/src/session_identity_stamp.rs`` ``STAMP_LOCK_SQL``, read at
+#: ``origin/main`` 9f2c9416777c), here with psycopg2 placeholders.
+_STAMP_LOCK_SQL = (
+    "SELECT s.id FROM coord.agent_sessions s "
+    "WHERE s.id = ANY(%s::uuid[]) AND s.device_id = %s "
+    "ORDER BY s.id FOR UPDATE"
+)
+
+
+def _wait_until_blocked_on_a_lock(observer: Any, pid: int) -> None:
+    """Return once backend ``pid`` waits on a lock; fail after 30 s."""
+    deadline = time.monotonic() + 30
+    with observer.cursor() as cur:
+        while time.monotonic() < deadline:
+            cur.execute(
+                "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s", (pid,)
+            )
+            row = cur.fetchone()
+            if row is not None and row[0] == "Lock":
+                return
+            time.sleep(0.02)
+    raise AssertionError(f"backend {pid} never waited on a lock")
+
+
+@_needs_pg
+def test_live_the_backfill_queues_behind_a_stamp_post_instead_of_deadlocking() -> None:
+    """A stamp post holds the lowest closed row when the backfill starts, then
+    asks for a higher one: both must finish, neither with 40P01.
+
+    Deterministic, because the two rows go into the empty table highest id
+    first, so the heap holds them high, low. A heap-order backfill would lock
+    the high row, then wait on the low one the stamp holds, and the stamp's
+    request for the high row would close the cycle PostgreSQL breaks with
+    40P01. In id order, the backfill waits on the low row holding nothing, the
+    stamp takes the high row and commits, and the backfill finishes behind it.
+    """
+    low, high = uuid.UUID(int=1), uuid.UUID(int=(1 << 128) - 1)
+    backfill_sql = _backfill_sql()
+    with ephemeral_database(admin_database_url(), "sesslive01race") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        tenant, device = uuid.uuid4(), uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
+                    "VALUES (:tenant, :slug, 'session liveness race tenant')"
+                ),
+                {"tenant": tenant, "slug": f"sesslive-race-{tenant.hex[:10]}"},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO coord.devices (device_id, tenant_id, name, hostname) "
+                    "VALUES (:device, :tenant, 'race-device', 'race-host')"
+                ),
+                {"device": device, "tenant": tenant},
+            )
+        for session in (high, low):  # one transaction each: heap order high, low
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO coord.agent_sessions (id, device_id, closed_at) "
+                        "VALUES (:id, :device, now())"
+                    ),
+                    {"id": session, "device": device},
+                )
+
+        stamp = psycopg2.connect(db_url)
+        backfill = psycopg2.connect(db_url)
+        observer = psycopg2.connect(db_url)
+        backfill.autocommit = True
+        observer.autocommit = True
+        outcome: dict[str, object] = {}
+        try:
+            with stamp.cursor() as cur:  # the stamp holds the low row
+                cur.execute(_STAMP_LOCK_SQL, ([str(low)], str(device)))
+            with backfill.cursor() as cur:
+                cur.execute("SELECT pg_backend_pid()")
+                row = cur.fetchone()
+                assert row is not None
+                pid = row[0]
+                cur.execute(_SESSION_LOCK_BOUND)  # as the revision bounds it
+
+            def run_backfill() -> None:
+                try:
+                    with backfill.cursor() as cur:
+                        cur.execute(backfill_sql)
+                        outcome["backfill"] = cur.rowcount
+                except psycopg2.Error as error:
+                    outcome["backfill"] = error.pgcode
+
+            thread = threading.Thread(target=run_backfill)
+            thread.start()
+            _wait_until_blocked_on_a_lock(observer, pid)
+            try:  # the stamp's next post asks for both rows, in id order
+                with stamp.cursor() as cur:
+                    cur.execute(_STAMP_LOCK_SQL, ([str(low), str(high)], str(device)))
+                stamp.commit()
+                outcome["stamp"] = "committed"
+            except psycopg2.Error as error:
+                stamp.rollback()
+                outcome["stamp"] = error.pgcode
+            thread.join(timeout=30)
+            assert not thread.is_alive(), "the backfill never finished"
+        finally:
+            for connection in (stamp, backfill, observer):
+                connection.close()
+
+        assert outcome == {"stamp": "committed", "backfill": 2}, outcome
+        assert _reason(engine, low) == "unrecorded"
+        assert _reason(engine, high) == "unrecorded"

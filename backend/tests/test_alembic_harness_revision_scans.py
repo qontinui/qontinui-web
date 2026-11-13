@@ -4,8 +4,9 @@
 ``downgrade()`` reads, so it must refuse a statement it cannot render rather
 than skip it. ``destructive_words_outside_downgrade`` claims to read at least
 the region coord's alembic re-point (its E6 clause) reads, with a rule that
-matches every token E6 matches; these cases pin both halves of that claim, and
-that prose is not read. No database needed.
+matches every token E6 matches; these cases pin both halves of that claim, that
+prose E6 blanks is not read while a docstring E6 reads as code is, and the one
+named exception (a module E6 cannot lex). No database needed.
 """
 
 from __future__ import annotations
@@ -130,3 +131,63 @@ def test_a_module_naming_a_docstring_reader_has_its_docstrings_read() -> None:
     its docstrings as code, and so does the scan."""
     source = synthetic_revision("op.execute(upgrade.__doc__)")
     assert len(_SCAN(source)) == 2
+
+
+#: Docstrings, as the AST calls them, that E6's lexer does NOT blank: it blanks
+#: a string statement only at bracket depth 0, after a statement boundary, with
+#: nothing but a newline or a comment after it, and not across a backslash.
+_DOCSTRINGS_E6_READS_AS_CODE = {
+    "parenthesised": 'def upgrade() -> None:\n    ("""DROP TABLE coord.t""")\n',
+    "parenthesised over lines": (
+        'def upgrade() -> None:\n    (\n        "DROP TABLE coord.t"\n    )\n'
+    ),
+    "after the colon of a one-line def": (
+        'def upgrade() -> None: """DROP TABLE coord.t"""\n'
+    ),
+    "followed by a semicolon": (
+        'def upgrade() -> None:\n    """DROP TABLE coord.t"""; pass\n'
+    ),
+    "literals a backslash joins": (
+        'def upgrade() -> None:\n    "DROP TABLE " \\\n    "coord.t"\n'
+    ),
+}
+
+#: Docstrings E6 does blank, which the scan leaves unread too.
+_DOCSTRINGS_E6_BLANKS = {
+    "plain": 'def upgrade() -> None:\n    """DROP TABLE coord.t"""\n',
+    "a comment after it": (
+        'def upgrade() -> None:\n    """DROP TABLE coord.t"""  # prose\n'
+    ),
+    "adjacent literals on one line": (
+        'def upgrade() -> None:\n    "DROP TABLE " "coord.t"\n'
+    ),
+    "a raw prefix": 'def upgrade() -> None:\n    r"""DROP TABLE coord.t"""\n',
+}
+
+
+@pytest.mark.parametrize(
+    "source",
+    list(_DOCSTRINGS_E6_READS_AS_CODE.values()),
+    ids=list(_DOCSTRINGS_E6_READS_AS_CODE),
+)
+def test_a_docstring_e6_reads_as_code_is_read(source: str) -> None:
+    found = _SCAN(source)
+    assert found, "E6 reads this docstring as code; the scan must read it too"
+    assert all("DROP TABLE" in hit for hit in found), found
+
+
+@pytest.mark.parametrize(
+    "source", list(_DOCSTRINGS_E6_BLANKS.values()), ids=list(_DOCSTRINGS_E6_BLANKS)
+)
+def test_a_docstring_e6_blanks_stays_unread(source: str) -> None:
+    assert _SCAN(source) == []
+
+
+def test_named_exception_a_module_e6_cannot_lex_keeps_its_prose_unread() -> None:
+    """The scan's one documented exception, pinned so that widening it and
+    updating its docstring happen together: an f-string quoting inside a
+    replacement field makes E6's lexer give up and read the raw text, so E6
+    would refuse this module for the destructive SQL in its docstrings and
+    comment, while the scan, which still skips prose there, reads nothing."""
+    source = synthetic_revision("op.execute(f\"SELECT {row['id']}\")")
+    assert _SCAN(source) == []

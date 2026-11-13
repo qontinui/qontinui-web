@@ -17,11 +17,12 @@ Why
 ===
 
 coord's handle sweep closed three live sessions' ``coord.agent_sessions`` rows
-because it read ``last_seen`` as a heartbeat: dossier finding
-d83a6eb3-f283-45c0-b2cc-8f22d6130b68 (occurrences a869a4d8, 37379108 and
-9acb8e0d), with the writer named by investigation plan-library artifact
-ca3952ac-7cef-4062-b713-0d7d2a9d080f. Once a row is closed nothing says
-WHICH writer closed it, so each occurrence had to be traced by hand, and
+because it read ``last_seen`` as a heartbeat: coord dossier
+``dossier:coord-session-row-closed-while-process-alive`` (occurrence findings
+a869a4d8, 37379108 and 9acb8e0d), with the writer named by investigation
+plan-library artifact ca3952ac-7cef-4062-b713-0d7d2a9d080f. Once a row is
+closed nothing says WHICH writer closed it, so each occurrence had to be traced
+by hand, and
 ``coord.session_handles.status`` could contradict its own ``closed_at`` with
 nothing to refuse it. This revision gives the plan's coord phases the columns
 and constraints they need:
@@ -75,7 +76,7 @@ and constraints they need:
 Production sizing (read-only, 2026-11-13)
 =========================================
 
-Recorded in coord finding 8ac6727f-2a77-491a-a025-7fda0c48d8a3 (topic
+Recorded in coord finding d199d941-f9cf-4d02-a037-842441a56e01 (topic
 ``session-liveness``), which carries the queries so a reader can re-run them.
 Measured at 2026-11-13T02:12:24Z through the production read door the
 knowledge base calls Door A (ECS Exec into the ``web`` container, psycopg2
@@ -87,9 +88,9 @@ on``), on PostgreSQL 16.13 with alembic at this revision's parent:
   ``unrecorded`` backfill is therefore one bounded statement, not a batched
   loop: on a synthetic local table of that size and closed share, built at
   this revision's parent (PostgreSQL 16.15, every index the chain creates, a
-  2.1 MB heap because its rows carry only key columns), it updated the 10,685
-  closed rows in 0.12 s under row locks only (step 2 below), and ``VALIDATE``
-  took 0.004 s (one run each).
+  2.1 MB heap because its rows carry only key columns), its id-ordered form
+  updated the 10,685 closed rows in 0.11 to 0.15 s (three runs) under row locks
+  only (step 2 below), and ``VALIDATE`` took 0.005 s.
 * ``coord.session_handles``: 3,203 rows (3,124 ``closed``, 70 ``live``, 9
   ``stale``), NONE with a NULL ``status``, none with a value outside the
   vocabulary, and none that would violate either handle CHECK after the
@@ -128,7 +129,8 @@ cycle). So the revision runs as four steps, one table at a time:
 2. ``autocommit_block()`` -- entering it COMMITS step 1, releasing the lock.
    A session-level ``SET lock_timeout = '3s'`` bounds every lock wait in the
    block. The ``unrecorded`` backfill then runs as its own transaction under
-   row locks only, and ``VALIDATE CONSTRAINT`` scans under ``SHARE UPDATE
+   row locks only, taken in id order (``ORDER BY id FOR NO KEY UPDATE`` in its
+   subquery), and ``VALIDATE CONSTRAINT`` scans under ``SHARE UPDATE
    EXCLUSIVE``, which blocks no reader or writer.
 3. ``coord.session_handles`` DDL in the transaction alembic reopens, again
    under ``SET LOCAL lock_timeout = '3s'``: ``SET DEFAULT`` first (its
@@ -147,6 +149,26 @@ transaction that holds one ``coord.agent_sessions`` row lock for longer than
 that makes the ``unrecorded`` backfill fail with ``lock_timeout`` (55P03) and
 roll back whole, a failure that converges on re-run (below), instead of
 stalling the upgrade for as long as the lock is held.
+
+The id order removes a deadlock (40P01). coord's identity stamp locks the rows
+of one post, closed ones included, ``FOR UPDATE`` in session-id order
+(qontinui-coord ``session_identity_stamp.rs`` ``STAMP_LOCK_SQL`` and its
+declared lock order, read at ``origin/main`` 9f2c9416777c). A backfill locking
+in heap order could hold a higher id while waiting on a lower one a stamp
+holds, and the stamp would then wait on the higher one; locking in the stamp's
+own order, the backfill waits holding nothing the stamp needs, and the two
+queue. The ``FOR NO KEY UPDATE`` mode is the one the UPDATE takes anyway, so a
+foreign-key check on a session id is not blocked by it. As coord's doc says of
+its own posts, a writer that locked two of these rows in some other order could
+still meet the backfill in a deadlock: PostgreSQL then aborts one side, and the
+backfill, if it is the one, re-runs like a lock timeout. The handle backfill in
+step 3 needs no such order: it runs after ``SET DEFAULT`` took ``ACCESS
+EXCLUSIVE`` on ``coord.session_handles`` in the same transaction, so no coord
+transaction holds or can take a handle row lock while it runs, and that
+transaction holds nothing on ``coord.agent_sessions``. (No writer in coord's
+``session_handles.rs`` at that sha locks several handle rows in a declared
+order either: the bind locks its one anchor row, and the sweep's passes 1-3 are
+single statements.)
 
 Partial apply and re-run
 ========================
@@ -183,7 +205,10 @@ one that stamps the version. Each group opens with its own ``SET LOCAL
 lock_timeout = '3s'``, since a ``SET LOCAL`` ends with its transaction. Every
 statement is ``IF EXISTS`` or repeats harmlessly, so a downgrade that fails in
 its second group (the handle group committed, alembic still at this revision)
-converges when re-run.
+converges when the DOWNGRADE is re-run. Only the downgrade: after such a
+failure alembic still reads this revision, so ``alembic upgrade head`` is a
+no-op that leaves the handle ``NOT NULL``, the default and both handle CHECKs
+missing while the version claims them.
 
 Ordering against coord
 ======================
@@ -326,9 +351,15 @@ def upgrade() -> None:
     # than stalling it. env.py RESETs it after the revision.
     with op.get_context().autocommit_block():
         op.execute("SET lock_timeout = '3s'")
+        # The row locks are taken in id order (LockRows sits above the sort),
+        # the order coord's identity stamp locks the same rows in, so the two
+        # queue instead of deadlocking. FOR NO KEY UPDATE is the mode the UPDATE
+        # itself takes, so a foreign-key check on a session id is not blocked.
         op.execute(
             "UPDATE coord.agent_sessions SET closed_reason = 'unrecorded' "
-            "WHERE closed_at IS NOT NULL AND closed_reason IS NULL"
+            "WHERE id IN (SELECT id FROM coord.agent_sessions "
+            "WHERE closed_at IS NOT NULL AND closed_reason IS NULL "
+            "ORDER BY id FOR NO KEY UPDATE)"
         )
         op.execute(
             "ALTER TABLE coord.agent_sessions "

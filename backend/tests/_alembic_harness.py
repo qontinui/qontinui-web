@@ -32,11 +32,13 @@ import ast
 import contextlib
 import importlib.util
 import io
+import itertools
 import logging
 import os
 import re
 import subprocess
 import sys
+import tokenize
 import traceback
 import uuid
 import warnings
@@ -940,6 +942,43 @@ def _carried_text(node: ast.AST, docstrings: set[int]) -> list[str]:
     return texts
 
 
+def _blanked_by_e6(source: str, lines: list[str], stmt: ast.Expr) -> bool:
+    """Whether E6 blanks the string statement ``stmt`` as prose.
+
+    E6's lexer (``python_code_text`` in qontinui-coord
+    ``crates/coord/src/alembic_repoint_plan.rs``) blanks a string-literal
+    statement only at bracket depth 0, right after a statement boundary, with
+    nothing after it but a newline or a comment, and never across a backslash
+    continuation. So it reads a docstring as CODE when the docstring is
+    parenthesised, follows the ``:`` of a one-line ``def``, is followed by a
+    ``;``, or has literals a backslash joins; the AST calls each of those a
+    docstring all the same.
+    """
+    value = stmt.value
+    end_lineno = stmt.end_lineno or stmt.lineno
+    first = lines[stmt.lineno - 1].encode()
+    last = lines[end_lineno - 1].encode()
+    if (stmt.lineno, stmt.col_offset) != (value.lineno, value.col_offset):
+        return False  # parenthesised: the statement opens before its literal
+    if first[: stmt.col_offset].strip():
+        return False  # not first on its line: after a ``:`` or a ``;``
+    after = last[stmt.end_col_offset or 0 :].strip()
+    if after and not after.startswith(b"#"):
+        return False  # a ``;`` (or anything but a comment) follows it
+    segment = ast.get_source_segment(source, stmt) or ""
+    try:
+        literals = [
+            token
+            for token in tokenize.generate_tokens(io.StringIO(segment).readline)
+            if token.type == tokenize.STRING
+        ]
+    except (tokenize.TokenError, SyntaxError):
+        return False
+    # Adjacent literals on one line are one E6 statement; across a backslash
+    # continuation they are not.
+    return all(a.end[0] == b.start[0] for a, b in itertools.pairwise(literals))
+
+
 def destructive_words_outside_downgrade(source: str) -> list[str]:
     """What coord's alembic re-point (its E6 clause) could refuse in a revision's
     ``source``, read more strictly than E6 reads it, as ``line N: <text>``.
@@ -947,28 +986,41 @@ def destructive_words_outside_downgrade(source: str) -> list[str]:
     The rule: any word BEGINNING ``drop`` / ``delete`` / ``truncate``, in a name
     (so a bare ``drop_table(...)``, ``sa.schema.DropTable(...)`` or
     ``sa.delete(...)`` is caught) or in a string or bytes literal that is not a
-    docstring (so is a token spelled inside a ``COMMENT ON`` body). Every token
-    form E6 lists begins so.
+    docstring E6 also blanks (so is a token spelled inside a ``COMMENT ON``
+    body). Every token form E6 lists begins so.
 
     The region: every line outside [`downgrade_body_lines`], E6's own bound read
-    at least as widely. ``#`` comments never reach the AST, and docstrings are
-    prose unless the module names one of [`DOCSTRING_READERS`], as in E6.
+    at least as widely. ``#`` comments never reach the AST. A docstring is
+    prose only where E6 blanks it too (see [`_blanked_by_e6`]), and none is
+    once the module names one of [`DOCSTRING_READERS`], as in E6.
+
+    One named exception, where E6 reads MORE than this scan: when E6's lexer
+    cannot lex the module, E6 scans the raw region text, docstrings and ``#``
+    comments included. On source Python accepts, that is a module with an f- or
+    t-string quoting inside a replacement field (``f"{row['id']}"``), which
+    E6's ``format_fields_balance`` refuses to guess the end of. This scan still
+    skips prose there, so a caller that needs the guarantee keeps such
+    f-strings out of the revision, as
+    ``test_coord_session_liveness_01_migration`` checks.
     """
     tree = ast.parse(source)
+    lines = source.split("\n")
     docstrings: set[int] = set()
     if not any(reader in source for reader in DOCSTRING_READERS):
-        docstrings = {
-            id(holder.body[0].value)
-            for holder in ast.walk(tree)
-            if isinstance(
+        for holder in ast.walk(tree):
+            if not isinstance(
                 holder,
                 ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
-            )
-            and holder.body
-            and isinstance(holder.body[0], ast.Expr)
-            and isinstance(holder.body[0].value, ast.Constant)
-            and isinstance(holder.body[0].value.value, str)
-        }
+            ):
+                continue
+            head = holder.body[0] if holder.body else None
+            if (
+                isinstance(head, ast.Expr)
+                and isinstance(head.value, ast.Constant)
+                and isinstance(head.value.value, str)
+                and _blanked_by_e6(source, lines, head)
+            ):
+                docstrings.add(id(head.value))
     skipped = downgrade_body_lines(source)
     found: list[str] = []
     for node in ast.walk(tree):
