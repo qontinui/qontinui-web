@@ -27,7 +27,8 @@
  *    a read retried after a 503, every write re-issued after a 429 or replayed
  *    after a token refresh, and the re-read each write takes.
  * 5. **THIS tab's own switch through the provider raises nothing**: the page
- *    follows it, and its writes go to the project it followed.
+ *    follows it, and its writes go to the project it followed. A write in
+ *    flight across that switch re-reads in the page's new project.
  * 6. **The dialogs' doors and readers keep one identity across renders**: a
  *    re-render of the list — a parent's, or the `saving` flag toggling through
  *    a restore — does not re-fetch the history dialog's versions or reset the
@@ -1236,6 +1237,181 @@ describe("a write while the page's project is not a known, named one", () => {
     await waitFor(() =>
       expect(screen.getByTestId("doc-body")).toHaveValue(`body in ${SYS}`)
     );
+  }, 20_000);
+});
+
+/** The page's re-reads since `from`: its rows and its publish-all status. */
+const rereadsSince = (from: number) =>
+  after(from).filter(
+    (s) =>
+      s.method === "GET" &&
+      /\/coord\/prompt-documents(\?|$|\/auto-publish\/status)/.test(s.url)
+  );
+/** The page's publish-all status reads since `from`. */
+const statusReadsSince = (from: number) =>
+  sentSince(from, "GET", /\/auto-publish\/status/);
+
+/**
+ * Hold the write `method` to `match`, `send` it, switch project in another tab
+ * (its event delivered) while it is in flight, then release it. Resolves to
+ * where the request count stood at the release: every re-read the write
+ * takes is sent after it. Ported from qontinui-web#2212, onto the provider.
+ */
+async function writeInFlightAcrossASwitch(
+  other: string,
+  method: string,
+  match: RegExp,
+  send: () => Promise<void>
+): Promise<number> {
+  const write = hold(match, method);
+  await send();
+  await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+  await act(async () => anotherTabStores(other));
+  await expectNotice("another_tab");
+  const before = sent.length;
+  write.release();
+  await waitFor(() => expect(rereadsSince(before).length).toBeGreaterThan(0), {
+    timeout: 5000,
+  });
+  await settle();
+  return before;
+}
+
+describe("a write in flight when another tab switches: what it re-reads stays in the page's project", () => {
+  it("publish-all re-reads the rows and the status there, and the page is its own once the other tab switches back", async () => {
+    await mountIn(SYS);
+    await user().click(
+      await screen.findByTestId("publish-all", {}, { timeout: 5000 })
+    );
+    const confirm = await screen.findByTestId("publish-all-confirm");
+    await waitFor(() => expect(confirm).toBeEnabled());
+
+    const before = await writeInFlightAcrossASwitch(
+      B,
+      "POST",
+      /\/publish-all$/,
+      () => user().click(confirm)
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(sentSince(before, "GET", LIST)).not.toHaveLength(0);
+    // The other tab switches back: the notice lifts over the page's own rows,
+    // and its publish surface is not retired by another project's answer.
+    await act(async () => anotherTabStores(SYS));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("doc-publish-mode-policy-sys1")
+    ).toBeInTheDocument();
+  }, 20_000);
+
+  it("a single publish re-reads the rows and the status there", async () => {
+    await mountIn();
+    await user().click(screen.getByTestId("doc-publish-policy-bravo-only"));
+    const confirm = await screen.findByTestId("publish-confirm");
+
+    const before = await writeInFlightAcrossASwitch(
+      SYS,
+      "POST",
+      /bravo-only\/publish$/,
+      () => user().click(confirm)
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => B));
+    expect(sentSince(before, "GET", LIST)).not.toHaveLength(0);
+  }, 20_000);
+
+  it("a publish-mode write re-takes the status there", async () => {
+    await mountIn(SYS);
+    await screen.findByTestId(
+      "doc-publish-mode-policy-sys1",
+      {},
+      { timeout: 5000 }
+    );
+
+    const before = await writeInFlightAcrossASwitch(
+      B,
+      "PATCH",
+      /policy\/sys1$/,
+      async () => {
+        await user().click(screen.getByTestId("doc-publish-mode-policy-sys1"));
+        await user().click(
+          await screen.findByTestId("doc-publish-mode-never-policy-sys1")
+        );
+      }
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+  }, 20_000);
+
+  it("a version restore re-reads the rows and the open document there", async () => {
+    await mountIn();
+    await openHistoryDialog();
+    await user().click(await screen.findByTestId("restore-version"));
+    const confirm = await screen.findByTestId("restore-version-confirm-button");
+
+    const before = await writeInFlightAcrossASwitch(
+      SYS,
+      "POST",
+      /\/versions\/\d+\/restore$/,
+      () => user().click(confirm)
+    );
+    await waitFor(
+      () => expect(sentSince(before, "GET", BODY)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+
+    const reads = [...rereadsSince(before), ...sentSince(before, "GET", BODY)];
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => B));
+  }, 20_000);
+
+  it("THIS tab switching project while a write is in flight: the re-read goes in the page's new project, not the write's", async () => {
+    const { switchTo } = await mountIn();
+    const write = hold(/policy\/bravo-only$/, "PATCH");
+    await setBravoTier();
+    await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+    await switchTo(SYS);
+    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+    await settle();
+    const before = sent.length;
+
+    write.release();
+    await waitFor(
+      () => expect(rereadsSince(before).length).toBeGreaterThan(0),
+      {
+        timeout: 5000,
+      }
+    );
+    await settle();
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
   }, 20_000);
 });
 
