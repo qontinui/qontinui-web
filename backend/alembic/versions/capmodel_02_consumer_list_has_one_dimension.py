@@ -60,9 +60,10 @@ the same run. coord reads the parent on every spawn admission and policy GET,
 and those reads queue behind it. So each ALTER's wait for its lock is bounded
 with ``SET LOCAL lock_timeout = '3s'`` (the ``coord_alerts_onset_01`` posture),
 which fails the deploy fast rather than stalling coord behind a queued lock.
-The parent is altered before its versions table, the order coord's write path
-locks them in (``FOR UPDATE`` on the parent, then the snapshot INSERT), so the
-migration cannot deadlock against a coord write. The trailing
+Both directions alter the parent before its versions table, the order coord's
+write path locks them in (``FOR UPDATE`` on the parent, then the snapshot
+INSERT), so neither the upgrade nor a downgrade can deadlock against a coord
+write. The trailing
 ``SET LOCAL lock_timeout = DEFAULT`` is house style rather than a need:
 ``env.py``'s ``on_version_apply`` hook already RESETs ``lock_timeout`` after
 every applied revision. coord's classifier admits ``= DEFAULT`` and rejects
@@ -72,8 +73,10 @@ Re-runs: PostgreSQL cannot guard ``ADD CONSTRAINT`` with ``IF NOT EXISTS``, but
 the constraints commit in the same transaction as the version stamp, so a run
 that died partway leaves neither and re-runs cleanly.
 
-Downgrade drops both constraints, the exact reverse. Every ``op.execute`` is a
-static string literal, which is what coord's migration classifier can inspect.
+Downgrade drops both constraints, parent first (the lock order above; the two
+drops are independent, so their order is free to follow it). Every
+``op.execute`` is a static string literal, which is what coord's migration
+classifier can inspect.
 """
 
 from collections.abc import Sequence
@@ -128,18 +131,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both CHECKs. Exact reverse of upgrade(); no data is touched."""
+    """Drop both CHECKs, parent first: the lock order upgrade() and coord's writes use.
+
+    No data is touched.
+    """
     op.execute("SET LOCAL lock_timeout = '3s'")
-    op.execute(
-        """
-        ALTER TABLE coord.fleet_runtime_policy_versions
-            DROP CONSTRAINT IF EXISTS fleet_runtime_policy_versions_consumers_ndims_check
-        """
-    )
     op.execute(
         """
         ALTER TABLE coord.fleet_runtime_policy
             DROP CONSTRAINT IF EXISTS fleet_runtime_policy_consumers_ndims_check
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.fleet_runtime_policy_versions
+            DROP CONSTRAINT IF EXISTS fleet_runtime_policy_versions_consumers_ndims_check
         """
     )
     op.execute("SET LOCAL lock_timeout = DEFAULT")
