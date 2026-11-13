@@ -158,10 +158,19 @@ in heap order could hold a higher id while waiting on a lower one a stamp
 holds, and the stamp would then wait on the higher one; locking in the stamp's
 own order, the backfill waits holding nothing the stamp needs, and the two
 queue. The ``FOR NO KEY UPDATE`` mode is the one the UPDATE takes anyway, so a
-foreign-key check on a session id is not blocked by it. As coord's doc says of
-its own posts, a writer that locked two of these rows in some other order could
-still meet the backfill in a deadlock: PostgreSQL then aborts one side, and the
-backfill, if it is the one, re-runs like a lock timeout. The handle backfill in
+foreign-key check on a session id is not blocked by it.
+
+One coord writer does lock several of these rows in another order:
+``run_name_backfill`` (qontinui-coord 9f2c9416777c
+``crates/coord/src/agent_sessions.rs``). It reads ids ``ORDER BY last_seen
+DESC`` (``:1382-1383``) and names them with one ``UPDATE ... FROM unnest``
+(``:1410-1413``), whose row locks follow the planner's join, so it could meet
+the backfill in a deadlock. It runs once, after a coord process first becomes
+leader (``spawn_name_backfill``, ``:1343-1361``). It touches only rows whose
+``derived_name IS NULL``, which every production insert path sets, so in
+practice none. And it fails soft (``:1389-1398``, ``:1419-1422``). If the two
+did deadlock, PostgreSQL would abort one side: the name backfill logs and stops,
+or the backfill fails and re-runs like a lock timeout. The handle backfill in
 step 3 needs no such order: it runs after ``SET DEFAULT`` took ``ACCESS
 EXCLUSIVE`` on ``coord.session_handles`` in the same transaction, so no coord
 transaction holds or can take a handle row lock while it runs, and that
@@ -310,10 +319,10 @@ def upgrade() -> None:
             'points at), rebind_reap (a handle rebind reaped the session it '
             'superseded), stamp_ended_insert (the session-identity stamp first '
             'saw the session already ended), stamp_reported_ended (the stamp '
-            'reported it ended while every liveness plane was stale) or '
-            'unrecorded (closed before any writer named itself, the backfilled '
-            'value). Meaningful only while closed_at is set. NULL = no writer '
-            'recorded a reason. Written from Phase 5 of plan '
+            'reported it ended while its last_seen and heartbeat planes were '
+            'both stale) or unrecorded (closed before any writer named itself, '
+            'the backfilled value). Meaningful only while closed_at is set. '
+            'NULL = no writer recorded a reason. Written from Phase 5 of plan '
             '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat '
             'on, by the coord write that sets closed_at (session_handles.rs, '
             'agent_sessions.rs, session_identity_stamp.rs). A row closed '

@@ -55,9 +55,9 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import psycopg2
+import psycopg2.extensions
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -358,6 +358,8 @@ def test_the_comments_carry_the_contracts_they_restate() -> None:
     for writer in ("upsert_agent_session", "bind_session_if_unclaimed"):
         assert writer in last_seen, writer
     assert "Written from Phase 5 of plan" in reason
+    # Plan D4 guards the stamp's close on two planes, not on every plane.
+    assert "its last_seen and heartbeat planes were both stale" in reason
     for phase in (
         "from Phase 1 of plan",
         "from Phase 3",
@@ -947,7 +949,9 @@ _STAMP_LOCK_SQL = (
 )
 
 
-def _wait_until_blocked_on_a_lock(observer: Any, pid: int) -> None:
+def _wait_until_blocked_on_a_lock(
+    observer: psycopg2.extensions.connection, pid: int
+) -> None:
     """Return once backend ``pid`` waits on a lock; fail after 30 s."""
     deadline = time.monotonic() + 30
     with observer.cursor() as cur:
