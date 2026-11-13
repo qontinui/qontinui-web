@@ -164,8 +164,10 @@ One coord writer does lock several of these rows in another order:
 ``run_name_backfill`` (qontinui-coord 9f2c9416777c
 ``crates/coord/src/agent_sessions.rs``). It reads ids ``ORDER BY last_seen
 DESC`` (``:1382-1383``) and names them with one ``UPDATE ... FROM unnest``
-(``:1410-1413``), whose row locks follow the planner's join, so it could meet
-the backfill in a deadlock. It runs once, after a coord process first becomes
+(``:1410-1413``) per batch of up to 500 ids (``NAME_BACKFILL_BATCH``,
+``:1326``; the loop is ``:1371-1433``), each batch its own transaction. Within a
+batch the row locks follow the planner's join, so a batch could meet the
+backfill in a deadlock. It runs once, after a coord process first becomes
 leader (``spawn_name_backfill``, ``:1343-1361``). It touches only rows whose
 ``derived_name IS NULL``, which every production insert path sets, so in
 practice none. And it fails soft (``:1389-1398``, ``:1419-1422``). If the two
