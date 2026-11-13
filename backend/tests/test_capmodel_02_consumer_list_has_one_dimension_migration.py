@@ -96,10 +96,12 @@ def test_upgrade_adds_one_not_valid_check_per_table_and_downgrade_drops_them(
         f"CHECK ({module._PREDICATE}) NOT VALID",
         "SET LOCAL lock_timeout = DEFAULT",
     ]
+    # The downgrade drops the parent's CHECK first too: the lock order coord's
+    # writes use, so a rollback against a live coord cannot deadlock either.
     assert down == [
         "SET LOCAL lock_timeout = '3s'",
-        f"ALTER TABLE {versions} DROP CONSTRAINT IF EXISTS {versions_check}",
         f"ALTER TABLE {parent} DROP CONSTRAINT IF EXISTS {parent_check}",
+        f"ALTER TABLE {versions} DROP CONSTRAINT IF EXISTS {versions_check}",
         "SET LOCAL lock_timeout = DEFAULT",
     ]
 
