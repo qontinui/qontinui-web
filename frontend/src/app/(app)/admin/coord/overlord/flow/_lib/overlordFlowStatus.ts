@@ -518,8 +518,9 @@ function closedOf(raw: unknown, truncated: unknown): ClosedSessions | null {
 /**
  * Coord's per-version groups, or `null` (UNKNOWN) when absent or any group
  * cannot be read: a missing group would drop a version from the comparison.
- * `overlord_version` must be PRESENT — its `null` is coord saying "recorded
- * none", which an absent key is not.
+ * `overlord_version` must be PRESENT — its `null` is coord saying the version
+ * is unknown (none recorded, or an entry its runner had read missed), which an
+ * absent key is not.
  */
 function groupsOf(raw: unknown): VersionGroup[] | null {
   if (!Array.isArray(raw)) return null;
@@ -1271,4 +1272,16 @@ export function laterStopAt(row: ClosedSession): string | null {
   return Date.parse(episode) === Date.parse(row.firstStoppedAt)
     ? null
     : episode;
+}
+
+/**
+ * The operator label form, prefilled with the session's last `/next-move`
+ * judgment — or `null` when there is no judgment to label: none recorded
+ * (`null`), a coord predating the join (`undefined`), or no proven session id
+ * to have joined on (the same rule `lastInterventionWords` applies).
+ */
+export function labelHref(row: FlowUnchangedSession): string | null {
+  const last = row.last_intervention;
+  if (!last || !row.claude_session_id) return null;
+  return `/admin/coord/overlord/label?intervention_id=${encodeURIComponent(last.intervention_id)}`;
 }

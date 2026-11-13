@@ -125,7 +125,8 @@ describe("ClauseManagerDialog raw (verbatim-body) clauses", () => {
       {
         clause_id: "finish-to-zero",
         category: "planning-and-scope",
-        status: "active",
+        // coord's import seed default — a raw body never sets status.
+        status: "proposed",
         tier: null,
         trigger: "",
         action: "",
@@ -148,6 +149,13 @@ describe("ClauseManagerDialog raw (verbatim-body) clauses", () => {
     const row = await screen.findByTestId("clause-row-finish-to-zero");
     expect(row).toHaveTextContent("verbatim");
     expect(row).toHaveTextContent("Your assignment includes its follow-ups.");
+  });
+
+  it("does not show the placeholder lifecycle status on a raw row", async () => {
+    renderDialog(doc(null));
+
+    const row = await screen.findByTestId("clause-row-finish-to-zero");
+    expect(row).not.toHaveTextContent("proposed");
   });
 
   it("opens a read-only view instead of the labelled editor", async () => {
@@ -186,6 +194,7 @@ describe("ClauseManagerDialog raw (verbatim-body) clauses", () => {
 
     const row = await screen.findByTestId("clause-row-labelled-rule");
     expect(row).toHaveTextContent("ask-first");
+    expect(row).toHaveTextContent("active");
     expect(row).not.toHaveTextContent("verbatim");
     fireEvent.click(screen.getByRole("button", { name: "Edit clause" }));
     expect(await screen.findByTestId("clause-editor")).toBeInTheDocument();

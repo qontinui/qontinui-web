@@ -2,7 +2,7 @@
  * Workflow Testing Types
  *
  * Type definitions for the workflow testing framework including
- * test cases, suites, assertions and results.
+ * test cases, suites and assertions.
  */
 
 // ============================================================================
@@ -105,7 +105,6 @@ export interface TestCase {
     created?: string;
     updated?: string;
     author?: string;
-    lastRun?: string;
     [key: string]: unknown;
   };
 
@@ -146,75 +145,4 @@ export interface TestSuite {
 
   /** Tags for categorization */
   tags?: string[];
-}
-
-// ============================================================================
-// Test Result Types
-// ============================================================================
-
-export interface AssertionResult {
-  /** Assertion that was evaluated */
-  assertion: Assertion;
-
-  /** Did the assertion pass? */
-  passed: boolean;
-
-  /** Actual value found */
-  actualValue?: unknown;
-
-  /** Error message if failed */
-  error?: string;
-}
-
-export interface TestResult {
-  /** Unique result ID */
-  id: string;
-
-  /** Test case that was executed */
-  testCaseId: string;
-
-  /** Test case name (cached for convenience) */
-  testCaseName: string;
-
-  /** Workflow ID */
-  workflowId: string;
-
-  /** Workflow name (cached for convenience) */
-  workflowName?: string;
-
-  /** Did the test pass? */
-  passed: boolean;
-
-  /** Execution start time */
-  startTime: string;
-
-  /** Execution end time */
-  endTime: string;
-
-  /** Duration in milliseconds */
-  duration: number;
-
-  /** Assertion results */
-  assertions: AssertionResult[];
-
-  /** Execution path taken (action IDs) */
-  executionPath?: string[];
-
-  /** Final workflow state */
-  finalState?: {
-    variables?: Record<string, unknown>;
-    activeStates?: string[];
-  };
-
-  /** Actions that were executed */
-  actionsExecuted?: number;
-
-  /** Actions that succeeded */
-  actionsSucceeded?: number;
-
-  /** Error message if test failed */
-  error?: string;
-
-  /** Additional execution details */
-  details?: unknown;
 }

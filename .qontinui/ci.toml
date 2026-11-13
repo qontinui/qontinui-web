@@ -37,14 +37,47 @@
 #
 # 1. backend-ci.yml's `test` job — THE POSTGRES/REDIS SUITE.
 #    "Run tests with coverage" needs the job's `services:` block: a
-#    pgvector/pgvector:pg16 container and a redis:7-alpine container, plus the
-#    "Create test schemas and extensions" psql step that creates the project /
-#    auth / cloud / coord / web schemas and `CREATE EXTENSION vector`.
-#    The ci_node executor provisions sibling repos and registry tools; it
-#    provisions no DATABASE. Nothing in this manifest can stand a server up, and
-#    a step that assumed a local Postgres would fail on exactly the clean user
-#    machine this lane exists to serve. So the backend unit suite is NOT gated
-#    here — the Actions lane remains its only gate.
+#    pgvector/pgvector:pg16 container and a redis:7-alpine container.
+#
+#    This lane CAN provide both. A `[[services]]` entry names one entry of the
+#    executor's CLOSED service registry — `postgres`, `postgres-pgvector` or
+#    `redis` (qontinui-runner `ci_node/services.rs` `KNOWN_SERVICES`, and its
+#    twin in qontinui-schemas `ci-exec/src/services.rs`) — and pins the image
+#    tag; a manifest never supplies an image reference. The executor runs it as
+#    a dispatch-scoped container (docker or podman; a machine with neither
+#    fails the dispatch, it never skips the service) and exports
+#    `DATABASE_URL`, the libpq `PG*` family and `REDIS_URL` / `REDIS_HOST` /
+#    `REDIS_PORT` to every step (`exports_for`). That is how a step here gets a
+#    database: none may assume a local Postgres, which a clean user machine —
+#    the one this lane exists to serve — does not have.
+#    No psql client is needed either: the test session creates its own schemas
+#    and the `vector` extension (backend/tests/conftest.py, the `test_engine`
+#    fixture).
+#
+#    What still keeps the suite off this lane, so the backend unit suite is NOT
+#    gated here and the Actions lane remains its only gate:
+#
+#    (i)  ONE PROCESS OUTLASTS THE PER-STEP CAP. A step may run for at most
+#         `MAX_STEP_TIMEOUT_SECS` (7,200 s), and the whole suite takes longer
+#         than that in one process: the six "Run tests with coverage" steps of
+#         Backend CI's 2026-11-05 nightly (run 4354) took 8,796 s between them.
+#         backend-ci.yml shards the suite six ways, each shard a job with its
+#         own service containers. Per-shard jobs with per-job services need
+#         manifest version 2 `[[jobs]]`, which only qontinui-schemas `ci-exec`
+#         reads. The runner's executor accepts `version = 1` only until
+#         qontinui-runner#1995 (which moves it onto `ci-exec`) lands, and coord
+#         must then name the job on each dispatch.
+#
+#    (ii) THE SUITE NEVER USES THE EXECUTOR'S DATABASE. conftest.py builds its
+#         DSN from QONTINUI_TEST_PG_DSN / QONTINUI_TEST_PG and overwrites
+#         DATABASE_URL, so the executor's generated credentials never reach
+#         the engine.
+#
+#    Closing this gap is owed follow-up #4 of plan
+#    2026-08-08-ci-tool-registry-and-canonical-configuration-parity: the web
+#    manifest and conftest PR it already owes. Plan
+#    2026-10-04-coord-managed-ci-for-every-tenant-with-an-actions-free-mode
+#    Phase 9 only consumes it, since an uncovered job blocks its flip.
 #
 # 2. backend-ci.yml's `build-test` job — DOCKER.
 #    "Build Docker image" / "Test Docker image" need a working docker daemon.
@@ -98,23 +131,24 @@
 #    and a running app. Out of scope for a parity mirror of the GATES.
 #
 # 6. NO [[tools]] ARE DECLARED, AND THAT IS NOT THE SAME AS "NEEDS NOTHING".
-#    The runner's tool registry (ci_node/tools.rs — `static KNOWN_TOOLS` at
-#    :107, and the "The registry is CLOSED" rationale at :20) currently
-#    provisions exactly one tool, cargo-nextest. Cited by line here ON PURPOSE,
-#    against this file's own name-not-line-number rule: a 2026-08-18 review of
-#    the Phase 5 diff reported "there is no tool registry in the runner — `find
-#    -name tools.rs` returns nothing" and recommended deleting the closed-
-#    registry framing. That was a STALE CHECKOUT artifact: the primary
-#    qontinui-runner checkout sat at 33500d706 (2026-08-07, 97 commits behind)
-#    whose ci_node/ has 7 files and no tools.rs, while origin/main has 12
-#    including it — added by a4e040c7c, shipped 2026-08-08 with the preceding
-#    plan. Verify against origin/main, never a local checkout. Every step below
-#    assumes `npm` (Node 22, per
-#    frontend-ci.yml's setup-node) and `poetry` (Python 3.12, per backend-ci.yml's
-#    PYTHON_VERSION) are already on PATH. Until those enter the registry this
-#    repo is not yet a zero-install target; declaring a tool the registry does
-#    not know would be REJECTED at validation, so the honest move is to say so
-#    here rather than to declare a lie.
+#    The runner's tool registry (qontinui-runner `ci_node/tools.rs`, the closed
+#    `KNOWN_TOOLS` list) provisions five tools: cargo-nextest, node (with npm
+#    and npx), poetry, twine and datamodel-code-generator. This manifest still
+#    declares none of them, so every step below assumes `npm` (Node 22, per
+#    frontend-ci.yml's setup-node) and `poetry` (Python 3.12, per
+#    backend-ci.yml's PYTHON_VERSION) are already on PATH, and this repo is not
+#    yet a zero-install target. Declaring `node` and `poetry` is owed
+#    follow-up #3 of plan
+#    2026-08-08-ci-tool-registry-and-canonical-configuration-parity.
+#
+#    Read the registry at origin/main, never in a local checkout. A 2026-08-18
+#    review of the Phase 5 diff reported "there is no tool registry in the
+#    runner — `find -name tools.rs` returns nothing" and recommended deleting
+#    the closed-registry framing. That was a STALE CHECKOUT artifact: the
+#    primary qontinui-runner checkout sat at 33500d706 (2026-08-07, 97 commits
+#    behind), whose ci_node/ has 7 files and no tools.rs, while origin/main
+#    then had 12 including it — added by a4e040c7c, shipped 2026-08-08 with the
+#    preceding plan.
 #
 #    THE REPO-WIDE GATE STEPS ADD TWO MORE PATH ASSUMPTIONS, recorded here for
 #    the same reason: a bare `python` (>= 3.11; the scripts use only the standard
@@ -137,19 +171,19 @@
 #    The failure mode there is the safe one: the step cannot start, so it fails
 #    LOUD AND RED with a "program not found" spawn error. It cannot produce a
 #    vacuous green, which is the failure this manifest actually guards against.
-#    The fix, when `python` enters the registry (gap 1's problem, not this
-#    file's), is a provisioned interpreter rather than a spelling change here —
-#    `python3` would merely move the same gap to Windows.
+#    The fix, when `python` enters the registry (a change to the runner's
+#    registry, not to this file), is a provisioned interpreter rather than a
+#    spelling change here — `python3` would merely move the same gap to Windows.
 #
 # 7. e2e-tests.yml's `changed-specs` + `frontend-e2e-changed-specs` lane — THE
 #    PLAYWRIGHT STACK, ON A PR DIFF (plan
 #    2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time, Phase 2.5).
-#    Inexpressible for the same two reasons as gaps 1 and 4 combined: the run
+#    Inexpressible for two reasons, the second the same as gap 4's: the run
 #    job (`.github/workflows/e2e-playwright-stack.yml`, also the body of the
-#    4-shard `frontend-tests` job) needs a Postgres service, uvicorn, a
-#    `next` server and a Chromium install this lane cannot provision; and the
-#    detect job diffs `github.event.pull_request.base.sha` against the PR's
-#    merge commit, a base/head pair a detached worktree does not have. The
+#    4-shard `frontend-tests` job) needs uvicorn, a `next` server and a
+#    Chromium install this lane cannot provision; and the detect job diffs
+#    `github.event.pull_request.base.sha` against the PR's merge commit, a
+#    base/head pair a detached worktree does not have. The
 #    detection half IS a committed script (`scripts/ci/list_changed_e2e_specs.py`,
 #    stdlib + git) and could be invoked here against `origin/main`, but a step
 #    that lists files and runs nothing would be parity theatre — the list is
@@ -299,8 +333,8 @@ command = ["python", "scripts/ci/check_forbidden_public_schema.py"]
 name = "alembic-single-head"
 # alembic-graph-pr.yml, step "Count alembic heads". Offline textual scan of
 # backend/alembic/versions/*.py — it never imports env.py, so it costs nothing
-# and needs no database, which is exactly why this gate CAN live here while the
-# rest of backend-ci.yml's `test` job (gap 1 above) cannot.
+# and needs no database or test session, so it can live here whatever becomes
+# of the `test` job's own blockers (gap 1 above).
 #
 # FIVE lanes now share this script: the required PR check, this manifest, the
 # post-land companion (alembic-graph-check.yml), .pre-commit-config.yaml's
@@ -546,16 +580,18 @@ name = "composed-build"
 # EASILY THE MOST EXPENSIVE STEP HERE — a full `next build`, minutes rather than
 # seconds. Mirrored regardless: the disclosed-gap list at the top of this file
 # is for steps that CANNOT run, and cost has never been a reason to drop a gate
-# from it (gap 1 is impossibility, not expense). It runs last so everything
+# from it (gap 1's blockers are the per-step cap and the conftest DSN, not
+# expense). It runs last so everything
 # cheaper has already had its chance to fail.
 command = ["npm", "run", "build"]
 working_dir = "frontend"
 
 # ---------------------------------------------------------------------------
 # BACKEND — mirrors backend-ci.yml's `lint` job, plus the `test` job's
-# "Check OpenAPI snapshot is up to date" step (which needs no database: the
-# exporter builds the FastAPI app from its route table and self-configures the
-# minimal env it needs, so it is the one gate of that job this lane CAN hold).
+# "Check OpenAPI snapshot is up to date" step (the exporter builds the FastAPI
+# app from its route table and self-configures the minimal env it needs, so it
+# runs in seconds and sits clear of both of gap 1's blockers; it is the one gate
+# of that job this lane holds today).
 # ---------------------------------------------------------------------------
 
 [[steps]]

@@ -11,8 +11,6 @@ export type {
   TestCaseConfig,
   TestCase,
   TestSuite,
-  AssertionResult,
-  TestResult,
 } from "./types";
 
 // Service
