@@ -15,6 +15,8 @@ import {
   enrichElement,
   enrichElements,
   normalizeBboxes,
+  applyHierarchy,
+  collectElementHierarchy,
   projectMedia,
   srcDigest,
 } from "./normalize";
@@ -1496,5 +1498,60 @@ describe("r2: media kinds come from own table entries only", () => {
       const kind = (JSON.parse(JSON.stringify(row)).media as Record<string, unknown>).kind;
       expect(kind).toBe("role_img"); // an `image` on a non-img tag
     }
+  });
+});
+
+describe("collectElementHierarchy / applyHierarchy", () => {
+  const mount = (html: string) => {
+    document.body.innerHTML = html;
+  };
+
+  it("emits the nearest REGISTERED ancestor, skipping unregistered wrappers", () => {
+    mount(
+      '<div data-ui-id="root"><section><div data-ui-id="child"></div></section></div>'
+    );
+    const h = collectElementHierarchy();
+    expect(h.child.parent_id).toBe("root");
+    expect(h.root.parent_id).toBeNull();
+  });
+
+  it("flags clipping from overflow and contain: paint, not from visible", () => {
+    mount(
+      '<div data-ui-id="a" style="overflow:hidden"><div data-ui-id="b" style="overflow-y:auto"><div data-ui-id="c" style="contain:paint"><div data-ui-id="d"></div></div></div></div>'
+    );
+    const h = collectElementHierarchy();
+    expect(h.a.clips_children).toBe(true);
+    expect(h.b.clips_children).toBe(true);
+    expect(h.c.clips_children).toBe(true);
+    expect(h.d.clips_children).toBe(false);
+  });
+
+  it("applyHierarchy stamps parent_id and clips_children on the element", () => {
+    const els: Record<string, unknown>[] = [{ id: "root" }, { id: "child" }];
+    applyHierarchy(els, {
+      root: { parent_id: null, clips_children: true },
+      child: { parent_id: "root", clips_children: false },
+    });
+    expect(els[1]).toMatchObject({ parent_id: "root", clips_children: false });
+    expect(els[0].clips_children).toBe(true);
+  });
+
+  it("omits parent_id when there is no registered ancestor", () => {
+    const els: Record<string, unknown>[] = [{ id: "root" }];
+    applyHierarchy(els, { root: { parent_id: null, clips_children: false } });
+    expect("parent_id" in els[0]).toBe(false);
+    expect(els[0].clips_children).toBe(false);
+  });
+
+  it("omits a parent_id that names no element in the snapshot", () => {
+    const els: Record<string, unknown>[] = [{ id: "child" }];
+    applyHierarchy(els, { child: { parent_id: "gone", clips_children: false } });
+    expect("parent_id" in els[0]).toBe(false);
+  });
+
+  it("leaves unmeasured elements untouched (absent = unmeasured)", () => {
+    const els: Record<string, unknown>[] = [{ id: "x" }];
+    applyHierarchy(els, {});
+    expect(els[0]).toEqual({ id: "x" });
   });
 });

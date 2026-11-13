@@ -953,6 +953,97 @@ export function enrichElements(elements: unknown[]): void {
 }
 
 /**
+ * Per-element containment facts, keyed by the element's `data-ui-id`.
+ * `parent_id` is the `data-ui-id` of the nearest REGISTERED ancestor (null when
+ * none); `clips_children` is whether THIS element clips its descendants.
+ */
+export interface ElementHierarchyFacts {
+  parent_id: string | null;
+  clips_children: boolean;
+}
+
+export type ElementHierarchy = Record<string, ElementHierarchyFacts>;
+
+/**
+ * Measure the registered-element hierarchy IN THE PAGE. Self-contained by
+ * construction (it references only DOM globals, no imports or module state):
+ * the spec hands it to `page.evaluate`, which serializes the function body.
+ *
+ * For every node carrying `data-ui-id`:
+ *   - `parent_id` — the `data-ui-id` of its nearest ancestor that also carries
+ *     one, or null when there is none. Unregistered wrappers are skipped, so
+ *     the edge matches what the snapshot can name.
+ *   - `clips_children` — whether the node clips: computed `overflow-x` or
+ *     `overflow-y` is hidden / clip / scroll / auto, or computed `contain`
+ *     includes `paint` (or `strict` / `content`, which imply it).
+ *
+ * The first node wins when an id is duplicated.
+ */
+export function collectElementHierarchy(): ElementHierarchy {
+  const out: ElementHierarchy = {};
+  const clipping = ["hidden", "clip", "scroll", "auto"];
+  const nodes = Array.from(document.querySelectorAll("[data-ui-id]"));
+  for (const node of nodes) {
+    const id = node.getAttribute("data-ui-id");
+    if (!id || Object.prototype.hasOwnProperty.call(out, id)) continue;
+    let parentId: string | null = null;
+    for (let p = node.parentElement; p; p = p.parentElement) {
+      const pid = p.getAttribute("data-ui-id");
+      if (pid) {
+        parentId = pid;
+        break;
+      }
+    }
+    const cs = window.getComputedStyle(node);
+    const contain = cs.getPropertyValue("contain");
+    // Longhands are always expanded in a real browser; the `overflow`
+    // shorthand tokens are read too so a DOM that does not expand it still
+    // answers correctly.
+    const overflow = [
+      cs.getPropertyValue("overflow-x"),
+      cs.getPropertyValue("overflow-y"),
+      ...cs.getPropertyValue("overflow").split(/\s+/),
+    ];
+    const clips =
+      overflow.some((v) => clipping.includes(v.trim())) ||
+      /\b(paint|strict|content)\b/.test(contain);
+    out[id] = { parent_id: parentId, clips_children: clips };
+  }
+  return out;
+}
+
+/**
+ * Stamp `parent_id` / `clips_children` onto each element whose `id` appears in
+ * the measured hierarchy. Elements with no entry are left untouched (absent =
+ * unmeasured, which is what vision-core's no_clipping expects). `parent_id` is
+ * OMITTED when the element has no registered ancestor; `clips_children` is
+ * always emitted for a measured element. A parent that names no element in
+ * this snapshot is dropped as well — a dangling edge cannot be compared.
+ */
+export function applyHierarchy(
+  elements: unknown[],
+  hierarchy: ElementHierarchy
+): void {
+  const ids = new Set<string>();
+  for (const el of elements) {
+    const rec = asRecord(el);
+    if (rec && typeof rec.id === "string") ids.add(rec.id);
+  }
+  for (const el of elements) {
+    const rec = asRecord(el);
+    if (!rec || typeof rec.id !== "string") continue;
+    if (!Object.prototype.hasOwnProperty.call(hierarchy, rec.id)) continue;
+    const facts = hierarchy[rec.id];
+    if (typeof facts.parent_id === "string" && ids.has(facts.parent_id)) {
+      rec.parent_id = facts.parent_id;
+    }
+    if (typeof facts.clips_children === "boolean") {
+      rec.clips_children = facts.clips_children;
+    }
+  }
+}
+
+/**
  * Bbox-normalization adapter — the ONE shape transform between the web SDK's
  * snapshot and the Rust analyzer.
  *
