@@ -4,6 +4,7 @@ import { createContext, useContext } from "react";
 import type { useOptionalTenant } from "@/contexts/tenant-context";
 import type { ProjectPin } from "@/services/http-client";
 import type { ResolvePin } from "../../_shared/useSendTimePin";
+import type { CrossTabLock } from "./usePageWriteGuard";
 
 /**
  * What `PageWriteGuardProvider` (`../_components/PageWriteGuard`) gives
@@ -19,13 +20,25 @@ export interface PageWriteGuardValue {
   mountTenant: string | null;
   /** The layout's tenant provider; `null` when mounted outside one. */
   tenantContext: ReturnType<typeof useOptionalTenant>;
-  /** True while another tab's project switch is in effect (`usePageWriteGuard`). */
-  locked: boolean;
+  /**
+   * Why the page is locked — the stored project differs from the one it
+   * shows — or `null` while it is not (`usePageWriteGuard`). A cause, not a
+   * flag: the notice names only the cause it observed (D4). Read "is it
+   * locked?" as `locked !== null`.
+   */
+  locked: CrossTabLock | null;
   /**
    * The call-time guard: `false` sends nothing, says why and raises the
    * notice. One identity for the page's lifetime.
    */
   writeAllowed: () => boolean;
+  /**
+   * Whether the stored project differs from the page's at this moment, read
+   * at call time, raising the notice when it does — for a refusal stated in
+   * a caller's own words (adopt-all's), so the page locks beside it. One
+   * identity for the page's lifetime.
+   */
+  crossTabInEffect: () => boolean;
   /**
    * The project the page's requests are pinned to — the page's, kept through
    * a provider refresh; `undefined` while it is `null` or has never been

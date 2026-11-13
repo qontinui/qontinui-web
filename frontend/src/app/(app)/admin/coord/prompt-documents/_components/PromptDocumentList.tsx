@@ -719,8 +719,8 @@ function PromptDocumentListBody({
   return (
     <div className="space-y-6">
       {/*
-        The list's controls are disabled while another tab's switch is in
-        effect by the provider's one fieldset, which this list is always
+        The list's controls are disabled while the stored project differs from
+        the page's by the provider's one fieldset, which this list is always
         inside (`PageWriteGuard`); its notice is the provider's too. The
         dialogs portal out of that fieldset, so their doors are refused at
         call time instead.

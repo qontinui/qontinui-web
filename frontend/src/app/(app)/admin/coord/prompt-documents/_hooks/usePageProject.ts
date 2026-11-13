@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useOptionalTenant } from "@/contexts/tenant-context";
 import { readActiveTenantId, type ProjectPin } from "@/services/http-client";
 
@@ -23,22 +23,33 @@ export interface PageProject {
    */
   pageTenant: string | null | undefined;
   /**
-   * The project the cross-tab GUARD compares against: the page's project, or
-   * — once that has been known — the last one known while it is UNKNOWN
-   * again. A provider `refresh()` (a project rename, for one) puts the
-   * provider back into `loading`, which makes `pageTenant` UNKNOWN for that
-   * round trip; the rows on screen are still the last known project's, so
-   * the guard must not lift. Only the guard and the pin read this: Adopt all
-   * and the list re-reads keep treating UNKNOWN as offering nothing.
+   * The project the cross-tab GUARD compares the stored one against (plan
+   * `2026-11-09-prompt-documents-cross-tab-write-guard` #7): the project the
+   * page shows. It is never absent, so the guard is never off.
+   *
+   * - The page's project, while it is known.
+   * - Once that has been known, the last one known while it is UNKNOWN again.
+   *   A provider `refresh()` (a project rename, for one) puts the provider
+   *   back into `loading`, which makes `pageTenant` UNKNOWN for that round
+   *   trip; the rows on screen are still the last known project's, so the
+   *   guard must not lift.
+   * - While it has never been known, the project stored at mount: the one the
+   *   page's first reads went out in. A change from it while the layout's
+   *   provider is still reading is a change the page must not write through.
+   *
+   * Only the guard reads this. Adopt all and the list re-reads keep treating
+   * UNKNOWN as offering nothing, and the pin below never takes the mount
+   * fallback.
    */
-  guardTenant: string | null | undefined;
+  guardTenant: string | null;
   /**
    * The project every row read and write is SENT in, on every attempt — the
    * HTTP client otherwise reads the stored project per attempt, so a request
    * retried or replayed after another tab's switch would land in, or answer
-   * from, that project. Taken from `guardTenant`, not bare `pageTenant`, so a
-   * provider `refresh()` neither drops the pin for its round trip nor flips
-   * the pinned readers' identity, which would re-fire an open dialog's reads.
+   * from, that project. The page's project, else the last one known — not
+   * bare `pageTenant`, so a provider `refresh()` neither drops the pin for its
+   * round trip nor flips the pinned readers' identity, which would re-fire an
+   * open dialog's reads — and never the project stored at mount.
    *
    * Only a NAMED project is pinned. `undefined` while the page's project has
    * never been known, and while it is `null` (none selected): a `null` pin
@@ -118,25 +129,33 @@ export function usePageProject(): PageProject {
   const [followedTenant, setFollowedTenant] = useState<
     string | null | undefined
   >(undefined);
-  useEffect(() => {
-    if (providerTenant === undefined || providerTenant === seenProviderTenant) {
-      return;
-    }
+  // Followed DURING render (React's "adjusting state when a prop changes"),
+  // never in an effect. This tab's switch writes the stored project before
+  // the provider re-renders, and the cross-tab lock is derived at render
+  // (`usePageWriteGuard`). An effect would commit one render that shows the
+  // old project beside the new stored one, which the guard would read as a
+  // switch this page did not make: a flash of the notice, and focus moved to
+  // its Reload. React re-runs this component at once, before committing it.
+  if (providerTenant !== undefined && providerTenant !== seenProviderTenant) {
     if (seenProviderTenant !== undefined) setFollowedTenant(providerTenant);
     setSeenProviderTenant(providerTenant);
-  }, [providerTenant, seenProviderTenant]);
+  }
   const pageTenant: string | null | undefined =
     followedTenant !== undefined ? followedTenant : resolvedPageTenant;
 
   const lastKnownPageTenant = useRef<string | null | undefined>(undefined);
   if (pageTenant !== undefined) lastKnownPageTenant.current = pageTenant;
-  const guardTenant: string | null | undefined =
+  // The page's project, else the last one known; `undefined` only while it
+  // has never been known.
+  const knownTenant: string | null | undefined =
     pageTenant !== undefined ? pageTenant : lastKnownPageTenant.current;
+  const guardTenant: string | null =
+    knownTenant !== undefined ? knownTenant : mountTenant;
 
   const pin = useMemo<ProjectPin | undefined>(
     () =>
-      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
-    [guardTenant]
+      typeof knownTenant === "string" ? { tenant: knownTenant } : undefined,
+    [knownTenant]
   );
 
   return { mountTenant, tenantContext, pageTenant, guardTenant, pin };

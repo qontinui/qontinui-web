@@ -57,10 +57,13 @@
  *   narrowed to `space-y-4`, because the two `border-t` sections below are
  *   separate governance controls and their separation is what stops them
  *   reading as one.
- * - **R3** — nothing to correct at page scope. The one amber surface here
- *   (`PageWriteGuard`'s cross-tab notice) is a warning callout, not a
- *   kind-keyed status hue, so there is no palette to enrol in
- *   `console/attention.test.ts`.
+ * - **R3** — the page's one attention surface, `PageWriteGuard`'s cross-tab
+ *   notice, is RED: only the operator's Reload (or a switch back in the other
+ *   tab) clears it, which is R3's "the operator's move, now" (plan
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). It is a callout,
+ *   not a kind-keyed status hue, so there is no palette to enrol in
+ *   `console/attention.test.ts`. It takes the route's existing must-act red
+ *   (`PromptDocumentClaims.tsx`).
  *
  * ## One cross-tab write guard for the whole page
  *

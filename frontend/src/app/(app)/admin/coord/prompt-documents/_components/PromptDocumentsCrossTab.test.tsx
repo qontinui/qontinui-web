@@ -11,7 +11,10 @@
  *
  * 1. **Another tab's switch disables the list's controls and says so, with a
  *    Reload** (the `storage` event, or the stored project already differing
- *    when the page's project becomes known); switching back clears it.
+ *    when the page's project becomes known); switching back clears it. The
+ *    notice names another tab only when a `storage` event delivered the
+ *    change, which only another document can receive; a change found ahead
+ *    of its event is one that "changed since this page loaded".
  * 2. **Every write door raced past that — no event yet, or a dialog already
  *    open — is refused at call time**: nothing is sent. One test per door,
  *    each reaching it past every other guard, so removing any ONE guard fails
@@ -481,12 +484,22 @@ async function mountIn(page: string = B) {
   };
 }
 
-/** The refusal is said — the notice is raised by the guard itself. */
-async function expectNotice() {
+/**
+ * The refusal is said — the notice is raised by the guard itself — naming
+ * only the cause the page observed (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard` D4). A door raced past
+ * the switch finds it ahead of its `storage` event, so by default the notice
+ * cannot name another tab; a test whose event arrived says `another_tab`.
+ */
+async function expectNotice(
+  cause: "another_tab" | "unattributed" = "unattributed"
+) {
   expect(
     await screen.findByTestId("prompt-documents-cross-tab")
   ).toHaveTextContent(
-    "The active project was changed in another tab — reload to continue."
+    cause === "another_tab"
+      ? "The active project was changed in another tab — reload to continue."
+      : "The active project changed since this page loaded — reload to continue."
   );
 }
 
@@ -545,7 +558,7 @@ describe("another tab switches project", () => {
 
     await act(async () => anotherTabStores(SYS));
 
-    await expectNotice();
+    await expectNotice("another_tab");
     expect(
       screen.getByTestId("prompt-documents-cross-tab-reload")
     ).toBeEnabled();
@@ -573,8 +586,17 @@ describe("another tab switches project", () => {
 
   it("is raised when the stored project already differs as the page's project becomes known", async () => {
     // The provider is still loading when the page mounts in Bravo; another
-    // tab stores the system tenant before it answers, and that tab's event
-    // reached this page while it had no project to compare against.
+    // tab stores the system tenant before it answers, and its event has not
+    // arrived. Nothing else re-reads the store, so it is the page's project
+    // becoming known — the render that compares the two — that raises it.
+    //
+    // Corrected (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+    // #7): this test used to deliver the event while the page's project was
+    // UNKNOWN and assert that NO notice was raised then — the guard off while
+    // the page had no project to compare against, recorded as behaviour. Such
+    // an event now locks the page at once, against the project stored at
+    // mount (`usePageWriteGuard.test.tsx`, "while the page's project is
+    // UNKNOWN, a change from the mount project locks the page").
     let answer: () => void = () => {};
     listTenantsMock.mockImplementation(
       () =>
@@ -593,15 +615,12 @@ describe("another tab switches project", () => {
       {},
       { timeout: 5000 }
     );
-    await act(async () => anotherTabStores(SYS));
+    await act(async () => anotherTabStoresSilently(SYS));
     await settle();
-    expect(
-      screen.queryByTestId("prompt-documents-cross-tab")
-    ).not.toBeInTheDocument();
 
     await act(async () => answer());
 
-    await expectNotice();
+    await expectNotice("unattributed");
     expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
   }, 20_000);
 });
@@ -610,7 +629,7 @@ describe("while the provider refreshes", () => {
   it("keeps the notice up: the page's project is not forgotten while UNKNOWN", async () => {
     const { refreshHeld } = await mountIn();
     await act(async () => anotherTabStores(SYS));
-    await expectNotice();
+    await expectNotice("another_tab");
 
     const release = await refreshHeld();
     await settle();
@@ -624,9 +643,12 @@ describe("while the provider refreshes", () => {
 
   it("refuses a write raced past the notice", async () => {
     const { refreshHeld } = await mountIn();
-    anotherTabStoresSilently(SYS);
+    // The refresh first, then the switch: the lock is derived at every render
+    // (D3), so a switch stored before the refresh would be on screen by the
+    // refresh's own render, and this write would no longer race past it.
     const release = await refreshHeld();
     await settle();
+    anotherTabStoresSilently(SYS);
     const before = sent.length;
 
     await user().click(
