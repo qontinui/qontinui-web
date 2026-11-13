@@ -9,7 +9,6 @@ import time, so setting ``DATABASE_URL`` itself has no effect under pytest).
 
 from __future__ import annotations
 
-import ast
 import uuid
 from pathlib import Path
 from types import ModuleType
@@ -25,7 +24,9 @@ from tests._alembic_harness import (
     can_connect,
     ephemeral_database,
     load_revision_module,
+    recorded_sql,
     run_alembic,
+    upgrade_execute_calls,
 )
 
 _REVISION_ID = "capmodel_02"
@@ -51,20 +52,6 @@ def _module() -> ModuleType:
     return load_revision_module(_path(), f"_rev_{_REVISION_ID}")
 
 
-def _recorded(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    module = _module()
-    out: list[str] = []
-
-    class _Op:
-        @staticmethod
-        def execute(sql: object) -> None:
-            out.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _Op)
-    getattr(module, step)()
-    return out
-
-
 def _flat(sql: str) -> str:
     return " ".join(sql.split())
 
@@ -82,8 +69,10 @@ def test_constraints_are_the_interface() -> None:
         (f"coord.{_VERSIONS}", _VERSIONS_CHECK),
     )
     assert module._PREDICATE == "array_ndims(capacity_model_off_consumers) <= 1"
-    # Postgres truncates an identifier past 63 bytes; a truncated name would
-    # leave the downgrade's DROP ... IF EXISTS dropping nothing.
+    # Postgres stores an identifier past 63 bytes truncated (every statement
+    # truncates it the same way, so ADD and DROP would still agree), and this
+    # test's lookups by the full name — `_constraints(...)[name]` and the
+    # violated constraint's name in `_refused_by` — would then miss it.
     for _, name in module._CONSTRAINTS:
         assert len(name.encode()) <= 63, name
 
@@ -92,47 +81,38 @@ def test_upgrade_adds_one_not_valid_check_per_table_and_downgrade_drops_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _module()
-    up = [_flat(s) for s in _recorded(monkeypatch, "upgrade")]
-    down = [_flat(s) for s in _recorded(monkeypatch, "downgrade")]
-    # The lock bound opens and closes each direction, and is restored with
-    # `= DEFAULT` (coord's classifier rejects RESET).
-    for steps in (up, down):
-        assert steps[0] == "SET LOCAL lock_timeout = '3s'"
-        assert steps[-1] == "SET LOCAL lock_timeout = DEFAULT"
-        assert len(steps) == 4
-        assert not any("RESET" in s for s in steps)
-    for table, name in module._CONSTRAINTS:
-        (add,) = [s for s in up if s.startswith(f"ALTER TABLE {table} ")]
-        assert add == (
-            f"ALTER TABLE {table} ADD CONSTRAINT {name} "
-            f"CHECK ({module._PREDICATE}) NOT VALID"
-        )
-        (drop,) = [s for s in down if s.startswith(f"ALTER TABLE {table} ")]
-        assert drop == f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}"
-    joined_up = "\n".join(up)
-    # Catalog-only: no column, no data, no other constraint.
-    assert joined_up.count("ADD CONSTRAINT") == 2
-    assert joined_up.count("NOT VALID") == 2
-    for word in ("ADD COLUMN", "UPDATE ", "DELETE ", "INSERT ", "DROP", "VALIDATE"):
-        assert word not in joined_up, word
+    up = [_flat(s) for s in recorded_sql(module, "upgrade", monkeypatch)]
+    down = [_flat(s) for s in recorded_sql(module, "downgrade", monkeypatch)]
+    (parent, parent_check), (versions, versions_check) = module._CONSTRAINTS
+    # Every statement each direction, pinned exactly: the lock bound opens and
+    # closes it (restored with `= DEFAULT`, which coord's classifier admits;
+    # it rejects RESET), the parent is altered before its versions table, and
+    # nothing else runs: no column, no data, no other constraint, no VALIDATE.
+    assert up == [
+        "SET LOCAL lock_timeout = '3s'",
+        f"ALTER TABLE {parent} ADD CONSTRAINT {parent_check} "
+        f"CHECK ({module._PREDICATE}) NOT VALID",
+        f"ALTER TABLE {versions} ADD CONSTRAINT {versions_check} "
+        f"CHECK ({module._PREDICATE}) NOT VALID",
+        "SET LOCAL lock_timeout = DEFAULT",
+    ]
+    assert down == [
+        "SET LOCAL lock_timeout = '3s'",
+        f"ALTER TABLE {versions} DROP CONSTRAINT IF EXISTS {versions_check}",
+        f"ALTER TABLE {parent} DROP CONSTRAINT IF EXISTS {parent_check}",
+        "SET LOCAL lock_timeout = DEFAULT",
+    ]
 
 
 def test_every_op_execute_takes_a_static_string_literal() -> None:
-    tree = ast.parse(_path().read_text(encoding="utf-8"))
-    calls = [
-        n
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Attribute)
-        and n.func.attr == "execute"
-        and isinstance(n.func.value, ast.Name)
-        and n.func.value.id == "op"
-    ]
-    assert calls
-    for call in calls:
-        assert len(call.args) == 1 and not call.keywords
-        assert isinstance(call.args[0], ast.Constant)
-        assert isinstance(call.args[0].value, str)
+    # coord's migration classifier can inspect only a static inline literal;
+    # anything else reads back as `sql=None`.
+    for function in ("upgrade", "downgrade"):
+        calls = upgrade_execute_calls(_path(), function=function)
+        assert len(calls) == 4, function
+        for call in calls:
+            assert call.sql is not None, function
+            assert not call.in_autocommit_block, function
 
 
 def _admin_url_or_skip() -> str:
