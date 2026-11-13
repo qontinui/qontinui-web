@@ -9,20 +9,21 @@
  * 1. **A settings write raced past the page's disabled fieldset is refused.**
  *    A confirmation renders outside the fieldset, and a click can land before
  *    the other tab's `storage` event does. Each test opens the control's
- *    confirmation — or, for the compliance settings, which have none, readies
- *    the save — while this page's project is stored, then another tab stores a
- *    different one (its event not yet arrived), then confirms. Nothing may be
- *    sent: the page's call-time guard, which the list hands up, refuses the
+ *    confirmation — or, for a control that has none (the compliance save, a
+ *    kind's Clear), readies it — while this page's project is stored, then
+ *    another tab stores a different one (its event not yet arrived), then
+ *    confirms. Nothing may be sent: the page's call-time guard, which each
+ *    section's hook asks beside its send (the page's provider), refuses the
  *    write and raises the notice.
  * 2. **A settings request in flight across the switch stays in the page's
  *    project.** Every section write re-issued after a 429, or replayed after a
  *    token refresh, with the other project stored meanwhile; the read-back each
  *    write takes; every section read retried after a 503; a read sent after the
  *    switch is stored; and the page's own auto-publish status re-take after a
- *    dial write. The page pins them to the project the list hands up with its
- *    guard, so each is told apart from an unpinned request by where it went —
- *    also when that project becomes known only after the page mounted, as on a
- *    hard load under the layout's tenant provider.
+ *    dial write. The page pins them to the project its provider pins the
+ *    list's rows to, so each is told apart from an unpinned request by where
+ *    it went — also when that project becomes known only after the page
+ *    mounted, as on a hard load under the layout's tenant provider.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -349,6 +350,33 @@ describe("a settings write raced past the page's fieldset is refused", () => {
     await expectRefused(before);
   });
 
+  it("the kind-tier Clear sends nothing", async () => {
+    // A kind with a stored tier, so Clear is offered. It closes or reopens
+    // nothing it asks about first: it applies on one click.
+    extraKindRows = [
+      {
+        kind: "initiative",
+        tier: "allow",
+        unreadable: false,
+        builtin_default_tier: "allow_with_notification",
+        effective_tier: "allow",
+        effective_source: "tenant",
+      },
+    ];
+    render(<PromptDocumentsPage />);
+    const row = await screen.findByTestId(
+      "kind-tier-row-initiative",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently();
+    const before = sent.length;
+
+    await user().click(within(row).getByRole("button", { name: "clear" }));
+
+    await expectRefused(before);
+  });
+
   it("the session-compliance save sends nothing", async () => {
     render(<PromptDocumentsPage />);
     const attempts = await screen.findByTestId(
@@ -671,7 +699,7 @@ describe("the page's project known only after the page mounted", () => {
   it("a settings write sent once the provider has answered lands in the page's project", async () => {
     // A hard load: the layout's provider is still reading the membership list
     // when the page mounts, so the page's project is UNKNOWN at first and the
-    // list hands the page no pin. Once the provider answers, the page's
+    // page's provider pins nothing. Once the provider answers, the page's
     // project is the one it loaded in.
     let answer: () => void = () => {};
     listTenantsMock.mockImplementation(

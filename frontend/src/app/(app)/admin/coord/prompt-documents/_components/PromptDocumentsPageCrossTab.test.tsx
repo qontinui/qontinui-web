@@ -2,7 +2,7 @@
  * The prompt-documents PAGE after another tab switches project: the settings
  * beside the list — kind tiers, the three dials, session compliance — write
  * through the same per-request project as the list's rows, so they are
- * disabled with them while the list's notice stands.
+ * disabled with them while the page's notice stands.
  *
  * Renders the real `PromptDocumentsPage` and the real list (through the real
  * `HttpClient`, `fetch` faked); the five settings sections are stubbed as one
