@@ -547,7 +547,7 @@ describe("when the Adopt all updates button is offered", () => {
   });
 });
 
-async function openAdoptAll() {
+async function startAdoptAllPreview() {
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("adopt-all"));
   await screen.findByTestId("adopt-all-candidates");
@@ -582,7 +582,7 @@ describe("the adopt-all preview", () => {
       ],
     ]);
     render(<PromptDocumentList />);
-    await openAdoptAll();
+    await startAdoptAllPreview();
 
     expect(
       within(screen.getByTestId("adopt-all-candidates")).getAllByRole(
@@ -656,7 +656,7 @@ describe("the adopt-all preview", () => {
       Promise.resolve(adoptedBody("policy", url.split("/").at(-2) ?? "", 10))
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
 
     expect(
       screen.getByTestId("adopt-all-versions-policy-testing")
@@ -894,7 +894,7 @@ describe("the adopt-all run", () => {
       return Promise.resolve(adoptedBody("policy", "testing", 7));
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     const readsBeforeRun = listReads();
 
     await user.click(screen.getByTestId("adopt-all-confirm"));
@@ -977,7 +977,7 @@ describe("the adopt-all run", () => {
         : Promise.reject(new TypeError("Failed to fetch"))
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
     expect(await screen.findByTestId("adopt-all-summary")).toHaveTextContent(
@@ -1025,7 +1025,7 @@ describe("the adopt-all run", () => {
       throw new Error(`POST ${LIST}/policy/a/upstream-adopt failed: 504 - {}`);
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     const readsBeforeRun = listReads();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
@@ -1070,7 +1070,7 @@ describe("the adopt-all run", () => {
       new Error(`POST ${LIST}/policy/a/upstream-adopt failed: 504 - {}`)
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(listCalls).toBe(3));
     await act(async () => {
@@ -1098,7 +1098,7 @@ describe("the adopt-all run", () => {
       )
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await screen.findByTestId("adopt-all-summary");
     const outcome = screen.getByTestId("adopt-all-outcome-policy-a");
@@ -1120,7 +1120,7 @@ describe("the adopt-all run", () => {
       )
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await screen.findByTestId("adopt-all-summary");
     const outcome = screen.getByTestId("adopt-all-outcome-policy-a");
@@ -1138,7 +1138,7 @@ describe("the adopt-all run", () => {
       return adoptedBody("policy", "a", 3);
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
     const line = await screen.findByTestId("adopt-all-summary");
@@ -1157,7 +1157,7 @@ describe("the adopt-all run", () => {
       return adoptedBody("policy", "a", 3);
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     expect(
       screen.queryByTestId("prompt-documents-cross-tab")
     ).not.toBeInTheDocument();
@@ -1189,7 +1189,7 @@ describe("the adopt-all run", () => {
         })
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
 
@@ -1224,7 +1224,7 @@ describe("the adopt-all run", () => {
     );
     postMock.mockResolvedValue(adoptedBody("policy", "b", 3));
     const { unmount } = render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
 
@@ -1250,7 +1250,7 @@ describe("the adopt-all run", () => {
       ),
     ]);
     render(<PromptDocumentList />);
-    await openAdoptAll();
+    await startAdoptAllPreview();
 
     const dialog = screen.getByTestId("adopt-all-dialog");
     const body = screen.getByTestId("adopt-all-body");
