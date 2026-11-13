@@ -130,46 +130,63 @@ Expect one row: ``true``, and exactly the definition
 
     CREATE INDEX idx_pr_events_repair_not_a_verdict ON coord.pr_events USING btree (created_at) WHERE ((event_kind = 'repair_decision'::text) AND ((payload ->> 'reason'::text) = 'not_a_verdict'::text))
 
-No row means the index is missing: run step 4. ``false``, or any other
-definition, means:
+No row, ``false``, or any other definition means the index needs repair. Do
+the whole repair in ONE session, in autocommit mode, under ONE hold of the
+migration lock. Take it in step 1. Release it in step 3 if you STOP there,
+and otherwise in step 6. While you hold it, no migrator can build or drop
+this index under you.
 
-1. Wait until this returns no row::
+1. Take the lock. Poll until this returns ``t``, sleeping between attempts
+   outside any transaction::
+
+       SELECT pg_try_advisory_lock(8173873295031625586);
+
+   The key is ``MIGRATION_LOCK_KEY`` in ``app/db/migration_lock.py``, the lock
+   every migrator takes. Stop at the first ``t``: each further ``t`` stacks
+   another hold, and each hold needs its own unlock. Never wait in the
+   blocking ``pg_advisory_lock``: a session blocked inside it holds a
+   snapshot that a live CONCURRENTLY build waits for, and the deadlock
+   detector then usually kills the build. The lock is session-level, so it
+   survives the internal commits of the CONCURRENTLY statements below and
+   holds through every step.
+2. Wait until this returns no row::
 
        SELECT 1 FROM pg_stat_progress_create_index
         WHERE relid IS NULL OR relid = 'coord.pr_events'::regclass;
 
-   ``relid IS NULL`` is there on purpose. A role that has neither the builder's
-   privileges nor ``pg_read_all_stats`` sees another session's build with
-   ``relid`` NULL, so filtering on ``relid`` alone would hide exactly that
-   build. The cost is that a build on another table also holds the wait, which
-   only makes it longer.
-2. Re-run the identity-and-validity read above. A live build also reads
-   ``false``, so if it now reads ``true`` with the expected definition, STOP:
-   that build finished VALID and nothing needs repair. Only otherwise go on.
-3. Run ``DROP INDEX CONCURRENTLY coord.idx_pr_events_repair_not_a_verdict``.
-   Never use a plain ``DROP INDEX``: its ACCESS EXCLUSIVE lock queues behind
-   any long reader and stalls every coord read and write on the table behind
-   it.
-4. Rebuild by hand under the migration lock, so that no migrator starts a
-   second build while yours runs. In ONE session, in autocommit mode:
+   ``relid IS NULL`` is there on purpose. A role that has neither the
+   builder's privileges nor ``pg_read_all_stats`` sees another session's
+   build with ``relid`` NULL, so filtering on ``relid`` alone would hide
+   exactly that build. The cost is that a build on another table also holds
+   the wait, which only makes it longer.
+3. Re-run the identity-and-validity read above. A live build also reads
+   ``false``, so if it now reads ``true`` with the expected definition, that
+   build finished VALID and nothing needs repair: release the lock with
+   ``SELECT pg_advisory_unlock(8173873295031625586);`` and STOP. Only
+   otherwise go on.
+4. Run ``DROP INDEX CONCURRENTLY IF EXISTS
+   coord.idx_pr_events_repair_not_a_verdict``. Never use a plain
+   ``DROP INDEX``: its ACCESS EXCLUSIVE lock queues behind any long reader
+   and stalls every coord read and write on the table behind it.
+5. Run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()``.
+6. Release the lock, whatever step 5 did::
 
-   a. Poll until this returns ``t``, sleeping between attempts outside any
-      transaction::
+       SELECT pg_advisory_unlock(8173873295031625586);
 
-          SELECT pg_try_advisory_lock(8173873295031625586);
-
-      The key is ``MIGRATION_LOCK_KEY`` in ``app/db/migration_lock.py``, the
-      lock every migrator takes. Never wait in the blocking
-      ``pg_advisory_lock``: a session blocked inside it holds a snapshot that
-      a live CONCURRENTLY build waits for, and the deadlock detector then
-      usually kills the build. Stop at the first ``t``, because each ``t``
-      takes the lock once more.
-   b. Run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()``. The
-      lock is session-level, so it survives the build's internal commits and
-      is held for the whole build.
-   c. Release it::
-
-          SELECT pg_advisory_unlock(8173873295031625586);
+   A failed or cancelled build keeps the lock: a session-level advisory lock
+   outlives a failed statement, and only ``pg_advisory_unlock`` or the end of
+   the session releases it. If step 5 failed, or you are unsure how many
+   ``t`` you took in step 1, end the session instead, which releases every
+   hold at once. A failed build also leaves an INVALID index behind, so then
+   start again from step 1 in a new session. Never leave a hold behind. Each
+   extra ``t`` stacks one, and while any hold remains, every migrator waits
+   out ``DEFAULT_WAIT_SECS`` (3600 s in ``app/db/migration_lock.py``, unless
+   ``QONTINUI_MIGRATION_LOCK_WAIT_SECS`` overrides it) and then raises
+   ``MigrationLockTimeout`` having applied nothing.
+7. Re-run the identity-and-validity read above, and expect ``true`` with the
+   definition above. If step 5 printed a ``skipping`` NOTICE, an index of
+   that name was already there and step 5 built nothing, so the index you
+   are checking is not one you built: start again from step 1.
 
 The revision has no in-migration repair, on purpose. coord's migration
 classifier (``pr_merge/migration_classifier.rs``) is fail-closed: it rejects a

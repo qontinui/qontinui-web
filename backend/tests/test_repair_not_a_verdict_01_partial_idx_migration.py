@@ -21,8 +21,8 @@ Without a database (always runs):
 1. **Chain wiring.** ``revision`` / ``down_revision`` match the pins below, the
    parent names exactly one real sibling, and the docstring's ``Revises:`` header
    agrees with the assignment. The docstring's post-deploy identity check quotes
-   ``_EXPECTED_DEFINITION`` verbatim, and its hand-rebuild runbook takes the lock
-   under ``MIGRATION_LOCK_KEY``.
+   ``_EXPECTED_DEFINITION`` verbatim. Its repair runbook takes the lock once and
+   releases it at both exits, each call spelling ``MIGRATION_LOCK_KEY``.
 2. **The upgrade path is what coord's merge classifier auto-lands**: one static
    ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` literal in an autocommit block, no
    other ``op.*`` call (so no non-concurrent ``op.create_index``), no ``get_bind``,
@@ -32,7 +32,11 @@ Without a database (always runs):
    index only when it can prove that the statement's ``WHERE`` implies the index's
    predicate. So every conjunct of the predicate, with the scan's ``e.`` alias, must
    be a top-level conjunct of the scan's ``WHERE``, spelled the same way. The index
-   key must also be the column the scan's 7-day window bounds.
+   key must also be the column the scan's 7-day window bounds. The conjunct
+   splitter this relies on refuses a top-level ``OR``, matched as a keyword
+   rather than by its spaces: ``OR(x)`` and ``)OR`` raise, while ``ORDER``, a
+   quoted or parenthesised ``OR`` and identifiers such as ``color`` do not. Two
+   parametrised tests pin both sides.
 
 Against a real Postgres (skipped when none is reachable):
 
@@ -206,15 +210,28 @@ def _squash(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
 
 
-def _top_level_conjuncts(where: str) -> list[str]:
-    """``where`` split on the ``AND`` s outside any parentheses or quotes.
+# The OR keyword: any case, not preceded by a word character, `$` or `.`, and not
+# followed by a word character or `$`. So `OR(x)` and `)OR` match, while
+# `ORDER`, `color`, `or_flag` and `e.ORDER` do not.
+_TOP_LEVEL_OR = re.compile(r"(?<![\w$.])OR(?![\w$])", re.IGNORECASE)
 
-    Raises on an ``OR`` outside parentheses and quotes, found in the same walk.
-    Such a clause is not a conjunction: its pieces are not conjuncts, and a
-    partial-index predicate cannot be proved from them. Without the raise, an
-    ``OR`` appended to the scan's ``WHERE`` would leave every predicate conjunct
-    "found" and the always-run predicate test green. Both keywords match
-    case-insensitively.
+
+def _top_level_conjuncts(where: str) -> list[str]:
+    """Split ``where`` on its top-level ``AND`` s, refusing a top-level ``OR``.
+
+    ``where`` is first squashed (each whitespace run becomes one space, and the
+    ends are stripped). One walk then tracks parenthesis depth and quoting; a
+    ``'`` toggles quoting, so a doubled ``''`` inside a literal toggles twice and
+    leaves it unchanged. At depth 0 outside quotes, the walk:
+
+    - raises ``ValueError`` (its message names a top-level OR) where
+      ``_TOP_LEVEL_OR`` matches;
+    - splits where `` AND `` stands, one space on each side, in any case.
+
+    A clause with a top-level ``OR`` is not a conjunction. Its pieces are not
+    conjuncts, and a partial-index predicate cannot be proved from them.
+    Without the raise, an ``OR`` appended to the scan's ``WHERE`` would leave
+    every predicate conjunct "found" and the always-run predicate test green.
     """
     parts: list[str] = []
     depth = 0
@@ -230,7 +247,7 @@ def _top_level_conjuncts(where: str) -> list[str]:
             depth += 1
         elif not in_quote and ch == ")":
             depth -= 1
-        elif not in_quote and depth == 0 and squashed[i : i + 4].upper() == " OR ":
+        elif not in_quote and depth == 0 and _TOP_LEVEL_OR.match(squashed, i):
             raise ValueError(
                 f"a top-level OR at offset {i} of {squashed!r}: the clause is not "
                 "a conjunction, so a partial-index predicate cannot be proved "
@@ -283,12 +300,24 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
     assert _EXPECTED_DEFINITION in source, (
         "the docstring's post-deploy check must quote _EXPECTED_DEFINITION verbatim"
     )
-    # The hand-rebuild runbook spells the migration lock's key; a key that drifts
-    # from the one every migrator takes would not serialize the rebuild with them.
-    for statement in ("pg_try_advisory_lock", "pg_advisory_unlock"):
-        assert f"{statement}({MIGRATION_LOCK_KEY})" in source, (
-            f"the docstring's runbook must call {statement} with MIGRATION_LOCK_KEY "
-            f"({MIGRATION_LOCK_KEY})"
+    # The repair runbook takes the migration lock once (step 1) and releases it
+    # at each of its two exits (the STOP in step 3, and step 6), every call
+    # spelling the key. A key that drifts from the one every migrator takes would
+    # not serialize the repair with them, and a missing release leaves a hold
+    # that times every migrator out.
+    calls = re.findall(
+        r"\b(pg_try_advisory_lock|pg_advisory_lock|pg_advisory_unlock)\((\d+)\)",
+        source,
+    )
+    assert sorted(name for name, _ in calls) == [
+        "pg_advisory_unlock",
+        "pg_advisory_unlock",
+        "pg_try_advisory_lock",
+    ], f"the runbook's lock calls changed shape: {calls}"
+    for name, key in calls:
+        assert int(key) == MIGRATION_LOCK_KEY, (
+            f"the docstring's runbook calls {name}({key}), but MIGRATION_LOCK_KEY is "
+            f"{MIGRATION_LOCK_KEY}"
         )
 
 
@@ -387,6 +416,40 @@ def test_the_scans_literals_imply_the_partial_predicate() -> None:
     assert f"e.{key} >= now() - interval '7 days'" in scan_conjuncts, (
         f"the index key {key!r} must be the column the scan's window bounds"
     )
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        "e.a = 1 OR true",
+        "e.a = 1 or true",
+        "e.a = 1 OR(true)",
+        "(e.a = 1)OR e.b = 2",
+    ],
+)
+def test_the_conjunct_splitter_refuses_a_top_level_or(where: str) -> None:
+    """A top-level ``OR`` raises, with or without spaces around the keyword."""
+    with pytest.raises(ValueError, match="top-level OR"):
+        _top_level_conjuncts(where)
+
+
+@pytest.mark.parametrize(
+    ("where", "expected"),
+    [
+        ("e.a = 1 AND e.b = 2 ORDER BY e.c", ["e.a = 1", "e.b = 2 ORDER BY e.c"]),
+        ("e.reason = ' OR ' AND e.b = 2", ["e.reason = ' OR '", "e.b = 2"]),
+        ("(e.a = 1 OR e.b = 2) AND e.c = 3", ["(e.a = 1 OR e.b = 2)", "e.c = 3"]),
+        (
+            "color = 1 AND or_flag AND e.ORDER = 2",
+            ["color = 1", "or_flag", "e.ORDER = 2"],
+        ),
+    ],
+)
+def test_the_conjunct_splitter_lets_every_other_or_through(
+    where: str, expected: list[str]
+) -> None:
+    """``ORDER``, a quoted or parenthesised ``OR``, and identifiers do not raise."""
+    assert _top_level_conjuncts(where) == expected
 
 
 # ---------------------------------------------------------------------------
