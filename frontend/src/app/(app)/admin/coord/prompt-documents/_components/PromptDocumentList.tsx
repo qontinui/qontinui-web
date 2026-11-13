@@ -197,12 +197,18 @@ function PromptDocumentListBody({
    * The page's project, its pin and its cross-tab guard, from the provider
    * this list is always under (`PromptDocumentList`): see
    * `usePageProject` for `mountTenant`, `pageTenant` and `pin`, and
-   * `usePageWriteGuard` for `writeAllowed`. `writeAllowed` keeps ONE identity
-   * for the page's lifetime, so every guarded door built on it below does
-   * too; the pin changes identity only with the project it names.
+   * `usePageWriteGuard` for `writeAllowed` and `crossTabInEffect`. Both keep
+   * ONE identity for the page's lifetime, so every guarded door built on them
+   * below does too; the pin changes identity only with the project it names.
    */
-  const { mountTenant, tenantContext, pageTenant, pin, writeAllowed } =
-    useRequiredPageWriteGuard();
+  const {
+    mountTenant,
+    tenantContext,
+    pageTenant,
+    pin,
+    writeAllowed,
+    crossTabInEffect,
+  } = useRequiredPageWriteGuard();
   /** `fn`, answering `refused` without calling it while the guard says no. */
   const guard = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
@@ -569,8 +575,14 @@ function PromptDocumentListBody({
    * to confirm should be the ones coord returned seconds ago, and the dry run
    * is a POST on an admin write door that a page load has no business making.
    * The dialog renders its own loading state until this resolves.
+   *
+   * Refused first, like every other dialog's opening: pressed after another
+   * tab's switch whose event has not arrived, it sends no dry run and opens
+   * no dialog. A preview of the other project's changed documents is not this
+   * page's to show.
    */
   const openPublishAll = async () => {
+    if (!writeAllowed()) return;
     setPublishAllOpen(true);
     await loadPublishAllPreview();
   };
@@ -670,8 +682,11 @@ function PromptDocumentListBody({
       setAdoptAllPreview([]);
     };
     // `pageTenant` is never `undefined` here — the button is not offered then —
-    // and an unknown page project could not be "unchanged" in any case.
+    // and an unknown page project could not be "unchanged" in any case. A
+    // project changed under the page also locks the page, beside the dialog's
+    // own refusal.
     if (pageTenant === undefined || tenant !== pageTenant) {
+      crossTabInEffect();
       return refuse("tenant_changed");
     }
     // Ask coord AGAIN, now, in this project: the answer that showed the button
@@ -685,7 +700,10 @@ function PromptDocumentListBody({
     // A later open owns the preview; this read arrived too late to be it.
     if (request !== adoptAllRequest.current) return;
     // Both answers must be about the project the preview will be pinned to.
-    if (readActiveTenantId() !== tenant) return refuse("tenant_changed");
+    if (readActiveTenantId() !== tenant) {
+      crossTabInEffect();
+      return refuse("tenant_changed");
+    }
     if (tenancy === "system") return refuse("system_tenant");
     if (tenancy === "unknown") return refuse("tenancy_unknown");
     if (fresh === null) {
@@ -1119,15 +1137,24 @@ function PromptDocumentListBody({
         // reconcile one project's rows against another's list; so a project
         // that changed before or during it makes it no answer, as does a
         // degraded one. A project that changed before it is not re-read at
-        // all: this page's rows are better stale than another project's.
+        // all: this page's rows are better stale than another project's. A
+        // change before or during it also locks the page, beside the run's
+        // own refusal (`tenantUnchanged` stopped it), unless it was this
+        // tab's own switch, which the page followed.
         onFinished={async () => {
           const runTenant = adoptAllTenantRef.current;
-          if (readActiveTenantId() !== runTenant) return null;
+          if (readActiveTenantId() !== runTenant) {
+            crossTabInEffect();
+            return null;
+          }
           const [reread] = await Promise.all([
             reload({ tenant: runTenant }),
             reloadPublishAll(),
           ]);
-          if (readActiveTenantId() !== runTenant) return null;
+          if (readActiveTenantId() !== runTenant) {
+            crossTabInEffect();
+            return null;
+          }
           return reread && reread.degraded === null ? reread.documents : null;
         }}
       />

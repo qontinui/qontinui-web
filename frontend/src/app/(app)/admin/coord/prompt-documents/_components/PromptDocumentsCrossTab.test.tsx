@@ -18,7 +18,7 @@
  * 2. **Every write door raced past that — no event yet, or a dialog already
  *    open — is refused at call time**: nothing is sent. One test per door,
  *    each reaching it past every other guard, so removing any ONE guard fails
- *    a test here. So is opening a row's dialog.
+ *    a test here. So is opening a row's dialog, and Publish all changed.
  * 3. **A dialog's READS are not refused but pinned**: one sent while another
  *    project is stored is answered by the page's project and renders its data
  *    (a refused read would render as an empty one).
@@ -878,6 +878,25 @@ describe("a door raced past the notice is refused at call time", () => {
     await expectNotice();
     await settle();
     expect(sentSince(before, "POST", /./)).toEqual([]);
+  }, 20_000);
+
+  it("Publish all changed, raced: no dry-run POST and no dialog", async () => {
+    // Offered on the system tenant's rows only.
+    await mountIn(SYS);
+    const publishAll = await screen.findByTestId(
+      "publish-all",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(publishAll);
+
+    await expectNotice();
+    await settle();
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(sentSince(before, "POST", /\/publish-all$/)).toEqual([]);
   }, 20_000);
 
   it("the publish-all dialog, already open, arms no run", async () => {
