@@ -99,6 +99,9 @@ describe("PromptInjectionsDashboard — R6's failed-read arms", () => {
     expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
       "–"
     );
+    // A failed read is UNKNOWN, not "still reading": no skeleton stands in
+    // for an answer that is not coming until the next poll.
+    expect(screen.queryByTestId("prompt-injections-reading")).toBeNull();
   });
 
   it("a failed REFETCH keeps its rows and says they may be out of date", async () => {
@@ -229,6 +232,9 @@ describe("PromptInjectionsDashboard — a filter set is this route's param", () 
     expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
       "–"
     );
+    // A failed read is UNKNOWN, not "still reading": no skeleton stands in
+    // for an answer that is not coming until the next poll.
+    expect(screen.queryByTestId("prompt-injections-reading")).toBeNull();
   });
 
   it("never shows rows fetched under a DIFFERENT filter set", async () => {
@@ -521,5 +527,136 @@ describe("PromptInjectionsDashboard — truncation is derived, because no total 
     expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
       "–"
     );
+  });
+});
+
+/**
+ * Plan `2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport`
+ * Phase 1 (F1). `readIsUnknown(loaded=false, readFailed=false)` is false by
+ * contract, so before the first answer for the current filters the badge used
+ * to paint `rows.length` — a `0` read off the empty-rows sentinel — and the
+ * render that commits a filter change could reach the empty state. A count
+ * nobody has measured is a dash; "no prompt injections" needs an answer.
+ */
+describe("PromptInjectionsDashboard — before the read for these filters answers", () => {
+  beforeEach(() => {
+    listPromptInjections.mockReset();
+    getPromptInjection.mockReset();
+  });
+
+  /** A read that never settles: the state between the request and its answer. */
+  function pending(): Promise<never> {
+    return new Promise<never>(() => {});
+  }
+
+  it("a first read still in flight is a dash, never a 0, and shows no empty state", async () => {
+    listPromptInjections.mockReturnValue(pending());
+
+    render(<PromptInjectionsDashboard />);
+    await waitFor(() => expect(listPromptInjections).toHaveBeenCalled());
+
+    const count = screen.getByTestId("prompt-injections-count");
+    expect(count).toHaveTextContent("–");
+    expect(count).not.toHaveTextContent("0");
+    expect(count).toHaveAttribute(
+      "title",
+      "nothing has answered for these filters yet; this is a dash, not a zero"
+    );
+    expect(screen.queryByTestId("prompt-injections-empty")).toBeNull();
+    expect(screen.getByTestId("prompt-injections-reading")).toBeInTheDocument();
+  });
+
+  it("a filter change whose read is in flight is a dash — not the old count, not a 0", async () => {
+    listPromptInjections
+      .mockResolvedValueOnce(envelope([row()]))
+      .mockReturnValue(pending());
+
+    render(<PromptInjectionsDashboard />);
+    expect(await screen.findAllByTestId("prompt-injections-row")).toHaveLength(
+      1
+    );
+    expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
+      "1"
+    );
+
+    await userEvent.type(
+      screen.getByTestId("prompt-injections-session-input"),
+      "q"
+    );
+
+    expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
+      "–"
+    );
+    expect(screen.queryAllByTestId("prompt-injections-row")).toHaveLength(0);
+    expect(screen.queryByTestId("prompt-injections-empty")).toBeNull();
+  });
+
+  it("never commits the empty state for filters whose read has not answered", async () => {
+    // The render that commits a filter change runs BEFORE the effect that
+    // sets `loading` again, so a body keyed on `loading` alone put "No prompt
+    // injections matching the current filters" into the DOM for that render.
+    // React may replace it before paint, so the DOM is watched for it rather
+    // than read once afterwards. The first read answers with a ROW so the
+    // body is the table: an empty state appearing afterwards is an insertion
+    // the observer sees, not a text update to a node already on screen.
+    listPromptInjections
+      .mockResolvedValueOnce(envelope([row()]))
+      .mockReturnValue(pending());
+
+    const { container } = render(<PromptInjectionsDashboard />);
+    expect(await screen.findAllByTestId("prompt-injections-row")).toHaveLength(
+      1
+    );
+
+    const inserted: string[] = [];
+    const collectEmpty = (records: MutationRecord[]) => {
+      for (const r of records) {
+        r.addedNodes.forEach((n) => {
+          if (!(n instanceof HTMLElement)) return;
+          const hits = [
+            n,
+            ...Array.from(n.querySelectorAll("[data-testid]")),
+          ].filter(
+            (el) => el.getAttribute("data-testid") === "prompt-injections-empty"
+          );
+          for (const el of hits) inserted.push(el.textContent ?? "");
+        });
+      }
+    };
+    const observer = new MutationObserver(collectEmpty);
+    observer.observe(container, { childList: true, subtree: true });
+
+    await userEvent.type(
+      screen.getByTestId("prompt-injections-session-input"),
+      "q"
+    );
+    // Deliver any records still queued before disconnecting.
+    collectEmpty(observer.takeRecords());
+    observer.disconnect();
+
+    expect(inserted).toEqual([]);
+    expect(screen.queryByTestId("prompt-injections-empty")).toBeNull();
+    expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
+      "–"
+    );
+  });
+
+  it("once the filtered read answers empty, the measured zero is sayable again", async () => {
+    listPromptInjections.mockResolvedValue(envelope([]));
+
+    render(<PromptInjectionsDashboard />);
+    await screen.findByTestId("prompt-injections-empty");
+
+    await userEvent.type(
+      screen.getByTestId("prompt-injections-session-input"),
+      "q"
+    );
+
+    const empty = await screen.findByTestId("prompt-injections-empty");
+    expect(empty).toHaveTextContent(/matching the current filters/i);
+    expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
+      "0"
+    );
+    expect(screen.queryByTestId("prompt-injections-reading")).toBeNull();
   });
 });

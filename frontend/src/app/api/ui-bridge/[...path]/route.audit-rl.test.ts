@@ -20,47 +20,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { makeMockRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest } from "./_rate-limit";
-
-/**
- * Minimal in-memory ioredis stand-in (same shape as `_rate-limit.test.ts`).
- * Two test files keeping their own clients is intentional — they're
- * independent unit boundaries and a shared helper would couple them.
- */
-function makeMockRedis() {
-  const store = new Map<string, number>();
-  const pipelineApi = {
-    _ops: [] as Array<["incr" | "expire", string]>,
-    incr(key: string) {
-      this._ops.push(["incr", key]);
-      return this;
-    },
-    expire(key: string) {
-      this._ops.push(["expire", key]);
-      return this;
-    },
-    async exec(): Promise<unknown> {
-      const results: Array<[Error | null, unknown]> = [];
-      for (const [op, key] of this._ops) {
-        if (op === "incr") {
-          const next = (store.get(key) ?? 0) + 1;
-          store.set(key, next);
-          results.push([null, next]);
-        } else {
-          results.push([null, 1]);
-        }
-      }
-      this._ops = [];
-      return results;
-    },
-  };
-  const client = {
-    pipeline: () => ({ ...pipelineApi, _ops: [] }),
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-  return { client, store };
-}
 
 /**
  * The route handler instantiates a CommandRelay at module load that
