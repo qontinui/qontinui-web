@@ -14,12 +14,16 @@ default and two CHECKs. What is pinned:
 3. the transaction shape the docstring promises: each table's DDL is its own
    lock-bounded group, every CHECK is added ``NOT VALID`` behind an existence
    test and validated inside an ``autocommit_block``, the ``unrecorded``
-   backfill runs inside one, and ``SET DEFAULT`` precedes the status backfill,
-   which precedes ``SET NOT NULL`` -- read from the source AND from the offline
+   backfill runs inside one, each block opens with a session-level lock bound,
+   and ``SET DEFAULT`` precedes the status backfill, which precedes ``SET NOT
+   NULL`` -- read from the source statement by statement (so ANY statement but
+   an ``op.execute`` literal or an autocommit block fails) AND from the offline
    ``--sql`` render, where an autocommit block is a ``COMMIT;``/``BEGIN;`` pair;
 4. nothing outside ``downgrade()`` carries a destructive token, so coord's
-   alembic re-point (its E6 clause) can still move this revision -- read by a
-   rule stricter than E6's, itself pinned against every form E6 lists;
+   alembic re-point (its E6 clause) can still move this revision -- read over
+   E6's own region with a stricter rule (``_alembic_harness``
+   ``destructive_words_outside_downgrade``, pinned in
+   ``test_alembic_harness_revision_scans.py``);
 5. no literal carries a ``:word`` bind parameter;
 6. ``downgrade()`` removes exactly what ``upgrade()`` added, one table at a
    time: an ``autocommit_block`` COMMITs the ``coord.session_handles`` group
@@ -50,17 +54,24 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
 from tests._alembic_harness import (
+    ENTER_AUTOCOMMIT,
+    LEAVE_AUTOCOMMIT,
     admin_database_url,
+    assert_in_order,
     backend_root,
     can_connect,
+    collapsed,
     column_comment,
     column_info,
     comment_body_from_source,
     declared_parent_revision_id,
+    destructive_words_outside_downgrade,
     ephemeral_database,
     load_revision_module,
+    offline_framing,
     run_alembic,
     scalar,
+    statement_shape,
     upgrade_execute_calls,
 )
 
@@ -91,6 +102,9 @@ _CHECKS = {
 }
 
 _LOCK_BOUND = "SET LOCAL lock_timeout = '3s'"
+#: The same bound for an autocommit block, which has no transaction for a
+#: ``SET LOCAL`` to live in; env.py RESETs it after the revision.
+_SESSION_LOCK_BOUND = "SET lock_timeout = '3s'"
 _CHECK_VIOLATION = "23514"
 _NOT_NULL_VIOLATION = "23502"
 
@@ -162,80 +176,12 @@ def _execute_literals(fn: ast.FunctionDef) -> list[str]:
     return literals
 
 
-def _collapsed(sql: str) -> str:
-    return " ".join(sql.split())
-
-
-#: How ``_statements`` renders an ``autocommit_block``: entering one COMMITs the
-#: open transaction, leaving it BEGINs the next.
-_ENTER_AUTOCOMMIT = "<enter autocommit_block: COMMIT>"
-_LEAVE_AUTOCOMMIT = "<leave autocommit_block: BEGIN>"
-
-
-def _statements(fn: ast.FunctionDef) -> tuple[str, ...]:
-    """``fn``'s body as it runs: each ``op.execute`` literal, whitespace-
-    collapsed, and each ``with op.get_context().autocommit_block():`` as
-    ``_ENTER_AUTOCOMMIT``, the statements inside it, then ``_LEAVE_AUTOCOMMIT``.
-
-    A docstring and ``pass`` are skipped; any other statement fails, so nothing
-    can run unseen by a comparison against this shape.
-    """
-    shape: list[str] = []
-
-    def visit(body: list[ast.stmt]) -> None:
-        for stmt in body:
-            if isinstance(stmt, ast.Pass):
-                continue
-            if isinstance(stmt, ast.With):
-                managers = [ast.unparse(item.context_expr) for item in stmt.items]
-                assert managers == ["op.get_context().autocommit_block()"], managers
-                shape.append(_ENTER_AUTOCOMMIT)
-                visit(stmt.body)
-                shape.append(_LEAVE_AUTOCOMMIT)
-                continue
-            assert isinstance(stmt, ast.Expr), ast.unparse(stmt)
-            call = stmt.value
-            if isinstance(call, ast.Constant) and isinstance(call.value, str):
-                continue  # a docstring
-            assert (
-                isinstance(call, ast.Call)
-                and ast.unparse(call.func) == "op.execute"
-                and len(call.args) == 1
-                and not call.keywords
-            ), ast.unparse(stmt)
-            sql = call.args[0]
-            assert isinstance(sql, ast.Constant) and isinstance(sql.value, str), (
-                ast.unparse(stmt)
-            )
-            shape.append(_collapsed(sql.value))
-
-    visit(fn.body)
-    return tuple(shape)
-
-
-def _framing(sql: str) -> list[str]:
-    """The bare ``BEGIN;`` / ``COMMIT;`` lines of an offline render, in order."""
-    return [
-        line.strip()
-        for line in sql.splitlines()
-        if line.strip() in ("BEGIN;", "COMMIT;")
-    ]
-
-
-def _assert_in_order(sql: str, markers: tuple[str, ...]) -> None:
-    """Every marker occurs in ``sql``, each after the one before it."""
-    at = 0
-    for marker in markers:
-        found = sql.find(marker, at)
-        assert found >= 0, f"{marker!r} missing or out of order in:\n{sql}"
-        at = found + len(marker)
-
-
 #: Each upgrade statement, recognised by a pattern over its whitespace-collapsed
 #: SQL, mapped to a name. The order of this table is irrelevant; the expected
 #: SEQUENCE is ``_UPGRADE_SHAPE``.
 _UPGRADE_KINDS: tuple[tuple[str, str], ...] = (
     ("lock bound", r"SET LOCAL lock_timeout = '3s'"),
+    ("session lock bound", r"SET lock_timeout = '3s'"),
     (
         "add closed_reason",
         r"ALTER TABLE coord\.agent_sessions ADD COLUMN IF NOT EXISTS closed_reason TEXT",
@@ -293,38 +239,45 @@ _UPGRADE_KINDS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: (statement, inside an autocommit block?) in order -- the four steps the
-#: revision docstring describes, one table at a time.
-_UPGRADE_SHAPE: tuple[tuple[str, bool], ...] = (
+#: Every statement of ``upgrade()`` in order, as ``statement_shape`` reads it with
+#: each ``op.execute`` named by ``_kind``: the four steps the revision docstring
+#: describes, one table at a time.
+_UPGRADE_SHAPE: tuple[str, ...] = (
     # Step 1: coord.agent_sessions DDL, one transactional group.
-    ("lock bound", False),
-    ("add closed_reason", False),
-    (f"add {_REASON_CHECK} NOT VALID", False),
-    ("comment closed_reason", False),
-    ("comment last_seen", False),
-    # Step 2: commit step 1, then backfill and validate under no table lock.
-    ("backfill unrecorded", True),
-    (f"validate {_REASON_CHECK}", True),
+    "lock bound",
+    "add closed_reason",
+    f"add {_REASON_CHECK} NOT VALID",
+    "comment closed_reason",
+    "comment last_seen",
+    # Step 2: commit step 1, then backfill and validate under no table lock,
+    # every lock wait bounded.
+    ENTER_AUTOCOMMIT,
+    "session lock bound",
+    "backfill unrecorded",
+    f"validate {_REASON_CHECK}",
+    LEAVE_AUTOCOMMIT,
     # Step 3: coord.session_handles DDL, the default before the backfill before
     # NOT NULL.
-    ("lock bound", False),
-    ("default live", False),
-    ("backfill status", False),
-    ("status not null", False),
-    (f"add {_STATUS_CHECK} NOT VALID", False),
-    (f"add {_PAIR_CHECK} NOT VALID", False),
-    # Step 4: commit step 3, then validate.
-    (f"validate {_STATUS_CHECK}", True),
-    (f"validate {_PAIR_CHECK}", True),
+    "lock bound",
+    "default live",
+    "backfill status",
+    "status not null",
+    f"add {_STATUS_CHECK} NOT VALID",
+    f"add {_PAIR_CHECK} NOT VALID",
+    # Step 4: commit step 3, then validate, every lock wait bounded.
+    ENTER_AUTOCOMMIT,
+    "session lock bound",
+    f"validate {_STATUS_CHECK}",
+    f"validate {_PAIR_CHECK}",
+    LEAVE_AUTOCOMMIT,
 )
 
 
 def _kind(sql: str) -> str:
-    collapsed = _collapsed(sql)
-    matches = [
-        name for name, pattern in _UPGRADE_KINDS if re.fullmatch(pattern, collapsed)
-    ]
-    assert len(matches) == 1, f"unrecognised or ambiguous statement: {collapsed!r}"
+    """The ``_UPGRADE_KINDS`` name of one statement; exactly one must match."""
+    sql = collapsed(sql)
+    matches = [name for name, pattern in _UPGRADE_KINDS if re.fullmatch(pattern, sql)]
+    assert len(matches) == 1, f"unrecognised or ambiguous statement: {sql!r}"
     return matches[0]
 
 
@@ -368,7 +321,7 @@ def test_the_reason_check_admits_exactly_the_plans_vocabulary() -> None:
     ]
     assert len(adds) == 1, adds
     found = re.search(
-        r"closed_reason IS NULL OR closed_reason IN \(([^)]*)\)", _collapsed(adds[0])
+        r"closed_reason IS NULL OR closed_reason IN \(([^)]*)\)", collapsed(adds[0])
     )
     assert found is not None, adds[0]
     listed = tuple(re.findall(r"'([a-z_]+)'", found.group(1)))
@@ -385,10 +338,18 @@ def test_the_comments_carry_the_contracts_they_restate() -> None:
     assert last_seen.startswith("Latest positive evidence that this session is alive")
     assert "evidence of life, not a heartbeat" in last_seen
     assert "design decision D2" in last_seen
-    # What coord does not do yet is dated by the plan phase that brings it, so
-    # the catalog never states a future writer or reader as a present one.
+    # The last_seen comment names the writers that move it today, and what coord
+    # does not do yet is dated by the plan phase that brings it, so the catalog
+    # never states a future writer or reader as a present one.
+    for writer in ("upsert_agent_session", "bind_session_if_unclaimed"):
+        assert writer in last_seen, writer
     assert "Written from Phase 5 of plan" in reason
-    for phase in ("from Phase 1 of plan", "from Phase 3", "from Phase 7"):
+    for phase in (
+        "from Phase 1 of plan",
+        "from Phase 3",
+        "from Phase 6",
+        "from Phase 7",
+    ):
         assert phase in last_seen, phase
     for body in (reason, last_seen):
         assert _PLAN_STEM in body
@@ -397,11 +358,14 @@ def test_the_comments_carry_the_contracts_they_restate() -> None:
 
 
 def test_upgrade_runs_one_table_at_a_time_with_every_check_validated_late() -> None:
-    calls = upgrade_execute_calls(_revision_path())
-    assert all(call.sql is not None for call in calls), (
-        "every op.execute in upgrade() must take one static literal"
+    """Every statement of ``upgrade()``, in order. ``statement_shape`` refuses
+    any statement that is not an ``op.execute`` literal or an autocommit block,
+    so an ``op.alter_column`` (or any other op) added anywhere fails here even
+    though it would never reach an ``op.execute`` reading."""
+    shape = tuple(
+        line if line in (ENTER_AUTOCOMMIT, LEAVE_AUTOCOMMIT) else _kind(line)
+        for line in statement_shape(_function("upgrade"))
     )
-    shape = tuple((_kind(call.sql or ""), call.in_autocommit_block) for call in calls)
     assert shape == _UPGRADE_SHAPE
 
 
@@ -415,7 +379,7 @@ def test_offline_render_commits_each_table_before_backfill_and_validate() -> Non
     sql = run_alembic(
         backend_root(), _OFFLINE_URL, "upgrade", f"{parent}:{_REVISION_ID}", "--sql"
     ).stdout
-    assert _framing(sql) == [
+    assert offline_framing(sql) == [
         "BEGIN;",
         "COMMIT;",
         "BEGIN;",
@@ -428,6 +392,7 @@ def test_offline_render_commits_each_table_before_backfill_and_validate() -> Non
         "ALTER TABLE coord.agent_sessions ADD COLUMN IF NOT EXISTS closed_reason TEXT;",
         "COMMENT ON COLUMN coord.agent_sessions.last_seen IS",
         "COMMIT;",
+        _SESSION_LOCK_BOUND + ";",
         "UPDATE coord.agent_sessions SET closed_reason = 'unrecorded'",
         f"ALTER TABLE coord.agent_sessions VALIDATE CONSTRAINT {_REASON_CHECK};",
         "BEGIN;",
@@ -437,78 +402,13 @@ def test_offline_render_commits_each_table_before_backfill_and_validate() -> Non
         "ALTER TABLE coord.session_handles ALTER COLUMN status SET NOT NULL;",
         f"ADD CONSTRAINT {_PAIR_CHECK}",
         "COMMIT;",
+        _SESSION_LOCK_BOUND + ";",
         f"ALTER TABLE coord.session_handles VALIDATE CONSTRAINT {_STATUS_CHECK};",
         f"ALTER TABLE coord.session_handles VALIDATE CONSTRAINT {_PAIR_CHECK};",
         "BEGIN;",
         f"UPDATE alembic_version SET version_num='{_REVISION_ID}'",
     )
-    _assert_in_order(sql, in_order)
-
-
-#: E6 reads a module's docstrings as code once the module names any of these,
-#: since one of them could be the SQL ``upgrade()`` executes; so does this scan.
-_DOCSTRING_READERS = ("__doc__", "getdoc", "cleandoc", "co_consts")
-
-#: A word BEGINNING drop / delete / truncate. Every token form E6 lists begins
-#: so (``.drop_*``, ``drop_table(``, ``DropTable``, ``DROP TABLE``, ``TRUNCATE``,
-#: ``DELETE FROM``, ``delete(``, ``ALTER TABLE ... DROP``); ``_E6_FORMS`` pins it.
-_DESTRUCTIVE_WORD = re.compile(r"\b(?:drop|delete|truncate)", re.IGNORECASE)
-
-
-def _texts(node: ast.AST, docstrings: set[int]) -> list[str]:
-    """The text ``node`` itself carries: a literal's value, or its names."""
-    if isinstance(node, ast.Constant):
-        if id(node) in docstrings:
-            return []
-        if isinstance(node.value, bytes):
-            return [node.value.decode("latin-1")]
-        return [node.value] if isinstance(node.value, str) else []
-    # Every str a non-literal node holds is a name (``ast.parse`` keeps no type
-    # comments): a Name's id, an attribute, an imported name, alias or module,
-    # a def / class / argument / keyword name, a global, a match capture.
-    texts: list[str] = []
-    for field in node._fields:
-        value = getattr(node, field, None)
-        for item in value if isinstance(value, list) else [value]:
-            if isinstance(item, str):
-                texts.append(item)
-    return texts
-
-
-def _destructive_words_outside_downgrade(source: str) -> list[str]:
-    """Every name, and every string or bytes literal that is not a docstring,
-    holding a word that begins ``drop`` / ``delete`` / ``truncate``, anywhere
-    outside the ``downgrade()`` body, as ``line N: <text>``.
-
-    ``#`` comments never reach the AST. Docstrings are skipped unless the module
-    names one of ``_DOCSTRING_READERS``. ``downgrade()``'s decorators are read;
-    its signature and body are not, as E6 skips them.
-    """
-    tree = ast.parse(source)
-    docstrings: set[int] = set()
-    if not any(reader in source for reader in _DOCSTRING_READERS):
-        docstrings = {
-            id(holder.body[0].value)
-            for holder in ast.walk(tree)
-            if isinstance(
-                holder,
-                ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
-            )
-            and holder.body
-            and isinstance(holder.body[0], ast.Expr)
-            and isinstance(holder.body[0].value, ast.Constant)
-            and isinstance(holder.body[0].value.value, str)
-        }
-    found: list[str] = []
-    for top in tree.body:
-        roots: list[ast.AST] = [top]
-        if isinstance(top, ast.FunctionDef) and top.name == "downgrade":
-            roots = list(top.decorator_list)
-        for node in (n for root in roots for n in ast.walk(root)):
-            for text_ in _texts(node, docstrings):
-                if _DESTRUCTIVE_WORD.search(text_):
-                    found.append(f"line {getattr(node, 'lineno', '?')}: {text_!r}")
-    return found
+    assert_in_order(sql, in_order)
 
 
 def test_nothing_outside_downgrade_carries_a_destructive_token() -> None:
@@ -516,69 +416,20 @@ def test_nothing_outside_downgrade_carries_a_destructive_token() -> None:
     in CODE outside the ``downgrade()`` body -- strings an ``op.execute`` is
     passed included, comment bodies too; docstrings and ``#`` comments are prose
     (docstrings only while the module names no ``__doc__`` or other reader).
-    This scan reads that code with a rule stricter than E6's: any word BEGINNING
-    ``drop`` / ``delete`` / ``truncate``, in every name (so a bare
-    ``drop_table(...)``, ``sa.schema.DropTable(...)`` or ``sa.delete(...)`` is
-    caught) and in every string or bytes literal that is not a docstring (so a
-    later edit cannot slip a token in by spelling it inside a comment body).
-    The next test pins that it catches every form E6 lists, and no prose.
+
+    The harness scan reads E6's own region: everything but the ``downgrade()``
+    body as E6 bounds it, from the ``def`` line to the first column-0 line that
+    is neither blank nor a comment, so a flush-left line inside a
+    ``downgrade()`` string ends the skip there as it does in E6. Over that region
+    its rule is stricter than E6's: any word BEGINNING ``drop`` / ``delete`` /
+    ``truncate``, in every name (so a bare ``drop_table(...)``,
+    ``sa.schema.DropTable(...)`` or ``sa.delete(...)`` is caught) and in every
+    string or bytes literal that is not a docstring (so a later edit cannot slip
+    a token in by spelling it inside a comment body).
+    ``test_alembic_harness_revision_scans.py`` pins the region against E6's
+    column-0 rule and the rule against one example of every form E6 lists.
     """
-    assert _destructive_words_outside_downgrade(_revision_source()) == []
-
-
-#: One example of each token form coord's E6 refuses (``DESTRUCTIVE_TOKENS`` in
-#: qontinui-coord ``crates/coord/src/alembic_repoint_plan.rs``), as one line of
-#: ``upgrade()``.
-_E6_FORMS = (
-    'op.drop_table("t", schema="coord")',
-    'batch_op.drop_column("c")',
-    'drop_table("t")',
-    "sa.schema.DropTable(t)",
-    "DropIndex(ix)",
-    'op.execute("DROP MATERIALIZED VIEW coord.v")',
-    'op.execute("DROP TABLE coord.t")',
-    'op.execute("ALTER TABLE coord.t ALTER COLUMN c DROP DEFAULT")',
-    'op.execute("TRUNCATE coord.t")',
-    'op.execute("DELETE FROM coord.t")',
-    "op.execute(sa.delete(t))",
-    "t.delete()",
-)
-
-
-def _synthetic_revision(upgrade_line: str, *, module_line: str = "") -> str:
-    """A revision whose prose (both docstrings, a ``#`` comment) and whose
-    ``downgrade()`` body spell destructive SQL the scan must NOT report."""
-    return (
-        '"""DROP TABLE coord.t, in the module docstring."""\n'
-        "from alembic import op\n"
-        f"{module_line}\n"
-        "\n"
-        "def upgrade() -> None:\n"
-        '    """DELETE FROM coord.t, in a function docstring."""\n'
-        "    # TRUNCATE coord.t, in a comment.\n"
-        f"    {upgrade_line}\n"
-        "\n"
-        "\n"
-        "def downgrade() -> None:\n"
-        '    op.drop_table("t", schema="coord")\n'
-    )
-
-
-def test_the_destructive_scan_reads_every_form_e6_refuses_and_no_prose() -> None:
-    """The scan's rule against E6's own list, and its region: the prose and the
-    ``downgrade()`` body go unread, everything else is read."""
-    scan = _destructive_words_outside_downgrade
-    assert scan(_synthetic_revision("pass")) == []
-    missed = [form for form in _E6_FORMS if not scan(_synthetic_revision(form))]
-    assert missed == [], f"forms E6 refuses that the scan lets through: {missed}"
-    # Outside upgrade() too: a module constant, and a helper after downgrade().
-    assert scan(_synthetic_revision("pass", module_line='_SQL = "DROP TABLE coord.t"'))
-    assert scan(
-        _synthetic_revision("pass")
-        + '\n\ndef _helper() -> None:\n    op.execute("TRUNCATE coord.t")\n'
-    )
-    # A module that names __doc__ could execute a docstring: both are read then.
-    assert len(scan(_synthetic_revision("op.execute(upgrade.__doc__)"))) == 2
+    assert destructive_words_outside_downgrade(_revision_source()) == []
 
 
 def test_no_literal_carries_a_bind_parameter() -> None:
@@ -607,8 +458,8 @@ def test_downgrade_removes_exactly_what_upgrade_added() -> None:
         "ALTER TABLE coord.session_handles ALTER COLUMN status DROP DEFAULT",
         # COMMIT, then BEGIN, with nothing between: that lock is released
         # before the next one is asked for.
-        _ENTER_AUTOCOMMIT,
-        _LEAVE_AUTOCOMMIT,
+        ENTER_AUTOCOMMIT,
+        LEAVE_AUTOCOMMIT,
         # coord.agent_sessions, in the transaction alembic stamps the version
         # in, under its own bound (a SET LOCAL ends with its transaction).
         _LOCK_BOUND,
@@ -616,7 +467,7 @@ def test_downgrade_removes_exactly_what_upgrade_added() -> None:
         f"ALTER TABLE coord.agent_sessions DROP CONSTRAINT IF EXISTS {_REASON_CHECK}",
         "ALTER TABLE coord.agent_sessions DROP COLUMN IF EXISTS closed_reason",
     )
-    assert _statements(_function("downgrade")) == expected
+    assert statement_shape(_function("downgrade")) == expected
 
 
 def test_offline_downgrade_commits_between_the_two_tables() -> None:
@@ -628,7 +479,7 @@ def test_offline_downgrade_commits_between_the_two_tables() -> None:
     sql = run_alembic(
         backend_root(), _OFFLINE_URL, "downgrade", f"{_REVISION_ID}:{parent}", "--sql"
     ).stdout
-    assert _framing(sql) == ["BEGIN;", "COMMIT;", "BEGIN;", "COMMIT;"]
+    assert offline_framing(sql) == ["BEGIN;", "COMMIT;", "BEGIN;", "COMMIT;"]
     in_order = (
         "BEGIN;",
         _LOCK_BOUND + ";",
@@ -642,7 +493,7 @@ def test_offline_downgrade_commits_between_the_two_tables() -> None:
         f"UPDATE alembic_version SET version_num='{parent}'",
         "COMMIT;",
     )
-    _assert_in_order(sql, in_order)
+    assert_in_order(sql, in_order)
 
 
 # ---------------------------------------------------------------------------

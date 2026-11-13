@@ -40,7 +40,7 @@ import sys
 import traceback
 import uuid
 import warnings
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -793,3 +793,235 @@ def assert_nullable_add_only(statements: list[str], schema: str, table: str) -> 
     # (``ALTER TABLE ONLY``, another table, a ``SET DEFAULT``) cannot slip past.
     others = [sql for sql in statements if sql is not add]
     assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others), others
+
+
+# ---------------------------------------------------------------------------
+# Reading a revision's statement shape, its offline render, and what coord's
+# alembic re-point (its E6 clause) would call destructive.
+#
+# Revision-agnostic, so migration tests share one copy instead of each carrying
+# its own. tests/test_alembic_harness_revision_scans.py pins them.
+# ---------------------------------------------------------------------------
+
+
+def collapsed(sql: str) -> str:
+    """``sql`` with every whitespace run collapsed to one space, case kept."""
+    return " ".join(sql.split())
+
+
+#: How [`statement_shape`] renders an ``autocommit_block``: entering one COMMITs
+#: the open transaction, leaving it BEGINs the next.
+ENTER_AUTOCOMMIT = "<enter autocommit_block: COMMIT>"
+LEAVE_AUTOCOMMIT = "<leave autocommit_block: BEGIN>"
+
+
+def statement_shape(fn: ast.FunctionDef) -> tuple[str, ...]:
+    """``fn``'s body as it runs: each ``op.execute`` literal, whitespace-
+    collapsed, and each ``with op.get_context().autocommit_block():`` as
+    ``ENTER_AUTOCOMMIT``, the statements inside it, then ``LEAVE_AUTOCOMMIT``.
+
+    A docstring and ``pass`` are skipped. ANY other statement fails: an
+    ``op.alter_column``, an ``op.execute`` of a non-literal, a helper call. So a
+    golden comparison against this shape cannot be passed by a statement that
+    [`upgrade_execute_calls`], which reads ``op.execute`` calls only, never sees.
+    """
+    shape: list[str] = []
+
+    def visit(body: list[ast.stmt]) -> None:
+        for stmt in body:
+            if isinstance(stmt, ast.Pass):
+                continue
+            if isinstance(stmt, ast.With):
+                assert all(_is_autocommit_block(item) for item in stmt.items), (
+                    ast.unparse(stmt)
+                )
+                shape.append(ENTER_AUTOCOMMIT)
+                visit(stmt.body)
+                shape.append(LEAVE_AUTOCOMMIT)
+                continue
+            assert isinstance(stmt, ast.Expr), ast.unparse(stmt)
+            call = stmt.value
+            if isinstance(call, ast.Constant) and isinstance(call.value, str):
+                continue  # a docstring
+            assert (
+                isinstance(call, ast.Call)
+                and ast.unparse(call.func) == "op.execute"
+                and len(call.args) == 1
+                and not call.keywords
+            ), ast.unparse(stmt)
+            sql = call.args[0]
+            assert isinstance(sql, ast.Constant) and isinstance(sql.value, str), (
+                ast.unparse(stmt)
+            )
+            shape.append(collapsed(sql.value))
+
+    visit(fn.body)
+    return tuple(shape)
+
+
+def offline_framing(sql: str) -> list[str]:
+    """The bare ``BEGIN;`` / ``COMMIT;`` lines of an offline ``--sql`` render, in
+    order: the batch's own pair, plus a ``COMMIT;`` then ``BEGIN;`` for every
+    ``autocommit_block`` the render passes through."""
+    return [
+        line.strip()
+        for line in sql.splitlines()
+        if line.strip() in ("BEGIN;", "COMMIT;")
+    ]
+
+
+def assert_in_order(text: str, markers: Iterable[str]) -> None:
+    """Every marker occurs in ``text``, each after the end of the one before."""
+    at = 0
+    for marker in markers:
+        found = text.find(marker, at)
+        assert found >= 0, f"{marker!r} missing or out of order in:\n{text}"
+        at = found + len(marker)
+
+
+#: E6 reads a module's docstrings as code once the module names any of these,
+#: since one of them could be the SQL ``upgrade()`` executes (qontinui-coord
+#: ``crates/coord/src/alembic_repoint_plan.rs`` ``DOCSTRING_READERS``); so does
+#: [`destructive_words_outside_downgrade`].
+DOCSTRING_READERS: tuple[str, ...] = ("__doc__", "getdoc", "cleandoc", "co_consts")
+
+#: A word BEGINNING drop / delete / truncate. Every token form E6 lists begins
+#: so; [`E6_FORMS`] holds one example of each.
+DESTRUCTIVE_WORD = re.compile(r"\b(?:drop|delete|truncate)", re.IGNORECASE)
+
+
+def downgrade_body_lines(source: str) -> frozenset[int]:
+    """The 1-based lines coord's E6 skips as a ``downgrade()`` body.
+
+    E6's own bound (``outside_downgrade`` in qontinui-coord
+    ``crates/coord/src/alembic_repoint_plan.rs``): from a column-0 ``def
+    downgrade(`` or ``async def downgrade(`` line to the next column-0 line that
+    is neither blank nor a ``#`` comment. So a flush-left line inside a string
+    in ``downgrade()`` ENDS the skip, and that line and everything after it are
+    read. Where this differs from E6 it skips less, never more: the skip starts
+    only at a real top-level ``downgrade`` (E6 also starts at that text inside a
+    string), and a flush-left line ends it even inside a docstring (E6 blanks
+    docstrings first, so there it does not).
+    """
+    tree = ast.parse(source)
+    lines = source.split("\n")
+    skipped: set[int] = set()
+    for node in tree.body:
+        if (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name == "downgrade"
+        ):
+            skipped.add(node.lineno)
+            for number in range(node.lineno + 1, len(lines) + 1):
+                line = lines[number - 1]
+                if line[:1] and not line[0].isspace() and not line.startswith("#"):
+                    break
+                skipped.add(number)
+    return frozenset(skipped)
+
+
+def _carried_text(node: ast.AST, docstrings: set[int]) -> list[str]:
+    """The text ``node`` itself carries: a literal's value, or its names."""
+    if isinstance(node, ast.Constant):
+        if id(node) in docstrings:
+            return []
+        if isinstance(node.value, bytes):
+            return [node.value.decode("latin-1")]
+        return [node.value] if isinstance(node.value, str) else []
+    # Every str a non-literal node holds is a name (``ast.parse`` keeps no type
+    # comments): a Name's id, an attribute, an imported name, alias or module,
+    # a def / class / argument / keyword name, a global, a match capture.
+    texts: list[str] = []
+    for field in node._fields:
+        value = getattr(node, field, None)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str):
+                texts.append(item)
+    return texts
+
+
+def destructive_words_outside_downgrade(source: str) -> list[str]:
+    """What coord's alembic re-point (its E6 clause) could refuse in a revision's
+    ``source``, read more strictly than E6 reads it, as ``line N: <text>``.
+
+    The rule: any word BEGINNING ``drop`` / ``delete`` / ``truncate``, in a name
+    (so a bare ``drop_table(...)``, ``sa.schema.DropTable(...)`` or
+    ``sa.delete(...)`` is caught) or in a string or bytes literal that is not a
+    docstring (so is a token spelled inside a ``COMMENT ON`` body). Every token
+    form E6 lists begins so.
+
+    The region: every line outside [`downgrade_body_lines`], E6's own bound read
+    at least as widely. ``#`` comments never reach the AST, and docstrings are
+    prose unless the module names one of [`DOCSTRING_READERS`], as in E6.
+    """
+    tree = ast.parse(source)
+    docstrings: set[int] = set()
+    if not any(reader in source for reader in DOCSTRING_READERS):
+        docstrings = {
+            id(holder.body[0].value)
+            for holder in ast.walk(tree)
+            if isinstance(
+                holder,
+                ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+            )
+            and holder.body
+            and isinstance(holder.body[0], ast.Expr)
+            and isinstance(holder.body[0].value, ast.Constant)
+            and isinstance(holder.body[0].value.value, str)
+        }
+    skipped = downgrade_body_lines(source)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        first = getattr(node, "lineno", None)
+        if isinstance(first, int):
+            last = getattr(node, "end_lineno", None) or first
+            if all(number in skipped for number in range(first, last + 1)):
+                continue
+        for text_ in _carried_text(node, docstrings):
+            if DESTRUCTIVE_WORD.search(text_):
+                found.append(f"line {first}: {text_!r}")
+    return found
+
+
+#: One example of each token form coord's E6 refuses (``DESTRUCTIVE_TOKENS`` in
+#: qontinui-coord ``crates/coord/src/alembic_repoint_plan.rs``), as one line of
+#: ``upgrade()``.
+E6_FORMS: tuple[str, ...] = (
+    'op.drop_table("t", schema="coord")',
+    'batch_op.drop_column("c")',
+    'drop_table("t")',
+    "sa.schema.DropTable(t)",
+    "DropIndex(ix)",
+    'op.execute("DROP MATERIALIZED VIEW coord.v")',
+    'op.execute("DROP TABLE coord.t")',
+    'op.execute("ALTER TABLE coord.t ALTER COLUMN c DROP DEFAULT")',
+    'op.execute("TRUNCATE coord.t")',
+    'op.execute("DELETE FROM coord.t")',
+    "op.execute(sa.delete(t))",
+    "t.delete()",
+)
+
+
+def synthetic_revision(
+    upgrade_line: str = "pass",
+    *,
+    module_line: str = "",
+    downgrade_body: str = '    op.drop_table("t", schema="coord")\n',
+) -> str:
+    """A revision with ``upgrade_line`` as one line of ``upgrade()``, whose prose
+    (both docstrings, a ``#`` comment) and default ``downgrade()`` body spell
+    destructive SQL that E6 does not read."""
+    return (
+        '"""DROP TABLE coord.t, in the module docstring."""\n'
+        "from alembic import op\n"
+        f"{module_line}\n"
+        "\n"
+        "def upgrade() -> None:\n"
+        '    """DELETE FROM coord.t, in a function docstring."""\n'
+        "    # TRUNCATE coord.t, in a comment.\n"
+        f"    {upgrade_line}\n"
+        "\n"
+        "\n"
+        "def downgrade() -> None:\n"
+        f"{downgrade_body}"
+    )

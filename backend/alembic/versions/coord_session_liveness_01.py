@@ -17,7 +17,10 @@ Why
 ===
 
 coord's handle sweep closed three live sessions' ``coord.agent_sessions`` rows
-because it read ``last_seen`` as a heartbeat. Once a row is closed nothing says
+because it read ``last_seen`` as a heartbeat: dossier finding
+d83a6eb3-f283-45c0-b2cc-8f22d6130b68 (occurrences a869a4d8, 37379108 and
+9acb8e0d), with the writer named by investigation plan-library artifact
+ca3952ac-7cef-4062-b713-0d7d2a9d080f. Once a row is closed nothing says
 WHICH writer closed it, so each occurrence had to be traced by hand, and
 ``coord.session_handles.status`` could contradict its own ``closed_at`` with
 nothing to refuse it. This revision gives the plan's coord phases the columns
@@ -38,15 +41,20 @@ and constraints they need:
   That is the honest value: no writer recorded why. Only rows whose reason is
   still NULL are touched, so a re-run never overwrites a reason a writer set.
 * ``COMMENT ON COLUMN last_seen`` restates the column as plan D2 decided: the
-  latest POSITIVE EVIDENCE that the session is alive (an id-bearing coord write
-  or a live harness observation), not a heartbeat. That is the contract the
-  plan's coord phases bring coord to, not coord as this revision found it, so
-  the comment dates each part by phase. At qontinui-coord ``origin/main``
-  edca5ef1 (2026-11-12) the identity stamp never writes ``last_seen`` on an
-  existing row (Phase 1 makes a live stamp move it), and sweep pass 4 still
-  closes a session on ``last_seen`` older than its cutoff alone (Phase 3 adds
-  the heartbeat plane to it and to the rebind reap; Phase 7 moves the other
-  liveness readers to a verdict over every plane).
+  latest POSITIVE EVIDENCE that the session is alive, not a heartbeat. That is
+  the contract the plan's coord phases bring coord to, not coord as this
+  revision found it, so the comment names the writers that move the column
+  today and dates the rest by phase. At qontinui-coord ``origin/main``
+  edca5ef1 (2026-11-12) three production writes set it:
+  ``upsert_agent_session`` and ``bind_session_if_unclaimed`` (``now()``), and
+  the identity stamp's first-sight insert (the session's ``last_acted_at``).
+  The stamp never moves it on an existing row (Phase 1 makes a live stamp do
+  so); the per-turn context report, which carries the session id, moves
+  ``last_turn_at`` instead; and sweep pass 4 still closes a session on
+  ``last_seen`` older than its cutoff alone. Phase 3 adds the heartbeat plane
+  to pass 4 and to the rebind reap, Phase 6 gives the session card one verdict
+  over every plane, and Phase 7 moves the destructive consumers to that
+  verdict.
 
 ``coord.session_handles.status``
 --------------------------------
@@ -67,19 +75,26 @@ and constraints they need:
 Production sizing (read-only, 2026-11-13)
 =========================================
 
-Measured through the production read door (ECS Exec into the ``web``
-container, psycopg2 with ``set_session(readonly=True)``; the session read
-``transaction_read_only = on``), on PostgreSQL 16.13 at this revision's parent:
+Recorded in coord finding 8ac6727f-2a77-491a-a025-7fda0c48d8a3 (topic
+``session-liveness``), which carries the queries so a reader can re-run them.
+Measured at 2026-11-13T02:12:24Z through the production read door the
+knowledge base calls Door A (ECS Exec into the ``web`` container, psycopg2
+with ``set_session(readonly=True)``; the session read ``transaction_read_only =
+on``), on PostgreSQL 16.13 with alembic at this revision's parent:
 
-* ``coord.agent_sessions``: 24,063 rows, 10,654 of them closed (458 closed in
-  the preceding 24 h), a 7.6 MB heap. The ``unrecorded`` backfill is therefore
-  one bounded statement, not a batched loop: on a replica of that size at this
-  revision's parent (local PostgreSQL 16, every index present, 5.6 MB heap) it
-  updated the 10,654 rows in 0.21 s, under row locks only (step 2 below).
-* ``coord.session_handles``: 3,159 rows, NONE with a NULL ``status``, none with
-  a value outside the vocabulary, and none that would violate either handle
-  CHECK after the backfill rule. The handle backfill is a no-op in production;
-  it is here for every other database.
+* ``coord.agent_sessions``: 24,124 rows, 10,685 of them closed (458 closed in
+  the preceding 24 h, 2,199 in the preceding 7 days), a 7.6 MB heap. The
+  ``unrecorded`` backfill is therefore one bounded statement, not a batched
+  loop: on a synthetic local table of that size and closed share, built at
+  this revision's parent (PostgreSQL 16.15, every index the chain creates, a
+  2.1 MB heap because its rows carry only key columns), it updated the 10,685
+  closed rows in 0.12 s under row locks only (step 2 below), and ``VALIDATE``
+  took 0.004 s (one run each).
+* ``coord.session_handles``: 3,203 rows (3,124 ``closed``, 70 ``live``, 9
+  ``stale``), NONE with a NULL ``status``, none with a value outside the
+  vocabulary, and none that would violate either handle CHECK after the
+  backfill rule. The handle backfill is a no-op in production; it is here for
+  every other database.
 
 Writers of ``coord.session_handles``
 ====================================
@@ -100,31 +115,38 @@ Transaction shape and locking
 
 ``env.py`` runs a whole upgrade batch in one transaction. Here that would hold
 ``coord.agent_sessions``'s ``ACCESS EXCLUSIVE`` lock (taken by the ``ADD
-COLUMN``) through a 10,654-row backfill, and hold both tables' locks at once,
-which coord's own transactions take in BOTH orders (a rebind and sweep pass 1
-lock the handle before the session; pass 4 locks the session first), so a
-deadlock could abort either transaction (PostgreSQL aborts the backend whose
-deadlock check first sees the cycle). So the revision runs as four steps, one
-table at a time:
+COLUMN``) through the backfill of every closed row (10,685 at the measurement
+above), and hold both tables' locks at once, which coord's own transactions
+take in BOTH orders (a rebind and sweep pass 1 lock the handle before the
+session; pass 4 locks the session first), so a deadlock could abort either
+transaction (PostgreSQL aborts the backend whose deadlock check first sees the
+cycle). So the revision runs as four steps, one table at a time:
 
 1. ``coord.agent_sessions`` DDL under ``SET LOCAL lock_timeout = '3s'``: the
    column ``ADD`` (nullable, no default: catalog-only), its CHECK ``NOT VALID``
    (no scan; enforced on every write from here) and both comments.
 2. ``autocommit_block()`` -- entering it COMMITS step 1, releasing the lock.
-   The ``unrecorded`` backfill then runs as its own transaction under row locks
-   only, and ``VALIDATE CONSTRAINT`` scans under ``SHARE UPDATE EXCLUSIVE``,
-   which blocks no reader or writer.
+   A session-level ``SET lock_timeout = '3s'`` bounds every lock wait in the
+   block. The ``unrecorded`` backfill then runs as its own transaction under
+   row locks only, and ``VALIDATE CONSTRAINT`` scans under ``SHARE UPDATE
+   EXCLUSIVE``, which blocks no reader or writer.
 3. ``coord.session_handles`` DDL in the transaction alembic reopens, again
    under ``SET LOCAL lock_timeout = '3s'``: ``SET DEFAULT`` first (its
    ``ACCESS EXCLUSIVE`` lock means no writer can insert a NULL status between
    the backfill and ``SET NOT NULL``), the backfill, ``SET NOT NULL`` (a scan of
-   3,159 rows) and both CHECKs ``NOT VALID``.
-4. A second ``autocommit_block()`` commits step 3 and validates both CHECKs.
+   every handle, 3,203 at the measurement above) and both CHECKs ``NOT VALID``.
+4. A second ``autocommit_block()`` commits step 3, sets the same session-level
+   bound, and validates both CHECKs.
 
-Each ``SET LOCAL`` ends with the transaction the following block commits, and
-``env.py``'s ``_reset_revision_settings`` RESETs ``lock_timeout`` after the
-revision anyway, so neither group restores it. Nothing inside an autocommit
-block is bounded by it.
+A ``SET LOCAL`` ends with the transaction the following block commits, and
+would do nothing inside an autocommit block, which has no transaction for it
+to live in; so each block sets the session value instead, and ``env.py``'s
+``_reset_revision_settings`` RESETs ``lock_timeout`` after the revision, so
+nothing here restores it. Every lock wait is therefore bounded: a coord
+transaction that holds one ``coord.agent_sessions`` row lock for longer than
+that makes the ``unrecorded`` backfill fail with ``lock_timeout`` (55P03) and
+roll back whole, a failure that converges on re-run (below), instead of
+stalling the upgrade for as long as the lock is held.
 
 Partial apply and re-run
 ========================
@@ -134,11 +156,12 @@ only when the table has no CHECK of that name (``pg_constraint`` is read first;
 PostgreSQL has no ``ADD CONSTRAINT IF NOT EXISTS``), and a constraint of that
 name that is not a CHECK makes the add fail loudly; both backfills touch only
 rows still NULL; ``SET DEFAULT`` / ``SET NOT NULL`` / ``COMMENT`` / ``VALIDATE``
-repeat harmlessly. So an upgrade that fails part-way -- a lock timeout, or a
-``VALIDATE`` refusing a row a writer wrote after the census above -- leaves
+repeat harmlessly. So an upgrade that fails part-way -- a lock timeout (the
+backfill's included: it is one statement, so a timeout rolls it back whole), or
+a ``VALIDATE`` refusing a row a writer wrote after the census above -- leaves
 alembic at the parent with the committed steps in place; repair the named rows
-and re-run, and it converges. A ``NOT VALID`` CHECK left committed by such a
-failure is already enforced on new writes.
+if any and re-run, and it converges. A ``NOT VALID`` CHECK left committed by
+such a failure is already enforced on new writes.
 
 Downgrade
 =========
@@ -170,9 +193,15 @@ is safe ahead of every coord change. Plan Phase 5's coord PR is held on
 ``schema_object_exists`` for the production column, and bumps coord CI's
 migrator pin (``MIGRATOR_DIGEST`` / ``MIGRATOR_ALEMBIC_HEAD``) to a head that
 includes this revision. Until Phase 5 deploys, coord keeps closing rows with no
-reason (about 450 a day) AND keeps reopening rows without clearing a reason,
-so an open row can carry ``unrecorded``; plan Phase 8 reconciles both before it
-pairs ``closed_reason`` with ``closed_at`` by CHECK.
+reason (458 in the 24 h and 2,199 in the 7 days before the measurement above)
+AND keeps reopening rows without clearing a reason (its three production reopen
+paths set ``closed_at = NULL`` and leave the reason), so an open row can carry
+``unrecorded``. Plan Phase 8 (qontinui-dev-notes ``origin/main`` fed8a3180ec9)
+reconciles both before it adds the pairing CHECK ``(closed_at IS NULL) =
+(closed_reason IS NULL)``: it backfills ``unrecorded`` into every row closed
+with a NULL reason between the Phase 4 and Phase 5 deploys, and clears the
+reason on every row that is open again (``UPDATE coord.agent_sessions SET
+closed_reason = NULL WHERE closed_at IS NULL AND closed_reason IS NOT NULL``).
 
 Merge-train disposition
 =======================
@@ -270,24 +299,33 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.agent_sessions.last_seen IS
-            'Latest positive evidence that this session is alive: the newest '
-            'coord write that carried this session id or, from Phase 1 of plan '
+            'Latest positive evidence that this session is alive. Coord sets it '
+            'to now() when it registers or binds this session id '
+            '(upsert_agent_session, bind_session_if_unclaimed) and, when the '
+            'session-identity stamp first inserts the row, to the last activity '
+            'that stamp observed; from Phase 1 of plan '
             '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat '
-            'on, the newest live harness observation of the session (the '
-            'runner session-identity stamp reporting it live). It is evidence '
-            'of life, not a heartbeat: a quiet live session is observed only '
-            'as often as one of those happens, so a stale value alone does not '
-            'prove the session ended (design decision D2 of that plan). Coord '
-            'adopts that reading by plan phase: from Phase 3 the handle sweep '
-            'and the rebind reap no longer close a row on a stale value alone, '
-            'and from Phase 7 no other liveness reader acts on a stale value '
-            'alone.'
+            'on, every live stamp of the session sets it to now() too. Other '
+            'writes that carry the id leave it alone (the per-turn context '
+            'report moves last_turn_at). It is evidence of life, not a '
+            'heartbeat: a quiet live session is observed only as often as one '
+            'of those happens, so a stale value alone does not prove the '
+            'session ended (design decision D2 of that plan). Coord adopts that '
+            'reading by plan phase: from Phase 3 the handle sweep and the '
+            'rebind reap no longer close a row on a stale value alone, from '
+            'Phase 6 the session card reports one liveness verdict over every '
+            'plane, and from Phase 7 the destructive consumers act only on an '
+            'ended verdict.'
         """
     )
 
     # Step 2 -- entering the block COMMITS step 1, so the backfill rewrites rows
     # under row locks only, and VALIDATE scans under SHARE UPDATE EXCLUSIVE.
+    # A SET LOCAL has no transaction to live in here, so the bound is session
+    # level: a row lock held past it fails the backfill (re-runnable) rather
+    # than stalling it. env.py RESETs it after the revision.
     with op.get_context().autocommit_block():
+        op.execute("SET lock_timeout = '3s'")
         op.execute(
             "UPDATE coord.agent_sessions SET closed_reason = 'unrecorded' "
             "WHERE closed_at IS NOT NULL AND closed_reason IS NULL"
@@ -349,8 +387,10 @@ def upgrade() -> None:
         """
     )
 
-    # Step 4 -- commit step 3, then validate both handle CHECKs.
+    # Step 4 -- commit step 3, then validate both handle CHECKs under the same
+    # session-level bound.
     with op.get_context().autocommit_block():
+        op.execute("SET lock_timeout = '3s'")
         op.execute(
             "ALTER TABLE coord.session_handles "
             "VALIDATE CONSTRAINT ck_session_handles_status"
