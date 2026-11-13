@@ -21,8 +21,10 @@ Without a database (always runs):
 1. **Chain wiring.** ``revision`` / ``down_revision`` match the pins below, the
    parent names exactly one real sibling, and the docstring's ``Revises:`` header
    agrees with the assignment. The docstring's post-deploy identity check quotes
-   ``_EXPECTED_DEFINITION`` verbatim. Its repair runbook takes the lock once and
-   releases it at both exits, each call spelling ``MIGRATION_LOCK_KEY``.
+   ``_EXPECTED_DEFINITION`` verbatim. Its repair runbook's lock calls are, in
+   source order, a take and then two releases, each spelling
+   ``MIGRATION_LOCK_KEY``. The take sits in step 1, one release in step 3 beside
+   its STOP, and the other in step 6.
 2. **The upgrade path is what coord's merge classifier auto-lands**: one static
    ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` literal in an autocommit block, no
    other ``op.*`` call (so no non-concurrent ``op.create_index``), no ``get_bind``,
@@ -210,9 +212,12 @@ def _squash(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
 
 
-# The OR keyword: any case, not preceded by a word character, `$` or `.`, and not
-# followed by a word character or `$`. So `OR(x)` and `)OR` match, while
-# `ORDER`, `color`, `or_flag` and `e.ORDER` do not.
+# The OR keyword, in any case, wherever both of these hold:
+# - the lookbehind: the character before is not a word character, `$` or `.`,
+#   which keeps out `color`, `a$or` and `e.or`;
+# - the lookahead: the character after is not a word character or `$`, which
+#   keeps out `ORDER`, `e.ORDER`, `or_flag` and `or$x`.
+# So `OR(x)`, `)OR` and `'x'OR` match.
 _TOP_LEVEL_OR = re.compile(r"(?<![\w$.])OR(?![\w$])", re.IGNORECASE)
 
 
@@ -300,25 +305,41 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
     assert _EXPECTED_DEFINITION in source, (
         "the docstring's post-deploy check must quote _EXPECTED_DEFINITION verbatim"
     )
-    # The repair runbook takes the migration lock once (step 1) and releases it
-    # at each of its two exits (the STOP in step 3, and step 6), every call
-    # spelling the key. A key that drifts from the one every migrator takes would
-    # not serialize the repair with them, and a missing release leaves a hold
-    # that times every migrator out.
+    # The repair runbook's lock calls, in source order, are one take and then two
+    # releases, each spelling the key. The take sits in step 1, one release in
+    # step 3 beside its STOP, and the other in step 6. A key that drifts from the
+    # one every migrator takes would not serialize the repair with them, and a
+    # missing release leaves a hold that times every migrator out.
     calls = re.findall(
         r"\b(pg_try_advisory_lock|pg_advisory_lock|pg_advisory_unlock)\((\d+)\)",
         source,
     )
-    assert sorted(name for name, _ in calls) == [
-        "pg_advisory_unlock",
-        "pg_advisory_unlock",
+    assert [name for name, _ in calls] == [
         "pg_try_advisory_lock",
+        "pg_advisory_unlock",
+        "pg_advisory_unlock",
     ], f"the runbook's lock calls changed shape: {calls}"
     for name, key in calls:
         assert int(key) == MIGRATION_LOCK_KEY, (
             f"the docstring's runbook calls {name}({key}), but MIGRATION_LOCK_KEY is "
             f"{MIGRATION_LOCK_KEY}"
         )
+
+    def runbook_step(number: int) -> str:
+        step = re.search(
+            rf"^{number}\. (.*?)(?=^{number + 1}\. |^The revision has no)",
+            source,
+            re.M | re.S,
+        )
+        assert step is not None, f"runbook step {number} not found"
+        return step.group(1)
+
+    unlock = f"pg_advisory_unlock({MIGRATION_LOCK_KEY})"
+    assert f"pg_try_advisory_lock({MIGRATION_LOCK_KEY})" in runbook_step(1)
+    assert unlock in runbook_step(3) and "STOP" in runbook_step(3), (
+        "step 3 must release the lock where it STOPs"
+    )
+    assert unlock in runbook_step(6), "step 6 must release the lock"
 
 
 def test_the_upgrade_and_downgrade_paths_are_classifier_safe() -> None:
@@ -425,6 +446,7 @@ def test_the_scans_literals_imply_the_partial_predicate() -> None:
         "e.a = 1 or true",
         "e.a = 1 OR(true)",
         "(e.a = 1)OR e.b = 2",
+        "e.a = 'x'OR true",
     ],
 )
 def test_the_conjunct_splitter_refuses_a_top_level_or(where: str) -> None:
@@ -443,6 +465,7 @@ def test_the_conjunct_splitter_refuses_a_top_level_or(where: str) -> None:
             "color = 1 AND or_flag AND e.ORDER = 2",
             ["color = 1", "or_flag", "e.ORDER = 2"],
         ),
+        ("e.or = 1 AND a$or = 1 AND or$x = 1", ["e.or = 1", "a$or = 1", "or$x = 1"]),
     ],
 )
 def test_the_conjunct_splitter_lets_every_other_or_through(

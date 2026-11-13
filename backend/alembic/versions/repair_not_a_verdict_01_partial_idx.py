@@ -152,34 +152,54 @@ this index under you.
 2. Wait until this returns no row::
 
        SELECT 1 FROM pg_stat_progress_create_index
-        WHERE relid IS NULL OR relid = 'coord.pr_events'::regclass;
+        WHERE (relid IS NULL OR relid = 'coord.pr_events'::regclass)
+          AND datid = (SELECT oid FROM pg_database WHERE datname = current_database());
 
-   ``relid IS NULL`` is there on purpose. A role that has neither the
-   builder's privileges nor ``pg_read_all_stats`` sees another session's
-   build with ``relid`` NULL, so filtering on ``relid`` alone would hide
-   exactly that build. The cost is that a build on another table also holds
-   the wait, which only makes it longer.
+   You hold the migration lock while you wait, so every migrator that starts
+   meanwhile spends this time against its ``DEFAULT_WAIT_SECS`` bound (step 6
+   says what happens when that runs out). ``relid IS NULL`` is there on
+   purpose. A role that has neither the builder's privileges nor
+   ``pg_read_all_stats`` sees another session's build with ``relid`` NULL,
+   so filtering on ``relid`` alone would hide exactly that build. ``datid``
+   stays visible to such a role, so the ``datid`` filter keeps builds in
+   other databases out. The cost that remains is that a build on another
+   table of this database also holds the wait, which only makes it longer.
 3. Re-run the identity-and-validity read above. A live build also reads
    ``false``, so if it now reads ``true`` with the expected definition, that
-   build finished VALID and nothing needs repair: release the lock with
-   ``SELECT pg_advisory_unlock(8173873295031625586);`` and STOP. Only
-   otherwise go on.
+   build finished VALID and nothing needs repair. Release the lock as step 6
+   does, running ``SELECT pg_advisory_unlock(8173873295031625586);`` until it
+   returns ``f``, and STOP. The first call must return ``t``. A first ``f``
+   means this session had already lost its hold (step 6 says how), which
+   changes nothing here, because steps 4 and 5 have not run. Only otherwise
+   go on.
 4. Run ``DROP INDEX CONCURRENTLY IF EXISTS
    coord.idx_pr_events_repair_not_a_verdict``. Never use a plain
    ``DROP INDEX``: its ACCESS EXCLUSIVE lock queues behind any long reader
    and stalls every coord read and write on the table behind it.
 5. Run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()``.
-6. Release the lock, whatever step 5 did::
+6. Release the lock, whatever step 5 did. Run this until it returns ``f``::
 
        SELECT pg_advisory_unlock(8173873295031625586);
 
-   A failed or cancelled build keeps the lock: a session-level advisory lock
-   outlives a failed statement, and only ``pg_advisory_unlock`` or the end of
-   the session releases it. If step 5 failed, or you are unsure how many
-   ``t`` you took in step 1, end the session instead, which releases every
-   hold at once. A failed build also leaves an INVALID index behind, so then
-   start again from step 1 in a new session. Never leave a hold behind. Each
-   extra ``t`` stacks one, and while any hold remains, every migrator waits
+   Each ``t`` releases one stacked hold. The closing ``f``, with the WARNING
+   "you don't own a lock of type ExclusiveLock", says none is left.
+   ``SELECT pg_advisory_unlock_all();`` drops every hold the session has in
+   one call, and so does ending the session. A failed or cancelled build
+   keeps the lock, because a session-level advisory lock outlives a failed
+   statement, so release it here after a failure too. A failed build also
+   leaves an INVALID index behind, so then start again from step 1.
+
+   The FIRST call must return ``t``. A first ``f`` means this session lost
+   its hold somewhere before step 6. When the connection drops, interactive
+   psql prints "The connection to the server was lost. Attempting reset:
+   Succeeded." and carries on in a NEW session, which never took the lock.
+   Measured on PostgreSQL 16.15 with psql 16.15: after the reset, the first
+   unlock returned ``f`` with that WARNING. So treat steps 4 and 5 as having
+   run unserialized. Re-run the identity-and-validity read (step 7), and
+   start again from step 1 unless it reads ``true`` with the expected
+   definition.
+
+   Never leave a hold behind. While any hold remains, every migrator waits
    out ``DEFAULT_WAIT_SECS`` (3600 s in ``app/db/migration_lock.py``, unless
    ``QONTINUI_MIGRATION_LOCK_WAIT_SECS`` overrides it) and then raises
    ``MigrationLockTimeout`` having applied nothing.
