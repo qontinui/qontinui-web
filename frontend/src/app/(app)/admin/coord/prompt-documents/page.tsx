@@ -108,18 +108,21 @@ export default function PromptDocumentsPage() {
  * send in.
  */
 function PromptDocumentsPageBody() {
-  // The project the page's rows are pinned to, asked for as each status read
-  // and publish-all request is SENT, so one in flight when another tab
-  // switches project — re-issued after a 429, replayed after a token refresh
-  // — cannot land in, or answer from, that tab's project. One identity for
-  // the page's lifetime, so the mount read below does not re-fire on it (D10).
-  const { resolvePin } = useRequiredPageWriteGuard();
+  // The page's send guard: `writeAllowed`, asked right before the dry run, the
+  // armed run and a publish-mode PATCH are sent, and `resolvePin`, the
+  // project the page's rows are pinned to, asked as each status read and
+  // publish-all request is SENT. So one in flight when another tab switches
+  // project — re-issued after a 429, replayed after a token refresh — cannot
+  // land in, or answer from, that tab's project. Both keep one identity for
+  // the page's lifetime, so the mount read below does not re-fire on them
+  // (D9, D10).
+  const guard = useRequiredPageWriteGuard();
   // ONE auto-publish status read for the whole page (plan
   // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the
   // list's badges and the dial's observed worker are two readings of the same
   // response, so they must not come from two fetches that can disagree. A
   // write to the D5 switch re-takes it, because the badges key on the switch.
-  const publishAllState = usePublishAll({ resolvePin });
+  const publishAllState = usePublishAll(guard);
   return (
     <div className="space-y-8">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console

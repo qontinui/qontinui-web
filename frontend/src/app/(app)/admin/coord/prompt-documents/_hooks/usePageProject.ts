@@ -34,30 +34,35 @@ export interface PageProject {
    *   trip; the rows on screen are still the last known project's, so the
    *   guard must not lift.
    * - While it has never been known, the project stored at mount: the one the
-   *   page's first reads went out in. A change from it while the layout's
-   *   provider is still reading is a change the page must not write through.
+   *   page's first reads went out in, and were answered in. A change from it
+   *   while the layout's provider is still reading, or after its read failed,
+   *   is a change the page must not write through.
    *
-   * Only the guard reads this. Adopt all and the list re-reads keep treating
-   * UNKNOWN as offering nothing, and the pin below never takes the mount
-   * fallback.
+   * The guard compares against this, and `pin` names it. Adopt all and the
+   * list re-reads keep treating UNKNOWN as offering nothing.
    */
   guardTenant: string | null;
   /**
    * The project every row read and write is SENT in, on every attempt — the
    * HTTP client otherwise reads the stored project per attempt, so a request
    * retried or replayed after another tab's switch would land in, or answer
-   * from, that project. The page's project, else the last one known — not
-   * bare `pageTenant`, so a provider `refresh()` neither drops the pin for its
-   * round trip nor flips the pinned readers' identity, which would re-fire an
-   * open dialog's reads — and never the project stored at mount.
+   * from, that project. It names `guardTenant`: the page's project, else the
+   * last one known — not bare `pageTenant`, so a provider `refresh()` neither
+   * drops the pin for its round trip nor flips the pinned readers' identity,
+   * which would re-fire an open dialog's reads — else, while the page's
+   * project has never been known (the provider still reading, or its read
+   * failed), the project stored at mount, which the mount read was answered
+   * in. The guard refuses every write once another project is stored, so a
+   * write pinned to it cannot land anywhere else.
    *
-   * Only a NAMED project is pinned. `undefined` while the page's project has
-   * never been known, and while it is `null` (none selected): a `null` pin
-   * sends no header, so the client would fill in whatever project is stored on
-   * every attempt — another tab's, after a switch — and it would also give up
-   * the request's retries. Without a pin, the list's dialog readers are
-   * refused at call time instead, like its write doors. One identity until
-   * the project it names changes.
+   * Only a NAMED project is pinned. `undefined` while the page's project is
+   * `null` (none selected), and while it has never been known and none was
+   * stored at mount: a `null` pin sends no header, so the client would fill
+   * in whatever project is stored on each attempt — another tab's, after a
+   * switch, on a token-refresh replay too. Without a pin every write is
+   * refused (`usePageWriteGuard`), and the list's dialog readers are refused
+   * at call time once another project is stored. One identity until the
+   * project it names changes.
    */
   pin: ProjectPin | undefined;
 }
@@ -154,8 +159,8 @@ export function usePageProject(): PageProject {
 
   const pin = useMemo<ProjectPin | undefined>(
     () =>
-      typeof knownTenant === "string" ? { tenant: knownTenant } : undefined,
-    [knownTenant]
+      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
+    [guardTenant]
   );
 
   return { mountTenant, tenantContext, pageTenant, guardTenant, pin };

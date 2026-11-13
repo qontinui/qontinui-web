@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { TenantPin } from "@/services/http-client";
+import type { ProjectPin } from "@/services/http-client";
 import {
   createPromptDocumentClause,
   deletePromptDocumentClause,
@@ -19,7 +19,7 @@ import type {
   PromptDocumentAttrs,
   PromptDocumentKind,
 } from "../types";
-import { usePageWriteGuardContext } from "./usePageWriteGuardContext";
+import { useRequiredPageWriteGuard } from "./usePageWriteGuardContext";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -38,19 +38,11 @@ export interface UseClausesOptions {
    */
   onAttrsSaved?: () => void;
   /**
-   * OUTSIDE the prompt-documents page's provider only (a mount on its own, as
-   * the hook's unit test mounts it): checked before every write; `false`
-   * sends nothing (the caller says why). Omitted there, nothing is refused.
-   * Under the provider the page's own guard is checked instead, always.
+   * The caller's own say over a write, checked beside the page's guard before
+   * every write: a write is sent only when BOTH allow it. `false` sends
+   * nothing (the caller says why). Omitted, the page's guard alone decides.
    */
   canWrite?: () => boolean;
-  /**
-   * OUTSIDE the prompt-documents page's provider only: the project the clause
-   * read and every write are sent in, on every attempt (`pinActiveTenant`).
-   * Omitted there, each request goes in the project stored when it is sent.
-   * Under the provider the page's own pin is used instead, always.
-   */
-  pin?: TenantPin;
 }
 
 /**
@@ -62,17 +54,18 @@ export interface UseClausesOptions {
  * Only meaningful for `kind === "policy"` documents; the caller passes `enabled`
  * false for other kinds so the hook doesn't fetch.
  *
- * **Which project, and when nothing is written.** Under the prompt-documents
- * page's provider (`PageWriteGuardProvider`; the clause manager is always
- * there, inside the list) the hook takes the page's call-time write guard and
- * the page's pin from it — never from its caller — so a clause write raced
- * past the page's notice is refused here, beside its send, and the clause read
- * and every write go in the page's project on every attempt, a write in
- * flight when another tab switches project included. The pin is a VALUE, as
- * for the list's other hooks (plan
- * `2026-11-09-prompt-documents-cross-tab-write-guard` D10): the clause read
- * re-fires only when the page's project changes. Outside any provider the
- * {@link UseClausesOptions} `canWrite` and `pin` stand in for them.
+ * **Which project, and when nothing is written.** The hook is always under
+ * the prompt-documents page's provider (`PageWriteGuardProvider`; the clause
+ * manager is always there, inside the list), and throws outside it: there is
+ * no unguarded mode. It takes the page's call-time write guard and the page's
+ * pin from it. A clause write raced past the page's notice, or sent while the
+ * page has no project to pin it to, is refused here, beside its send, and the
+ * clause read and every write go in the page's project on every attempt, a
+ * write in flight when another tab switches project included. The caller's
+ * `canWrite` narrows that further and never widens it: a write needs both.
+ * The pin is the page's, never the caller's. It is a VALUE, as for the list's
+ * other hooks (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+ * D10): the clause read re-fires only when the page's project changes.
  */
 export function useClauses(
   kind: PromptDocumentKind,
@@ -80,18 +73,18 @@ export function useClauses(
   enabled: boolean,
   options: UseClausesOptions = {}
 ) {
-  const { onAttrsSaved } = options;
-  const page = usePageWriteGuardContext();
-  const canWrite = page ? page.writeAllowed : options.canWrite;
-  const pin = page ? page.pin : options.pin;
-  // Keyed on the project, not on the caller's object: the clause read below
+  const { onAttrsSaved, canWrite } = options;
+  const page = useRequiredPageWriteGuard();
+  // Keyed on the project, not on the page's object: the clause read below
   // re-fires only when the pinned project actually changes.
-  const pinTenant = pin?.tenant;
-  const projectPin = useMemo<TenantPin | undefined>(
+  const pinTenant = page.pin?.tenant;
+  const projectPin = useMemo<ProjectPin | undefined>(
     () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
     [pinTenant]
   );
-  const blocked = () => canWrite !== undefined && !canWrite();
+  /** Whether a write must not be sent: the page's guard or the caller's says so. */
+  const blocked = () =>
+    !page.writeAllowed() || (canWrite !== undefined && !canWrite());
   const [clauses, setClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -222,10 +215,9 @@ export function useClauses(
         );
       }
       // The re-read shows what the run created. A refused run takes it only
-      // when it is pinned to a NAMED project: unpinned — or pinned to `null`,
-      // which sends no header, so the client fills in the stored project — it
-      // would be served by the project the other tab stored, not this page's.
-      if (!refused || projectPin?.tenant != null) await load();
+      // when the page has a pin: unpinned, it would be served by the project
+      // the other tab stored, not this page's.
+      if (!refused || projectPin !== undefined) await load();
     } finally {
       setSaving(false);
     }

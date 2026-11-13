@@ -65,8 +65,8 @@ import {
  * goes out, and a write is refused — nothing sent, the page says why — while
  * another tab's project switch is in effect. Both come from the page's
  * provider (`usePageSendGuard`), and the refusal sits here, beside the send,
- * so no caller can leave it out. Mounted outside that provider, each request
- * goes in the project stored when it is made, and nothing is refused.
+ * so no caller can leave it out. It is never mounted outside that provider,
+ * and throws if it is: there is no unguarded mode.
  */
 export function usePolicyWritePolicy() {
   const { writeAllowed, resolvePin } = usePageSendGuard();

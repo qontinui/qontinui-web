@@ -16,7 +16,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one (`pageWriteGuardForTests`).
+import { renderSection } from "../_hooks/pageWriteGuardForTests";
+
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
@@ -89,7 +93,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     // The wire says `off`; the fleet is on `tightening_only`. The readout must
     // show the second and say where it came from — scoped to the readout,
@@ -107,7 +111,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       view({ effective_level: "tightening-only", resolved_scope: "tenant" })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-unrecognized-level");
     // The raw stored value, so the operator knows which row to fix...
@@ -126,7 +130,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       view({ effective_level: "tightening-only", resolved_scope: "repo" })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-unrecognized-level");
     // The control writes the tenant band only. Telling the operator that
@@ -141,7 +145,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       async () => new Response("coord is not reachable", { status: 502 })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     // Nothing has ever been read, so there is no "value below" to call stale —
     // and the one claim the console must never make on no evidence is that
@@ -155,7 +159,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("warns when a repo-band row overrides the tenant row this control writes", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "repo" }));
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-overridden-by-repo");
     expect(banner).toHaveTextContent(/keeps.*overriding/i);
@@ -167,7 +171,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("says a write takes effect when only a system-band row is answering", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "system" }));
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const note = await screen.findByTestId("policy-write-system-fallback");
     expect(note).toHaveTextContent(/takes effect immediately/i);
@@ -181,7 +185,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const note = await screen.findByTestId("policy-write-keys-not-shown");
     expect(note).toHaveTextContent("controls, drain");
@@ -198,7 +202,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
     });
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/propose_only/));
@@ -214,7 +218,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
   it("offers full at all — coord retired the clamp that justified hiding it", async () => {
     getMock.mockResolvedValue(view());
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     await screen.findByTestId("policy-write-dial");
     expect(screen.getByLabelText(/full/)).toBeInTheDocument();
@@ -228,7 +232,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     getMock.mockResolvedValue(view());
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -241,7 +245,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     getMock.mockResolvedValue(view());
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -264,7 +268,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     putMock.mockResolvedValue(okWrite(view({ effective_level: "full" })));
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -283,7 +287,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     });
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/^off/));

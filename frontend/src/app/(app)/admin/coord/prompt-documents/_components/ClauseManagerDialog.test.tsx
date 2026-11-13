@@ -12,7 +12,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one (`pageWriteGuardForTests`).
+import { renderSection } from "../_hooks/pageWriteGuardForTests";
 
 const getMock = vi.fn();
 const patchMock = vi.fn();
@@ -53,7 +56,7 @@ function doc(attrs: PromptDocument["attrs"]): PromptDocument {
 }
 
 function renderDialog(document: PromptDocument) {
-  render(
+  renderSection(
     <ClauseManagerDialog
       open
       onOpenChange={vi.fn()}

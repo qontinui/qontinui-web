@@ -59,9 +59,9 @@ function message(err: unknown, fallback: string): string {
  * another tab's switch cannot open or close a kind in that tab's project, and
  * its read-back cannot show that project's tiers as this one's. And a write is
  * refused — nothing sent, the page says why — while another tab's switch is in
- * effect: the check sits beside the send, so no caller can leave it out.
- * Mounted outside the page's provider, each is sent in the project stored when
- * it is made, and nothing is refused.
+ * effect: the check sits beside the send, so no caller can leave it out. It
+ * is never mounted outside the page's provider, and throws if it is: there is
+ * no unguarded mode.
  */
 export function usePromptDocumentKindTiers() {
   const { writeAllowed, resolvePin } = usePageSendGuard();

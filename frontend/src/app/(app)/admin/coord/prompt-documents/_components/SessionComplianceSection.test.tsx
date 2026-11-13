@@ -22,7 +22,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one (`pageWriteGuardForTests`).
+import { renderSection } from "../_hooks/pageWriteGuardForTests";
+
 import userEvent from "@testing-library/user-event";
 
 const getMock = vi.fn();
@@ -90,13 +94,15 @@ describe("SessionComplianceSection", () => {
       new Error("GET /api/v1/operations/... failed: 404 - Not Found")
     );
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const notice = await screen.findByTestId("compliance-unavailable");
     // Both readings of a 404 are named — the UI reports what coord said, and
     // does not pick one diagnosis and state it as fact.
     expect(notice).toHaveTextContent(/doesn't serve the session-compliance/i);
-    expect(notice).toHaveTextContent(/nothing stored under them for this tenant/i);
+    expect(notice).toHaveTextContent(
+      /nothing stored under them for this tenant/i
+    );
     // The honesty clause: absence of data is not evidence of absence of work.
     expect(notice).toHaveTextContent(
       /not the same as nothing having happened/i
@@ -124,7 +130,7 @@ describe("SessionComplianceSection", () => {
       )
     );
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     // The real status reaches the operator. Each failing read raises its own
     // notice, so this is `findAll` — the assertion is that the 500 is stated,
@@ -142,11 +148,13 @@ describe("SessionComplianceSection", () => {
   it("renders the enforcement panel with derived applicability", async () => {
     routeGets();
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const applicability = await screen.findByTestId("compliance-applicability");
     expect(applicability).toHaveTextContent("Currently applicable: yes");
-    expect(applicability).toHaveTextContent(/worked out by coord, not set here/i);
+    expect(applicability).toHaveTextContent(
+      /worked out by coord, not set here/i
+    );
     expect(applicability).toHaveTextContent("version 7");
     expect(screen.getByTestId("clause-resolved-via")).toHaveTextContent(
       /matched a structured clause row/i
@@ -187,7 +195,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const applicability = await screen.findByTestId("compliance-applicability");
     // Not the original understatement...
@@ -241,7 +249,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const row = await screen.findByTestId("compliance-session-sess-na");
     const count = within(row).getByTestId("unconfirmed-count");
@@ -283,7 +291,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
     await user.click(
       await screen.findByTestId("compliance-open-report-sess-live-absent")
     );
@@ -315,7 +323,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
     await user.click(
       await screen.findByTestId("compliance-open-report-sess-closed-absent")
     );
@@ -335,7 +343,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const applicability = await screen.findByTestId("compliance-applicability");
     expect(applicability).toHaveTextContent("Currently applicable: no");
@@ -353,7 +361,7 @@ describe("SessionComplianceSection", () => {
   it("states the coverage bound instead of implying universal coverage", async () => {
     routeGets();
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const bound = await screen.findByTestId("compliance-coverage-bound");
     expect(bound).toHaveTextContent(/sessions started from this runner/i);
@@ -380,7 +388,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const row = await screen.findByTestId("compliance-session-sess-absent");
     expect(within(row).getByText("Unverified")).toBeInTheDocument();
@@ -404,7 +412,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const row = await screen.findByTestId("compliance-session-sess-live");
     expect(within(row).getByTestId("verdict-in-progress")).toHaveTextContent(
@@ -437,7 +445,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const ledger = await screen.findByTestId("outstanding-ledger");
     expect(within(ledger).getByText("Guessed, not proven")).toBeInTheDocument();
@@ -463,7 +471,7 @@ describe("SessionComplianceSection", () => {
       return Promise.resolve({ items: [] });
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     await user.click(
       await screen.findByTestId("compliance-config-history-toggle")
@@ -496,7 +504,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const row = await screen.findByTestId("compliance-session-sess-omitted");
     expect(within(row).getByText("Unverified")).toBeInTheDocument();
@@ -522,7 +530,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const ledger = await screen.findByTestId("outstanding-ledger");
     expect(within(ledger).queryByText("Confirmed")).not.toBeInTheDocument();
@@ -534,7 +542,7 @@ describe("SessionComplianceSection", () => {
   it("explains what the check is, including who runs it", async () => {
     routeGets();
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const panel = await screen.findByTestId("compliance-enforcement-panel");
     expect(panel).toHaveTextContent(/POLICY_COMPLIANCE report/);
@@ -583,7 +591,7 @@ describe("SessionComplianceSection", () => {
       sessions: { sessions: [absentRow({ nudge_attempts: 2 })] },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     expect(await screen.findByTestId("nudge-count")).toHaveAttribute(
       "title",
@@ -611,7 +619,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     // In the table: the number, hedged.
     const count = await screen.findByTestId("nudge-count");
@@ -636,7 +644,7 @@ describe("SessionComplianceSection", () => {
       sessions: { sessions: [absentRow({ nudge_attempts: 0 })] },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     // Await the ROW before asserting the badge's absence. Without this the
     // query runs before the fetch resolves and is null no matter what the
@@ -672,7 +680,7 @@ describe("SessionComplianceSection", () => {
       sessions: { sessions: [absentRow({ nudge_attempts: -1 })] },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
     await screen.findByTestId("compliance-session-sess-nudged");
     expect(screen.queryByTestId("nudge-count")).toBeNull();
 
@@ -695,7 +703,7 @@ describe("SessionComplianceSection", () => {
       sessions: { sessions: [absentRow({ nudge_attempts: 2.5 })] },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     const count = await screen.findByTestId("nudge-count");
     expect(count).toHaveTextContent(/asked 2×/);
@@ -728,7 +736,7 @@ describe("SessionComplianceSection", () => {
       },
     });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
     expect(await screen.findByTestId("nudge-count")).toHaveTextContent(
       /asked 3×/
     );
@@ -746,7 +754,7 @@ describe("SessionComplianceSection", () => {
     // A coord that doesn't carry the field at all — the pre-deploy case.
     routeGets({ sessions: { sessions: [absentRow({})] } });
 
-    render(<SessionComplianceSection />);
+    renderSection(<SessionComplianceSection />);
 
     await screen.findByTestId("compliance-session-sess-nudged");
     expect(screen.queryByTestId("nudge-count")).toBeNull();

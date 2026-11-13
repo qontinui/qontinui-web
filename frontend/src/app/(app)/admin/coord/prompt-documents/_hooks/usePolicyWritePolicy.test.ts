@@ -20,6 +20,9 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+// The hook on its own, under a test page guard: it requires one
+// (`pageWriteGuardForTests`).
+import { AllowAllPageGuard } from "./pageWriteGuardForTests";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -93,7 +96,9 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
   it("resolves a missing row to tightening_only and flags it as defaulted", async () => {
     getMock.mockResolvedValue(NO_ROW);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // The raw wire value. Rendering THIS is the bug the hook exists to avoid.
@@ -109,7 +114,9 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
   it("honours an explicit off — the same string, the opposite meaning", async () => {
     getMock.mockResolvedValue(OFF_TENANT);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // A row exists, so `off` is an operator's decision and must survive intact.
@@ -130,7 +137,9 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
       effective_level: "tightening-only",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Coord's `parse_fail_closed` refuses everything for this row. Showing the
@@ -148,7 +157,9 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
   it("does not flag a recognised level as unrecognised", async () => {
     getMock.mockResolvedValue(PROPOSE_ONLY_TENANT);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.displayLevel).toBe("propose_only");
@@ -161,7 +172,9 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     // tenant would be reported as a broken row.
     getMock.mockResolvedValue(NO_ROW);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.unrecognizedLevel).toBeNull();
@@ -183,7 +196,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -222,7 +237,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -254,7 +271,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -284,7 +303,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: "read-back failed: coord returned 502",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -315,7 +336,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: "read-back failed: coord returned 502",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
       await result.current.setLevel("propose_only");
@@ -335,7 +358,9 @@ describe("usePolicyWritePolicy — writes", () => {
 
   it("keeps the last known value on a failed read rather than showing off", async () => {
     getMock.mockResolvedValueOnce(PROPOSE_ONLY_TENANT);
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     getMock.mockResolvedValueOnce(
@@ -356,7 +381,9 @@ describe("usePolicyWritePolicy — writes", () => {
       async () => new Response("admin_required", { status: 403 })
     );
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     let outcome: boolean | undefined;

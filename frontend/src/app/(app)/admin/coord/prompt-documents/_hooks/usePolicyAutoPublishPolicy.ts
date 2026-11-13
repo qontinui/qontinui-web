@@ -72,9 +72,9 @@ function message(err: unknown, fallback: string): string {
  * re-issued after another tab's switch cannot land in that tab's project; and
  * a write is refused — nothing sent, the page says why — while that switch is
  * in effect. Both come from the page's provider (`usePageSendGuard`), and the
- * refusal sits beside the send, so no caller can leave it out. Mounted outside
- * that provider, each is sent in the project stored when it is made, and
- * nothing is refused.
+ * refusal sits beside the send, so no caller can leave it out. It is never
+ * mounted outside that provider, and throws if it is: there is no unguarded
+ * mode.
  */
 export function usePolicyAutoPublishPolicy() {
   const { writeAllowed, resolvePin } = usePageSendGuard();

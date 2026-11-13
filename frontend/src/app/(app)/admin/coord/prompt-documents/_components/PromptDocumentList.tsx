@@ -161,20 +161,23 @@ export function PromptDocumentList({
  * The list reading the publish-all surface itself — no page owns the read.
  *
  * It is always under a `PageWriteGuardProvider` (its own, when the list is
- * mounted standalone), and its `usePublishAll` asks that provider which
- * project to send in, exactly as the page's does (`page.tsx`). So the dry
- * run, the armed run, the publish-mode PATCH and every status read go in the
- * project the rows are pinned to, not the one stored when each is sent: a
- * status re-take sent after another tab's switch cannot put that project's
- * publish state on this page, and the list's two mounts pin alike.
+ * mounted standalone), and its `usePublishAll` takes that provider's guard,
+ * exactly as the page's does (`page.tsx`), so the list's two mounts send
+ * alike. The dry run, the armed run and the publish-mode PATCH are sent only
+ * in the project the rows are pinned to, and refused while the page has no
+ * such project (its project `null`, or never known with nothing stored at
+ * mount) or another project is stored. A status read goes in that same
+ * project whenever there is one, so a re-take sent after another tab's switch
+ * cannot put that project's publish state on this page. With no pin it goes
+ * in the project stored when it is sent, and a refusal it latches is stamped
+ * with that project (`usePublishAll`).
  */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
 }: {
   autoPublishRefreshKey: number;
 }) {
-  const { resolvePin } = useRequiredPageWriteGuard();
-  const publishAllState = usePublishAll({ resolvePin });
+  const publishAllState = usePublishAll(useRequiredPageWriteGuard());
   return (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
@@ -194,9 +197,15 @@ function PromptDocumentListBody({
    * The page's project, its pin and its cross-tab guard, from the provider
    * this list is always under (`PromptDocumentList`): see
    * `usePageProject` for `mountTenant`, `pageTenant` and `pin`, and
-   * `usePageWriteGuard` for `writeAllowed` and `crossTabInEffect`. Both keep
-   * ONE identity for the page's lifetime, so every guarded door built on them
-   * below does too; the pin changes identity only with the project it names.
+   * `usePageWriteGuard` for `writeAllowed`, `projectUnchanged` and
+   * `crossTabInEffect`. All three keep ONE identity for the page's lifetime,
+   * so every guarded door built on them below does too; the pin changes
+   * identity only with the project it names.
+   *
+   * A write asks `writeAllowed`, which also refuses while the page has no
+   * project to pin it to. A dialog's opening, and a dialog read the page
+   * cannot pin, ask `projectUnchanged`: a page with no pin can still show its
+   * own documents, it just cannot change them.
    */
   const {
     mountTenant,
@@ -204,14 +213,22 @@ function PromptDocumentListBody({
     pageTenant,
     pin,
     writeAllowed,
+    projectUnchanged,
     crossTabInEffect,
   } = useRequiredPageWriteGuard();
-  /** `fn`, answering `refused` without calling it while the guard says no. */
-  const guard = useCallback(
+  /** The write `fn`, answering `refused` without calling it while the guard says no. */
+  const guardWrite = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
       async (...args: A): Promise<R> =>
         writeAllowed() ? fn(...args) : refused,
     [writeAllowed]
+  );
+  /** The read `fn`, answering `refused` without calling it once another project is stored. */
+  const guardRead = useCallback(
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
+      async (...args: A): Promise<R> =>
+        projectUnchanged() ? fn(...args) : refused,
+    [projectUnchanged]
   );
 
   const {
@@ -264,15 +281,16 @@ function PromptDocumentListBody({
    * The dialogs' READERS go to them pinned while the page's project is a named
    * one: a read in flight across another tab's switch cannot leave it, and a
    * refused read would render as an empty one ("No versions recorded yet.").
-   * Without a pin — the page's project `null`, or never known — nothing holds
-   * a read to the page's project, so each is refused at call time like a
-   * write door. One identity until the pin changes, so an open dialog's load
-   * effect does not re-fire on a re-render.
+   * Without a pin — the page's project `null`, or never known with nothing
+   * stored at mount — nothing holds a read to the page's project, so each is
+   * refused at call time once another project is stored. One identity until
+   * the pin changes, so an open dialog's load effect does not re-fire on a
+   * re-render.
    */
   const pinnedOrGuarded = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
-      pin ? fn : guard(fn, refused),
-    [pin, guard]
+      pin ? fn : guardRead(fn, refused),
+    [pin, guardRead]
   );
   const dialogFetchVersions = useMemo(
     () => pinnedOrGuarded(fetchVersions, null),
@@ -295,16 +313,16 @@ function PromptDocumentListBody({
   // function, so a stable door stays stable (`writeAllowed` keeps one
   // identity).
   const guardedCreate = useMemo(
-    () => guard(createDocument, null),
-    [guard, createDocument]
+    () => guardWrite(createDocument, null),
+    [guardWrite, createDocument]
   );
   const guardedUpdate = useMemo(
-    () => guard(updateDocument, false),
-    [guard, updateDocument]
+    () => guardWrite(updateDocument, false),
+    [guardWrite, updateDocument]
   );
   const guardedRestoreDefault = useMemo(
-    () => guard(restoreDefault, false),
-    [guard, restoreDefault]
+    () => guardWrite(restoreDefault, false),
+    [guardWrite, restoreDefault]
   );
 
   /**
@@ -385,19 +403,19 @@ function PromptDocumentListBody({
   };
 
   const openEdit = async (doc: PromptDocumentSummary) => {
-    if (!writeAllowed()) return;
+    if (!projectUnchanged()) return;
     setEditorOpen(true);
     await loadFull(doc);
   };
 
   const openHistory = async (doc: PromptDocumentSummary) => {
-    if (!writeAllowed()) return;
+    if (!projectUnchanged()) return;
     setHistoryOpen(true);
     await loadFull(doc);
   };
 
   const openClauses = async (doc: PromptDocumentSummary) => {
-    if (!writeAllowed()) return;
+    if (!projectUnchanged()) return;
     setClausesOpen(true);
     await loadFull(doc);
   };
@@ -407,7 +425,7 @@ function PromptDocumentListBody({
    * which the list does not carry — same fetch the editor and history views do.
    */
   const openUpstream = async (doc: PromptDocumentSummary) => {
-    if (!writeAllowed()) return;
+    if (!projectUnchanged()) return;
     setUpstreamOpen(true);
     await loadFull(doc);
   };
@@ -494,7 +512,7 @@ function PromptDocumentListBody({
    * the version shown on this row is still the one coord holds.
    */
   const openPublish = (doc: PromptDocumentSummary) => {
-    if (!writeAllowed()) return;
+    if (!projectUnchanged()) return;
     setPublishTarget(doc);
     setPublishOpen(true);
   };
@@ -607,10 +625,16 @@ function PromptDocumentListBody({
    * counted. It is not offered while the stored project differs from the
    * page's, whose rows another tab's switch would otherwise put this button
    * over, nor over rows read in any project but the page's (a switch whose
-   * re-read has not landed yet). Per-row Adopt is unaffected. Opening re-asks
-   * coord (`openAdoptAll`), so this governs only whether the button shows.
+   * re-read has not landed yet). Nor is it offered on a page with no project
+   * to pin its run's writes to: each adopt would go out with no header, and
+   * a retry or token-refresh replay of it could land in another tab's
+   * project. Per-row Adopt is still offered; on a page with no pin, or once
+   * another project is stored, its write is refused at call time like every
+   * write. Opening re-asks coord (`openAdoptAll`), so this governs only
+   * whether the button shows.
    */
   const adoptAllOffered =
+    pin !== undefined &&
     pageTenant !== undefined &&
     readActiveTenantId() === pageTenant &&
     documentsTenant === pageTenant &&

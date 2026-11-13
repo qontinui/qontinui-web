@@ -1,11 +1,18 @@
 /**
- * `useClauses`' write guard: with `canWrite` answering `false` — the
- * prompt-documents page after another tab switched project — every clause
- * write sends NOTHING and reports failure; answering `true`, it writes, in the
- * project it was given as its `pin`.
+ * `useClauses`' write guard. The hook is always under the prompt-documents
+ * page's provider, and takes the page's guard and pin from it:
+ *
+ * - A clause write is sent only when BOTH the page's guard and the caller's
+ *   own `canWrite` allow it. Either answering `false` sends NOTHING and
+ *   reports failure. The caller narrows the page's guard; it never widens it.
+ * - What is sent goes in the page's pin.
+ * - Outside the provider the hook throws: there is no unguarded mode.
+ *
+ * Each test mounts it under a test page guard (`pageWriteGuardForTests`),
+ * standing in for the page's provider.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({
@@ -21,7 +28,8 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
-import { useClauses } from "./useClauses";
+import { useClauses, type UseClausesOptions } from "./useClauses";
+import { testPageGuard, withPageGuard } from "./pageWriteGuardForTests";
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
@@ -37,6 +45,10 @@ beforeEach(() => {
   }
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 const writes = [
   api.createPromptDocumentClause,
   api.updatePromptDocumentClause,
@@ -45,37 +57,92 @@ const writes = [
   api.updatePromptDocumentAttrs,
 ];
 
-describe("useClauses canWrite", () => {
-  it("sends nothing while it answers false", async () => {
-    const { result } = renderHook(() =>
-      useClauses("policy", "testing", false, { canWrite: () => false })
-    );
-    let outcomes: unknown[] = [];
-    await act(async () => {
-      outcomes = [
-        await result.current.createClause({ clause_id: "x" } as never),
-        await result.current.updateClause("x", {} as never),
-        await result.current.deleteClause("x"),
-        await result.current.reorderClauses(["x"]),
-        await result.current.importCandidates([{ clause_id: "x" } as never]),
-        await result.current.saveAttrs({} as never),
-      ];
-    });
+/** The page's side: its guard, and the pin it hands down. */
+type Page = { writeAllowed?: () => boolean; pin?: { tenant: string } };
+
+function mount(
+  enabled: boolean,
+  page: Page = {},
+  options: UseClausesOptions = {}
+) {
+  const guard = testPageGuard(page);
+  return renderHook(() => useClauses("policy", "testing", enabled, options), {
+    wrapper: withPageGuard(guard),
+  });
+}
+
+/** Every write the hook makes, each once; what each answered. */
+async function writeEveryWay(
+  result: ReturnType<typeof mount>["result"]
+): Promise<unknown[]> {
+  let outcomes: unknown[] = [];
+  await act(async () => {
+    outcomes = [
+      await result.current.createClause({ clause_id: "x" } as never),
+      await result.current.updateClause("x", {} as never),
+      await result.current.deleteClause("x"),
+      await result.current.reorderClauses(["x"]),
+      await result.current.importCandidates([{ clause_id: "x" } as never]),
+      await result.current.saveAttrs({} as never),
+    ];
+  });
+  return outcomes;
+}
+
+describe("useClauses write guard", () => {
+  it("sends nothing while the page's guard answers false", async () => {
+    const { result } = mount(false, { writeAllowed: () => false });
+
+    const outcomes = await writeEveryWay(result);
+
     expect(outcomes).toEqual([false, false, false, false, 0, false]);
     for (const fn of writes) expect(fn).not.toHaveBeenCalled();
   });
 
-  it("stops an import part-way when it turns false between creates", async () => {
+  it("sends nothing while the caller's canWrite answers false, though the page's guard allows", async () => {
+    const pageAsked = vi.fn(() => true);
+    const { result } = mount(
+      false,
+      { writeAllowed: pageAsked, pin: { tenant: "t-b" } },
+      { canWrite: () => false }
+    );
+
+    const outcomes = await writeEveryWay(result);
+
+    expect(outcomes).toEqual([false, false, false, false, 0, false]);
+    for (const fn of writes) expect(fn).not.toHaveBeenCalled();
+    // Both were asked: the caller narrows the page's guard.
+    expect(pageAsked).toHaveBeenCalled();
+  });
+
+  it("writes when both allow, in the page's pin", async () => {
+    const { result } = mount(
+      false,
+      { writeAllowed: () => true, pin: { tenant: "t-b" } },
+      { canWrite: () => true }
+    );
+
+    await act(async () => {
+      await result.current.deleteClause("x");
+    });
+
+    expect(api.deletePromptDocumentClause).toHaveBeenCalledWith(
+      "policy",
+      "testing",
+      "x",
+      { tenant: "t-b" }
+    );
+  });
+
+  it("stops an import part-way when the guard turns false between creates", async () => {
     // Another tab switches project while the first create is in flight.
     let allowed = true;
     api.createPromptDocumentClause.mockImplementation(async () => {
       allowed = false;
       return {};
     });
-    const { result } = renderHook(() =>
-      // Enabled, so a re-read after the run would actually be sent.
-      useClauses("policy", "testing", true, { canWrite: () => allowed })
-    );
+    // Enabled, so a re-read after the run would actually be sent.
+    const { result } = mount(true, { writeAllowed: () => allowed });
     await waitFor(() =>
       expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1)
     );
@@ -90,24 +157,21 @@ describe("useClauses canWrite", () => {
     });
     expect(created).toBe(1);
     expect(api.createPromptDocumentClause).toHaveBeenCalledTimes(1);
-    // The refused run is unpinned, so it does not re-read the list: the
+    // The page has no pin, so the refused run does not re-read the list: the
     // read would be served by the other project.
     expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(listsBefore);
   });
 
-  it("re-reads, in its pinned project, after an import stopped part-way", async () => {
+  it("re-reads, in the page's pin, after an import stopped part-way", async () => {
     let allowed = true;
     api.createPromptDocumentClause.mockImplementation(async () => {
       allowed = false;
       return {};
     });
-    const pin = { tenant: "t-b" };
-    const { result } = renderHook(() =>
-      useClauses("policy", "testing", true, {
-        canWrite: () => allowed,
-        pin,
-      })
-    );
+    const { result } = mount(true, {
+      writeAllowed: () => allowed,
+      pin: { tenant: "t-b" },
+    });
     await waitFor(() =>
       expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1)
     );
@@ -128,48 +192,12 @@ describe("useClauses canWrite", () => {
     );
   });
 
-  it("takes no re-read after an import stopped part-way when its pin names no project", async () => {
-    // A `null` pin sends no header, so the client fills in the project stored
-    // when the read is made — the other tab's — exactly as for no pin at all.
-    let allowed = true;
-    api.createPromptDocumentClause.mockImplementation(async () => {
-      allowed = false;
-      return {};
-    });
-    const { result } = renderHook(() =>
-      useClauses("policy", "testing", true, {
-        canWrite: () => allowed,
-        pin: { tenant: null },
-      })
-    );
-    await waitFor(() =>
-      expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1)
-    );
-    await act(async () => {
-      await result.current.importCandidates([
-        { clause_id: "a" } as never,
-        { clause_id: "b" } as never,
-      ]);
-    });
-    expect(api.createPromptDocumentClause).toHaveBeenCalledTimes(1);
-    expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1);
-  });
+  it("throws outside the page's provider rather than writing unguarded", () => {
+    // React reports the render error it rethrows; that report is not under test.
+    vi.spyOn(console, "error").mockImplementation(() => {});
 
-  it("writes when it answers true, in its pinned project", async () => {
-    const { result } = renderHook(() =>
-      useClauses("policy", "testing", false, {
-        canWrite: () => true,
-        pin: { tenant: "t-b" },
-      })
-    );
-    await act(async () => {
-      await result.current.deleteClause("x");
-    });
-    expect(api.deletePromptDocumentClause).toHaveBeenCalledWith(
-      "policy",
-      "testing",
-      "x",
-      { tenant: "t-b" }
-    );
+    expect(() =>
+      renderHook(() => useClauses("policy", "testing", false))
+    ).toThrow(/PageWriteGuardProvider/);
   });
 });

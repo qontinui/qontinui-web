@@ -21,7 +21,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one (`pageWriteGuardForTests`).
+import { renderSection } from "../_hooks/pageWriteGuardForTests";
+
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
@@ -77,7 +81,7 @@ describe("what the operator can read off the dial", () => {
     getMock.mockResolvedValue(
       view({ effective_level: "off", resolved_scope: "none" })
     );
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     const inForce = await screen.findByTestId("policy-auto-publish-in-force");
     expect(inForce).toHaveTextContent("on");
@@ -89,7 +93,7 @@ describe("what the operator can read off the dial", () => {
     getMock.mockResolvedValue(
       view({ effective_level: "sometimes", resolved_scope: "tenant" })
     );
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     const notice = await screen.findByTestId(
       "policy-auto-publish-unrecognized-level"
@@ -108,7 +112,7 @@ describe("what the operator can read off the dial", () => {
 
   it("says a narrower band is overriding the row this control writes", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "repo" }));
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     expect(
       await screen.findByTestId("policy-auto-publish-overridden-by-repo")
@@ -120,7 +124,7 @@ describe("what the operator can read off the dial", () => {
     // reconcile keep running at `off`. An operator who reads this as "nothing
     // publishes any more" will go looking for a broken button.
     getMock.mockResolvedValue(view());
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     expect(screen.getByTestId("policy-auto-publish-dial")).toHaveTextContent(
@@ -132,7 +136,7 @@ describe("what the operator can read off the dial", () => {
 describe("what it refuses to do on one click", () => {
   it("confirms turning automatic publishing on", async () => {
     getMock.mockResolvedValue(view({ effective_level: "off" }));
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-on"));
@@ -174,7 +178,7 @@ describe("what it refuses to do on one click", () => {
       effective: view({ effective_level: "off" }),
       readback_error: null,
     });
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));
@@ -200,7 +204,9 @@ describe("what it refuses to do on one click", () => {
       readback_error: null,
     });
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));
@@ -222,7 +228,9 @@ describe("what it refuses to do on one click", () => {
       readback_error: null,
     });
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-on"));
@@ -240,7 +248,9 @@ describe("what it refuses to do on one click", () => {
       async () => new Response("boom", { status: 500 })
     );
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));

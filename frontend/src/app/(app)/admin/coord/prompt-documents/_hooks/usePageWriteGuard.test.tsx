@@ -4,17 +4,20 @@
  * taken once for the list and the settings alike (plan
  * `2026-11-09-prompt-documents-cross-tab-write-guard` D1, D10):
  *
- * 1. **`pin` is the page's project, never the project stored at mount.**
- *    While the page's project is UNKNOWN (the layout's provider still
- *    reading), nothing is pinned, though a project was stored when the page
- *    mounted; once the provider answers, the page's project is.
+ * 1. **`pin` is the project the page shows.** While the page's project has
+ *    never been known (the layout's provider still reading), that is the
+ *    project stored at mount, which the mount read was answered in; once the
+ *    provider answers, the page's project. With nothing stored at mount, or
+ *    none selected, nothing is pinned, and every write is refused with the
+ *    reason; dialogs still open.
  * 2. **`resolvePin` and `writeAllowed` keep one identity for the page's
  *    lifetime**, while the pin they answer changes. A hook that holds the
  *    resolver through `useSendTimePin` would absorb a new identity silently,
  *    so the page-level suites cannot see this; it is checked here. And the
  *    resolver answers the pin as it is CALLED, not the one it was made with.
- * 3. **Outside any provider there is no guard**, and a component that must
- *    send under one says so rather than sending unguarded.
+ * 3. **Outside any provider there is no guard**, and a component or a
+ *    section hook that must send under one throws rather than sending
+ *    unguarded.
  *
  * And the guard itself (D3, D4, D5, #7, #9):
  *
@@ -67,6 +70,8 @@ import {
   useRequiredPageWriteGuard,
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { NO_PIN_REFUSAL } from "./usePageWriteGuard";
 
 const KEY = "qontinui.active_tenant_id";
 const B = "t-bravo";
@@ -99,11 +104,15 @@ afterEach(() => {
 });
 
 /**
- * Mount in Bravo under the layout's tenant provider, whose membership read
+ * Mount with `stored` stored (Bravo by default; `null`: a fresh browser,
+ * nothing stored) under the layout's tenant provider, whose membership read
  * answers only when the returned `answer` is called: until then the page's
- * project is UNKNOWN.
+ * project is UNKNOWN. It answers Bravo as the only membership and the home
+ * project.
  */
-function mountWhileTheProviderReads(): { answer: () => Promise<void> } {
+function mountWhileTheProviderReads(stored: string | null = B): {
+  answer: () => Promise<void>;
+} {
   let release: () => void = () => {};
   listTenantsMock.mockImplementation(
     () =>
@@ -115,7 +124,7 @@ function mountWhileTheProviderReads(): { answer: () => Promise<void> } {
           });
       })
   );
-  localStorage.setItem(KEY, B);
+  if (stored !== null) localStorage.setItem(KEY, stored);
   render(
     <TenantProvider>
       <PageWriteGuardProvider>
@@ -132,14 +141,21 @@ function mountWhileTheProviderReads(): { answer: () => Promise<void> } {
 }
 
 describe("PageWriteGuardProvider", () => {
-  it("pins nothing while the page's project is UNKNOWN, though a project was stored at mount", async () => {
+  it("pins the project stored at mount while the page's project is UNKNOWN, and the page's own once known", async () => {
+    // Corrected (review round 1, A2): this test asserted that NOTHING was
+    // pinned while the page's project was UNKNOWN, though a project was
+    // stored at mount. Every write sent then went unpinned, and a 429 retry
+    // or a token-refresh replay of it after another tab's switch landed in
+    // that tab's project. The mount read was answered in the mount project,
+    // so writes are pinned there, and the guard refuses them once another
+    // project is stored.
     const { answer } = mountWhileTheProviderReads();
 
     const unknown = latest();
     expect(unknown.mountTenant).toBe(B);
     expect(unknown.pageTenant).toBeUndefined();
-    expect(unknown.pin).toBeUndefined();
-    expect(unknown.resolvePin()).toBeUndefined();
+    expect(unknown.pin).toEqual({ tenant: B });
+    expect(unknown.resolvePin()).toEqual({ tenant: B });
 
     await answer();
 
@@ -147,9 +163,53 @@ describe("PageWriteGuardProvider", () => {
     expect(latest().pin).toEqual({ tenant: B });
   });
 
+  it.each([
+    [
+      "none selected: no provider, nothing stored",
+      () => {
+        render(
+          <PageWriteGuardProvider>
+            <Probe />
+          </PageWriteGuardProvider>
+        );
+      },
+    ],
+    [
+      "never known: the provider still reading, nothing stored at mount",
+      () => {
+        mountWhileTheProviderReads(null);
+      },
+    ],
+  ] as const)(
+    "refuses every write while the page has no project to pin it to, and says why, but its dialogs still open (%s)",
+    (_label, mount) => {
+      mount();
+      expect(latest().pin).toBeUndefined();
+
+      let wrote = true;
+      let opened = false;
+      act(() => {
+        wrote = latest().writeAllowed();
+        opened = latest().projectUnchanged();
+      });
+
+      expect(wrote).toBe(false);
+      expect(vi.mocked(toast.error).mock.calls).toEqual([[NO_PIN_REFUSAL]]);
+      expect(opened).toBe(true);
+      // Nothing changed under the page: it is not locked.
+      expect(latest().locked).toBeNull();
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument();
+    }
+  );
+
   it("keeps one resolvePin and one writeAllowed while the pin changes, and the resolver answers the pin as it is called", async () => {
-    const { answer } = mountWhileTheProviderReads();
+    // A fresh browser: nothing is stored, so nothing is pinned until the
+    // provider answers and the page's project is the one it reconciles to.
+    const { answer } = mountWhileTheProviderReads(null);
     const { resolvePin, writeAllowed } = latest();
+    expect(resolvePin()).toBeUndefined();
 
     await answer();
 
@@ -176,6 +236,10 @@ describe("PageWriteGuardProvider", () => {
       renderHook(() => usePageWriteGuardContext()).result.current
     ).toBeNull();
     expect(() => renderHook(() => useRequiredPageWriteGuard())).toThrow(
+      /PageWriteGuardProvider/
+    );
+    // A settings section's guard has no unguarded mode either.
+    expect(() => renderHook(() => usePageSendGuard())).toThrow(
       /PageWriteGuardProvider/
     );
   });

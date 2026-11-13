@@ -20,6 +20,9 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+// The hook on its own, under a test page guard: it requires one
+// (`pageWriteGuardForTests`).
+import { AllowAllPageGuard } from "./pageWriteGuardForTests";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -71,7 +74,9 @@ const NOTIFY_TENANT = { ...OFF_TENANT, effective_level: "notify" };
 
 async function render(view: object) {
   getMock.mockResolvedValue(view);
-  const hook = renderHook(() => usePolicyUpstreamPolicy());
+  const hook = renderHook(() => usePolicyUpstreamPolicy(), {
+    wrapper: AllowAllPageGuard,
+  });
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return hook.result;
 }
@@ -127,7 +132,9 @@ describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
     getMock.mockImplementation(
       async () => new Response("coord is not reachable", { status: 502 })
     );
-    const { result } = renderHook(() => usePolicyUpstreamPolicy());
+    const { result } = renderHook(() => usePolicyUpstreamPolicy(), {
+      wrapper: AllowAllPageGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Neither the default nor fail-closed off: nothing has been read.

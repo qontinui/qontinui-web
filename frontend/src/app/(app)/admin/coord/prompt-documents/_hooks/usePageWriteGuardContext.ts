@@ -28,10 +28,18 @@ export interface PageWriteGuardValue {
    */
   locked: CrossTabLock | null;
   /**
-   * The call-time guard: `false` sends nothing, says why and raises the
-   * notice. One identity for the page's lifetime.
+   * Asked right before every write is sent: `false` sends nothing and says
+   * why, while another project is stored (raising the notice) or while the
+   * page has no project to pin the write to (`pin` undefined). One identity
+   * for the page's lifetime.
    */
   writeAllowed: () => boolean;
+  /**
+   * Asked before a dialog opens, and before a read with no pin is sent:
+   * `false` while another project is stored, raising the notice and saying
+   * why. It asks for no pin. One identity for the page's lifetime.
+   */
+  projectUnchanged: () => boolean;
   /**
    * Whether the stored project differs from the page's at this moment, read
    * at call time, raising the notice when it does — for a refusal stated in
@@ -41,9 +49,10 @@ export interface PageWriteGuardValue {
   crossTabInEffect: () => boolean;
   /**
    * The project the page's requests are pinned to — the page's, kept through
-   * a provider refresh; `undefined` while it is `null` or has never been
-   * known (`usePageProject`). Never the project stored when the page
-   * mounted. One identity until the project it names changes.
+   * a provider refresh, or the project stored at mount while the page's has
+   * never been known; `undefined` while the page's project is `null`, or has
+   * never been known with none stored at mount (`usePageProject`). One
+   * identity until the project it names changes.
    */
   pin: ProjectPin | undefined;
   /**
@@ -91,24 +100,19 @@ export interface PageSendGuard {
   resolvePin: ResolvePin;
 }
 
-/** Outside any provider: nothing refuses a write, and nothing is pinned. */
-const STANDALONE: PageSendGuard = {
-  writeAllowed: () => true,
-  resolvePin: () => undefined,
-};
-
 /**
  * The guard and the pin for a section hook on the prompt-documents page (D9):
  * the hook refuses beside its own send, so no caller can forget to.
  *
- * Under the page's provider, the page's own — always: every section the page
- * renders is under `PageWriteGuardProvider` by construction (`page.tsx`; its
- * body requires the provider, `useRequiredPageWriteGuard`). Outside any
- * provider — a section mounted on its own, as its unit tests mount it — there
- * is no page whose project could change under it: every write is sent, in the
- * project stored when it is made, as before the page wired a guard. Both
- * answers keep one identity, so no callback built on them is rebuilt.
+ * Always the page's own. Every section is mounted under
+ * `PageWriteGuardProvider` (`page.tsx`), and no production code mounts one
+ * anywhere else, so there is no answer for "outside a page": that would have
+ * to allow every write and pin none, which reads as "allowed" exactly where
+ * nothing guards. Rendered outside the provider, this throws, as
+ * `useRequiredPageWriteGuard` does. A section's unit test provides a guard of
+ * its own (`pageWriteGuardForTests`). Both functions keep one identity, so no
+ * callback built on them is rebuilt.
  */
 export function usePageSendGuard(): PageSendGuard {
-  return useContext(PageWriteGuardContext) ?? STANDALONE;
+  return useRequiredPageWriteGuard();
 }

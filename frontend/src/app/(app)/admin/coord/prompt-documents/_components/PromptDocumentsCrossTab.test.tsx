@@ -31,6 +31,10 @@
  *    re-render of the list — a parent's, or the `saving` flag toggling through
  *    a restore — does not re-fetch the history dialog's versions or reset the
  *    version the operator selected.
+ * 7. **A write goes only where a pin can hold it**: while the page's project
+ *    is UNKNOWN, in the project stored at mount, its 429 retry included; with
+ *    no project to pin it to (none selected), not at all, and the page says
+ *    why.
  *
  * Every pin assertion is made while a DIFFERENT project is stored than the one
  * the request was pinned to, so an unpinned request is told apart from a
@@ -96,8 +100,10 @@ vi.mock("@/components/ui/destructive-button", () => ({
   ),
 }));
 
+import { toast } from "sonner";
 import { PromptDocumentList } from "./PromptDocumentList";
 import { TenantProvider, useTenant } from "@/contexts/tenant-context";
+import { NO_PIN_REFUSAL } from "../_hooks/usePageWriteGuard";
 
 const KEY = "qontinui.active_tenant_id";
 const SYS = "t-system";
@@ -1144,6 +1150,90 @@ describe("while the page's project is null, a dialog's read is refused once anot
     expect(
       screen.queryByTestId(`clause-merge-entry-tempo-in-${B}`)
     ).not.toBeInTheDocument();
+  }, 20_000);
+});
+
+/**
+ * Mount in `page` under the layout's tenant provider, whose membership read
+ * is held: the page's project is UNKNOWN until the returned `answer` is
+ * called. The list's own mount read is answered meanwhile, in the project
+ * stored at mount.
+ */
+async function mountWhileTheProviderReads(page: string = B) {
+  let release: () => void = () => {};
+  listTenantsMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve(membership(page));
+      })
+  );
+  localStorage.setItem(KEY, page);
+  render(
+    <TenantProvider>
+      <PromptDocumentList />
+    </TenantProvider>
+  );
+  const name = page === SYS ? "sys1" : "bravo-only";
+  await screen.findByTestId(`doc-row-policy-${name}`, {}, { timeout: 5000 });
+  await settle();
+  return { answer: () => act(async () => release()) };
+}
+
+describe("a write while the page's project is not a known, named one", () => {
+  it("never known: a write retried after a 429 stays in the project stored at mount while another is stored", async () => {
+    // The membership read never answers in this test: the page's project is
+    // UNKNOWN throughout. Its mount read was answered in Bravo, so its writes
+    // are pinned to Bravo; another tab switches project inside the write's
+    // 429, so the client's re-issue is built with the system tenant stored.
+    await mountWhileTheProviderReads();
+    inAnswerTo("PATCH", BODY, () => anotherTabStoresSilently(SYS), 429);
+    const before = sent.length;
+
+    await setBravoTier();
+
+    await waitFor(
+      () => expect(sentSince(before, "PATCH", BODY)).toHaveLength(2),
+      { timeout: 5000 }
+    );
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    expect(sentSince(before, "PATCH", BODY).map((s) => s.tenant)).toEqual([
+      B,
+      B,
+    ]);
+    // Its re-read too.
+    await waitFor(
+      () => expect(sentSince(before, "GET", LIST)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+    expect(sentSince(before, "GET", LIST).map((s) => s.tenant)).toEqual([B]);
+  }, 20_000);
+
+  it("none selected: a write is refused and nothing is sent, so no retry or replay of it can land in another project", async () => {
+    // No pin can hold a write to "no project": `pinActiveTenant(null)` sends
+    // no header and gives up its 429 retries, but a token-refresh replay still
+    // re-reads the stored project. So the page refuses it and says why. The
+    // page's own documents still open.
+    vi.mocked(toast.error).mockClear();
+    await mountInNoProject();
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("doc-access-toggle-policy-sys1"));
+    await user().click(
+      await screen.findByTestId("doc-access-tier-policy-sys1-deny")
+    );
+    await settle();
+
+    expect(after(before).filter((s) => s.method !== "GET")).toEqual([]);
+    expect(toast.error).toHaveBeenCalledWith(NO_PIN_REFUSAL);
+    // Nothing changed under the page, so it is not locked, and it still
+    // shows its own documents.
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+    await user().click(screen.getByTestId("doc-edit-policy-sys1"));
+    await waitFor(() =>
+      expect(screen.getByTestId("doc-body")).toHaveValue(`body in ${SYS}`)
+    );
   }, 20_000);
 });
 

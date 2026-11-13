@@ -34,6 +34,16 @@ export function crossTabHeadline(cause: CrossTabLock): string {
 }
 
 /**
+ * Why a write is refused on a page with no project to pin it to: none is
+ * selected, or the page's project has never been known and none was stored at
+ * mount. Nothing can hold such a write, its 429 retries or its token-refresh
+ * replay to the project the page's documents were read in: the client fills
+ * in whatever project is stored when each attempt is made.
+ */
+export const NO_PIN_REFUSAL =
+  "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
+
+/**
  * Whether a `storage` event can have changed the stored project: an event for
  * its own key, or one whose key is `null`. A `null` key is another tab's
  * `localStorage.clear()`, which empties the selection too.
@@ -69,18 +79,29 @@ export interface PageWriteGuardState {
   /** The project stored now (`null`: none), as of this render. */
   stored: string | null;
   /**
-   * The call-time half of the guard: `locked` covers what is on screen, and
-   * this covers the race (a switch whose event has not arrived, or a dialog
-   * already open). `true` lets the request go. `false` sends nothing, says
-   * why, and raises the notice. One identity for the page's lifetime.
+   * Asked right before every WRITE is sent: the call-time half of the guard.
+   * `locked` covers what is on screen, and this covers the race (a switch
+   * whose event has not arrived, or a dialog already open). `false` sends
+   * nothing and says why. That is so while another project is stored, when
+   * the notice is raised too, and while the page has no project to pin the
+   * write to (`canPin`). `true` lets the write go. One identity for the
+   * page's lifetime.
    */
   writeAllowed: () => boolean;
+  /**
+   * Asked before a dialog opens, and before a read that has no pin is sent:
+   * `false` while another project is stored, raising the notice and saying
+   * why. Unlike `writeAllowed` it does not ask for a pin: a page with no
+   * project to pin a write to can still show its own documents. One identity
+   * for the page's lifetime.
+   */
+  projectUnchanged: () => boolean;
   /**
    * Whether the stored project differs from the page's at this moment, read
    * at call time, ahead of any event. When it does, the notice is raised. For
    * a caller that refuses in its own words, as adopt-all's dialog does, so
-   * the page locks beside that refusal. `writeAllowed` is built on it. One
-   * identity for the page's lifetime.
+   * the page locks beside that refusal. `projectUnchanged` and
+   * `writeAllowed` are built on it. One identity for the page's lifetime.
    */
   crossTabInEffect: () => boolean;
 }
@@ -98,9 +119,14 @@ export interface PageWriteGuardState {
  * with the reference on every render. There is no anchor step to forget and
  * no listener gap while the page's project is UNKNOWN. Another tab switching
  * back clears it.
+ *
+ * `canPin` says whether the page has a project to pin a write to
+ * (`usePageProject` `pin`). Without one, every write is refused: nothing
+ * could hold it, or a retry or replay of it, to the page's project.
  */
 export function usePageWriteGuard(
-  reference: string | null
+  reference: string | null,
+  canPin: boolean
 ): PageWriteGuardState {
   // The project the newest `storage` event left stored: what another tab is
   // PROVEN to have stored (`undefined`: no event yet). A state, so an event
@@ -135,6 +161,8 @@ export function usePageWriteGuard(
   // reset the operator's selection.
   const referenceRef = useRef(reference);
   referenceRef.current = reference;
+  const canPinRef = useRef(canPin);
+  canPinRef.current = canPin;
   // Re-renders the page, so the lock derived above reads the store again and
   // shows a change the call-time check found before its event arrived.
   const [, raise] = useReducer((renders: number) => renders + 1, 0);
@@ -145,12 +173,19 @@ export function usePageWriteGuard(
     return true;
   }, []);
 
-  const writeAllowed = useCallback((): boolean => {
+  const projectUnchanged = useCallback((): boolean => {
     if (!crossTabInEffect()) return true;
     const cause = attribute(readActiveTenantId(), eventStoredRef.current);
     toast.error(`${crossTabHeadline(cause)} Nothing was sent.`);
     return false;
   }, [crossTabInEffect]);
 
-  return { locked, stored, writeAllowed, crossTabInEffect };
+  const writeAllowed = useCallback((): boolean => {
+    if (!projectUnchanged()) return false;
+    if (canPinRef.current) return true;
+    toast.error(NO_PIN_REFUSAL);
+    return false;
+  }, [projectUnchanged]);
+
+  return { locked, stored, writeAllowed, projectUnchanged, crossTabInEffect };
 }

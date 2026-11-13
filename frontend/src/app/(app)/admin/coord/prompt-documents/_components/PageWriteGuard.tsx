@@ -88,8 +88,8 @@ function noticeProjectLabel(
 export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const { mountTenant, tenantContext, pageTenant, guardTenant, pin } =
     usePageProject();
-  const { locked, stored, writeAllowed, crossTabInEffect } =
-    usePageWriteGuard(guardTenant);
+  const { locked, stored, writeAllowed, projectUnchanged, crossTabInEffect } =
+    usePageWriteGuard(guardTenant, pin !== undefined);
   // Asked as each request is sent, through a ref: one identity for the page's
   // lifetime, so a hook mounted before the page's project resolves neither
   // re-fires its mount read nor rebuilds its callbacks when the pin changes.
@@ -103,6 +103,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
       tenantContext,
       locked,
       writeAllowed,
+      projectUnchanged,
       crossTabInEffect,
       pin,
       resolvePin,
@@ -113,6 +114,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
       tenantContext,
       locked,
       writeAllowed,
+      projectUnchanged,
       crossTabInEffect,
       pin,
       resolvePin,

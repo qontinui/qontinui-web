@@ -116,9 +116,8 @@ const EMPTY: Loaded<never> = {
  * and no read can show that project's verdicts as this one's; and the save is
  * refused — nothing sent, the page says why — while that switch is in effect.
  * Both come from the page's provider (`usePageSendGuard`), and the refusal
- * sits beside the send, so no caller can leave it out. Mounted outside that
- * provider, each is sent in the project stored when it is made, and nothing
- * is refused.
+ * sits beside the send, so no caller can leave it out. It is never mounted
+ * outside that provider, and throws if it is: there is no unguarded mode.
  */
 export function useSessionCompliance() {
   const { writeAllowed, resolvePin } = usePageSendGuard();

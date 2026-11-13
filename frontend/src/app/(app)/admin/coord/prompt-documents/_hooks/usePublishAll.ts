@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { readActiveTenantId } from "@/services/http-client";
+import { readActiveTenantId, type ProjectPin } from "@/services/http-client";
 import {
   fetchAutoPublishStatus,
   previewPublishAll,
@@ -14,10 +14,9 @@ import {
   type PublishRefusal,
 } from "./usePromptDocumentPublications";
 import type { TenantPin } from "@/lib/api/operations/coordPromptDocuments";
-import {
-  useSendTimePin,
-  type SendTimePinOptions,
-} from "../../_shared/useSendTimePin";
+import { useSendTimePin } from "../../_shared/useSendTimePin";
+import { NO_PIN_REFUSAL } from "./usePageWriteGuard";
+import type { PageSendGuard } from "./usePageWriteGuardContext";
 import type {
   AutoPublishStatusEntry,
   AutoPublishStatusResponse,
@@ -135,34 +134,43 @@ export function classifyPublishModeError(
  * healthy page in most of the fleet. `unavailable` is exported so a caller that
  * DOES want to say something can.
  *
- * ## Which project each request is sent in
+ * ## Which project each request is sent in, and when nothing is sent
  *
- * Every request here is PINNED (`pinActiveTenant`), so every attempt the client
- * makes of it — the first, a retry, the replay after a token refresh — goes to
- * one project, and the answer is about that project. Which one is decided as
- * the request is SENT:
+ * The caller hands in the page's send guard (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard` D9, D10). It is
+ * required: no default could allow a write the page has not guarded. Both of
+ * its functions are asked as each request is SENT, never from an effect's
+ * dependencies, so the mount read runs once and every returned function keeps
+ * one identity whatever the caller passes.
  *
- * - **`resolvePin`, when the caller gives one** — the prompt-documents page
- *   passes the project its list shows (plan
- *   `2026-11-09-prompt-documents-cross-tab-write-guard` D10). The dry run, the
- *   armed run, the publish-mode PATCH and every status read then go to that
- *   project even after another tab has switched the stored one, so a write
- *   re-issued across the switch cannot land in the other project and a re-take
- *   cannot put the other project's publish state on this page.
- * - **otherwise the project stored at that moment**, which is what this hook
- *   did before a resolver existed.
- *
- * `reload(pin)` sends an explicit pin over both. The resolver is read when each
- * request goes out, never from an effect's dependencies, so the mount read runs
- * once and `reload` keeps one identity whatever the caller passes.
+ * - **The dry run, the armed run and the publish-mode PATCH** each ask the
+ *   page's `writeAllowed` right before they are sent, beside the send, so no
+ *   caller can leave the check out. They are sent only in the project
+ *   `resolvePin` names, on every attempt (`pinActiveTenant`), so a write
+ *   retried after a 429 or replayed after a token refresh cannot land in
+ *   another tab's project. With no pin they are refused and nothing is sent:
+ *   nothing could hold them to the page's project.
+ * - **Every status read** a caller does not pin itself goes in the resolved
+ *   project. With no pin (the page's project `null`, or never known with
+ *   nothing stored at mount) it goes in the project stored when it is sent,
+ *   and a refusal it latches is stamped with that project. `reload(pin)` sends
+ *   an explicit pin over both.
  */
-export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
+export function usePublishAll({ writeAllowed, resolvePin }: PageSendGuard) {
   const sendPin = useSendTimePin(resolvePin);
-  /** The project a request is sent in when no explicit pin is given: see above. */
-  const pinNow = useCallback(
-    (): TenantPin => sendPin() ?? { tenant: readActiveTenantId() },
-    [sendPin]
-  );
+  const writeAllowedRef = useRef(writeAllowed);
+  writeAllowedRef.current = writeAllowed;
+  /**
+   * The pin a write is sent in, asked right before it is sent. `undefined`
+   * sends nothing: the page's guard refused it and said why, or there is no
+   * project to pin it to.
+   */
+  const writePin = useCallback((): ProjectPin | undefined => {
+    if (!writeAllowedRef.current()) return undefined;
+    const pin = sendPin();
+    if (pin === undefined) toast.error(NO_PIN_REFUSAL);
+    return pin;
+  }, [sendPin]);
   const [candidates, setCandidates] = useState<PublishAllCandidate[] | null>(
     null
   );
@@ -234,7 +242,8 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
    * "nothing to publish", which is the one claim a failed read cannot support.
    */
   const loadCandidates = useCallback(async (): Promise<void> => {
-    const pin = pinNow();
+    const pin = writePin();
+    if (pin === undefined) return;
     try {
       setPreviewing(true);
       const data = await previewPublishAll(pin);
@@ -246,7 +255,7 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
     } finally {
       setPreviewing(false);
     }
-  }, [latch, pinNow]);
+  }, [latch, writePin]);
 
   /**
    * What the auto-publisher would do next, per candidate. `pin` sends it in a
@@ -372,7 +381,8 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
         // Verbatim from the dry run. This is the optimistic lock.
         expected_version: candidate.current_version,
       }));
-      const pin = pinNow();
+      const pin = writePin();
+      if (pin === undefined) return null;
       try {
         setPublishing(true);
         // `dry_run: false` is written by the client function, never omitted:
@@ -413,7 +423,7 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
         setPublishing(false);
       }
     },
-    [latch, pinNow]
+    [latch, writePin]
   );
 
   /**
@@ -444,7 +454,8 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
       name: string,
       mode: PublishMode
     ): Promise<boolean> => {
-      const pin = pinNow();
+      const pin = writePin();
+      if (pin === undefined) return false;
       try {
         setSavingMode(true);
         await updatePromptDocument(
@@ -460,9 +471,9 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
         // The badges key on the served mode, so the status read is re-taken:
         // without it a document just set to `manual` or `never` keeps a
-        // "Publishes <time>" badge for a publication nothing will make. With a
-        // resolver it is sent in the resolver's project, not whatever is
-        // stored once the PATCH has answered — another tab's, after a switch.
+        // "Publishes <time>" badge for a publication nothing will make. It is
+        // sent in the resolved project, not whatever is stored once the PATCH
+        // has answered — another tab's, after a switch.
         await loadStatus();
         return true;
       } catch (err) {
@@ -483,7 +494,7 @@ export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
         setSavingMode(false);
       }
     },
-    [latch, loadStatus, pinNow]
+    [latch, loadStatus, writePin]
   );
 
   return {

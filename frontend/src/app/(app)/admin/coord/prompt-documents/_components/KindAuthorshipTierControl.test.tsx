@@ -36,7 +36,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one (`pageWriteGuardForTests`).
+import { renderSection } from "../_hooks/pageWriteGuardForTests";
+
 import userEvent from "@testing-library/user-event";
 import type {
   KindTierRow,
@@ -127,7 +131,7 @@ beforeEach(() => {
 describe("KindAuthorshipTierControl", () => {
   it("renders coord's own not-yet-enforced disclosure", async () => {
     getMock.mockResolvedValue(response([row()]));
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const notice = await screen.findByTestId(
       "kind-tier-notification-disclosure"
@@ -160,7 +164,7 @@ describe("KindAuthorshipTierControl", () => {
         warning: COORD_WARNING_ENFORCED,
       })
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const notice = await screen.findByTestId(
       "kind-tier-notification-disclosure"
@@ -200,7 +204,7 @@ describe("KindAuthorshipTierControl", () => {
         }),
       ])
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const carveOut = await screen.findByTestId("kind-tier-protected-policy");
     expect(carveOut).toHaveTextContent("session-protocol");
@@ -225,7 +229,7 @@ describe("KindAuthorshipTierControl", () => {
    */
   it("renders no carve-out for a kind coord reports none for", async () => {
     getMock.mockResolvedValue(response([row({ kind: "audience_profile" })]));
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     expect(
@@ -252,7 +256,7 @@ describe("KindAuthorshipTierControl", () => {
         }),
       ])
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const unset = await screen.findByTestId("kind-tier-row-audience_profile");
     expect(unset).toHaveTextContent("not set");
@@ -289,7 +293,7 @@ describe("KindAuthorshipTierControl", () => {
         }),
       ])
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const settings = await screen.findByTestId("kind-tier-row-claude_settings");
     expect(settings).toHaveTextContent("not set — denied by default");
@@ -306,7 +310,7 @@ describe("KindAuthorshipTierControl", () => {
     getMock.mockResolvedValue(response([row()]));
     putMock.mockResolvedValue({});
     const user = userEvent.setup();
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     // `getByRole`'s `name` already matches the full accessible name, so this
@@ -338,7 +342,7 @@ describe("KindAuthorshipTierControl", () => {
     );
     putMock.mockResolvedValue({});
     const user = userEvent.setup();
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     await user.click(screen.getByRole("button", { name: "deny" }));
@@ -349,7 +353,7 @@ describe("KindAuthorshipTierControl", () => {
 
   it("says a failed read is UNKNOWN rather than showing an empty setting list", async () => {
     getMock.mockRejectedValue(new Error("coord is not reachable"));
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const err = await screen.findByTestId("kind-tier-error");
     expect(err).toHaveTextContent("coord is not reachable");
@@ -372,7 +376,7 @@ describe("KindAuthorshipTierControl", () => {
         }),
       ])
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const badge = await screen.findByTestId("kind-tier-row-audience_profile");
     expect(badge).toHaveTextContent("unknown");
@@ -385,7 +389,7 @@ describe("KindAuthorshipTierControl", () => {
     delete (bare as Partial<KindTierRow>).effective_tier;
     delete (bare as Partial<KindTierRow>).effective_source;
     getMock.mockResolvedValue(response([bare]));
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const badge = await screen.findByTestId("kind-tier-row-audience_profile");
     expect(badge).toHaveTextContent("unknown");
@@ -403,7 +407,7 @@ describe("KindAuthorshipTierControl", () => {
     );
     putMock.mockResolvedValue({});
     const user = userEvent.setup();
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     await user.click(screen.getByRole("button", { name: "deny" }));
@@ -421,7 +425,7 @@ describe("KindAuthorshipTierControl", () => {
     getMock.mockResolvedValueOnce(response([row()]));
     putMock.mockResolvedValue({});
     const user = userEvent.setup();
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     // The reload after the write fails.
@@ -437,7 +441,7 @@ describe("KindAuthorshipTierControl", () => {
     getMock.mockResolvedValue(
       response([row()], { vocabulary: ["deny", "allow"] })
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     expect(screen.getByRole("button", { name: "deny" })).toBeInTheDocument();
@@ -453,7 +457,7 @@ describe("KindAuthorshipTierControl", () => {
     delete (bare as Partial<KindTiersResponse>).notification_enforced;
     delete (bare as Partial<KindTiersResponse>).warning;
     getMock.mockResolvedValue(bare);
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     const notice = await screen.findByTestId(
       "kind-tier-notification-disclosure"
@@ -506,7 +510,7 @@ describe("KindAuthorshipTierControl", () => {
         }),
       ])
     );
-    render(<KindAuthorshipTierControl />);
+    renderSection(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     const clears = screen.getAllByRole("button", { name: "clear" });
