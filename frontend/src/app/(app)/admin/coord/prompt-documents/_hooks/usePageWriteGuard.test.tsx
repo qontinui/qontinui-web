@@ -32,6 +32,7 @@
  *    render a lock derived from a lagging page project would show.
  * 7. **Focus moves to Reload when the page locks** (H07), from a control the
  *    fieldset disabled or from `<body>`, and never out of an open dialog.
+ *    While locked, the fieldset is described by the notice.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -400,6 +401,34 @@ describe("the notice", () => {
   });
 });
 
+describe("the disabled fieldset's description", () => {
+  it("is the notice while the page is locked, and nothing once it clears", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    const fieldset = screen.getByTestId("prompt-documents-controls");
+    expect(fieldset).not.toHaveAttribute("aria-describedby");
+
+    await act(async () => anotherTabStores(SYS));
+
+    // A disabled control's reason is announced with it: the notice.
+    expect(fieldset).toHaveAttribute("aria-describedby", notice().id);
+    expect(notice().id).not.toBe("");
+    expect(fieldset).toHaveAccessibleDescription(
+      expect.stringContaining(
+        "The active project was changed in another tab — reload to continue."
+      )
+    );
+
+    await act(async () => anotherTabStores(B));
+
+    expect(fieldset).not.toHaveAttribute("aria-describedby");
+  });
+});
+
 describe("this tab's own switch through the provider", () => {
   it("never locks the page, not even for one render", async () => {
     listTenantsMock.mockResolvedValue(BOTH);
@@ -468,6 +497,28 @@ describe("focus when the page locks", () => {
 
     expect(notice()).toBeInTheDocument();
     expect(field).toHaveFocus();
+  });
+
+  it("moves focus to Reload from <body>, where a browser drops it as the fieldset disables the control", async () => {
+    // jsdom keeps focus on a control its fieldset disables; a browser
+    // (measured: Chromium) drops it to <body> at once. So the path a user
+    // takes is the one from <body>, and it is driven here.
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    act(() => screen.getByTestId("edit").focus());
+    act(() => screen.getByTestId("edit").blur());
+    expect(document.body).toHaveFocus();
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(notice()).toBeInTheDocument();
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toHaveFocus();
   });
 
   it.each([

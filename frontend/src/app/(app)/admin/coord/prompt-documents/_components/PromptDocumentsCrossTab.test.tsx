@@ -18,7 +18,8 @@
  * 2. **Every write door raced past that — no event yet, or a dialog already
  *    open — is refused at call time**: nothing is sent. One test per door,
  *    each reaching it past every other guard, so removing any ONE guard fails
- *    a test here. So is opening a row's dialog, and Publish all changed.
+ *    a test here. So is opening every dialog, New document's and Publish
+ *    all changed's included.
  * 3. **A dialog's READS are not refused but pinned**: one sent while another
  *    project is stored is answered by the page's project and renders its data
  *    (a refused read would render as an empty one).
@@ -698,8 +699,9 @@ describe("this tab switches project through the provider", () => {
 });
 
 describe("a door raced past the notice is refused at call time", () => {
-  describe("opening a row's dialog", () => {
+  describe("opening a dialog", () => {
     it.each([
+      ["New document", "new-document", "prompt-document-create"],
       ["Edit", "doc-edit-policy-bravo-only", "prompt-document-editor"],
       ["History", "doc-history-policy-bravo-only", "prompt-document-history"],
       ["Clauses", "doc-clauses-policy-bravo-only", "clause-manager"],

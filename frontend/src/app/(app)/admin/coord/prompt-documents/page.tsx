@@ -60,10 +60,16 @@
  * - **R3** — the page's one attention surface, `PageWriteGuard`'s cross-tab
  *   notice, is RED: only the operator's Reload (or a switch back in the other
  *   tab) clears it, which is R3's "the operator's move, now" (plan
- *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). It is a callout,
- *   not a kind-keyed status hue, so there is no palette to enrol in
- *   `console/attention.test.ts`. It takes the route's existing must-act red
- *   (`PromptDocumentClaims.tsx`).
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). It is one
+ *   callout with one state, not a kind→attention table, so there is nothing
+ *   to enrol in `CONSOLE_PALETTES` (`components/console/consoleSurfaces.ts`,
+ *   which `console/attention.test.ts` imports and audits). That registry
+ *   holds the modules that export an attention table, typed as one or named
+ *   `*ATTENTION*`, and `consoleSurfaces.test.ts` scans the console for them;
+ *   this route exports none. The notice takes the route's existing must-act
+ *   red from `PromptDocumentClaims.tsx`, which is unregistered for the same
+ *   reason. Its classes are not `AUTHOR_RED` or a drift of it, which that
+ *   scan also checks.
  *
  * ## One cross-tab write guard for the whole page
  *

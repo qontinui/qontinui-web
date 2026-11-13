@@ -383,6 +383,16 @@ function PromptDocumentListBody({
   const [editing, setEditing] = useState<PromptDocument | null>(null);
   const [loadingBody, setLoadingBody] = useState(false);
 
+  /**
+   * Open the create dialog — refused, like every dialog's opening, while
+   * another project is stored: what would be created there is not this
+   * page's to create.
+   */
+  const openCreate = () => {
+    if (!projectUnchanged()) return;
+    setCreateOpen(true);
+  };
+
   /** Open the freshly-created document straight into the editor. */
   const openCreated = (doc: PromptDocument) => {
     setEditing(doc);
@@ -591,10 +601,12 @@ function PromptDocumentListBody({
    * is a POST on an admin write door that a page load has no business making.
    * The dialog renders its own loading state until this resolves.
    *
-   * Refused first, like every other dialog's opening: pressed after another
-   * tab's switch whose event has not arrived, it sends no dry run and opens
-   * no dialog. A preview of the other project's changed documents is not this
-   * page's to show.
+   * Refused first, as every dialog's opening is while another project is
+   * stored, and asking what a write asks (`writeAllowed`), because opening
+   * sends the dry run: pressed after another tab's switch whose event has not
+   * arrived, or on a page with no project to pin it to, it sends no dry run
+   * and opens no dialog. A preview of another project's changed documents is
+   * not this page's to show.
    */
   const openPublishAll = async () => {
     if (!writeAllowed()) return;
@@ -805,7 +817,7 @@ function PromptDocumentListBody({
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={() => setCreateOpen(true)}
+            onClick={openCreate}
             data-testid="new-document"
           >
             <Plus className="size-4" />

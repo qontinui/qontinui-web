@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { useOptionalTenant } from "@/contexts/tenant-context";
@@ -83,7 +90,8 @@ function noticeProjectLabel(
  * what amber would promise. It names only the cause it observed (D4). When the
  * page locks, focus moves to Reload from a control the fieldset just disabled
  * (or from `<body>`, where a browser drops it), unless a modal dialog holds it
- * (#9).
+ * (#9). While locked, the fieldset is described by the notice, so a disabled
+ * control's reason is announced with it.
  */
 export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const { mountTenant, tenantContext, pageTenant, guardTenant, pin } =
@@ -122,6 +130,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   );
 
   const isLocked = locked !== null;
+  const noticeId = useId();
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
   const reloadRef = useRef<HTMLButtonElement>(null);
   // #9: the fieldset has just disabled the control the operator was on, and a
@@ -147,6 +156,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
         {locked !== null ? (
           <div
             className="flex flex-wrap items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-700 dark:text-red-400"
+            id={noticeId}
             role="alert"
             data-testid="prompt-documents-cross-tab"
           >
@@ -173,6 +183,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
         <fieldset
           ref={fieldsetRef}
           disabled={isLocked}
+          aria-describedby={isLocked ? noticeId : undefined}
           className="m-0 min-w-0 border-0 p-0"
           data-testid="prompt-documents-controls"
         >
