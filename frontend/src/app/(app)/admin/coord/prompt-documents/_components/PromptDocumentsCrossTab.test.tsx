@@ -106,7 +106,11 @@ import { toast } from "sonner";
 import { PromptDocumentList } from "./PromptDocumentList";
 import { usePublishAll } from "../_hooks/usePublishAll";
 import { TenantProvider, useTenant } from "@/contexts/tenant-context";
-import { NO_PIN_REFUSAL } from "../_hooks/usePageWriteGuard";
+// The refusal's user-visible copy, asserted as the operator reads it rather
+// than through the hook's constant, so this suite also builds against a tree
+// without that module (the arming proof reverts production hunks).
+const NO_PIN_REFUSAL =
+  "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
 
 const KEY = "qontinui.active_tenant_id";
 const SYS = "t-system";
