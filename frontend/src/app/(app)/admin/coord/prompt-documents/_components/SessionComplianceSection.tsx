@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
-import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { useSessionCompliance } from "../_hooks/useSessionCompliance";
 import { ComplianceStateNotice } from "./ComplianceStateNotice";
 import { OutstandingWorkLedger } from "./OutstandingWorkLedger";
@@ -18,25 +17,11 @@ import { SessionComplianceSessions } from "./SessionComplianceSessions";
  * check names is edited on this same page, and splitting the switch away from
  * the text it enforces is how the two drift apart.
  */
-export function SessionComplianceSection({
-  canWrite,
-  resolvePin,
-}: {
-  /**
-   * Checked at the moment of every write; `false` sends nothing (the caller
-   * says why). The prompt-documents page passes its cross-tab guard here:
-   * its disabled fieldset reaches neither a confirmation (rendered outside
-   * it) nor a click that lands before another tab's switch is seen.
-   */
-  canWrite?: () => boolean;
-  /**
-   * The project every read and write of this section is sent in, asked for
-   * as each goes out — the prompt-documents page passes the project its list
-   * is pinned to, so a request in flight when another tab switches project
-   * stays in the page's. Omitted, each is sent in the project stored then.
-   */
-  resolvePin?: ResolvePin;
-} = {}) {
+export function SessionComplianceSection() {
+  // On the prompt-documents page every read and the save are sent in the
+  // page's project, and a save raced past another tab's switch is refused —
+  // by the hook itself, beside its send: the page's disabled fieldset does not
+  // reach a click that lands before the switch is seen.
   const {
     config,
     versions,
@@ -51,7 +36,7 @@ export function SessionComplianceSection({
     saveConfig,
     reloadAll,
     featureUnavailable,
-  } = useSessionCompliance({ resolvePin });
+  } = useSessionCompliance();
 
   return (
     <div className="space-y-6" data-testid="session-compliance-section">
@@ -103,11 +88,7 @@ export function SessionComplianceSection({
             versionsUnavailable={versions.unavailable}
             versionsDegraded={versions.degraded}
             versionsError={versions.error}
-            onSave={(patch) =>
-              canWrite && !canWrite()
-                ? Promise.resolve(false)
-                : saveConfig(patch)
-            }
+            onSave={saveConfig}
           />
 
           <SessionComplianceSessions

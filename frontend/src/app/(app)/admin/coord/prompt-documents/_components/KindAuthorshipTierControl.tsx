@@ -18,7 +18,6 @@ import type {
   KindTierRow,
   KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
-import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { usePromptDocumentKindTiers } from "../_hooks/usePromptDocumentKindTiers";
 import {
   AGENT_WRITE_TIERS,
@@ -285,38 +284,14 @@ function clearTitle(row: KindTierRow): string {
   }
 }
 
-export function KindAuthorshipTierControl({
-  canWrite,
-  resolvePin,
-}: {
-  /**
-   * Checked at the moment of every write; `false` sends nothing (the caller
-   * says why). The prompt-documents page passes its cross-tab guard here:
-   * its disabled fieldset reaches neither a confirmation (rendered outside
-   * it) nor a click that lands before another tab's switch is seen.
-   */
-  canWrite?: () => boolean;
-  /**
-   * The project every read and write of this control is sent in, asked for
-   * as each goes out — the prompt-documents page passes the project its list
-   * is pinned to, so a request in flight when another tab switches project
-   * stays in the page's. Omitted, each is sent in the project stored then.
-   */
-  resolvePin?: ResolvePin;
-} = {}) {
-  const {
-    data,
-    loading,
-    saving,
-    error,
-    setTier: writeTier,
-    clearTier: writeClear,
-  } = usePromptDocumentKindTiers({ resolvePin });
-  const blocked = () => canWrite !== undefined && !canWrite();
-  const setTier = (kind: string, tier: AgentWriteTier) =>
-    blocked() ? Promise.resolve(false) : writeTier(kind, tier);
-  const clearTier = (kind: string) =>
-    blocked() ? Promise.resolve(false) : writeClear(kind);
+export function KindAuthorshipTierControl() {
+  // On the prompt-documents page every read and write here is sent in the
+  // page's project, and a write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen.
+  const { data, loading, saving, error, setTier, clearTier } =
+    usePromptDocumentKindTiers();
   const [pending, setPending] = useState<{
     kind: string;
     tier: AgentWriteTier;

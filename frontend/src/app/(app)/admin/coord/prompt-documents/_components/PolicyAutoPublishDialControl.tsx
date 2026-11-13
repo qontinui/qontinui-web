@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
-import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
 import type { PublishAllState } from "../_hooks/usePublishAll";
 import {
@@ -160,8 +159,6 @@ function ObservedLine({
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
   observed,
-  canWrite,
-  resolvePin,
 }: {
   /**
    * Called after a write FROM THIS CONTROL lands, so the page can re-take the
@@ -175,21 +172,12 @@ export function PolicyAutoPublishDialControl({
    * observation lines (it is mounted outside the page that owns the read).
    */
   observed?: AutoPublishObserved;
-  /**
-   * Checked at the moment of every write; `false` sends nothing (the caller
-   * says why). The prompt-documents page passes its cross-tab guard here:
-   * its disabled fieldset reaches neither a confirmation (rendered outside
-   * it) nor a click that lands before another tab's switch is seen.
-   */
-  canWrite?: () => boolean;
-  /**
-   * The project every read and write of this control is sent in, asked for
-   * as each goes out — the prompt-documents page passes the project its list
-   * is pinned to, so a request in flight when another tab switches project
-   * stays in the page's. Omitted, each is sent in the project stored then.
-   */
-  resolvePin?: ResolvePin;
 } = {}) {
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and a write raced past another tab's switch is refused —
+  // by the hook itself, beside its send: the page's disabled fieldset reaches
+  // neither a confirmation (it portals out) nor a click that lands before the
+  // switch is seen. A refused write answers `false`, so nothing is re-taken.
   const {
     policy,
     loading,
@@ -202,7 +190,7 @@ export function PolicyAutoPublishDialControl({
     lastWrite,
     reload,
     setLevel,
-  } = usePolicyAutoPublishPolicy({ resolvePin });
+  } = usePolicyAutoPublishPolicy();
 
   // Held between the operator picking a confirmed level and confirming it. The
   // RadioGroup stays controlled by `displayLevel` throughout, so cancelling
@@ -211,7 +199,6 @@ export function PolicyAutoPublishDialControl({
     useState<PolicyAutoPublishLevel | null>(null);
 
   const applyLevel = async (next: PolicyAutoPublishLevel) => {
-    if (canWrite && !canWrite()) return;
     if (await setLevel(next)) onLevelChanged?.();
   };
 

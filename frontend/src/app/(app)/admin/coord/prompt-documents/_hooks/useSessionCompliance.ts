@@ -10,10 +10,8 @@ import {
   saveSessionComplianceConfig,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
-import {
-  useSendTimePin,
-  type SendTimePinOptions,
-} from "../../_shared/useSendTimePin";
+import { useSendTimePin } from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
 import type {
   ComplianceVerdict,
   OutstandingItem,
@@ -112,15 +110,19 @@ const EMPTY: Loaded<never> = {
  * store isn't provisioned), `error` (coord unreachable/refusing). None of them
  * is "nothing to show".
  *
- * With `resolvePin`, every read and the save are sent in the project it names,
- * asked as each goes out and kept on every attempt — the prompt-documents page
- * passes the project its list shows, so a save re-issued after another tab's
- * switch cannot change that tab's enforcement, and no read can show that
- * project's verdicts as this one's. Omitted, each is sent in the project
- * stored when it is made.
+ * On the prompt-documents page every read and the save are sent in the page's
+ * project, asked as each goes out and kept on every attempt, so a save
+ * re-issued after another tab's switch cannot change that tab's enforcement,
+ * and no read can show that project's verdicts as this one's; and the save is
+ * refused — nothing sent, the page says why — while that switch is in effect.
+ * Both come from the page's provider (`usePageSendGuard`), and the refusal
+ * sits beside the send, so no caller can leave it out. Mounted outside that
+ * provider, each is sent in the project stored when it is made, and nothing
+ * is refused.
  */
-export function useSessionCompliance({ resolvePin }: SendTimePinOptions = {}) {
-  // One identity whatever the caller passes, so the mount reads run once.
+export function useSessionCompliance() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the mount reads run once.
   const sendPin = useSendTimePin(resolvePin);
   const [config, setConfig] = useState<Loaded<SessionComplianceConfig>>(EMPTY);
   const [versions, setVersions] =
@@ -194,6 +196,7 @@ export function useSessionCompliance({ resolvePin }: SendTimePinOptions = {}) {
    */
   const saveConfig = useCallback(
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
+      if (!writeAllowed()) return false;
       setSaving(true);
       try {
         const updated = await saveSessionComplianceConfig(patch, sendPin());
@@ -216,7 +219,7 @@ export function useSessionCompliance({ resolvePin }: SendTimePinOptions = {}) {
         setSaving(false);
       }
     },
-    [loadVersions, sendPin]
+    [loadVersions, sendPin, writeAllowed]
   );
 
   /* ---- sessions -------------------------------------------------------- */

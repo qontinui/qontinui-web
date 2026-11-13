@@ -19,6 +19,7 @@ import type {
   PromptDocumentAttrs,
   PromptDocumentKind,
 } from "../types";
+import { usePageWriteGuardContext } from "./usePageWriteGuardContext";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -37,16 +38,17 @@ export interface UseClausesOptions {
    */
   onAttrsSaved?: () => void;
   /**
-   * Checked before every write; `false` sends nothing (the caller says why).
-   * The prompt-documents page passes its cross-tab guard here, so a clause
-   * write raced past the page's notice is refused.
+   * OUTSIDE the prompt-documents page's provider only (a mount on its own, as
+   * the hook's unit test mounts it): checked before every write; `false`
+   * sends nothing (the caller says why). Omitted there, nothing is refused.
+   * Under the provider the page's own guard is checked instead, always.
    */
   canWrite?: () => boolean;
   /**
-   * The project the clause read and every write are sent in, on every attempt
-   * (`pinActiveTenant`) — the page's own, so a write in flight when another tab
-   * switches project cannot be re-issued into that project. Omitted, each
-   * request goes in the project stored when it is sent.
+   * OUTSIDE the prompt-documents page's provider only: the project the clause
+   * read and every write are sent in, on every attempt (`pinActiveTenant`).
+   * Omitted there, each request goes in the project stored when it is sent.
+   * Under the provider the page's own pin is used instead, always.
    */
   pin?: TenantPin;
 }
@@ -58,15 +60,30 @@ export interface UseClausesOptions {
  * on tenant membership; writes are tenant-admin-gated (coord re-checks).
  *
  * Only meaningful for `kind === "policy"` documents; the caller passes `enabled`
- * false for other kinds so the hook doesn't fetch. See {@link UseClausesOptions}
- * for the re-read, write-guard and pin the caller hands in.
+ * false for other kinds so the hook doesn't fetch.
+ *
+ * **Which project, and when nothing is written.** Under the prompt-documents
+ * page's provider (`PageWriteGuardProvider`; the clause manager is always
+ * there, inside the list) the hook takes the page's call-time write guard and
+ * the page's pin from it — never from its caller — so a clause write raced
+ * past the page's notice is refused here, beside its send, and the clause read
+ * and every write go in the page's project on every attempt, a write in
+ * flight when another tab switches project included. The pin is a VALUE, as
+ * for the list's other hooks (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard` D10): the clause read
+ * re-fires only when the page's project changes. Outside any provider the
+ * {@link UseClausesOptions} `canWrite` and `pin` stand in for them.
  */
 export function useClauses(
   kind: PromptDocumentKind,
   name: string,
   enabled: boolean,
-  { onAttrsSaved, canWrite, pin }: UseClausesOptions = {}
+  options: UseClausesOptions = {}
 ) {
+  const { onAttrsSaved } = options;
+  const page = usePageWriteGuardContext();
+  const canWrite = page ? page.writeAllowed : options.canWrite;
+  const pin = page ? page.pin : options.pin;
   // Keyed on the project, not on the caller's object: the clause read below
   // re-fires only when the pinned project actually changes.
   const pinTenant = pin?.tenant;

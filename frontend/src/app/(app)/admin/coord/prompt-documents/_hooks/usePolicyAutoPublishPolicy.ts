@@ -8,10 +8,8 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
-import {
-  useSendTimePin,
-  type SendTimePinOptions,
-} from "../../_shared/useSendTimePin";
+import { useSendTimePin } from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
 import {
   isPolicyAutoPublishLevel,
   POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
@@ -68,16 +66,19 @@ function message(err: unknown, fallback: string): string {
  * off silently removed the safety net under the button the operator still
  * presses.
  *
- * **Which project it reads and writes.** With `resolvePin`, the read and the
- * write are sent in the project it names, asked as each goes out and kept on
- * every attempt — the prompt-documents page passes the project its list shows,
- * so a write re-issued after another tab's switch cannot land in that tab's
- * project. Omitted, each is sent in the project stored when it is made.
+ * **Which project it reads and writes, and when it writes nothing.** On the
+ * prompt-documents page the read and the write are sent in the page's
+ * project, asked as each goes out and kept on every attempt, so a write
+ * re-issued after another tab's switch cannot land in that tab's project; and
+ * a write is refused — nothing sent, the page says why — while that switch is
+ * in effect. Both come from the page's provider (`usePageSendGuard`), and the
+ * refusal sits beside the send, so no caller can leave it out. Mounted outside
+ * that provider, each is sent in the project stored when it is made, and
+ * nothing is refused.
  */
-export function usePolicyAutoPublishPolicy({
-  resolvePin,
-}: SendTimePinOptions = {}) {
-  // One identity whatever the caller passes, so the mount read runs once.
+export function usePolicyAutoPublishPolicy() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the mount read runs once.
   const sendPin = useSendTimePin(resolvePin);
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,6 +128,7 @@ export function usePolicyAutoPublishPolicy({
       level: PolicyAutoPublishLevel,
       changeNote?: string
     ): Promise<boolean> => {
+      if (!writeAllowed()) return false;
       try {
         setSaving(true);
         const result = await putFleetPolicy(
@@ -174,7 +176,7 @@ export function usePolicyAutoPublishPolicy({
         setSaving(false);
       }
     },
-    [sendPin]
+    [sendPin, writeAllowed]
   );
 
   // `"none"` means no row matched, which for this domain is `on` — NOT off.

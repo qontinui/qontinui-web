@@ -8,10 +8,8 @@ import {
   setKindTier,
   type KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
-import {
-  useSendTimePin,
-  type SendTimePinOptions,
-} from "../../_shared/useSendTimePin";
+import { useSendTimePin } from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
 import type { AgentWriteTier } from "../types";
 
 function message(err: unknown, fallback: string): string {
@@ -52,20 +50,22 @@ function message(err: unknown, fallback: string): string {
  * show them. A control whose NAME promises more than the deployed build
  * delivers — in the permissive direction — is worse than no control.
  *
- * ## Which project it reads and writes
+ * ## Which project it reads and writes, and when it writes nothing
  *
- * With `resolvePin`, every read — the read-back after each write included —
- * and every write is sent in the project it names, asked as each goes out and
- * kept on every attempt. The prompt-documents page passes the project its list
- * shows, so a tier write re-issued after another tab's switch cannot open or
- * close a kind in that tab's project, and its read-back cannot show that
- * project's tiers as this one's. Omitted, each is sent in the project stored
- * when it is made.
+ * On the prompt-documents page it reads the page's guard and pin from the
+ * page's provider (`usePageSendGuard`). Every read — the read-back after each
+ * write included — and every write is sent in the page's project, asked as
+ * each goes out and kept on every attempt, so a tier write re-issued after
+ * another tab's switch cannot open or close a kind in that tab's project, and
+ * its read-back cannot show that project's tiers as this one's. And a write is
+ * refused — nothing sent, the page says why — while another tab's switch is in
+ * effect: the check sits beside the send, so no caller can leave it out.
+ * Mounted outside the page's provider, each is sent in the project stored when
+ * it is made, and nothing is refused.
  */
-export function usePromptDocumentKindTiers({
-  resolvePin,
-}: SendTimePinOptions = {}) {
-  // One identity whatever the caller passes, so the mount read runs once.
+export function usePromptDocumentKindTiers() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the mount read runs once.
   const sendPin = useSendTimePin(resolvePin);
   const [data, setData] = useState<KindTiersResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +111,7 @@ export function usePromptDocumentKindTiers({
    */
   const setTier = useCallback(
     async (kind: string, tier: AgentWriteTier): Promise<boolean> => {
+      if (!writeAllowed()) return false;
       try {
         setSaving(true);
         await setKindTier(kind, tier, sendPin());
@@ -140,12 +141,13 @@ export function usePromptDocumentKindTiers({
         setSaving(false);
       }
     },
-    [load, sendPin]
+    [load, sendPin, writeAllowed]
   );
 
   /** Clear one kind's tier, returning it to coord's compile-time default. */
   const clearTier = useCallback(
     async (kind: string): Promise<boolean> => {
+      if (!writeAllowed()) return false;
       try {
         setSaving(true);
         await clearKindTier(kind, sendPin());
@@ -169,7 +171,7 @@ export function usePromptDocumentKindTiers({
         setSaving(false);
       }
     },
-    [load, sendPin]
+    [load, sendPin, writeAllowed]
   );
 
   return {

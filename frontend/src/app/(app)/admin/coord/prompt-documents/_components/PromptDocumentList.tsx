@@ -1,15 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useOptionalTenant } from "@/contexts/tenant-context";
 import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocuments";
-import {
-  ACTIVE_TENANT_STORAGE_KEY,
-  readActiveTenantId,
-  type ProjectPin,
-} from "@/services/http-client";
+import { readActiveTenantId } from "@/services/http-client";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -19,7 +13,6 @@ import {
   NotebookText,
   Pencil,
   Plus,
-  RotateCw,
   Send,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
@@ -38,6 +31,12 @@ import { AdoptAllDialog, type AdoptAllPreviewSource } from "./AdoptAllDialog";
 import { PublishModeControl } from "./PublishModeControl";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
+import {
+  PageWriteGuardProvider,
+  usePageWriteGuardContext,
+  useRequiredPageWriteGuard,
+} from "./PageWriteGuard";
+import { projectLabel } from "../_lib/projectLabel";
 import { upstreamBadge } from "../_lib/upstreamStatus";
 import {
   adoptAllCandidates,
@@ -69,10 +68,6 @@ import {
   PROMPT_DOCUMENT_BANDS,
   SESSION_BRIEFING_DOCUMENT_NAMES,
 } from "../types";
-
-/** What the page says when another tab has changed the stored project. */
-const CROSS_TAB_MESSAGE =
-  "The active project was changed in another tab — reload to continue.";
 
 /**
  * Ask coord, now, whether the active project is the system tenant, through
@@ -123,8 +118,6 @@ function formatWhen(iso: string): string {
 export function PromptDocumentList({
   autoPublishRefreshKey = 0,
   publishAllState,
-  onCrossTabChange,
-  writeGuardRef,
 }: {
   /**
    * Bumped by the page when something outside this list changes what the
@@ -141,78 +134,54 @@ export function PromptDocumentList({
    * reads for itself — which is how it is mounted standalone.
    */
   publishAllState?: PublishAllState;
-  /**
-   * Told whether another tab's project switch is in effect, so the page can
-   * disable its own controls beside the list's. Called on every change.
-   */
-  onCrossTabChange?: (changed: boolean) => void;
-  /**
-   * Given the list's call-time write guard and the project its rows are pinned
-   * to ({@link WriteGuard}), so the page's own settings can check the guard at
-   * the moment they write and send every request in the same project as the
-   * rows.
-   */
-  writeGuardRef?: WriteGuardRef;
 } = {}) {
-  return publishAllState ? (
+  // Under the page, the page's provider guards the list together with the
+  // settings beside it (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+  // D1). Mounted on its own, the list provides its own: the same project, the
+  // same notice and the same fieldset, around the list alone.
+  const enclosing = usePageWriteGuardContext();
+  const list = publishAllState ? (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
-      onCrossTabChange={onCrossTabChange}
-      writeGuardRef={writeGuardRef}
     />
   ) : (
     <SelfReadingPromptDocumentList
       autoPublishRefreshKey={autoPublishRefreshKey}
-      onCrossTabChange={onCrossTabChange}
-      writeGuardRef={writeGuardRef}
     />
   );
+  return enclosing ? (
+    list
+  ) : (
+    <PageWriteGuardProvider>{list}</PageWriteGuardProvider>
+  );
 }
-
-/** What the list hands the page through {@link WriteGuardRef}. */
-export interface WriteGuard {
-  /**
-   * The call-time write guard: `true`, send; `false`, another tab's switch is
-   * in effect — nothing is sent, and the notice is raised.
-   */
-  writeAllowed: () => boolean;
-  /**
-   * The project every row read and write is pinned to — the page's, kept
-   * through a provider refresh. `undefined` while the page's project has never
-   * been known, or is `null` (none selected), which no pin can hold a request
-   * to. The page sends its settings and its status read in it.
-   */
-  pin: ProjectPin | undefined;
-}
-
-/** Where the list hands the page its write guard and its pin. */
-export type WriteGuardRef = { current: WriteGuard | null };
 
 /**
  * The list reading the publish-all surface itself — no page owns the read.
  *
- * Nothing hands this `usePublishAll` a resolver, so its dry run, armed run and
+ * It is always under a `PageWriteGuardProvider` (its own, when the list is
+ * mounted standalone), which guards its rows. Its `usePublishAll` is
+ * deliberately NOT handed that provider's resolver: its dry run, armed run and
  * publish-mode PATCH are pinned to the project stored when each is sent, and
- * its status re-takes after a write go in whatever project is stored then. The
- * page mount (`page.tsx`) passes the list's own pin instead.
+ * its status re-takes after a write go in whatever project is stored then,
+ * exactly as before the provider existed. Two `AdoptAll.test.tsx` cases hold
+ * that behaviour ("is not offered on an answer another tab's project earned"
+ * and "stamps a refreshed status read with the project it was PINNED to …"),
+ * and both fail once the resolver is passed here — so pinning it is a change
+ * of its own, not part of the provider refactor. The page mount (`page.tsx`)
+ * passes its provider's resolver instead.
  */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
-  onCrossTabChange,
-  writeGuardRef,
 }: {
   autoPublishRefreshKey: number;
-  onCrossTabChange?: (changed: boolean) => void;
-  writeGuardRef?: WriteGuardRef;
 }) {
   const publishAllState = usePublishAll();
   return (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
-      onCrossTabChange={onCrossTabChange}
-      writeGuardRef={writeGuardRef}
     />
   );
 }
@@ -220,192 +189,20 @@ function SelfReadingPromptDocumentList({
 function PromptDocumentListBody({
   autoPublishRefreshKey,
   publishAllState,
-  onCrossTabChange,
-  writeGuardRef,
 }: {
   autoPublishRefreshKey: number;
   publishAllState: PublishAllState;
-  onCrossTabChange?: (changed: boolean) => void;
-  writeGuardRef?: WriteGuardRef;
 }) {
-  // The project stored when this page mounted (`null`: none stored yet) —
-  // the one its first status read is pinned to. Captured once, before any
-  // request was sent.
-  const [mountTenant] = useState<string | null>(() => readActiveTenantId());
-  const tenantContext = useOptionalTenant();
-  // Whether the provider was still loading when this page mounted — i.e.
-  // whether its reconcile is of the SAME stored project this page's first
-  // reads carried. The layout's provider outlives client-side navigation and
-  // never follows another tab's write, so one that had loaded earlier can name
-  // a project this page was never served in.
-  const [providerLoadingAtMount] = useState<boolean>(
-    () => tenantContext !== null && tenantContext.loading
-  );
   /**
-   * The project this page's reads were SERVED in — `undefined` while that is
-   * not known — as first resolved.
-   *
-   * - No provider (mounted standalone, under test): the project the page
-   *   loaded with.
-   * - The project the page loaded with is in the provider's membership list:
-   *   that project — coord serves a member id as asked.
-   * - It is not (none stored yet, or a stale id), and the provider was still
-   *   loading when this page mounted: the provider's RECONCILED project. Those
-   *   first reads were served the home project (coord's override is
-   *   fail-soft), and the provider's reconcile of that same stored value is
-   *   the home project too — so a fresh browser's seed is not a switch.
-   * - It is not, and the provider had loaded before this page mounted (a
-   *   client-side navigation): UNKNOWN. The provider's project then predates
-   *   this page and says nothing about what its reads were served.
-   * - The provider is loading, or failed: UNKNOWN.
-   *
-   * UNKNOWN offers nothing.
+   * The page's project, its pin and its cross-tab guard, from the provider
+   * this list is always under (`PromptDocumentList`): see
+   * `usePageProject` for `mountTenant`, `pageTenant` and `pin`, and
+   * `usePageWriteGuard` for `writeAllowed`. `writeAllowed` keeps ONE identity
+   * for the page's lifetime, so every guarded door built on it below does
+   * too; the pin changes identity only with the project it names.
    */
-  const resolvedPageTenant: string | null | undefined = (() => {
-    if (tenantContext === null) return mountTenant;
-    if (tenantContext.loading || tenantContext.error !== null) {
-      return undefined;
-    }
-    if (
-      mountTenant !== null &&
-      tenantContext.tenants.some((t) => t.id === mountTenant)
-    ) {
-      return mountTenant;
-    }
-    return providerLoadingAtMount ? tenantContext.activeTenantId : undefined;
-  })();
-  const providerReady =
-    tenantContext !== null &&
-    !tenantContext.loading &&
-    tenantContext.error === null;
-  // The provider's project as this page last saw it loaded, and the project
-  // the page followed it to. A CHANGE of the provider's project is THIS tab
-  // switching project through the provider (another tab's write never
-  // reaches this tab's provider), and the page follows it — to whichever
-  // project it changed to, the one the provider had loaded in included.
-  const providerTenant = providerReady
-    ? tenantContext.activeTenantId
-    : undefined;
-  const [seenProviderTenant, setSeenProviderTenant] = useState<
-    string | null | undefined
-  >(providerTenant);
-  const [followedTenant, setFollowedTenant] = useState<
-    string | null | undefined
-  >(undefined);
-  useEffect(() => {
-    if (providerTenant === undefined || providerTenant === seenProviderTenant) {
-      return;
-    }
-    if (seenProviderTenant !== undefined) setFollowedTenant(providerTenant);
-    setSeenProviderTenant(providerTenant);
-  }, [providerTenant, seenProviderTenant]);
-  /**
-   * The page's project: as first resolved, until THIS tab switches project
-   * through the provider — then the page follows it (re-reading below).
-   * Another tab's switch is not followed: it is detected (`crossTabChange`)
-   * and every write is withheld until the page is reloaded.
-   */
-  const pageTenant: string | null | undefined =
-    followedTenant !== undefined ? followedTenant : resolvedPageTenant;
-
-  /**
-   * The project the cross-tab GUARD compares against: the page's project, or
-   * — once that has been known — the last one known while it is UNKNOWN
-   * again. A provider `refresh()` (a project rename, for one) puts the
-   * provider back into `loading`, which makes `pageTenant` UNKNOWN for that
-   * round trip; the rows on screen are still the last known project's, so
-   * the guard must not lift. Only the guard reads this: Adopt all and the
-   * list re-reads keep treating UNKNOWN as offering nothing.
-   */
-  const lastKnownPageTenant = useRef<string | null | undefined>(undefined);
-  if (pageTenant !== undefined) lastKnownPageTenant.current = pageTenant;
-  const guardTenant: string | null | undefined =
-    pageTenant !== undefined ? pageTenant : lastKnownPageTenant.current;
-
-  /**
-   * The project every row read and write is SENT in, on every attempt — the
-   * HTTP client otherwise reads the stored project per attempt, so a request
-   * retried or replayed after another tab's switch would land in, or answer
-   * from, that project. Taken from `guardTenant`, not bare `pageTenant`, so a
-   * provider `refresh()` neither drops the pin for its round trip nor flips
-   * the pinned readers' identity, which would re-fire an open dialog's reads.
-   *
-   * Only a NAMED project is pinned. `undefined` while the page's project has
-   * never been known, and while it is `null` (none selected): a `null` pin
-   * sends no header, so the client would fill in whatever project is stored on
-   * every attempt — another tab's, after a switch — and it would also give up
-   * the request's retries. Without a pin, the dialogs' readers below are
-   * refused at call time instead, like the write doors.
-   */
-  const pin = useMemo<ProjectPin | undefined>(
-    () =>
-      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
-    [guardTenant]
-  );
-
-  /**
-   * True while the stored project differs from the page's because ANOTHER
-   * tab changed it. The HTTP client reads the stored project per request, so
-   * from then on every unpinned write would land in that project while this
-   * page shows its own rows — so the page's controls are disabled, writes are
-   * refused at call time, and the page asks to be reloaded.
-   *
-   * Computed against `guardTenant` whenever that is (re-)anchored — first
-   * known, or followed to after THIS tab's own switch, whose storage write
-   * has already happened by then — and on every `storage` event for the key,
-   * which only OTHER tabs receive. Another tab switching back clears it. A
-   * page whose project has never been known has nothing to compare and is
-   * not guarded.
-   */
-  const [crossTabChange, setCrossTabChange] = useState(false);
-  useEffect(() => {
-    setCrossTabChange(
-      guardTenant !== undefined && readActiveTenantId() !== guardTenant
-    );
-    if (guardTenant === undefined) return;
-    const onStorage = (event: StorageEvent) => {
-      // `null`: the other tab cleared storage — which clears the project too.
-      if (event.key !== null && event.key !== ACTIVE_TENANT_STORAGE_KEY) return;
-      setCrossTabChange(readActiveTenantId() !== guardTenant);
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [guardTenant]);
-  useEffect(() => {
-    onCrossTabChange?.(crossTabChange);
-  }, [crossTabChange, onCrossTabChange]);
-
-  // Read through a ref so `writeAllowed` — and every guarded door built on it
-  // below — keeps ONE identity for the page's lifetime. The dialogs' READERS
-  // are guarded only while there is no pin (`pinnedOrGuarded`), and change
-  // identity only with it: a reader with a new identity per render would
-  // re-fetch from a dialog's effect and reset the operator's selection.
-  const guardTenantRef = useRef(guardTenant);
-  guardTenantRef.current = guardTenant;
-
-  /**
-   * The call-time half of the guard: the listener above covers what is on
-   * screen, this covers the race (a switch whose event has not arrived, a
-   * dialog already open). `true` lets the request go; `false` sends nothing,
-   * says why, and raises the notice. A page whose project has never been
-   * known keeps the unguarded behaviour.
-   */
-  const writeAllowed = useCallback((): boolean => {
-    const tenant = guardTenantRef.current;
-    if (tenant === undefined || readActiveTenantId() === tenant) return true;
-    setCrossTabChange(true);
-    toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
-    return false;
-  }, []);
-  // Handed up with the pin, which the page's settings and its status read are
-  // sent in: the same project as the rows, asked for as each request goes out.
-  useEffect(() => {
-    if (!writeGuardRef) return;
-    writeGuardRef.current = { writeAllowed, pin };
-    return () => {
-      writeGuardRef.current = null;
-    };
-  }, [writeGuardRef, writeAllowed, pin]);
+  const { mountTenant, tenantContext, pageTenant, pin, writeAllowed } =
+    useRequiredPageWriteGuard();
   /** `fn`, answering `refused` without calling it while the guard says no. */
   const guard = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
@@ -492,7 +289,8 @@ function PromptDocumentListBody({
   );
 
   // The dialogs' write doors, behind the guard. Memoized on the underlying
-  // function, so a stable door stays stable (see `guardTenantRef`).
+  // function, so a stable door stays stable (`writeAllowed` keeps one
+  // identity).
   const guardedCreate = useMemo(
     () => guard(createDocument, null),
     [guard, createDocument]
@@ -843,18 +641,7 @@ function PromptDocumentListBody({
    * predates a client-side navigation). Not in the list: the id itself, said
    * to be unknown.
    */
-  const runTenantRow =
-    adoptAllTenant === null
-      ? undefined
-      : tenantContext?.tenants.find((t) => t.id === adoptAllTenant);
-  const tenantLabel =
-    adoptAllTenant === null
-      ? "your home project (none selected)"
-      : runTenantRow
-        ? runTenantRow.name?.trim() ||
-          runTenantRow.slug?.trim() ||
-          adoptAllTenant
-        : `${adoptAllTenant} (unknown project — not in this page's project list)`;
+  const tenantLabel = projectLabel(tenantContext?.tenants, adoptAllTenant);
 
   /**
    * Open adopt-all on a FRESH read of the list, and freeze that read as the
@@ -931,43 +718,14 @@ function PromptDocumentListBody({
 
   return (
     <div className="space-y-6">
-      {crossTabChange ? (
-        <div
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200"
-          role="alert"
-          data-testid="prompt-documents-cross-tab"
-        >
-          <AlertTriangle className="size-4 shrink-0" />
-          <p className="min-w-0 flex-1">
-            {CROSS_TAB_MESSAGE} Until then this page sends no changes: its
-            controls are disabled, and a change confirmed in a dialog or
-            settings confirmation that was already open is refused. The
-            documents shown are still this page&apos;s project, and the active
-            project is now a different one.
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => window.location.reload()}
-            data-testid="prompt-documents-cross-tab-reload"
-          >
-            <RotateCw className="size-4" />
-            Reload
-          </Button>
-        </div>
-      ) : null}
       {/*
         The list's controls are disabled while another tab's switch is in
-        effect — a disabled fieldset is the one switch that reaches them all.
-        The dialogs render outside it (and portal out of it in any case), so
-        their doors are refused at call time instead.
+        effect by the provider's one fieldset, which this list is always
+        inside (`PageWriteGuard`); its notice is the provider's too. The
+        dialogs portal out of that fieldset, so their doors are refused at
+        call time instead.
       */}
-      <fieldset
-        disabled={crossTabChange}
-        className="m-0 min-w-0 space-y-6 border-0 p-0"
-        data-testid="prompt-documents-controls"
-      >
+      <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/*
           D1 — visible only when N > 0. There is no disabled state and no "0
@@ -1250,7 +1008,7 @@ function PromptDocumentListBody({
               </section>
             );
           })}
-      </fieldset>
+      </div>
 
       <PromptDocumentCreateDialog
         open={createOpen}
@@ -1323,8 +1081,8 @@ function PromptDocumentListBody({
         onPublishAll={async (selected, releaseNote) => {
           // The confirm, not the preview: a confirm raced past the notice is
           // refused here. The run itself is pinned — to the page's project
-          // when the page hands `usePublishAll` the list's pin, else to the
-          // project stored now.
+          // when the page hands `usePublishAll` its provider's resolver, else
+          // to the project stored now.
           if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
@@ -1393,8 +1151,6 @@ function PromptDocumentListBody({
         document={editing?.kind === "policy" ? editing : null}
         loadingBody={loadingBody}
         onDocsReload={reload}
-        canWrite={writeAllowed}
-        pin={pin}
       />
     </div>
   );
