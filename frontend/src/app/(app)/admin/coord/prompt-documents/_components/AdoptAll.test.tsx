@@ -375,52 +375,37 @@ describe("when the Adopt all updates button is offered", () => {
     ).toEqual([]);
   });
 
-  it("stamps a refreshed status read with the project it was PINNED to, not the one stored when it answers", async () => {
+  it("re-takes a refreshed status read in the page's project, not the one stored when it is sent", async () => {
+    // Corrected (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+    // D10): this test used to have the re-take SENT in the project another
+    // tab had stored and refused there, after which the page withheld the
+    // system tenant's publish controls, because its newest status answer was
+    // about that project. That was a re-take landing in the other project,
+    // recorded as behaviour. The list mounted on its own now asks its
+    // provider which project to send in, as the page does, so the re-take
+    // goes in the page's project and that project answers it.
     localStorage.setItem(TENANT_KEY, "t-system");
-    let answerRefresh: (() => void) | undefined;
-    getMock.mockImplementation((url: string) => {
-      if (url === STATUS) {
-        if (localStorage.getItem(TENANT_KEY) === "t-system") {
-          return Promise.resolve({ candidates: [], count: 1 });
-        }
-        // Sent in B; answered after the other tab switches back.
-        return new Promise((_, reject) => {
-          answerRefresh = () => reject(NOT_SYSTEM_TENANT);
-        });
-      }
-      if (url === LIST) {
-        return Promise.resolve({
-          documents: [
-            flagged("policy", "coordination", { current_version: 7 }),
-          ],
-          degraded: null,
-        });
-      }
-      return Promise.reject(new Error(url));
-    });
+    const { statusSentIn } = serveBySentProject();
     const { rerender } = render(
       <PromptDocumentList autoPublishRefreshKey={0} />
     );
     await screen.findByTestId("publish-all");
     localStorage.setItem(TENANT_KEY, "t-other");
+
     rerender(<PromptDocumentList autoPublishRefreshKey={1} />);
-    await waitFor(() => expect(answerRefresh).toBeDefined());
-    localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerRefresh?.();
-    });
-    // Let the refusal land and latch.
+
+    await waitFor(() => expect(statusSentIn).toHaveLength(2));
+    // Let the answer land.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    // It is stamped with the project it was sent in, so Adopt all is not
-    // offered on the system tenant. And the newest status answer the page
-    // holds is now about another project, so the system tenant's publish
-    // controls are withheld until a read in the system tenant answers.
-    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    expect(statusSentIn).toEqual(["t-system", "t-system"]);
+    // Answered as the system tenant: its publish controls stay, and Adopt all
+    // is not offered on it.
     expect(
-      screen.queryByTestId("doc-publish-mode-policy-coordination")
-    ).not.toBeInTheDocument();
+      screen.getByTestId("doc-publish-mode-policy-coordination")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
   });
 
   // The hook's own half — an armed run's refusal stamped with the project

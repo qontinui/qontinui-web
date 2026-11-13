@@ -161,23 +161,20 @@ export function PromptDocumentList({
  * The list reading the publish-all surface itself — no page owns the read.
  *
  * It is always under a `PageWriteGuardProvider` (its own, when the list is
- * mounted standalone), which guards its rows. Its `usePublishAll` is
- * deliberately NOT handed that provider's resolver: its dry run, armed run and
- * publish-mode PATCH are pinned to the project stored when each is sent, and
- * its status re-takes after a write go in whatever project is stored then,
- * exactly as before the provider existed. Two `AdoptAll.test.tsx` cases hold
- * that behaviour ("is not offered on an answer another tab's project earned"
- * and "stamps a refreshed status read with the project it was PINNED to …"),
- * and both fail once the resolver is passed here — so pinning it is a change
- * of its own, not part of the provider refactor. The page mount (`page.tsx`)
- * passes its provider's resolver instead.
+ * mounted standalone), and its `usePublishAll` asks that provider which
+ * project to send in, exactly as the page's does (`page.tsx`). So the dry
+ * run, the armed run, the publish-mode PATCH and every status read go in the
+ * project the rows are pinned to, not the one stored when each is sent: a
+ * status re-take sent after another tab's switch cannot put that project's
+ * publish state on this page, and the list's two mounts pin alike.
  */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
 }: {
   autoPublishRefreshKey: number;
 }) {
-  const publishAllState = usePublishAll();
+  const { resolvePin } = useRequiredPageWriteGuard();
+  const publishAllState = usePublishAll({ resolvePin });
   return (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
@@ -1098,9 +1095,9 @@ function PromptDocumentListBody({
         publishing={publishingAll}
         onPublishAll={async (selected, releaseNote) => {
           // The confirm, not the preview: a confirm raced past the notice is
-          // refused here. The run itself is pinned — to the page's project
-          // when the page hands `usePublishAll` its provider's resolver, else
-          // to the project stored now.
+          // refused here. The run itself is pinned to the page's project
+          // (`usePublishAll` asks the provider), or, while that is null or has
+          // never been known, to the project stored now.
           if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
