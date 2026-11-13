@@ -632,6 +632,49 @@ describe("another tab switches project", () => {
     await expectNotice("unattributed");
     expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
   }, 20_000);
+
+  it("locks the list while its project is still UNKNOWN when another tab switches away from the mount project", async () => {
+    // The provider never answers, so the page's project is never known. The
+    // guard compares against the project stored at mount (#7): another tab's
+    // switch away from it locks the list at once, instead of leaving the
+    // guard off until a project the page may never learn.
+    listTenantsMock.mockImplementation(() => new Promise(() => {}));
+    localStorage.setItem(KEY, B);
+    render(
+      <TenantProvider>
+        <PromptDocumentList />
+      </TenantProvider>
+    );
+    await screen.findByTestId(
+      "doc-row-policy-bravo-only",
+      {},
+      { timeout: 5000 }
+    );
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+
+    await act(async () => anotherTabStores(SYS));
+
+    await expectNotice("another_tab");
+    expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
+  }, 20_000);
+
+  it("moves focus from a list control the lock disables to Reload", async () => {
+    await mountIn();
+    const edit = screen.getByTestId("doc-edit-policy-bravo-only");
+    edit.focus();
+    expect(document.activeElement).toBe(edit);
+
+    await act(async () => anotherTabStores(SYS));
+
+    await expectNotice("another_tab");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
+  }, 20_000);
 });
 
 describe("while the provider refreshes", () => {
