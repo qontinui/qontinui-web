@@ -8,6 +8,7 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
+import { useSendTimePin, type SendTimePinOptions } from "./useSendTimePin";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -66,6 +67,13 @@ function capitalise(s: string): string {
  *    generating for) — bind this hook for their TENANT band only, and write
  *    their repo band through the sibling `useRepoFleetPolicyWrite`.
  *
+ * **A page that shows one project's data can pin every request to it.** With
+ * `resolvePin`, the read and the write are each sent in the project it names
+ * when the request goes out, on every attempt — so a write re-issued after a
+ * 429, or replayed after a token refresh, once another tab has switched
+ * project still lands in the project the page shows. Omitted, every request is
+ * sent exactly as before: in the project stored when it is made.
+ *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
  * < System=2). So a `repo` band winning means a narrower row is overriding the
@@ -78,12 +86,17 @@ function capitalise(s: string): string {
  *                ("plan capture").
  * @param subject who resolves the level, for the disagreement toast —
  *                "devices" for a briefing clause, "agents" for an agent door.
+ * @param options `resolvePin`, asked at send time (see above).
  */
 export function useTenantFleetPolicyDial<L extends string>(
   domain: string,
   label: string,
-  subject: string = "devices"
+  subject: string = "devices",
+  { resolvePin }: SendTimePinOptions = {}
 ) {
+  // One identity whatever the caller passes, so the mount read below runs
+  // once: the pin is read as each request goes out.
+  const sendPin = useSendTimePin(resolvePin);
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -108,7 +121,7 @@ export function useTenantFleetPolicyDial<L extends string>(
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(domain);
+      const view = await fetchFleetPolicy(domain, undefined, sendPin());
       if (generation !== writeGeneration.current) return false;
       setPolicy(view);
       setError(null);
@@ -126,7 +139,7 @@ export function useTenantFleetPolicyDial<L extends string>(
     } finally {
       setLoading(false);
     }
-  }, [domain, label]);
+  }, [domain, label, sendPin]);
 
   useEffect(() => {
     load();
@@ -154,15 +167,18 @@ export function useTenantFleetPolicyDial<L extends string>(
     async (level: L, changeNote?: string): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await putFleetPolicy({
-          domain,
-          scope_band: "tenant",
-          scope_key: null,
-          level,
-          master_enabled: true,
-          change_note:
-            changeNote ?? `Set ${label} to "${level}" from the console`,
-        });
+        const result = await putFleetPolicy(
+          {
+            domain,
+            scope_band: "tenant",
+            scope_key: null,
+            level,
+            master_enabled: true,
+            change_note:
+              changeNote ?? `Set ${label} to "${level}" from the console`,
+          },
+          sendPin()
+        );
         writeGeneration.current += 1;
         setLastWrite(result);
 
@@ -198,7 +214,7 @@ export function useTenantFleetPolicyDial<L extends string>(
         setSaving(false);
       }
     },
-    [domain, label, subject]
+    [domain, label, subject, sendPin]
   );
 
   return {

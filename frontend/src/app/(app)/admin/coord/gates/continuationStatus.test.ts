@@ -34,6 +34,8 @@ import {
   DEFERRAL_SILENT_MS,
   DEFERRAL_STUCK_COUNT,
   DISPATCH_STALE_MS,
+  deferralHistoryChip,
+  deferralProblemNote,
   deriveContinuationStatus,
   humanizeDeferralReason,
   type ContinuationKind,
@@ -41,6 +43,9 @@ import {
 } from "./continuationStatus";
 
 const ALL = Object.keys(CONTINUATION_ATTENTION_BY_KIND) as ContinuationKind[];
+
+/** Pins `held` as a member of the closed union: this fails to compile without it. */
+const HELD_KIND: ContinuationKind = "held";
 
 /** Fixed clock so every age-derived reading is deterministic. */
 const NOW = Date.parse("2026-09-09T12:00:00Z");
@@ -69,6 +74,8 @@ describe("continuation palette", () => {
   });
 
   it("is total over the kind union", () => {
+    expect(ALL).toContain(HELD_KIND);
+    expect(Object.keys(CONTINUATION_KIND_CLASS)).toContain(HELD_KIND);
     for (const kind of ALL) {
       expect(CONTINUATION_KIND_CLASS[kind]).toBeTruthy();
     }
@@ -110,6 +117,11 @@ describe("continuation palette", () => {
 
   it("keeps deferred amber and both deferral escalations red", () => {
     expect(CONTINUATION_KIND_CLASS.deferred).toBe(WAITING_AMBER);
+    // A clearance hold waits on a nameable condition, like a sibling hold.
+    expect(CONTINUATION_KIND_CLASS.held).toBe(WAITING_AMBER);
+    expect(CONTINUATION_ATTENTION_BY_KIND.held).toBe("waiting");
+    expect(CONTINUATION_AUTHOR_GLYPH_KINDS.has("held")).toBe(false);
+    expect(CONTINUATION_UNKNOWN_OUTCOME_KINDS.has("held")).toBe(false);
     expect(CONTINUATION_KIND_CLASS.deferral_stuck).toBe(AUTHOR_RED);
     expect(CONTINUATION_KIND_CLASS.deferral_abandoned).toBe(AUTHOR_RED);
   });
@@ -455,10 +467,10 @@ describe("deriveContinuationStatus — deferral pressure", () => {
   // --- whose dispatch is the deferral about? --------------------------------
   //
   // coord's `stamp_continuation_dispatched` re-stamps
-  // `continuation_dispatched_at`, NULLs the two expiry columns and touches
-  // NONE of the three deferral columns; no writer anywhere in coord resets
-  // them. So a re-dispatched gate carries the previous cycle's deferral
-  // stamps, by design.
+  // `continuation_dispatched_at`, NULLs the two expiry columns and resets
+  // the deferral count, but keeps a RUNNER deferral's time and reason (it
+  // NULLs them only for a coord_hold. hold). So a re-dispatched gate can
+  // carry the previous cycle's runner deferral stamps, by design.
 
   it("does not call a freshly re-dispatched row abandoned on old deferral stamps", () => {
     const s = derive({
@@ -466,14 +478,17 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       continuation_dispatched_at: new Date(NOW - 3_000).toISOString(),
       continuation_deferred_at: minsAgo(4_000),
       continuation_deferred_reason: "at_cap:4",
-      continuation_deferred_count: 3,
+      // The dispatch stamp reset the count to 0; time and reason survive.
+      continuation_deferred_count: 0,
     });
     expect(s.status.kind).toBe("dispatched");
     expect(s.status.attention).toBe("none");
     expect(s.status.reason).toContain("re-dispatched");
     expect(s.status.reason).toContain("from an earlier dispatch");
-    // The deferrals are not lost — they become history the panel still reports.
-    expect(s.deferral?.count).toBe(3);
+    // The runner deferral's time and reason carry over as history the panel
+    // still reports; the count was reset to 0 by the dispatch stamp.
+    expect(s.deferral?.count).toBe(0);
+    expect(s.deferral?.countKnown).toBe(true);
     expect(s.deferralRendered).toBe(false);
   });
 
@@ -484,7 +499,7 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       ).toISOString(),
       continuation_deferred_at: minsAgo(4_000),
       continuation_deferred_reason: "at_cap:4",
-      continuation_deferred_count: 3,
+      continuation_deferred_count: 0,
     });
     expect(s.status.kind).toBe("dispatch_stalled");
     expect(s.status.attention).toBe("author");
@@ -822,5 +837,249 @@ describe("humanizeDeferralReason", () => {
   it("is null only for a genuinely absent reason", () => {
     expect(humanizeDeferralReason(null)).toBeNull();
     expect(humanizeDeferralReason("   ")).toBeNull();
+  });
+});
+
+describe("deriveContinuationStatus — coord's clearance hold (coord_hold.*)", () => {
+  /**
+   * EVERY code coord's classifier writes (`clearance_hold_reason` and
+   * `registry_veto_hold_reason`, qontinui-coord `gates.rs` @ origin/main
+   * 4cf46dd650), with the humanized text each must read as. One row per code.
+   */
+  const CODES: ReadonlyArray<[string, string]> = [
+    [
+      "coord_hold.device_drained",
+      "held: a device resolved, but its agent lane is closed (drained) or could not be read (×12)",
+    ],
+    [
+      "coord_hold.pin_stale",
+      "held: the pinned device is offline (or not bound to this tenant) and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.pin_drained",
+      "held: the pinned device is drained and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.lane_closed",
+      "held: the pinned device's dispatch role closes its agent lane and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.lane_unknown",
+      "held: the pinned device's agent lane could not be read and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.device_state_unreadable",
+      "held: coord could not read this tenant's device state (×12)",
+    ],
+    [
+      "coord_hold.no_device_online",
+      "held: no device in this tenant is online (×12)",
+    ],
+    [
+      "coord_hold.no_capable_device:os:linux",
+      "held: no online device advertises os:linux (×12)",
+    ],
+    [
+      "coord_hold.no_capable_device:os:linux|shell:powershell",
+      "held: no online device advertises all of os:linux, shell:powershell (×12)",
+    ],
+    [
+      "coord_hold.no_eligible_device",
+      "held: devices are online, but every one is lane-closed or otherwise excluded (×12)",
+    ],
+    [
+      "coord_hold.registry_veto:block",
+      "held: the agent registry vetoed the spawn (block) (×12)",
+    ],
+    [
+      "coord_hold.registry_veto:warn_proceed",
+      "held: the agent registry vetoed the spawn (warn_proceed) (×12)",
+    ],
+  ];
+
+  /** A cleared, never-dispatched row coord stamped with `reason`. */
+  const held = (reason: string, over: Partial<ContinuationStatusInput> = {}) =>
+    derive({
+      continuation_action: "run_skill",
+      continuation_will_dispatch: true,
+      continuation_deferred_at: minsAgo(3),
+      continuation_deferred_reason: reason,
+      continuation_deferred_count: 12,
+      ...over,
+    });
+
+  for (const [code, text] of CODES) {
+    it(`reads ${code} as held, not armed`, () => {
+      const s = held(code);
+      expect(s.status.kind).toBe("held");
+      expect(s.status.attention).toBe("waiting");
+      expect(s.status.label).toBe("held ×12");
+      expect(s.deferralRendered).toBe(true);
+      expect(s.deferral?.hold).toBe(true);
+      expect(s.status.reason).toContain(text);
+      expect(s.status.reason).not.toContain("will fire when this gate's anchor clears");
+    });
+
+    it(`humanizes ${code}`, () => {
+      expect(humanizeDeferralReason(code, 12)).toBe(text);
+    });
+  }
+
+  it("names a registry veto as a veto, and a device hold as a device hold", () => {
+    expect(held("coord_hold.registry_veto:block").status.reason).toContain(
+      "the agent registry vetoed its spawn"
+    );
+    expect(held("coord_hold.pin_stale").status.reason).toContain(
+      "no eligible device"
+    );
+  });
+
+  it("renders an unknown future coord_hold code honestly, as a hold", () => {
+    const s = held("coord_hold.some_new_code:x");
+    expect(s.status.kind).toBe("held");
+    expect(s.status.reason).toContain("held: some_new_code:x (×12)");
+    expect(humanizeDeferralReason("coord_hold.some_new_code")).toBe(
+      "held: some_new_code"
+    );
+    expect(humanizeDeferralReason("coord_hold.")).toBe("held: (no code)");
+  });
+
+  it("omits the count when coord sent none, and says so in the label", () => {
+    expect(humanizeDeferralReason("coord_hold.no_device_online")).toBe(
+      "held: no device in this tenant is online"
+    );
+    expect(humanizeDeferralReason("coord_hold.no_device_online", null)).toBe(
+      "held: no device in this tenant is online"
+    );
+    const s = held("coord_hold.no_device_online", {
+      continuation_deferred_count: null,
+    });
+    expect(s.status.kind).toBe("held");
+    expect(s.status.label).toBe("held ×?");
+  });
+
+  it("discriminates held from armed on the reason alone", () => {
+    expect(held("coord_hold.pin_stale").status.kind).toBe("held");
+    expect(
+      derive({ continuation_action: "run_skill", continuation_will_dispatch: true })
+        .status.kind
+    ).toBe("armed");
+  });
+
+  it("does not let a hold outrank a terminal or in-flight stamp", () => {
+    expect(
+      held("coord_hold.pin_stale", {
+        continuation_expired_at: minsAgo(1),
+        continuation_expired_reason: "held_no_eligible_device_ttl",
+      }).status.kind
+    ).toBe("expired");
+    expect(
+      held("coord_hold.pin_stale", { continuation_cancelled_at: minsAgo(1) })
+        .status.kind
+    ).toBe("cancelled");
+    expect(
+      held("coord_hold.pin_stale", { continuation_dispatched_at: minsAgo(1) })
+        .status.kind
+    ).not.toBe("held");
+  });
+
+  it("leaves a dispatched row with a runner deferral exactly as before", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(30),
+      continuation_deferred_at: minsAgo(10),
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 3,
+    });
+    expect(s.status.kind).toBe("deferred");
+    expect(s.status.label).toBe("deferred ×3");
+    expect(s.deferral?.hold).toBe(false);
+    expect(s.deferral?.reason).toBe(
+      "the machine was out of OS threads (critical) — 540 observed against a limit of 400"
+    );
+    // The count is never appended to a runner reason.
+    expect(
+      humanizeDeferralReason("thread_pressure:critical:540_over_400", 3)
+    ).toBe(
+      "the machine was out of OS threads (critical) — 540 observed against a limit of 400"
+    );
+  });
+});
+
+describe("the deferral history chip and problem note — a hold is not a push-back", () => {
+  const HOLD = "coord_hold.no_capable_device:os:linux";
+  const heldRow: Partial<ContinuationStatusInput> = {
+    continuation_deferred_at: minsAgo(3),
+    continuation_deferred_reason: HOLD,
+    continuation_deferred_count: 12,
+  };
+  // coord's hold-TTL expiry keeps the coord_hold. reason on the row.
+  const expiredHeldRow: Partial<ContinuationStatusInput> = {
+    ...heldRow,
+    continuation_expired_at: minsAgo(1),
+    continuation_expired_reason: "held_no_eligible_device_ttl",
+  };
+
+  it("adds no deferral note to a held row — the badge already says it", () => {
+    const s = derive(heldRow);
+    expect(s.status.kind).toBe("held");
+    expect(deferralProblemNote(s, "3m ago")).toBeNull();
+  });
+
+  it("words an expired held row's history as coord's hold, never a runner's", () => {
+    const s = derive(expiredHeldRow);
+    expect(s.status.kind).toBe("expired");
+    expect(s.deferralRendered).toBe(false);
+    const chip = deferralHistoryChip(s.deferral!);
+    expect(chip.text).toBe("after 12 holds");
+    expect(chip.title).toBe(
+      "coord stamped a hold on this continuation 12 times (at clearance and on each re-drive pass); last: held: no online device advertises os:linux (×12)"
+    );
+    const note = deferralProblemNote(s, "3m ago")!;
+    expect(note).toContain(
+      "coord stamped a hold on this continuation 12 times (at clearance and on each re-drive pass)"
+    );
+    expect(note).toContain("(last 3m ago)");
+    for (const text of [chip.text, chip.title, note]) {
+      expect(text).not.toMatch(/pushed back|runner/i);
+    }
+  });
+
+  it("reads every hold terminus coord writes as expired, worded as a hold", () => {
+    // TerminusReason::as_str, qontinui-coord continuation_hold_redrive.rs.
+    for (const why of [
+      "held_no_eligible_device_ttl",
+      "held_registry_veto",
+      "held_unit_terminal",
+    ]) {
+      const s = derive({ ...heldRow, continuation_expired_at: minsAgo(1), continuation_expired_reason: why });
+      expect(s.status.kind).toBe("expired");
+      expect(s.status.reason).toContain(why);
+      expect(deferralHistoryChip(s.deferral!).text).toBe("after 12 holds");
+    }
+  });
+
+  it("keeps a runner deferral's chip and note exactly as before", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(60),
+      continuation_deferred_at: minsAgo(120),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 1,
+      continuation_consumed_at: minsAgo(30),
+      continuation_consumed_outcome: "work_completed",
+    });
+    expect(deferralHistoryChip(s.deferral!)).toEqual({
+      text: "after 1 deferral",
+      title: `Dispatch was pushed back before this state; last reason: ${s.deferral!.reason}`,
+    });
+    expect(deferralProblemNote(s, null)).toBe(
+      `Dispatch pushed back 1 time; last time ${s.deferral!.reason}. The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused.`
+    );
+  });
+
+  it("notes a hold reason at coord's 200-character cap may be cut short", () => {
+    const capped = `coord_hold.no_capable_device:${"x".repeat(200)}`.slice(0, 200);
+    expect(capped).toHaveLength(200);
+    expect(humanizeDeferralReason(capped)).toContain("may be cut short");
+    expect(humanizeDeferralReason(HOLD)).not.toContain("cut short");
   });
 });
