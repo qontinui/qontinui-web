@@ -128,10 +128,16 @@ CONCURRENTLY IF NOT EXISTS`` inside ``autocommit_block()``, so the build takes
 no lock that blocks coord's log writes. A failed CONCURRENTLY build leaves an
 INVALID index of this name that ``IF NOT EXISTS`` would silently keep, so the
 upgrade first checks ``pg_index.indisvalid`` and drops an invalid one
-concurrently; a re-run over a VALID index leaves it untouched. The
-CONCURRENTLY build and drop run in autocommit with no ``lock_timeout`` or
-``statement_timeout`` (the same posture as ``agent_questions_alert_id_idx_01``),
-so a long-running transaction on ``coord.agent_logs`` delays the deploy until
+concurrently; a re-run over a VALID index leaves it untouched.
+
+No timeout may fail the CONCURRENTLY build or drop: its waits for older
+transactions are lock waits, and a timeout there leaves an INVALID index (or a
+half-done drop) behind. So, as in ``coord_agent_status_session_02``, the
+autocommit block opens with session-level ``SET lock_timeout = 0`` and
+``SET statement_timeout = 0`` and RESETs both after the CONCURRENTLY step, since
+``alembic/env.py``'s per-revision RESET covers ``lock_timeout`` but not
+``statement_timeout``. The cost is stated rather than hidden: a long-running
+transaction (on any table, holding an older snapshot) delays the deploy until
 it ends rather than failing it.
 
 Ordering and locks
@@ -157,15 +163,20 @@ the guard takes as present whatever its expression; a wrong expression under
 the right name is likewise repaired only by a new revision that drops and
 re-adds it.
 
-Every ``op.execute`` is a static string literal, so coord's merge-train
-migration classifier (``pr_merge/migration_classifier.rs``) can read all of it.
-That does NOT make this revision auto-landable: the classifier fails closed on
-any dollar-quoted string (the ``DO $$`` guard around the CHECK) and on any DROP
-statement in ``upgrade()`` (the invalid-index repair), so the merge train HOLDS
-this revision for review by design. Both are kept deliberately: the guard is
-what makes a re-run of ``upgrade()`` safe (Postgres has no ``ADD CONSTRAINT IF
-NOT EXISTS``), and the repair is what stops a failed CONCURRENTLY build from
-being kept INVALID forever. Re-runnability and self-repair outrank an
+Every ``op.execute`` takes a static string literal. That does NOT make this
+revision auto-landable: coord's merge-train migration classifier
+(``pr_merge/migration_classifier.rs``) fails closed on three things here, so the
+merge train HOLDS this revision for review by design:
+
+* SQL executed outside ``op.execute`` — the ``pg_index.indisvalid`` probe in
+  ``_index_is_invalid`` runs through ``op.get_bind().execute(...)``;
+* any dollar-quoted string — the ``DO $$`` guard around the CHECK;
+* any DROP statement in ``upgrade()`` — the invalid-index repair.
+
+All three are kept deliberately: the probe and the repair are what stop a failed
+CONCURRENTLY build from being kept INVALID forever, and the guard is what makes
+a re-run of ``upgrade()`` safe (Postgres has no ``ADD CONSTRAINT IF NOT
+EXISTS``). Re-runnability and self-repair outrank an
 unattended land for a migration on two hot coord tables.
 """
 
@@ -239,6 +250,12 @@ def _index_is_invalid(index_name: str) -> bool:
 def upgrade() -> None:
     """Build the retire-hold index, then add the five launch-capacity columns."""
     with op.get_context().autocommit_block():
+        # No timeout may fail the build (see the module docstring). Session-
+        # level, so it covers the autocommit statements below; both are RESET
+        # after the build, since env.py's per-revision RESET omits
+        # statement_timeout.
+        op.execute("SET lock_timeout = 0")
+        op.execute("SET statement_timeout = 0")
         # A failed earlier CONCURRENTLY build leaves an INVALID index that
         # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
         if _index_is_invalid(_RETIRE_INDEX_NAME):
@@ -257,6 +274,8 @@ def upgrade() -> None:
             WHERE event = 'spawn_deferred_load_retire'
             """
         )
+        op.execute("RESET statement_timeout")
+        op.execute("RESET lock_timeout")
 
     # Bound the ACCESS EXCLUSIVE lock wait (house style): a QUEUED lock request
     # blocks every reader of the table behind it. env.py resets lock_timeout
@@ -371,10 +390,15 @@ def downgrade() -> None:
     lacap_01``.
     """
     with op.get_context().autocommit_block():
+        # Same no-timeout posture as upgrade(), for the same reason.
+        op.execute("SET lock_timeout = 0")
+        op.execute("SET statement_timeout = 0")
         op.execute(
             "DROP INDEX CONCURRENTLY IF EXISTS "
             "coord.idx_agent_logs_deferred_load_retire_device"
         )
+        op.execute("RESET statement_timeout")
+        op.execute("RESET lock_timeout")
 
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(

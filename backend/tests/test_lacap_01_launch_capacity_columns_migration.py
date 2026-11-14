@@ -304,6 +304,45 @@ def test_upgrade_builds_the_index_before_the_transactional_part(
     assert create < add < check
 
 
+def test_the_concurrent_steps_run_with_no_timeout_and_reset_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both timeouts are zeroed BEFORE the CONCURRENTLY step and RESET after it.
+
+    Mutations: delete either SET (a lingering timeout can fail the build and
+    leave an INVALID index), move it after the CREATE/DROP, or delete a RESET
+    (statement_timeout = 0 leaks into later revisions; env.py does not reset
+    it).
+    """
+    for step, verb in (
+        ("upgrade", "CREATE INDEX CONCURRENTLY"),
+        ("downgrade", "DROP INDEX CONCURRENTLY"),
+    ):
+        for invalid in (False, True):
+            statements = [
+                collapsed_upper(s)
+                for s in _recorded(monkeypatch, step, index_invalid=invalid)
+            ]
+
+            def at(sql: str, statements: list[str] = statements) -> int:
+                hits = [i for i, s in enumerate(statements) if s == sql]
+                assert len(hits) == 1, (sql, hits)
+                return hits[0]
+
+            concurrent = [i for i, s in enumerate(statements) if "CONCURRENTLY" in s]
+            main = next(i for i, s in enumerate(statements) if verb in s)
+            assert at("SET LOCK_TIMEOUT = 0") < min(concurrent)
+            assert at("SET STATEMENT_TIMEOUT = 0") < min(concurrent)
+            assert main <= max(concurrent)
+            assert at("RESET STATEMENT_TIMEOUT") > max(concurrent)
+            assert at("RESET LOCK_TIMEOUT") > max(concurrent)
+            if step == "upgrade":
+                # The transactional part re-bounds its own lock wait.
+                assert statements.index("SET LOCAL LOCK_TIMEOUT = '3S'") > at(
+                    "RESET LOCK_TIMEOUT"
+                )
+
+
 def test_an_invalid_index_is_dropped_before_the_create(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
