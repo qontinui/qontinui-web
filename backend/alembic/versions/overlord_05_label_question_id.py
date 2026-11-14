@@ -38,14 +38,17 @@ The column (this docstring is its authority)
       inherits the label. An inherited label is not a decision, and copying the
       id would make the unique index refuse the successor.
     * ``operator_relayed`` rows written before this revision stay NULL. They
-      cannot be backfilled (nothing recorded which question they relayed), and
-      coord dates them by ``recorded_at``, which is never earlier than their
-      answer, so the rule refuses an old answer and never accepts one.
+      cannot be backfilled (nothing recorded which question they relayed). The
+      coord half of the plan (Phase 2) is to date them by ``recorded_at``, which
+      is never earlier than their answer, so the rule refuses an old answer and
+      never accepts one.
     * NULL on any other row means "not a relay", never UNKNOWN.
 
-    No foreign key, matching ``overlord_01``..``04``: the ledger references
-    coord ids by value, and coord validates the question at the write boundary
-    (answered by the operator, bound to this intervention).
+    No foreign key: no revision in the ``overlord_0*`` series references a
+    coord id table such as the agent-questions table (``overlord_03``'s only
+    foreign key is to ``coord.overlord_passes``, within the ledger). The ledger
+    references coord ids by value, and coord validates the question at the
+    write boundary (answered by the operator, bound to this intervention).
 
 The CHECK
 =========
@@ -65,8 +68,10 @@ The index
 ``ux_overlord_interventions_label_question``: UNIQUE on
 ``(tenant_id, label_question_id) WHERE label_question_id IS NOT NULL``. A
 question's context binds it to one intervention, so a second row carrying the
-same id ANYWHERE in the tenant is a reuse. coord maps the 23505 to the same
-422 ``overlord_label_claim_unverified`` its pre-check returns.
+same id ANYWHERE in the tenant is a reuse. The coord half of the plan (Phase
+2) maps the 23505 to the same 422 ``overlord_label_claim_unverified`` its
+pre-check returns; until it lands, a reuse that reaches the index surfaces as
+a database error.
 
 Safety
 ======
@@ -116,7 +121,7 @@ def upgrade() -> None:
     op.execute(
         """
         ALTER TABLE coord.overlord_interventions
-            ADD COLUMN IF NOT EXISTS label_question_id UUID
+            ADD COLUMN label_question_id UUID
         """
     )
     op.execute(
@@ -141,7 +146,7 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_overlord_interventions_label_question
+        CREATE UNIQUE INDEX ux_overlord_interventions_label_question
             ON coord.overlord_interventions (tenant_id, label_question_id)
             WHERE label_question_id IS NOT NULL
         """

@@ -6,7 +6,7 @@ Phase 1 of plan ``2026-11-02-overlord-one-answer-relays-once-server-side`` adds
 index ``ux_overlord_interventions_label_question``. The contract:
 
 1. **The column's NAME and TYPE are an interface.** coord's Phase 2 names it in
-   its INSERT and its relay-once read; ``IF NOT EXISTS`` is type-blind.
+   its INSERT and its relay-once read, so the live walk asserts both.
 2. **Nullable with no DEFAULT.** NULL means "not a relay"; a pre-migration
    ``operator_relayed`` row keeps NULL and is dated by ``recorded_at``.
 3. **The CHECK refuses an id on a row that is not ``operator_relayed``.**
@@ -159,16 +159,13 @@ def test_upgrade_emits_the_column_check_and_index(
 ) -> None:
     statements = [_collapsed(s) for s in _recorded_sql(monkeypatch, "upgrade")]
     assert statements[0] == _LOCK_BOUND, statements
-    assert (
-        f"ALTER TABLE {_SCHEMA}.{_TABLE} ADD COLUMN IF NOT EXISTS {_COLUMN} UUID"
-        in statements
-    )
+    assert f"ALTER TABLE {_SCHEMA}.{_TABLE} ADD COLUMN {_COLUMN} UUID" in statements
     assert (
         f"ALTER TABLE {_SCHEMA}.{_TABLE} ADD CONSTRAINT {_CHECK} CHECK "
         f"({_COLUMN} IS NULL OR label_source IS NOT DISTINCT FROM 'operator_relayed')"
     ) in statements
     assert (
-        f"CREATE UNIQUE INDEX IF NOT EXISTS {_INDEX} ON {_SCHEMA}.{_TABLE} "
+        f"CREATE UNIQUE INDEX {_INDEX} ON {_SCHEMA}.{_TABLE} "
         f"(tenant_id, {_COLUMN}) WHERE {_COLUMN} IS NOT NULL"
     ) in statements
     assert sum("ADD COLUMN" in s for s in statements) == 1
@@ -300,19 +297,17 @@ def _admin_url_or_skip() -> str:
 
 
 def _constraint_count(engine: Engine) -> int:
-    return int(
-        str(
-            scalar(
-                engine,
-                """
+    count = scalar(
+        engine,
+        """
             SELECT count(*) FROM pg_constraint
              WHERE conname = :name
                AND conrelid = 'coord.overlord_interventions'::regclass
             """,
-                name=_CHECK,
-            )
-        )
+        name=_CHECK,
     )
+    assert isinstance(count, int), f"pg_constraint count was {count!r}, not an int"
+    return count
 
 
 def _assert_present(engine: Engine) -> None:
