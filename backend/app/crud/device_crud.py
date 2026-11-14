@@ -9,6 +9,7 @@ direct read+write access to the columns it owns (WS lifecycle, derived
 status, heartbeat).
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -799,6 +800,42 @@ async def get_credential_revoked_at(
     """
     stmt = select(Device.credential_revoked_at).where(Device.device_id == device_id)
     return (await db.execute(stmt)).scalar_one_or_none()
+
+
+@dataclass(frozen=True)
+class DeviceCredentialAnchor:
+    """What a door that issues a device a credential must know about it."""
+
+    tenant_id: UUID | None
+    credential_revoked_at: datetime | None
+
+
+async def get_credential_anchor(
+    db: AsyncSession, device_id: UUID, *, lock_for_share: bool
+) -> DeviceCredentialAnchor | None:
+    """The device's home ``tenant_id`` and credential deny, in one read;
+    ``None`` when ``coord.devices`` has no row for it. A failed read RAISES.
+
+    ``lock_for_share`` takes ``FOR SHARE`` on the device row, serializing the
+    caller with the operator's revoke and ``authorize-redeem`` (both hold it
+    ``FOR UPDATE``): the read then sees a deny committed by either, and
+    neither can commit a deny change until the caller's transaction ends.
+    Only a caller holding NO pair-code row lock may ask for it: the operator
+    paths lock the device row and then wait on bound pair-code rows, so a
+    caller holding a bound code's lock and requesting the device row would
+    close a cycle Postgres aborts. See ``automint_on_pairing``.
+    """
+    stmt = select(Device.tenant_id, Device.credential_revoked_at).where(
+        Device.device_id == device_id
+    )
+    if lock_for_share:
+        stmt = stmt.with_for_update(read=True)
+    row = (await db.execute(stmt)).one_or_none()
+    if row is None:
+        return None
+    return DeviceCredentialAnchor(
+        tenant_id=row.tenant_id, credential_revoked_at=row.credential_revoked_at
+    )
 
 
 async def set_credential_revoked_at(
