@@ -1,7 +1,7 @@
 """coord.devices.ci_reserved_gib — persist the runner's published CI memory reservation
 
 Revision ID: cireserve_01_devices_ci_reserved_gib
-Revises: overlord_04_runner_start_and_nudge_time
+Revises: coord_agent_status_session_02
 Create Date: 2026-11-07
 
 Phase 3 of plan ``2026-11-05-the-worktree-cap-counts-idle-trees-against-a-ram-budget``
@@ -86,7 +86,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cireserve_01_devices_ci_reserved_gib"
-down_revision: str | Sequence[str] | None = "overlord_04_runner_start_and_nudge_time"
+down_revision: str | Sequence[str] | None = "coord_agent_status_session_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
