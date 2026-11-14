@@ -17615,7 +17615,11 @@ export interface paths {
         };
         /**
          * Read Change Log
-         * @description Newest first. Readable by any member, like the records it describes.
+         * @description Newest first. Readable by any member, like the records it describes,
+         *     and served as their reads are: a resource whose reads withhold text
+         *     naming the project's current confidential terms (``served_text``) has the
+         *     same fields withheld from the copies here, which were logged before a
+         *     term may have been added.
          */
         get: operations["api_v1_overview_change_log_get"];
         put?: never;
@@ -18132,6 +18136,166 @@ export interface paths {
         head?: never;
         /** Update Recurring Costs */
         patch: operations["api_v1_overview_recurring_costs_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/report-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Report Snapshots */
+        get: operations["api_v1_overview_report_snapshots_get"];
+        put?: never;
+        /** Create Report Snapshots */
+        post: operations["api_v1_overview_report_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/report-snapshots/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report Snapshots */
+        get: operations["api_v1_overview_report_snapshots_record_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Report Snapshots */
+        patch: operations["api_v1_overview_report_snapshots_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reports */
+        get: operations["api_v1_overview_reports_get"];
+        put?: never;
+        /** Create Reports */
+        post: operations["api_v1_overview_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/reports/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reports */
+        get: operations["api_v1_overview_reports_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Reports */
+        delete: operations["api_v1_overview_reports_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Reports */
+        patch: operations["api_v1_overview_reports_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/reports/{report_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Report Versions
+         * @description Every version of a report's narrative, newest first. A title naming
+         *     one of the project's current confidential terms reads ``[withheld]``.
+         */
+        get: operations["api_v1_overview_reports_report_id_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/reports/{report_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Report Version
+         * @description One version of a report's narrative. A field naming one of the
+         *     project's current confidential terms reads ``[withheld]``.
+         */
+        get: operations["api_v1_overview_reports_report_id_versions_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/reports/{report_id}/versions/{version}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Report
+         * @description Restore an earlier version of the narrative by writing it as a NEW
+         *     version, under the same contract as any write: ``If-Match`` names the
+         *     version the reader saw, and a report that has moved on is a 409 carrying
+         *     the server's copy. The restored narrative is scanned as any write is.
+         */
+        post: operations["api_v1_overview_reports_report_id_versions_version_revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/reports/{report_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Report View
+         * @description The report and its stops in time order, each with what changed since
+         *     the previous stop a reader is shown (D10). At most the newest
+         *     ``PAGE_SIZE`` (48) stops; ``before=<seq>`` pages back.
+         */
+        get: operations["api_v1_overview_reports_report_id_view_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/overview/resources": {
@@ -29769,6 +29933,21 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /** CellChange */
+        CellChange: {
+            /** Column Id */
+            column_id: string;
+            /** From */
+            from: number | null;
+            /** New */
+            new: boolean;
+            /** Row Id */
+            row_id: string;
+            /** Table Id */
+            table_id: string;
+            /** To */
+            to: number | null;
+        };
         /** ChangeLogEntry */
         ChangeLogEntry: {
             /** Action */
@@ -29807,6 +29986,8 @@ export interface components {
             via_device: string | null;
             /** Via Session */
             via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
         };
         /** ChangeLogPage */
         ChangeLogPage: {
@@ -36151,6 +36332,21 @@ export interface components {
             status: string;
         };
         /**
+         * EventInInterval
+         * @description An item event dated after the previous stop and up to this one.
+         */
+        EventInInterval: {
+            /**
+             * At
+             * Format: date
+             */
+            at: string;
+            /** Item Id */
+            item_id: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * ExecutionContext
          * @description Context available during code execution.
          */
@@ -37813,6 +38009,21 @@ export interface components {
              * @description Page URL where feedback was submitted
              */
             page_url?: string | null;
+        };
+        /** FigureChange */
+        FigureChange: {
+            /** Figure Id */
+            figure_id: string;
+            /** From */
+            from: number | null;
+            /** New */
+            new: boolean;
+            /** To */
+            to: number | null;
+            /** Verdict From */
+            verdict_from: string | null;
+            /** Verdict To */
+            verdict_to: string;
         };
         /**
          * FileContentResponse
@@ -40048,6 +40259,17 @@ export interface components {
             synced: number;
             /** Updated */
             updated: number;
+        };
+        /** ItemChange */
+        ItemChange: {
+            /** From Status */
+            from_status: string | null;
+            /** Item Id */
+            item_id: string;
+            /** New */
+            new: boolean;
+            /** To Status */
+            to_status: string;
         };
         /**
          * JobItem
@@ -47806,6 +48028,348 @@ export interface components {
             /** Repo */
             repo: string;
         };
+        /** ReportCreate */
+        ReportCreate: {
+            /**
+             * Body Md
+             * @default
+             */
+            body_md: string;
+            /** Slug */
+            slug?: string | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** ReportItem */
+        ReportItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["ReportRead"];
+        };
+        /** ReportRead */
+        ReportRead: {
+            /** Body Md */
+            body_md: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Source Path */
+            source_path: string | null;
+            /** Source Repo */
+            source_repo: string | null;
+            /** Source Sha */
+            source_sha: string | null;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
+        };
+        /** ReportSnapshotCreate */
+        ReportSnapshotCreate: {
+            /**
+             * ReportSnapshotDoc
+             * @description A report-snapshot/v1 document. Checked by the server against the contract; a failure is 422 snapshot_rejected listing each slot and rule, never a value.
+             */
+            data: {
+                /**
+                 * As Of
+                 * Format: date-time
+                 */
+                as_of: string;
+                /** Figures */
+                figures: components["schemas"]["SnapshotFigure"][];
+                /** Groups */
+                groups: components["schemas"]["SnapshotGroup"][];
+                /** Items */
+                items: components["schemas"]["SnapshotItem"][];
+                /** Label */
+                label: string;
+                method: components["schemas"]["SnapshotMethod"];
+                /** Notes */
+                notes: components["schemas"]["SnapshotNote"][];
+                /**
+                 * Schema
+                 * @constant
+                 */
+                schema: "report-snapshot/v1";
+                /** Summary */
+                summary: string | null;
+                /** Tables */
+                tables: components["schemas"]["SnapshotTable"][];
+            };
+            /**
+             * Report Id
+             * Format: uuid
+             */
+            report_id: string;
+            /** Source Path */
+            source_path?: string | null;
+        };
+        /**
+         * ReportSnapshotDoc
+         * @description One ``report-snapshot/v1`` document.
+         */
+        ReportSnapshotDoc: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Figures */
+            figures: components["schemas"]["SnapshotFigure"][];
+            /** Groups */
+            groups: components["schemas"]["SnapshotGroup"][];
+            /** Items */
+            items: components["schemas"]["SnapshotItem"][];
+            /** Label */
+            label: string;
+            method: components["schemas"]["SnapshotMethod"];
+            /** Notes */
+            notes: components["schemas"]["SnapshotNote"][];
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "report-snapshot/v1";
+            /** Summary */
+            summary: string | null;
+            /** Tables */
+            tables: components["schemas"]["SnapshotTable"][];
+        };
+        /** ReportSnapshotRead */
+        ReportSnapshotRead: {
+            /** Allowlist Version */
+            allowlist_version: number;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Method Kind
+             * @enum {string}
+             */
+            method_kind: "full_review" | "light_check" | "measured" | "manual";
+            /** Method Label */
+            method_label: string;
+            /**
+             * Report Id
+             * Format: uuid
+             */
+            report_id: string;
+            /** Scope Version */
+            scope_version: number;
+            /** Seq */
+            seq: number;
+            /** Source Path */
+            source_path: string | null;
+            /** Version */
+            version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
+            /** Withdrawn */
+            withdrawn: boolean;
+            /** Withdrawn At */
+            withdrawn_at: string | null;
+            /** Withdrawn Reason */
+            withdrawn_reason: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
+        };
+        /**
+         * ReportSnapshotUpdate
+         * @description Withdraw (``withdrawn: true`` with a ``withdrawn_reason``) or restore
+         *     (``withdrawn: false``, no reason) — the only change a snapshot takes.
+         */
+        ReportSnapshotUpdate: {
+            /** Withdrawn */
+            withdrawn: boolean;
+            /** Withdrawn Reason */
+            withdrawn_reason?: string | null;
+        };
+        /** ReportSnapshotsItem */
+        ReportSnapshotsItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["ReportSnapshotRead"];
+        };
+        /** ReportSnapshotsList */
+        ReportSnapshotsList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["ReportSnapshotRead"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * ReportUpdate
+         * @description Absent fields are left alone. ``title``, ``summary`` and ``body_md`` can
+         *     be changed, never cleared (``summary`` may be set to ""). The slug is
+         *     fixed: blocks in other pages name the report by it.
+         *
+         *     ``source_repo`` + ``source_path`` name the source the writer believes the
+         *     report mirrors (409 ``source_mismatch`` when it does not); ``source_sha``
+         *     is the commit the new content mirrors.
+         */
+        ReportUpdate: {
+            /** Body Md */
+            body_md?: string | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** ReportVersionList */
+        ReportVersionList: {
+            /** Current Version */
+            current_version: number;
+            /** Versions */
+            versions: components["schemas"]["ReportVersionSummary"][];
+        };
+        /** ReportVersionRead */
+        ReportVersionRead: {
+            /** Body Md */
+            body_md: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Source Sha */
+            source_sha: string | null;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
+        };
+        /** ReportVersionSummary */
+        ReportVersionSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Source Sha */
+            source_sha: string | null;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
+        };
+        /**
+         * ReportView
+         * @description A report's timeline (D10).
+         */
+        ReportView: {
+            report: components["schemas"]["ReportRead"];
+            /** Shown */
+            shown: number;
+            /** Snapshots */
+            snapshots: components["schemas"]["ViewSnapshot"][];
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldEntry"][];
+        };
+        /** ReportsItem */
+        ReportsItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["ReportRead"];
+        };
+        /** ReportsList */
+        ReportsList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["ReportRead"][];
+            /** Total */
+            total: number;
+        };
         /**
          * ReposApplyDispatchRequest
          * @description Ask a machine's runner to reconcile its cloned repositories.
@@ -50457,6 +51021,155 @@ export interface components {
             /** Demoted */
             demoted: components["schemas"]["SlotCandidateDemotion"][];
         };
+        /** SnapshotCell */
+        SnapshotCell: {
+            /** Unknown Reason */
+            unknown_reason: string | null;
+            /** Value */
+            value: number | null;
+        };
+        /**
+         * SnapshotChanges
+         * @description What changed since the previous stop a reader is shown.
+         */
+        SnapshotChanges: {
+            /** Cells */
+            cells: components["schemas"]["CellChange"][];
+            /** Events */
+            events: components["schemas"]["EventInInterval"][];
+            /** Figures */
+            figures: components["schemas"]["FigureChange"][];
+            /** Items */
+            items: components["schemas"]["ItemChange"][];
+            /** Method Changed */
+            method_changed: boolean;
+            /** Previous Seq */
+            previous_seq: number;
+        };
+        /** SnapshotColumn */
+        SnapshotColumn: {
+            /** Help */
+            help: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** SnapshotEvent */
+        SnapshotEvent: {
+            /**
+             * At
+             * Format: date
+             */
+            at: string;
+            /** Label */
+            label: string;
+        };
+        /** SnapshotFigure */
+        SnapshotFigure: {
+            /** Baseline */
+            baseline: number | null;
+            /**
+             * Better
+             * @enum {string}
+             */
+            better: "higher" | "lower";
+            /** Help */
+            help: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Measured At */
+            measured_at: string | null;
+            /** Source */
+            source: string;
+            /** Target */
+            target: number | null;
+            /** Unit */
+            unit: string;
+            /** Unknown Reason */
+            unknown_reason: string | null;
+            /** Value */
+            value: number | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "met" | "missed" | "unknown";
+        };
+        /** SnapshotGroup */
+        SnapshotGroup: {
+            /** Due */
+            due: string | null;
+            /** Help */
+            help: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** SnapshotItem */
+        SnapshotItem: {
+            /** Events */
+            events: components["schemas"]["SnapshotEvent"][];
+            /** Group */
+            group: string | null;
+            /** Help */
+            help: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Links */
+            links: components["schemas"]["SnapshotLink"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planned" | "in_progress" | "done" | "blocked" | "unknown" | "dropped";
+            /** Status Note */
+            status_note: string | null;
+        };
+        /** SnapshotLink */
+        SnapshotLink: {
+            /** Label */
+            label: string;
+            /** Url */
+            url: string;
+        };
+        /** SnapshotMethod */
+        SnapshotMethod: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "full_review" | "light_check" | "measured" | "manual";
+            /** Label */
+            label: string;
+            /** Note */
+            note: string | null;
+        };
+        /** SnapshotNote */
+        SnapshotNote: {
+            /** Body Md */
+            body_md: string;
+            /** Title */
+            title: string;
+        };
+        /** SnapshotRow */
+        SnapshotRow: {
+            /** Cells */
+            cells: {
+                [key: string]: components["schemas"]["SnapshotCell"];
+            };
+            /** Help */
+            help: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** SnapshotRun */
         SnapshotRun: {
             /** Created At */
@@ -50579,6 +51292,49 @@ export interface components {
             run_name?: string | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /** SnapshotScale */
+        SnapshotScale: {
+            /**
+             * Better
+             * @enum {string}
+             */
+            better: "higher" | "lower";
+            /** Max */
+            max: number;
+            /** Min */
+            min: number;
+            /** Target */
+            target: number | null;
+        };
+        /** SnapshotSummaryRow */
+        SnapshotSummaryRow: {
+            /** Cells */
+            cells: {
+                [key: string]: components["schemas"]["SnapshotCell"];
+            };
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** SnapshotTable */
+        SnapshotTable: {
+            /** Caption */
+            caption: string;
+            /** Columns */
+            columns: components["schemas"]["SnapshotColumn"][];
+            /** Id */
+            id: string;
+            /** Row Header */
+            row_header: string;
+            /** Rows */
+            rows: components["schemas"]["SnapshotRow"][];
+            scale: components["schemas"]["SnapshotScale"];
+            /** Summary Rows */
+            summary_rows: components["schemas"]["SnapshotSummaryRow"][];
+            /** Title */
+            title: string;
         };
         /**
          * StateAnnotation
@@ -55950,6 +56706,50 @@ export interface components {
              */
             elements: components["schemas"]["ElementAnnotationCreate"][];
         };
+        /** ViewSnapshot */
+        ViewSnapshot: {
+            /** Allowlist Version */
+            allowlist_version: number;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            changes_since_previous: components["schemas"]["SnapshotChanges"] | null;
+            /** Content Sha256 */
+            content_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Method Kind */
+            method_kind: string;
+            /** Method Label */
+            method_label: string;
+            /** Scope Version */
+            scope_version: number;
+            /** Seq */
+            seq: number;
+            /** Source Path */
+            source_path: string | null;
+            /** Version */
+            version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
+        };
         /**
          * VisionResults
          * @description Vision extraction results from the runner.
@@ -56129,6 +56929,34 @@ export interface components {
             status: string;
             /** Wake Url */
             wake_url: string;
+        };
+        /**
+         * WithheldEntry
+         * @description A slot the view did not serve. When ``seq`` is absent from
+         *     ``snapshots`` the whole stop was withheld, and ``slot`` names why.
+         */
+        WithheldEntry: {
+            /** Reason */
+            reason: string;
+            /** Seq */
+            seq: number;
+            /** Slot */
+            slot: string;
+        };
+        /**
+         * WithheldSlot
+         * @description A slot a read did not serve, and why: a contract violation kind
+         *     (``confidential_term`` for a string or a field naming one of the
+         *     project's current confidential terms), a link's
+         *     ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
+         *     ``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry
+         *     names the copy too (``after.title``).
+         */
+        WithheldSlot: {
+            /** Reason */
+            reason: string;
+            /** Slot */
+            slot: string;
         };
         /**
          * WorkArtifactDetail
@@ -83243,6 +84071,414 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecurringCostsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_report_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSnapshotsList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_report_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportSnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSnapshotsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_report_snapshots_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSnapshotsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_report_snapshots_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportSnapshotUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSnapshotsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_report_id_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportVersionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_report_id_versions_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportVersionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_report_id_versions_version_revert_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                report_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_reports_report_id_view_get: {
+        parameters: {
+            query?: {
+                /** @description Read the stops ordered before the stop with this seq. */
+                before?: number | null;
+            };
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
                 };
             };
             /** @description Validation Error */

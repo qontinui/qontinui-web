@@ -1210,15 +1210,15 @@ class TestUpsertBySource:
         (controls, separators, format characters outside the allowlist, and the
         reserved default-ignorable unassigned code points) and the format (Cf)
         characters a path may hold are spelled out here independently of
-        pages.py, so that changing either is deliberate."""
+        sourced.py, so that changing either is deliberate."""
         import unicodedata
 
-        from app.overview.pages import _is_path_forbidden_char
+        from app.overview.sourced import is_path_forbidden_char
 
         allowed = {0x00AD, 0x200C, 0x200D, 0x0600, 0x0601, 0x0602, 0x0603}
         allowed |= {0x0604, 0x0605, 0x06DD, 0x070F, 0x0890, 0x0891, 0x08E2}
         allowed |= {0x110BD, 0x110CD}
-        refused = {cp for cp in range(0x110000) if _is_path_forbidden_char(chr(cp))}
+        refused = {cp for cp in range(0x110000) if is_path_forbidden_char(chr(cp))}
         expected = set()
         for cp in range(0x110000):
             category = unicodedata.category(chr(cp))
@@ -1240,9 +1240,9 @@ class TestUpsertBySource:
             f"U+{cp:04X}" for cp in accepted_format ^ allowed
         )
         for cp in (0x0000, 0x0085, 0x2028, 0x2029, 0x200B, 0x200E, 0x202E):
-            assert _is_path_forbidden_char(chr(cp)), f"U+{cp:04X}"
+            assert is_path_forbidden_char(chr(cp)), f"U+{cp:04X}"
         for cp in (0x2060, 0x2066, 0x206A, 0x180E, 0xFEFF, 0xE0001, 0xE0041):
-            assert _is_path_forbidden_char(chr(cp)), f"U+{cp:04X}"
+            assert is_path_forbidden_char(chr(cp)), f"U+{cp:04X}"
 
     async def test_the_repo_and_sha_are_stored_lowercased_and_the_filter_matches(
         self, agent: httpx.AsyncClient

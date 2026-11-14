@@ -44,13 +44,25 @@ class StaleVersion(Exception):
 
 class StoreRefused(Exception):
     """The store declined the write for a reason the caller can act on (a
-    name already taken, content its own rules reject)."""
+    name already taken, content its own rules reject).
 
-    def __init__(self, status_code: int, error: str, message: str) -> None:
+    ``extra`` carries structured detail beside ``error`` and ``message`` in
+    the refusal body — a report snapshot's slot-named ``violations``, so a
+    publisher can say which slot failed without parsing prose."""
+
+    def __init__(
+        self,
+        status_code: int,
+        error: str,
+        message: str,
+        *,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error = error
         self.message = message
+        self.extra = extra or {}
 
 
 @dataclass
@@ -104,6 +116,20 @@ class ResourceStore(Protocol):
     # (the first answer lost in transit) implements it to say which record
     # that was; the router calls it only for a keyed create refused as
     # ``name_taken``. See ``IntentDocumentStore.adopt_existing``.
+    #
+    # Optional: ``adopts_without_key = True``. A store whose create body
+    # carries its own identity (a report snapshot's ``source_path``) makes a
+    # re-post of the same body the same create whether or not it names an
+    # Idempotency-Key, so the router offers an UNKEYED ``name_taken`` to
+    # ``adopt_existing`` too. See ``ReportSnapshotStore``.
+    #
+    # Optional: ``served(ctx, record) -> BaseModel``. A store whose reads
+    # withhold part of a record (a report's text under the project's current
+    # confidential terms) returns the STORED copy from ``create``, ``update``
+    # and ``adopt_existing`` — the copy ``overview.change_log`` keeps, before
+    # and after alike — and the router answers each write through this hook.
+    # ``get``, ``list`` and a ``StaleVersion``'s server copy are served copies
+    # already. See ``ReportStore.served``.
 
 
 @dataclass(frozen=True)
@@ -136,3 +162,21 @@ class ResourceSpec:
     #: (a page's body is in ``page_versions``). A DELETE snapshot keeps every
     #: field, because the record and whatever kept its history go with it.
     audit_exclude: frozenset[str] = frozenset()
+    #: Read-model text fields served under the project's CURRENT confidential
+    #: terms: a value naming one is served whole as ``[withheld]``. The
+    #: resource's own reads apply this; ``GET /change-log`` applies it to the
+    #: ``before`` / ``after`` copies it serves for the resource, which were
+    #: logged before a term may have been added (the rows are not rewritten).
+    served_text: frozenset[str] = frozenset()
+
+
+class WithheldSlot(BaseModel):
+    """A slot a read did not serve, and why: a contract violation kind
+    (``confidential_term`` for a string or a field naming one of the
+    project's current confidential terms), a link's
+    ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
+    ``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry
+    names the copy too (``after.title``)."""
+
+    slot: str
+    reason: str
