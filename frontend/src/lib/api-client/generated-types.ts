@@ -49325,6 +49325,12 @@ export interface components {
          *     * ``sole`` — exactly one live session on the device in this tenant.
          *       ``session_name`` is its display name, and ``None`` there means the
          *       session has NO name — not that the name is unknown.
+         *     * ``declared`` — the live session's ``coord.agent_status`` row is STAMPED
+         *       with its writer's session, so ``session_id`` names the declarer exactly
+         *       — even on a device hosting several live sessions, since the stamp is
+         *       not a guess. coord emits it INSTEAD of ``sole``/``ambiguous`` for a
+         *       stamped row. ``session_name`` ``None`` is an UNNAMED session, as on
+         *       ``sole``.
          *     * ``ambiguous`` — ``live_session_count`` (≥ 2) sessions share the device,
          *       so naming any one would be a guess. Render "N sessions".
          *     * ``unresolved`` — coord could not establish custody (a failed count, a
@@ -49336,13 +49342,15 @@ export interface components {
         ReconciliationCustody: {
             /** Live Session Count */
             live_session_count?: number | null;
+            /** Session Id */
+            session_id?: string | null;
             /** Session Name */
             session_name?: string | null;
             /**
              * State
              * @enum {string}
              */
-            state: "sole" | "ambiguous" | "unresolved";
+            state: "sole" | "declared" | "ambiguous" | "unresolved";
         };
         /**
          * ReconciliationFacets
