@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -588,3 +588,152 @@ class FollowupReconcileResponse(BaseModel):
     #: True when the pass stopped at its row cap with ``fixing`` rows left —
     #: the next pass continues; nothing past the cap was examined.
     truncated: bool = False
+
+
+# ───────────────────── claim / edge-create conflicts ─────────────────────
+#
+# What ``PATCH /plan-library/edges/{edge_id}`` (the claim door) and
+# ``POST /plan-library/{artifact_id}/edges`` (the edge-create door) answer when a
+# follow-up write meets the row that already records the finding. The routes
+# build their 409 ``detail`` FROM these models (``_followup_conflict``), so the
+# body OpenAPI documents and the body that is served are one definition and
+# cannot drift. ``error`` is the discriminator; ``detail.error`` names the
+# condition that actually held.
+#
+# ``to_id`` does NOT mean the same thing in every body, and the field
+# descriptions say which: in ``followup_already_claimed`` it is the edge's
+# CURRENT owner, in ``followup_duplicate_owned`` the owner the claim asked for
+# (who also holds ``existing_edge_id``). ``followup_exists_unowned`` therefore
+# calls the owner a post asked for ``requested_to_id``.
+
+
+class FollowupAlreadyClaimedBody(BaseModel):
+    """The edge row already has an owner, and it is not the one asked for."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: Literal["followup_already_claimed"]
+    message: str
+    edge_id: UUID = Field(description="The edge that already has an owner.")
+    to_id: UUID = Field(
+        description=(
+            "The edge's CURRENT owner, as stored - never the artifact the "
+            "caller asked for."
+        )
+    )
+
+
+class FollowupDuplicateOwnedBody(BaseModel):
+    """The requested owner already owns this finding under another edge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: Literal["followup_duplicate_owned"]
+    message: str
+    edge_id: UUID = Field(description="The edge the claim named; it stays open.")
+    existing_edge_id: UUID = Field(
+        description="The edge the requested owner already holds for this finding."
+    )
+    to_id: UUID = Field(
+        description=(
+            "The owner the claim asked for, who is also the owner of "
+            "``existing_edge_id``."
+        )
+    )
+
+
+class FollowupExistsUnownedBody(BaseModel):
+    """The follow-up posted with an owner already exists, and is still open."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: Literal["followup_exists_unowned"]
+    message: str
+    existing_edge_id: UUID = Field(
+        description="The open follow-up; claim it with ``PATCH /edges/{id}``."
+    )
+    requested_to_id: UUID = Field(
+        description="The owner the post asked for. It owns nothing yet."
+    )
+
+
+class FollowupResolvedBody(BaseModel):
+    """A resolution already closed the follow-up."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: Literal["followup_resolved"]
+    message: str
+    edge_id: UUID
+    resolution: FollowupResolution = Field(description="How it was closed.")
+
+
+class FollowupClaimConflict(BaseModel):
+    """The body of a 409 from ``PATCH /plan-library/edges/{edge_id}``."""
+
+    detail: Annotated[
+        FollowupAlreadyClaimedBody | FollowupDuplicateOwnedBody | FollowupResolvedBody,
+        Field(discriminator="error"),
+    ]
+
+
+class FollowupEdgeConflict(BaseModel):
+    """The body of a 409 from ``POST /plan-library/{artifact_id}/edges``."""
+
+    detail: Annotated[
+        FollowupAlreadyClaimedBody | FollowupExistsUnownedBody | FollowupResolvedBody,
+        Field(discriminator="error"),
+    ]
+
+
+class PlanLibraryNotFound(BaseModel):
+    """The body of a 404: ``{"detail": "<what was not found>"}``."""
+
+    detail: str
+
+
+#: ``responses=`` of ``PATCH /plan-library/edges/{edge_id}``. Documentation only
+#: (the answers are raised as ``HTTPException``), which is the point: without it
+#: the OpenAPI snapshot and the generated client know no 404 or 409 and none of
+#: ``detail.error``.
+CLAIM_FOLLOWUP_RESPONSES: dict[int | str, dict[str, Any]] = {
+    404: {
+        "model": PlanLibraryNotFound,
+        "description": (
+            "No such edge in the caller's organization scope (also the answer "
+            "when the edge was deleted between the read and the row lock)."
+        ),
+    },
+    409: {
+        "model": FollowupClaimConflict,
+        "description": (
+            "The claim was refused. ``detail.error`` names the condition that "
+            "held: ``followup_already_claimed`` (the edge has ANOTHER owner, "
+            "named in ``to_id``), ``followup_duplicate_owned`` (the requested "
+            "owner already holds this finding under ``existing_edge_id``) or "
+            "``followup_resolved``."
+        ),
+    },
+}
+
+#: ``responses=`` of ``POST /plan-library/{artifact_id}/edges``.
+CREATE_EDGE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    404: {
+        "model": PlanLibraryNotFound,
+        "description": (
+            "The artifact in the path, or the artifact at the other end of the "
+            "edge, is not in the caller's organization scope."
+        ),
+    },
+    409: {
+        "model": FollowupEdgeConflict,
+        "description": (
+            "A ``spawned_followup`` posted with an owner met the stored row for "
+            "the same finding. ``detail.error`` names the condition that held: "
+            "``followup_already_claimed`` (owned by ANOTHER artifact, named in "
+            "``to_id``), ``followup_exists_unowned`` (still open: claim "
+            "``existing_edge_id``; ``requested_to_id`` is the owner this post "
+            "asked for) or ``followup_resolved``."
+        ),
+    },
+}

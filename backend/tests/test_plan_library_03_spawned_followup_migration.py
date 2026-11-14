@@ -258,8 +258,20 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         assert "ck_work_artifact_edges_open_target" not in after_down
         assert "ck_work_artifact_edges_followup_note" not in after_down
         assert "uq_work_artifact_edges_open_followup" not in _indexes(engine)
-        # Phase 1's own index is untouched by this revision's downgrade.
-        assert "uq_work_artifact_edges_from_to_relation" in _indexes(engine)
+        # Phase 1's own index is untouched by this revision's downgrade. Walking
+        # down from head, it is also RESTORED by
+        # ``plan_library_12_followup_identity_is_the_note``'s downgrade, which
+        # replaced it with a narrowed index and a note-keyed owned-follow-up one:
+        # the full, unconditional pair index is back and the two new ones are gone.
+        after_down_indexes = _indexes(engine)
+        assert "uq_work_artifact_edges_from_to_relation" in after_down_indexes
+        restored = after_down_indexes["uq_work_artifact_edges_from_to_relation"]
+        assert "UNIQUE" in restored and "(from_id, to_id, relation)" in restored
+        assert " WHERE " not in restored, restored
+        assert "uq_work_artifact_edges_from_to_relation_non_followup" not in (
+            after_down_indexes
+        )
+        assert "uq_work_artifact_edges_owned_followup" not in after_down_indexes
 
         run_alembic(root, db_url, "upgrade", "head")
         assert _to_id_is_nullable(engine)
