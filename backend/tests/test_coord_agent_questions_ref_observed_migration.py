@@ -41,7 +41,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_agent_questions_ref_observed_01"
-_PARENT_REVISION_ID = "overlord_04_runner_start_and_nudge_time"
+_PARENT_REVISION_ID = "coord_agent_status_session_02"
 _REVISION_FILENAME = "coord_agent_questions_ref_observed_01.py"
 
 _TABLE = "agent_questions"

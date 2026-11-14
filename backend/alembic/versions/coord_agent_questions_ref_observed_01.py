@@ -1,7 +1,7 @@
 """coord.agent_questions — ref_observed: the cited PR's state as first observed after the ask
 
 Revision ID: coord_agent_questions_ref_observed_01
-Revises: overlord_04_runner_start_and_nudge_time
+Revises: coord_agent_status_session_02
 Create Date: 2026-11-14
 
 Plan ``2026-11-14-an-old-question-whose-pr-coord-ff-lands-later-is-kept-forever-instead-of-retired``
@@ -81,7 +81,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_ref_observed_01"
-down_revision: str | Sequence[str] | None = "overlord_04_runner_start_and_nudge_time"
+down_revision: str | Sequence[str] | None = "coord_agent_status_session_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
