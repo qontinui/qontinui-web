@@ -1314,12 +1314,17 @@ jobs:
         #
         # Only apt reaches the network. The suite is `<VERSION_CODENAME>-pgdg`,
         # read from /etc/os-release. The step first looks for a live entry
-        # for it: a source file whose uncommented lines name both
-        # apt.postgresql.org and that suite, and which has no `Enabled: no`
-        # or `Enabled: false` line. Such an entry is used as configured,
-        # because a second entry for the same suite with another Signed-By
-        # breaks every `apt-get update`. Anything else -- a commented-out
-        # line, another codename's suite, a disabled stanza -- gets this
+        # for it, judged per entry -- per line in the one-line format, per
+        # stanza in deb822 -- never per file: an uncommented entry that names
+        # apt.postgresql.org (deb822: in its URIs; one-line: anywhere in the
+        # line), which lists that suite and, in deb822, is
+        # not disabled by any value apt reads as false. Such an entry, deb or
+        # deb-src, is used as configured, because a second entry for the same
+        # URI and suite with another Signed-By breaks every `apt-get update`
+        # (a deb-src-only one then reports no candidate, not a mirror stall).
+        # Anything else -- a commented-out line, another codename's suite, a
+        # disabled stanza (even beside a live one for another host), or a
+        # host and suite split across two entries -- gets this
         # step's own pgdg.sources, signed by
         # /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc. That key
         # ships in postgresql-client-common on resolute (290ubuntu1) but not
@@ -1364,9 +1369,36 @@ jobs:
           configured=
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             [ -r "$f" ] || continue
-            if grep -Eqs '^[^#]*apt\.postgresql\.org' "$f" &&
-              grep -Eqs "^[^#]*[[:space:]]${codename}-pgdg([[:space:]]|\$)" "$f" &&
-              ! grep -Eiqs '^[[:space:]]*Enabled:[[:space:]]*(no|false)[[:space:]]*$' "$f"; then
+            case "$f" in *.sources) deb822=1 ;; *) deb822=0 ;; esac
+            # One entry per line (one-line format) or per stanza (deb822,
+            # paragraphs split by blank lines; a line opening with blank space
+            # continues the field above it). An entry is live when its URI
+            # names apt.postgresql.org, it lists the suite, and (deb822) its
+            # `Enabled:` is not one of apt's false values. deb-src counts too:
+            # apt keeps one Signed-By per URI and suite across deb and deb-src.
+            if awk -v suite="${codename}-pgdg" -v deb822="$deb822" '
+              function flush() { if (uri && hit && !off) found = 1; uri = hit = off = 0; field = "" }
+              deb822 && /^[[:space:]]*$/ { flush(); next }
+              {
+                line = $0; sub(/#.*/, "", line); value = line
+                if (deb822 && line ~ /^[^[:space:]]/) {
+                  if (!index(line, ":")) next
+                  field = tolower(substr(line, 1, index(line, ":") - 1))
+                  value = substr(line, index(line, ":") + 1)
+                }
+                if (!deb822 || field == "uris") if (index(value, "apt.postgresql.org")) uri = 1
+                if (!deb822 || field == "suites") {
+                  n = split(value, w, /[[:space:]]+/)
+                  for (i = 1; i <= n; i++) if (w[i] == suite) hit = 1
+                }
+                if (deb822 && field == "enabled") {
+                  v = tolower(value); gsub(/[[:space:]]/, "", v)
+                  if (v ~ /^(no|false|off|without|disable|0)$/) off = 1
+                }
+              }
+              !deb822 { flush() }
+              END { flush(); exit !found }
+            ' "$f"; then
               configured=$f
               break
             fi
