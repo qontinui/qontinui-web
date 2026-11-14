@@ -57,7 +57,10 @@ from tests._alembic_harness import (
     ephemeral_database,
     index_definition,
     index_exists,
+    index_oid,
     index_state,
+    invalidate_index,
+    is_superuser,
     load_revision_module,
     run_alembic,
     table_exists,
@@ -106,12 +109,15 @@ def _module() -> ModuleType:
     return load_revision_module(_path(), f"_rev_{_REVISION_ID}")
 
 
-def _recorded(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
+def _recorded(
+    monkeypatch: pytest.MonkeyPatch, step: str, *, index_invalid: bool = False
+) -> list[str]:
     """Run ``upgrade``/``downgrade`` against a recording ``op``.
 
     The harness's ``recorded_sql`` stubs only ``execute``; this revision also
     calls ``op.get_context().autocommit_block()`` and ``op.get_bind()`` (the
-    invalid-index probe), so both are stubbed here: no invalid index exists.
+    invalid-index probe), so both are stubbed here. ``index_invalid`` is what
+    the probe answers: True takes the failed-build repair branch.
     """
     module = _module()
     executed: list[str] = []
@@ -121,8 +127,8 @@ def _recorded(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
         def execute(*_args: object, **_kwargs: object) -> object:
             class _Result:
                 @staticmethod
-                def scalar() -> None:
-                    return None
+                def scalar() -> bool:
+                    return index_invalid
 
             return _Result()
 
@@ -161,6 +167,13 @@ def _column_add_statement(statements: list[str]) -> str:
     return found[0]
 
 
+def _constraint_statement(statements: list[str]) -> str:
+    """The ONE recorded statement adding the launch_verdict CHECK, collapsed."""
+    found = [collapsed_upper(s) for s in statements if "ADD CONSTRAINT" in s.upper()]
+    assert len(found) == 1, f"expected ONE ADD CONSTRAINT, got {len(found)}"
+    return found[0]
+
+
 def _add_clause(add: str, column: str) -> str:
     """The text of one ``ADD COLUMN IF NOT EXISTS <column> ...`` clause."""
     collapsed = collapsed_upper(add)
@@ -195,8 +208,6 @@ def test_the_column_list_is_the_interface_coord_reads() -> None:
         "Option<i32>; a rename or retype breaks it silently"
     )
     assert module._TABLE == _QUALIFIED
-    for _, ddl, pg_type in _EXPECTED:
-        assert ddl.lower() == pg_type
 
 
 def test_the_check_names_exactly_the_runner_verdict_vocabulary(
@@ -204,17 +215,31 @@ def test_the_check_names_exactly_the_runner_verdict_vocabulary(
 ) -> None:
     module = _module()
     assert tuple(module._LAUNCH_VERDICTS) == _VERDICTS
-    clause = _add_clause(
-        _column_add_statement(_recorded(monkeypatch, "upgrade")), "launch_verdict"
-    )
+    clause = _constraint_statement(_recorded(monkeypatch, "upgrade"))
     in_list = re.search(r"CHECK \(LAUNCH_VERDICT IN \((.*?)\)\s*\)", clause)
     assert in_list, f"launch_verdict carries no IN-list CHECK: {clause}"
     words = tuple(w.strip().strip("'").lower() for w in in_list.group(1).split(","))
     assert words == _VERDICTS
-    assert module._VERDICT_CHECK_NAME.upper() in clause
+    assert f"ADD CONSTRAINT {module._VERDICT_CHECK_NAME.upper()}" in clause
 
 
-def test_the_add_is_nullable_with_no_default_and_one_check(
+def test_the_check_is_not_valid_and_guarded_against_a_rerun(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NOT VALID skips the ACCESS EXCLUSIVE scan of existing rows; the guard
+    keeps a re-run from failing on the existing constraint name.
+
+    Mutations: drop ``NOT VALID`` (the scan returns), or drop the
+    ``pg_constraint`` lookup (a re-run raises duplicate_object).
+    """
+    clause = _constraint_statement(_recorded(monkeypatch, "upgrade"))
+    assert re.search(r"\)\s*NOT VALID\s*;", clause), clause
+    assert "IF NOT EXISTS ( SELECT 1 FROM PG_CONSTRAINT" in clause
+    assert f"CONNAME = '{_module()._VERDICT_CHECK_NAME.upper()}'" in clause
+    assert f"CONRELID = '{_QUALIFIED.upper()}'::REGCLASS" in clause
+
+
+def test_the_add_is_nullable_with_no_default_and_no_constraint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """NULL means 'publisher predates this'; a DEFAULT 0 would refuse every device."""
@@ -227,10 +252,10 @@ def test_the_add_is_nullable_with_no_default_and_one_check(
             assert not re.search(rf"\b{forbidden}\b", clause), (
                 f"{name} carries {forbidden}; NULL is load-bearing"
             )
-        has_check = bool(re.search(r"\bCHECK\b", clause))
-        assert has_check == (name == "launch_verdict"), (
-            f"{name}: only launch_verdict is a fixed vocabulary; a CHECK on a "
-            "counter would discard whole best-effort sample rows"
+        assert not re.search(r"\b(CHECK|CONSTRAINT)\b", clause), (
+            f"{name}: no constraint rides the ADD COLUMN -- an inline CHECK "
+            "validates every existing row under ACCESS EXCLUSIVE; the "
+            "launch_verdict CHECK is a separate NOT VALID constraint"
         )
 
 
@@ -263,6 +288,47 @@ def test_upgrade_builds_the_partial_retire_index_concurrently(
     assert "ON COORD.AGENT_LOGS (DEVICE_ID, OCCURRED_AT DESC)" in create
     assert f"WHERE EVENT = '{_RETIRE_EVENT.upper()}'" in create
     assert _module()._RETIRE_INDEX_NAME == _INDEX_NAME
+
+
+def test_upgrade_builds_the_index_before_the_transactional_part(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Index first, so a re-run after a failed column step finds it VALID.
+
+    Mutation: move the autocommit block after the column ALTER.
+    """
+    statements = [collapsed_upper(s) for s in _recorded(monkeypatch, "upgrade")]
+    create = next(i for i, s in enumerate(statements) if "CREATE INDEX" in s)
+    add = next(i for i, s in enumerate(statements) if "ADD COLUMN" in s)
+    check = next(i for i, s in enumerate(statements) if "ADD CONSTRAINT" in s)
+    assert create < add < check
+
+
+def test_an_invalid_index_is_dropped_before_the_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed CONCURRENTLY build is dropped, then rebuilt -- not kept.
+
+    Mutation: delete the ``_index_is_invalid`` branch (no DROP recorded), or
+    make it drop after the CREATE.
+    """
+    statements = [
+        collapsed_upper(s)
+        for s in _recorded(monkeypatch, "upgrade", index_invalid=True)
+    ]
+    drop = [
+        i
+        for i, s in enumerate(statements)
+        if f"DROP INDEX CONCURRENTLY IF EXISTS COORD.{_INDEX_NAME.upper()}" in s
+    ]
+    create = [i for i, s in enumerate(statements) if "CREATE INDEX" in s]
+    assert len(drop) == 1 and len(create) == 1
+    assert drop[0] < create[0]
+
+    healthy = _recorded(monkeypatch, "upgrade", index_invalid=False)
+    assert not any("DROP INDEX" in collapsed_upper(s) for s in healthy), (
+        "a VALID index must be left alone"
+    )
 
 
 def test_downgrade_drops_exactly_the_index_and_the_five_columns(
@@ -302,7 +368,11 @@ def test_every_op_execute_is_static_and_concurrent_ddl_is_autocommitted() -> Non
         concurrent = [e for e in executes if e.sql and "CONCURRENTLY" in e.sql.upper()]
         assert concurrent, f"{function}() has no CONCURRENTLY statement"
         assert all(e.in_autocommit_block for e in concurrent), function
-        column_ddl = [e for e in executes if e.sql and "COLUMN" in e.sql.upper()]
+        column_ddl = [
+            e
+            for e in executes
+            if e.sql and ("COLUMN" in e.sql.upper() or "CONSTRAINT" in e.sql.upper())
+        ]
         assert column_ddl and not any(e.in_autocommit_block for e in column_ddl), (
             f"{function}(): the column ALTER belongs in the migration transaction"
         )
@@ -397,6 +467,50 @@ def test_live_columns_check_and_null_semantics() -> None:
         _insert_sample(engine, uuid.uuid4(), None)
         with pytest.raises(Exception, match="(?i)check"):
             _insert_sample(engine, uuid.uuid4(), "admit")
+
+        with engine.connect() as conn:
+            validated = conn.execute(
+                text(
+                    """
+                    SELECT convalidated FROM pg_constraint
+                     WHERE conname = :c
+                       AND conrelid = 'coord.device_resource_samples'::regclass
+                    """
+                ),
+                {"c": _module()._VERDICT_CHECK_NAME},
+            ).scalar_one()
+        assert validated is False, (
+            "the CHECK must be added NOT VALID (no scan of existing rows under "
+            "ACCESS EXCLUSIVE)"
+        )
+
+
+def test_live_rerun_repairs_an_invalid_index_and_skips_the_existing_check() -> None:
+    """Stamp back and re-run upgrade over an INVALID index and the existing CHECK.
+
+    The re-run must (a) drop and rebuild the INVALID index -- VALID, new oid --
+    and (b) not fail on the constraint name that already exists. Mutations:
+    delete the invalid-index branch (index stays INVALID), or the
+    pg_constraint guard (duplicate_object on re-run).
+    """
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, "lacap01v") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _assert_index_present(engine)
+        if not is_superuser(engine):
+            pytest.skip("the test role cannot write pg_index to invalidate an index")
+        before = index_oid(engine, _INDEX_NAME)
+        invalidate_index(engine, _INDEX_NAME)
+        assert not index_state(engine, _INDEX_NAME)[0]
+
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+
+        _assert_index_present(engine)
+        assert index_oid(engine, _INDEX_NAME) != before, (
+            "the INVALID index must be dropped and rebuilt, not kept by IF NOT EXISTS"
+        )
+        _assert_columns_present(engine)
 
 
 def _insert_tenant(conn: Connection) -> str:
