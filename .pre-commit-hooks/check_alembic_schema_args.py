@@ -105,6 +105,11 @@ ALLOWED_SCHEMAS = {
     # content) — plan ``2026-09-19-project-overview-for-business-leaders``.
     # 8th canonical schema, same precedent as ``strategy`` and ``web``.
     "overview",
+    # ``design_refs`` holds the design reference library — described,
+    # tenant-scoped captures of third-party sites and the human judgement layer
+    # over them (plan ``2026-11-13-design-reference-library-stores-described-
+    # web-examples-for-any-project-to-query``, revision ``design_refs_01``).
+    "design_refs",
 }
 
 # Schemas accepted by the raw-SQL audit. ``public`` is included here

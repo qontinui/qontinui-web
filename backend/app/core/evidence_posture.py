@@ -241,6 +241,36 @@ STORES: Final[dict[str, Store]] = {
         states=("live", "deleted"),
         terminal=("live", "deleted"),
     ),
+    # A design-refs record's review state (plan
+    # 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query).
+    # Nothing automatic moves any of them: a record waits for, or rests after,
+    # an operator's review — so all three are terminal.
+    "design_refs_records": Store(
+        states=("pending", "approved", "rejected"),
+        terminal=("pending", "approved", "rejected"),
+    ),
+    # A capture job. ``queued`` and ``running`` are moved by the worker (a
+    # claim, or a lapsed lease re-queued); the rest rest until a person or
+    # the worker moves them.
+    "design_refs_capture_jobs": Store(
+        states=(
+            "proposed",
+            "rejected",
+            "queued",
+            "running",
+            "done",
+            "failed",
+            "cancelled",
+        ),
+        terminal=("proposed", "rejected", "done", "failed", "cancelled"),
+    ),
+    # A design principle. A takedown that leaves an ``approved`` principle
+    # below two reference sites returns it to ``proposed`` automatically, so
+    # ``approved`` is not terminal.
+    "design_refs_principles": Store(
+        states=("proposed", "approved", "retired"),
+        terminal=("proposed", "retired"),
+    ),
 }
 
 
@@ -310,6 +340,48 @@ _OVERVIEW = f"{_V1}/overview"
 OVERVIEW_PUBLISHING_PLAN: Final = (
     "2026-10-07-agents-publish-documents-to-the-project-overview"
 )
+
+
+_DESIGN_REFS = f"{_V1}/design-refs"
+_DR_REVIEW_STATES: Final = ("pending", "approved", "rejected")
+_DR_TAKEDOWN = Verb(verb=f"POST {_DESIGN_REFS}/takedown", admits=_DR_REVIEW_STATES)
+_DR_RETIRE = Verb(
+    verb=f"POST {_DESIGN_REFS}/principles/{{principle_id}}/retire",
+    admits=("proposed", "approved", "retired"),
+)
+_DR_JUDGEMENT_LOG = AppendOnlyByDesign(
+    "a judgement is appended, never rewritten: a re-rating or a re-comparison "
+    "is a new row, and the read-time distribution uses each rater's latest "
+    "row, so a wrong judgement is corrected by judging again; the rater kind "
+    "is derived from the credential, so it cannot be asserted wrongly"
+)
+
+
+def _design_refs_record_rows(
+    collection: str,
+    item: str,
+    *,
+    create: tuple[str, ...] = (),
+    update: tuple[str, ...] = (),
+    identity: Verb = _DR_TAKEDOWN,
+) -> dict[tuple[str, str], Posture]:
+    """The create and PATCH rows of one design-refs record kind. A wrong
+    field is corrected forward by a PATCH; a record filed under the wrong
+    parent or tier is removed by the identity verb and re-created."""
+    patch = Verb(verb=f"PATCH {_DESIGN_REFS}/{item}", admits=_DR_REVIEW_STATES)
+    return {
+        ("POST", f"{_DESIGN_REFS}/{collection}"): Evidence(
+            closed_fields=create,
+            store="design_refs_records",
+            correction=patch,
+            aspects=(("identity", identity),),
+        ),
+        ("PATCH", f"{_DESIGN_REFS}/{item}"): Evidence(
+            closed_fields=update,
+            store="design_refs_records",
+            correction=patch,
+        ),
+    }
 
 
 def _overview_record_rows(
@@ -968,6 +1040,218 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         "runs, so a device mutates nothing through this door; a person's write "
         "is coord's, proxied, and outside this table's scope"
     ),
+    # ── design reference library (``get_memory_tenant``) ─────────────────
+    **_design_refs_record_rows(
+        "sites",
+        "sites/{site_id}",
+        create=("price_tier", "tier"),
+        update=("price_tier", "split"),
+    ),
+    **_design_refs_record_rows("pages", "pages/{page_id}"),
+    **_design_refs_record_rows("flows", "flows/{flow_id}"),
+    **_design_refs_record_rows("components", "components/{component_id}"),
+    **_design_refs_record_rows(
+        "descriptions",
+        "descriptions/{description_id}",
+        create=("level",),
+        identity=Verb(
+            verb=f"POST {_DESIGN_REFS}/review/{{target_kind}}/{{target_id}}",
+            admits=_DR_REVIEW_STATES,
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/sites/{{site_id}}/context/confirm"): Evidence(
+        closed_fields=("price_tier",),
+        store="design_refs_records",
+        correction=Verb(
+            verb=f"PATCH {_DESIGN_REFS}/sites/{{site_id}}", admits=_DR_REVIEW_STATES
+        ),
+        aspects=(
+            (
+                "split",
+                AppendOnlyByDesign(
+                    "the holdout split is assigned once, at the first "
+                    "confirmation, and never changes on purpose: a site an "
+                    "agent has already seen can never become a clean holdout, "
+                    "and a database trigger refuses the change"
+                ),
+            ),
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/review/{{target_kind}}/{{target_id}}"): Evidence(
+        closed_fields=("quality", "review_state"),
+        store="design_refs_records",
+        correction=Verb(
+            verb=f"POST {_DESIGN_REFS}/review/{{target_kind}}/{{target_id}}",
+            admits=_DR_REVIEW_STATES,
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/captures"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a capture records what one page served at one run and viewport; "
+            "it is never rewritten, on purpose — a wrong capture is superseded "
+            "by a later run's capture and removed with its page by takedown"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-sources"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a source copy is the bytes one run fetched, each part a verified "
+            "content-addressed blob whose digest and size the server reads from "
+            "the blob row; a later run is a new row, and takedown removes it"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/replay-bundles"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a replay bundle is one run's archive, a verified content-addressed "
+            "private blob; a later run is a new row, and takedown removes it"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/asset-fingerprints"): Evidence(
+        closed_fields=("items[].asset_class",),
+        correction=AppendOnlyByDesign(
+            "fingerprints are hashes computed from one capture's assets for the "
+            "reuse check; they are never rewritten, and are removed with the "
+            "capture by takedown"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-jobs"): Evidence(
+        closed_fields=("scope_kind", "source"),
+        store="design_refs_capture_jobs",
+        correction=Verb(
+            verb=f"PATCH {_DESIGN_REFS}/capture-jobs/{{job_id}}",
+            admits=(
+                "proposed",
+                "rejected",
+                "queued",
+                "running",
+                "done",
+                "failed",
+                "cancelled",
+            ),
+        ),
+    ),
+    ("PATCH", f"{_DESIGN_REFS}/capture-jobs/{{job_id}}"): Evidence(
+        closed_fields=("derived_tier", "state"),
+        store="design_refs_capture_jobs",
+        correction=Verb(
+            verb=f"PATCH {_DESIGN_REFS}/capture-jobs/{{job_id}}",
+            admits=(
+                "proposed",
+                "rejected",
+                "queued",
+                "running",
+                "done",
+                "failed",
+                "cancelled",
+            ),
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-jobs/claim"): Ephemeral(
+        "leases the oldest queued capture job to this worker — a lease that "
+        "lapses and is re-claimed, asserting nothing a later reader relies on"
+    ),
+    ("POST", f"{_DESIGN_REFS}/uploads"): Read(
+        "computes a blob's content-addressed key and an upload ticket; it "
+        "inserts, updates and deletes no row"
+    ),
+    ("POST", f"{_DESIGN_REFS}/uploads/verify"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a blob row is content-addressed: its key IS the sha256 of its "
+            "bytes, re-hashed by the server before the row is written, so it "
+            "cannot be asserted wrongly; an unreferenced blob is deleted by "
+            "takedown"
+        ),
+    ),
+    ("PUT", f"{_DESIGN_REFS}/blobs/{{tier}}/{{filename}}"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a blob row is content-addressed: the bytes are hashed as they "
+            "stream and refused unless they match the sha256 the path names, so "
+            "it cannot be asserted wrongly; an unreferenced blob is deleted by "
+            "takedown"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/search"): Read(
+        "search_examples — a retrieval query sent as POST for its body; it "
+        "inserts, updates and deletes nothing"
+    ),
+    ("POST", f"{_DESIGN_REFS}/similar-by-style"): Read(
+        "similar_by_style — a token-distance ranking sent as POST for its "
+        "body; it inserts, updates and deletes nothing"
+    ),
+    ("POST", f"{_DESIGN_REFS}/compare-to-references"): Read(
+        "compare_to_references — a token comparison sent as POST for its "
+        "body; it inserts, updates and deletes nothing"
+    ),
+    ("POST", f"{_DESIGN_REFS}/ratings"): Evidence(
+        closed_fields=("confidence", "rater_kind", "target_kind"),
+        correction=_DR_JUDGEMENT_LOG,
+    ),
+    ("POST", f"{_DESIGN_REFS}/comparisons"): Evidence(
+        closed_fields=("rater_kind", "shown_order", "target_kind", "winner"),
+        correction=_DR_JUDGEMENT_LOG,
+    ),
+    ("POST", f"{_DESIGN_REFS}/sites/{{site_id}}/personality"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a personality value is appended, never rewritten: a device's row "
+            "is a proposal the operator confirms (or edits) by appending a "
+            "confirmed row, and ranking reads the latest confirmed value"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/sites/{{site_id}}/personality/{{row_id}}/confirm"): (
+        Evidence(
+            closed_fields=(),
+            correction=AppendOnlyByDesign(
+                "a confirmation appends a confirmed row and logs any edit in "
+                "the correction log; a wrong one is corrected by confirming "
+                "again, since ranking reads the latest confirmed value"
+            ),
+        )
+    ),
+    ("POST", f"{_DESIGN_REFS}/principles"): Evidence(
+        closed_fields=("scope.price_tiers[]",),
+        store="design_refs_principles",
+        correction=_DR_RETIRE,
+    ),
+    ("POST", f"{_DESIGN_REFS}/principles/{{principle_id}}/evidence"): Evidence(
+        closed_fields=("evidence_kind", "role"),
+        store="design_refs_principles",
+        correction=_DR_RETIRE,
+    ),
+    ("POST", f"{_DESIGN_REFS}/principles/{{principle_id}}/approve"): Evidence(
+        closed_fields=(),
+        store="design_refs_principles",
+        correction=_DR_RETIRE,
+    ),
+    ("POST", f"{_DESIGN_REFS}/principles/{{principle_id}}/retire"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "retirement is final on purpose: a retired principle keeps its "
+            "evidence and history, and a principle retired in error is "
+            "proposed again as a new row and approved through the same gates"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/judge-bench-runs"): Evidence(
+        closed_fields=(),
+        correction=AppendOnlyByDesign(
+            "a bench run is one measurement of one model and prompt at one "
+            "time; it is never rewritten, and a wrong one is superseded by the "
+            "next run, which readers take as the latest"
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/takedown"): Evidence(
+        closed_fields=("target_kind",),
+        correction=AppendOnlyByDesign(
+            "a takedown is irreversible on purpose: it answers an IP holder, "
+            "so the rows and blobs are deleted, not hidden, and the domain is "
+            "added to the do-not-capture list; a record taken down in error is "
+            "captured again"
+        ),
+    ),
 }
 
 
@@ -1019,6 +1303,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
     finds every function under ``app/`` that verifies a coord device JWT.
     """
     from app.api import deps
+    from app.api.v1.endpoints.design_refs import get_source_reader
     from app.api.v1.endpoints.memory import get_memory_tenant
     from app.api.v1.endpoints.testing.deps import get_runner_user
     from app.overview.permissions import get_overview_principal
@@ -1035,6 +1320,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
             deps.get_reporting_device,
             get_memory_tenant,
             get_overview_principal,
+            get_source_reader,
             get_runner_user,
         }
     )

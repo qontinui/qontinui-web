@@ -792,6 +792,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // The taste inbox: its queue and labels are the active tenant's.
     "https://api.test/api/v1/taste/inbox?limit=5",
     "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
+    // The design reference library: its corpus and judgements are the active tenant's.
+    "https://api.test/api/v1/design-refs/sites?limit=5",
+    "https://api.test/api/v1/design-refs/principles/00000000-0000-0000-0000-000000000001/approve",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
     // Test-host designation writes: coord binding-checks the device against
