@@ -175,7 +175,8 @@ jobs:
     # WAIT_CAP_MIN in the script MUST equal this: the script ends itself 3 min
     # before it, so a timeout here is never the verdict.
     timeout-minutes: 120
-    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, qontinui-web-trusted, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted","ram-4g"]' || '"ubuntu-latest"') }}
     # A newer wait SUPERSEDES an older one: it cancels the older wait, whose
     # deploy then skips (its need is not `success`). Without this, N queued
     # pushes hold N waits — on the release lane, every trusted-pool slot,
@@ -468,7 +469,8 @@ jobs:
     # the pool MUST run >= 2 jobs at once or the wait starves the migration it
     # waits for. 3 avoids one more serialisation: a prior run's `deploy` still
     # rolling out alongside the next push's wait + migrate.
-    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, qontinui-web-trusted, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted","ram-4g"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
       contents: read

@@ -1,29 +1,145 @@
 /**
- * Differential: the route's body peek against the platform's `Request.json()`.
+ * Differential: the route's body peek against the installed SDK's own Next
+ * handler.
  *
- * The SDK parses every body it reads with `request.json()` on the request the
- * route forwards. The route's peek (`passThroughBodyWithPeek`) must reach the
- * same verdict on the same bytes — parse or refuse — and, when both parse,
- * the same value. A body the peek refuses but the SDK parses would reach the
- * SDK with any caller identity it names still in it (the route only strips a
- * body it parsed), so the two must never disagree.
+ * The route only strips a caller identity from a body its peek
+ * (`passThroughBodyWithPeek`) parsed, so the peek must reach the verdict the
+ * SDK reaches on the client's ORIGINAL request — the same value where the SDK
+ * reads one, no body where it reads none, a refusal where it refuses — and
+ * the request it forwards must get that same verdict from the SDK. A body the
+ * SDK reads a value from but the peek did not would reach a handler with any
+ * caller identity it names still in it.
  *
- * Each corpus case is judged independently by the global `Request` (the
- * platform parser itself, not the `NextRequest` subclass the peek builds),
- * and the peek must agree with it case by case. The corpus covers zero to
- * three leading byte-order marks, whitespace around and between them, a
- * lone surrogate (escaped, and as raw bytes), invalid UTF-8, duplicate keys,
+ * Each corpus case is sent under every content type a client may declare
+ * (none, JSON, a `+json` type, and two non-JSON ones), because the SDK's
+ * reader reads an unparseable body declared as a non-JSON type as no body.
+ * The client's request goes straight to the INSTALLED SDK's
+ * `createNextRouteHandlers` POST on `/control/find`, a `bodyRequired` route
+ * whose `find` handler records what the adapter gave it; an identical one
+ * goes through the peek, and the request the peek hands on goes to that same
+ * handler. Nothing about the SDK's reader is restated here; only the
+ * adapter's removal of its reserved `__callerUserId` key after reading is, so
+ * the values compare. The corpus covers an empty body, zero to three leading
+ * byte-order marks, whitespace around and between them, blank bodies, a lone
+ * surrogate (escaped, and as raw bytes), invalid UTF-8, duplicate keys,
  * numbers past double range and precision, negative zero, deep nesting,
- * `__proto__`, and non-object top-level values. An empty body is not in the
- * corpus: the peek reports it as absent and forwards nothing to strip.
+ * `__proto__`, non-object top-level values, and form-encoded and plain-text
+ * bodies.
  */
 
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
+import { createNextRouteHandlers } from "@qontinui/ui-bridge/server";
 
 import { passThroughBodyWithPeek } from "./body-passthrough";
 
-type Verdict = { parses: true; value: unknown } | { parses: false };
+/** What a body means: a value, no body, or a refusal. */
+type Read =
+  | { reads: "value"; value: unknown }
+  | { reads: "no body" }
+  | { reads: "refused" }
+  | { reads: "too large" };
+
+/** What the SDK's `find` handler was called with, per request. */
+const received: unknown[] = [];
+
+const sdk = createNextRouteHandlers({
+  find: async (request: unknown) => {
+    received.push(request);
+    return { success: true, data: null, timestamp: 0 };
+  },
+} as unknown as Parameters<typeof createNextRouteHandlers>[0]);
+
+/**
+ * The adapter's removal of its reserved caller key from a read body, before
+ * any handler sees it: every `__callerUserId` key down to depth 64 (ui-bridge
+ * `src/server/reserved-caller.ts` `withoutReservedCaller`, module-private).
+ */
+function withoutReservedCaller(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== "object" || depth > 64) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => withoutReservedCaller(item, depth + 1));
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "__callerUserId")
+      .map(([key, item]) => [key, withoutReservedCaller(item, depth + 1)])
+  );
+}
+
+/** The installed SDK's verdict on the request the route forwards. */
+async function sdkRead(request: NextRequest): Promise<Read> {
+  received.length = 0;
+  const res = await sdk.POST(request as never, {
+    params: { path: "control/find" },
+  });
+  if (res.status === 400) {
+    const body = (await res.json()) as { error?: unknown };
+    expect(body.error).toBe("Request body is not valid JSON");
+    return { reads: "refused" };
+  }
+  if (res.status === 413) {
+    const body = (await res.json()) as { error?: unknown };
+    expect(body.error).toBe("Request body too large");
+    return { reads: "too large" };
+  }
+  expect(res.status, await res.clone().text()).toBe(200);
+  expect(received).toHaveLength(1);
+  const [given] = received;
+  // With no body the adapter hands the handler a synthesized `{}` (this
+  // request names no tab and no caller); no corpus body parses to `{}`.
+  return isEmptyObject(given)
+    ? { reads: "no body" }
+    : { reads: "value", value: given };
+}
+
+/** A client's request: `body` under the content type it declares, if any. */
+function clientRequest(
+  body: Uint8Array,
+  contentType: string | null
+): NextRequest {
+  return new NextRequest("http://localhost/api/ui-bridge/control/find", {
+    method: "POST",
+    headers: contentType === null ? {} : { "content-type": contentType },
+    body,
+  });
+}
+
+/** The route peek's verdict on a client's request, and the request it hands on. */
+async function peek(
+  body: Uint8Array,
+  contentType: string | null
+): Promise<{ read: Read; forwarded: NextRequest }> {
+  return peekRequest(clientRequest(body, contentType));
+}
+
+async function peekRequest(
+  client: NextRequest
+): Promise<{ read: Read; forwarded: NextRequest }> {
+  const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+    client,
+    "POST"
+  );
+  expect(bodyState).not.toBe("unreadable");
+  const read: Read =
+    bodyState === "parsed"
+      ? { reads: "value", value: withoutReservedCaller(parsedBody) }
+      : bodyState === "absent"
+        ? { reads: "no body" }
+        : bodyState === "oversized"
+          ? { reads: "too large" }
+          : { reads: "refused" };
+  return { read, forwarded: request };
+}
+
+function isEmptyObject(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
+}
 
 const BOM = [0xef, 0xbb, 0xbf];
 
@@ -44,33 +160,6 @@ function utf16le(text: string): Uint8Array {
     out.push(unit & 0xff, unit >> 8);
   }
   return new Uint8Array(out);
-}
-
-/** The platform parser's verdict: `.json()` on a plain `Request`. */
-async function platform(body: Uint8Array): Promise<Verdict> {
-  try {
-    const value: unknown = await new Request("http://localhost/", {
-      method: "POST",
-      body,
-    }).json();
-    return { parses: true, value };
-  } catch {
-    return { parses: false };
-  }
-}
-
-/** The route peek's verdict on the same bytes. */
-async function peek(body: Uint8Array): Promise<Verdict> {
-  const { parsedBody, bodyState } = await passThroughBodyWithPeek(
-    new NextRequest("http://localhost/api/ui-bridge/control/find", {
-      method: "POST",
-      body,
-    }),
-    "POST"
-  );
-  return bodyState === "parsed"
-    ? { parses: true, value: parsedBody }
-    : { parses: false };
 }
 
 const OBJ = '{"text":"Save","callerUserId":"user-a"}';
@@ -147,20 +236,180 @@ const CORPUS: ReadonlyArray<readonly [string, Uint8Array]> = [
   ["a form-encoded body", bytes("text=Save&callerUserId=user-a")],
 ];
 
-describe("body peek vs the platform's Request.json(), case by case", () => {
-  it.each(CORPUS)("agrees on %s", async (_name, body) => {
-    expect(await peek(body)).toEqual(await platform(body));
+const CASES: ReadonlyArray<readonly [string, Uint8Array]> = [
+  ["an empty body", bytes()],
+  ...CORPUS,
+  ["plain text", bytes("hello")],
+];
+
+/** What a client may declare its body as; `null` declares nothing. */
+const CONTENT_TYPES: ReadonlyArray<string | null> = [
+  null,
+  "application/json",
+  "application/vnd.foo+json",
+  "text/plain",
+  "application/x-www-form-urlencoded",
+];
+
+/** Every case under every declared content type. */
+const MATRIX = CASES.flatMap(([name, body]) =>
+  CONTENT_TYPES.map(
+    (type) => [name, type ?? "no content type", body, type] as const
+  )
+);
+
+describe("body peek vs the installed SDK's Next handler, case by case", () => {
+  it.each(MATRIX)(
+    "reaches the verdict the SDK reaches on the client's request: %s, declared as %s",
+    async (_name, _label, body, type) => {
+      const direct = await sdkRead(clientRequest(body, type));
+      const { read, forwarded } = await peek(body, type);
+      expect(read).toEqual(direct);
+      expect(await sdkRead(forwarded)).toEqual(direct);
+    }
+  );
+
+  it("is not vacuous: the SDK reads values, reads no body, refuses, and reads an unparseable non-JSON body as none", async () => {
+    const reads = new Set<string>();
+    let declaredNone = 0;
+    for (const [, , body, type] of MATRIX) {
+      const direct = await sdkRead(clientRequest(body, type));
+      reads.add(direct.reads);
+      const nonJson = type !== null && !type.includes("json");
+      const blank = !new TextDecoder().decode(body).trim();
+      if (nonJson && !blank && direct.reads === "no body") declaredNone++;
+    }
+    expect(reads).toEqual(new Set(["value", "no body", "refused"]));
+    expect(declaredNone).toBeGreaterThan(0);
   });
 
-  it("is not vacuous: the corpus holds bodies the platform parses and bodies it refuses", async () => {
-    const verdicts = await Promise.all(
-      CORPUS.map(([, body]) => platform(body))
-    );
-    expect(verdicts.filter((verdict) => verdict.parses).length).toBeGreaterThan(
-      0
-    );
-    expect(
-      verdicts.filter((verdict) => !verdict.parses).length
-    ).toBeGreaterThan(0);
+  it("reads `{}` from no corpus body, so a synthesized `{}` means no body", async () => {
+    for (const [name, label, body, type] of MATRIX) {
+      const { read } = await peek(body, type);
+      expect(
+        read.reads === "value" && isEmptyObject(read.value),
+        `${name}, ${label}`
+      ).toBe(false);
+    }
   });
+});
+
+/** The SDK's body cap: `MAX_BODY_BYTES` in ui-bridge `src/server/request-body.ts`. */
+const SDK_CAP = 10 * 1024 * 1024;
+
+/**
+ * A client's request whose body is streamed in 1 MiB chunks with no
+ * Content-Length (chunked), so only reading it finds its size.
+ */
+function chunkedRequest(
+  body: Uint8Array,
+  headers: Record<string, string>
+): NextRequest {
+  const CHUNK = 1024 * 1024;
+  return new NextRequest("http://localhost/api/ui-bridge/control/find", {
+    method: "POST",
+    headers,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let at = 0; at < body.byteLength; at += CHUNK) {
+          controller.enqueue(body.slice(at, at + CHUNK));
+        }
+        controller.close();
+      },
+    }),
+    // @ts-expect-error — duplex is a Node-only field not in the DOM RequestInit type.
+    duplex: "half",
+  });
+}
+
+/** `size` copies of one byte. */
+function filled(size: number, byte: number): Uint8Array {
+  return new Uint8Array(size).fill(byte);
+}
+
+const SPACE = 0x20;
+const X = 0x78;
+
+/** A JSON object naming a caller, padded to `size` bytes. */
+function paddedJson(size: number): Uint8Array {
+  const head = '{"callerUserId":"user-a","pad":"';
+  const tail = '"}';
+  return bytes(head, Array(size - head.length - tail.length).fill(X), tail);
+}
+
+const CAP_CASES: ReadonlyArray<
+  readonly [string, () => NextRequest, Read["reads"]]
+> = [
+  [
+    "a blank body exactly at the cap, declared JSON",
+    () =>
+      chunkedRequest(filled(SDK_CAP, SPACE), {
+        "content-type": "application/json",
+      }),
+    "no body",
+  ],
+  [
+    "a blank body one byte over the cap, declared JSON",
+    () =>
+      chunkedRequest(filled(SDK_CAP + 1, SPACE), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "an 11 MiB blank body, declared JSON",
+    () =>
+      chunkedRequest(filled(11 * 1024 * 1024, SPACE), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "a non-JSON body exactly at the cap, declared text/plain",
+    () => chunkedRequest(filled(SDK_CAP, X), { "content-type": "text/plain" }),
+    "no body",
+  ],
+  [
+    "an 11 MiB non-JSON body, declared text/plain",
+    () =>
+      chunkedRequest(filled(11 * 1024 * 1024, X), {
+        "content-type": "text/plain",
+      }),
+    "too large",
+  ],
+  [
+    "an 11 MiB JSON body naming a caller, declared JSON",
+    () =>
+      chunkedRequest(paddedJson(11 * 1024 * 1024), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "a small body declaring a Content-Length over the cap",
+    () =>
+      chunkedRequest(bytes('{"text":"Save"}'), {
+        "content-type": "application/json",
+        "content-length": String(SDK_CAP + 1),
+      }),
+    "too large",
+  ],
+];
+
+describe("body peek vs the installed SDK's Next handler, at the SDK's body cap", () => {
+  // The SDK refuses (413) a body that runs past its cap, or declares a
+  // Content-Length over it, before reading what it means — a blank one and
+  // one declared as a non-JSON type included. A body handed on with no body
+  // would answer 200 instead.
+  it.each(CAP_CASES)(
+    "reaches the SDK's verdict on %s",
+    async (_name, client, expected) => {
+      const direct = await sdkRead(client());
+      expect(direct.reads).toBe(expected);
+      const { read, forwarded } = await peekRequest(client());
+      expect(read.reads).toBe(expected);
+      expect((await sdkRead(forwarded)).reads).toBe(expected);
+    },
+    60_000
+  );
 });

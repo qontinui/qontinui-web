@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { UnreadableAnswerError } from "@/services/http-client";
+import { type TenantPin, UnreadableAnswerError } from "@/services/http-client";
 import {
   adoptUpstreamPublication,
   applyUpstreamMerge,
@@ -149,8 +149,24 @@ export type UpstreamDecisionOutcome<T> =
  * The alternative — hiding the control until some flag says otherwise — fails
  * in the direction that cannot be recovered from: an operator in the system
  * tenant would see no way to publish and no reason why.
+ *
+ * **Pinned.** `pin` is the project the page's rows belong to, and every read
+ * and decision below is sent in it on EVERY attempt (`pinActiveTenant`) — a
+ * 429 retry or a token-refresh replay after another tab switched project
+ * would otherwise land in, or answer from, that project. `adoptUpstream` takes
+ * it by default and keeps taking an explicit project (the adopt-all run pins
+ * its own). Each returned function keeps one identity until the pinned project
+ * changes; the upstream dialog holds the readers in its effect dependencies.
  */
-export function usePromptDocumentPublications() {
+export function usePromptDocumentPublications({
+  pin,
+}: { pin?: TenantPin } = {}) {
+  // Keyed on the project, not on the caller's object.
+  const pinTenant = pin?.tenant;
+  const projectPin = useMemo<TenantPin | undefined>(
+    () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
+    [pinTenant]
+  );
   const [publishing, setPublishing] = useState(false);
   const [publishUnavailable, setPublishUnavailable] = useState<{
     refusal: PublishRefusal;
@@ -170,7 +186,11 @@ export function usePromptDocumentPublications() {
       name: string
     ): Promise<PublicationSummary[] | null> => {
       try {
-        const data = await listPromptDocumentPublications(kind, name);
+        const data = await listPromptDocumentPublications(
+          kind,
+          name,
+          projectPin
+        );
         return (data.publications ?? [])
           .slice()
           .sort((a, b) => b.publication_version - a.publication_version);
@@ -179,7 +199,7 @@ export function usePromptDocumentPublications() {
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /** One publication WITH its body — the "theirs" side of the three-way view. */
@@ -190,13 +210,18 @@ export function usePromptDocumentPublications() {
       version: number
     ): Promise<Publication | null> => {
       try {
-        return await fetchPromptDocumentPublication(kind, name, version);
+        return await fetchPromptDocumentPublication(
+          kind,
+          name,
+          version,
+          projectPin
+        );
       } catch (err) {
         toast.error(message(err, `Failed to load publication v${version}`));
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /**
@@ -218,10 +243,15 @@ export function usePromptDocumentPublications() {
     ): Promise<PublishResponse | null> => {
       try {
         setPublishing(true);
-        const result = await publishPromptDocument(kind, name, {
-          release_note: releaseNote.trim() ? releaseNote.trim() : null,
-          expected_version: expectedVersion,
-        });
+        const result = await publishPromptDocument(
+          kind,
+          name,
+          {
+            release_note: releaseNote.trim() ? releaseNote.trim() : null,
+            expected_version: expectedVersion,
+          },
+          projectPin
+        );
         toast.success(
           `Published ${kind}/${name} as publication v${result.publication.publication_version}`
         );
@@ -242,7 +272,7 @@ export function usePromptDocumentPublications() {
         setPublishing(false);
       }
     },
-    []
+    [projectPin]
   );
 
   // ---- the modified-tenant decisions (D4, Phase 7) ----------------------
@@ -297,9 +327,10 @@ export function usePromptDocumentPublications() {
    * tracked version.
    *
    * `options.silent` suppresses the per-call toasts; see {@link decide}.
-   * `options.tenant`, when given, pins the project the write is sent in on
-   * every attempt (`pinActiveTenant`), so a re-issued request cannot land in
-   * a project another tab switched to.
+   * The write is sent in `options.tenant` when one is given — the adopt-all run
+   * pins its own project — and otherwise in the hook's pinned project, on every
+   * attempt (`pinActiveTenant`), so a re-issued request cannot land in a
+   * project another tab switched to.
    */
   const adoptUpstream = useCallback(
     async (
@@ -319,7 +350,7 @@ export function usePromptDocumentPublications() {
               expected_version: expectedVersion,
             },
             options.tenant === undefined
-              ? undefined
+              ? projectPin
               : { tenant: options.tenant }
           ),
         (r) =>
@@ -327,7 +358,7 @@ export function usePromptDocumentPublications() {
         "Failed to adopt the publication",
         options.silent === true
       ),
-    []
+    [projectPin]
   );
 
   /**
@@ -343,16 +374,21 @@ export function usePromptDocumentPublications() {
     ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
       decide<UpstreamDecisionResponse>(
         () =>
-          keepLocalOverPublication(kind, name, {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-          }),
+          keepLocalOverPublication(
+            kind,
+            name,
+            {
+              publication_version: publicationVersion,
+              expected_version: expectedVersion,
+            },
+            projectPin
+          ),
         (r) =>
           `Kept your ${kind}/${name}; publication v${r.publication_version} recorded as reviewed`,
         "Failed to record the decision",
         false
       ),
-    []
+    [projectPin]
   );
 
   /**
@@ -368,13 +404,18 @@ export function usePromptDocumentPublications() {
       publicationVersion: number
     ): Promise<ClauseMergePreview | null> => {
       try {
-        return await previewUpstreamMerge(kind, name, publicationVersion);
+        return await previewUpstreamMerge(
+          kind,
+          name,
+          publicationVersion,
+          projectPin
+        );
       } catch (err) {
         toast.error(message(err, "Failed to load the clause merge preview"));
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /**
@@ -394,17 +435,22 @@ export function usePromptDocumentPublications() {
     ): Promise<UpstreamDecisionOutcome<ClauseMergeApplyResponse>> =>
       decide<ClauseMergeApplyResponse>(
         () =>
-          applyUpstreamMerge(kind, name, {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-            resolutions,
-          }),
+          applyUpstreamMerge(
+            kind,
+            name,
+            {
+              publication_version: publicationVersion,
+              expected_version: expectedVersion,
+              resolutions,
+            },
+            projectPin
+          ),
         (r) =>
           `Merged publication v${r.publication_version} into ${kind}/${name} clause by clause (v${r.to_version}, ${r.clauses} clauses)`,
         "Failed to merge the publication",
         false
       ),
-    []
+    [projectPin]
   );
 
   return {

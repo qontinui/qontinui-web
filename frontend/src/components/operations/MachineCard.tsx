@@ -50,8 +50,8 @@ import { resolveRunnerReports } from "./runnerReportStatus";
 import { RunnerReportsSection } from "./RunnerReportsSection";
 import {
   DeviceCrossLinks,
+  deviceRowStateLabel,
   deviceStateBadgeVariant,
-  deviceStateLabel,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
 import { DeviceDrainControl } from "./DeviceDrainControl";
@@ -603,6 +603,13 @@ export function MachineCard({
       ? (machine.coordHealth.state ?? "unknown")
       : "unknown"
     : null;
+  // The row's own words for that state: `ci_unrefreshed` aged from the
+  // registrar's last refresh, and a `ci_offline` registration GitHub no
+  // longer lists said as exactly that (`deviceRowStateLabel`).
+  const coordStateText =
+    machine.coordHealth?.matched === true
+      ? deviceRowStateLabel(machine.coordHealth, { now: nowMs })
+      : "unknown";
   // The device id is the operator's handle on the row; an outsider gets the
   // same sentence without it (D3.3).
   const coordStateLabel = !machine.coordHealth
@@ -613,8 +620,8 @@ export function MachineCard({
         `verdict about the machine.`
       : machine.coordHealth.state
         ? presenting
-          ? `Coord device state: ${deviceStateLabel(machine.coordHealth.state)}.`
-          : `Coord device state: ${deviceStateLabel(machine.coordHealth.state)} ` +
+          ? `Coord device state: ${coordStateText}.`
+          : `Coord device state: ${coordStateText} ` +
             `(device ${machine.coordHealth.device_id}).`
         : presenting
           ? `Coord knows this device but reports no state for it. ` +
@@ -799,7 +806,7 @@ export function MachineCard({
                     )}
                     data-coord-state={coordState}
                   >
-                    {deviceStateLabel(coordState)}
+                    {coordStateText}
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">

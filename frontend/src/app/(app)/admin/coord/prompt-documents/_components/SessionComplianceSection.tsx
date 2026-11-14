@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { useSessionCompliance } from "../_hooks/useSessionCompliance";
 import { ComplianceStateNotice } from "./ComplianceStateNotice";
 import { OutstandingWorkLedger } from "./OutstandingWorkLedger";
@@ -19,6 +20,7 @@ import { SessionComplianceSessions } from "./SessionComplianceSessions";
  */
 export function SessionComplianceSection({
   canWrite,
+  resolvePin,
 }: {
   /**
    * Checked at the moment of every write; `false` sends nothing (the caller
@@ -27,6 +29,13 @@ export function SessionComplianceSection({
    * it) nor a click that lands before another tab's switch is seen.
    */
   canWrite?: () => boolean;
+  /**
+   * The project every read and write of this section is sent in, asked for
+   * as each goes out — the prompt-documents page passes the project its list
+   * is pinned to, so a request in flight when another tab switches project
+   * stays in the page's. Omitted, each is sent in the project stored then.
+   */
+  resolvePin?: ResolvePin;
 } = {}) {
   const {
     config,
@@ -42,7 +51,7 @@ export function SessionComplianceSection({
     saveConfig,
     reloadAll,
     featureUnavailable,
-  } = useSessionCompliance();
+  } = useSessionCompliance({ resolvePin });
 
   return (
     <div className="space-y-6" data-testid="session-compliance-section">

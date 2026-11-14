@@ -104,7 +104,8 @@ jobs:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
     # p50 0.23 / p90 0.28 / max 0.37 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     outputs:
       relevant: ${{ steps.detect.outputs.relevant }}
     steps:
@@ -153,7 +154,8 @@ jobs:
   reverse:
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
     # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes -- not a
     # value this repo chose. This workflow is named in the plan's own Why
@@ -962,7 +964,8 @@ jobs:
     name: Migration Reversal Tested
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Read the repo only: the checkout and the base/head object reads. Narrower
     # than the workflow default (which adds `actions: read` for the
     # explainer's run lookup -- the explainer here falls back to that lookup
@@ -2266,7 +2269,8 @@ jobs:
     name: Migration Reversal Gate
     needs: [detect, reverse]
     if: always()
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     steps:
       - name: Aggregate
         env:

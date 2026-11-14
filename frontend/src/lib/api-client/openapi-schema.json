@@ -45493,6 +45493,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "recent_crash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerHeartbeatCrash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relay": {
             "anyOf": [
               {
@@ -47324,6 +47334,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "recent_crash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerHeartbeatCrash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relay": {
             "anyOf": [
               {
@@ -47364,6 +47384,70 @@
           "os"
         ],
         "title": "RunnerHeartbeat",
+        "type": "object"
+      },
+      "RunnerHeartbeatCrash": {
+        "description": "The runner's most recent crash dump, as its HTTP heartbeat sends it.\n\nThe snake_case ``HeartbeatRecentCrash`` in ``heartbeat.rs``. The optional\nfields are omitted, never ``null``, when the dump lacks a section. ``pid``\nis omitted for a dump that predates the ``Pid:`` header\n(qontinui-runner#2551 / #2722).\n\nThe route is unauthenticated and the registry lives in memory, so text is\ncut to ``MAX_TEXT`` characters. Unknown keys are dropped.",
+        "properties": {
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "panic_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Panic Location"
+          },
+          "panic_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Panic Message"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "reported_at": {
+            "title": "Reported At",
+            "type": "string"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread"
+          }
+        },
+        "required": [
+          "file_path",
+          "reported_at"
+        ],
+        "title": "RunnerHeartbeatCrash",
         "type": "object"
       },
       "RunnerInstance": {
