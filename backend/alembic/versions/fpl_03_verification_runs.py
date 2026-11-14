@@ -1,7 +1,7 @@
 """coord.verification_runs - one row per Rust verification-wrapper invocation
 
 Revision ID: fpl_03
-Revises: coord_ci_runs_head_sha_idx_01
+Revises: runmem_01
 Create Date: 2026-10-17
 
 Phase 4 of plan
@@ -93,9 +93,9 @@ revision.
 Head resolution
 ===============
 
-``down_revision = "coord_ci_runs_head_sha_idx_01"`` - main's single head when
-this revision was re-parented (2026-11-13, measured on main 4ab8b7692). That head
-chains ``coord_ci_runs_head_sha_idx_01`` -> ``repair_rerun_01_partial_idx`` ->
+``down_revision = "runmem_01"`` - main's single head when this revision was
+re-parented (2026-11-14, measured on main 2542a5ae7). That head chains
+``runmem_01`` -> ``coord_ci_runs_head_sha_idx_01`` -> ``repair_rerun_01_partial_idx`` ->
 ``fpl_02b``, the ``coord.fleet_machine_hourly`` tenant-key revision (plan Phase 3,
 landed via qontinui-web#2174). Earlier adoptions of this revision (qontinui-web#1930,
 then #2175) chained it directly off ``fpl_02b``, which forked the chain once
@@ -113,7 +113,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fpl_03"
-down_revision: str | Sequence[str] | None = "coord_ci_runs_head_sha_idx_01"
+down_revision: str | Sequence[str] | None = "runmem_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
