@@ -42,24 +42,31 @@ Why JSONB rather than a timestamp
 =================================
 
 Both readings have to be storable, and the shape leaves room for a non-PR
-reference later. Gate references need no reading: ``coord.gates.cleared_at``
-has no time-based retention.
+reference later. Gate references are not recorded here. A cited gate that
+clears after the ask is seen by the sweep's next tick. Coord's
+``retention_worker`` archives a terminal gate 14 days after it goes terminal
+and deletes it 90 days after that, so a gate the sweep can no longer read
+leaves the question kept, which is the conservative outcome.
 
 Locking
 =======
 
 A single catalog-only ``ADD COLUMN`` with no default (ACCESS EXCLUSIVE, no
-rewrite). The wait is bounded with ``SET LOCAL lock_timeout = '3s'`` and reset
-at the end, for the reasons ``coord_agent_questions_withdrawn`` sets out: one
-transaction wraps the whole run, so an unreset timeout would leak into every
-later revision.
+rewrite). Both directions bound the wait with ``SET LOCAL lock_timeout =
+'3s'``. Neither restores the bound itself. env.py's
+``on_version_apply=_reset_revision_settings`` hook issues ``RESET
+lock_timeout`` after every applied step, and
+``tests/test_alembic_env_setting_reset.py`` pins that. A ``RESET`` in this
+file would be redundant, and on the upgrade path it would be harmful: coord's
+migration classifier (``crates/coord/src/pr_merge/migration_classifier.rs``)
+fails every ``RESET`` closed. This follows ``coord_agent_questions_recommendation``.
 
 Ordering
 ========
 
 This lands BEFORE coord's PR [served policy ``production-and-cost``
-``alembic-sole-authorship``]. Coord reads the column only when
-``schema_readiness`` reports it present, and otherwise degrades to the current
+``alembic-sole-authorship``]. That PR must read the column only when
+``schema_readiness`` reports it present, and otherwise degrade to the current
 rule. Both directions are idempotent.
 """
 
@@ -76,6 +83,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add the nullable ``ref_observed`` column."""
+    # Bound the DDL's lock wait; see the docstring's Locking section. No RESET
+    # follows: env.py's on_version_apply hook restores lock_timeout after this
+    # step, and coord's migration classifier fails any RESET here closed.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -83,11 +93,11 @@ def upgrade() -> None:
             ADD COLUMN IF NOT EXISTS ref_observed JSONB
         """
     )
-    op.execute("RESET lock_timeout")
 
 
 def downgrade() -> None:
     """Drop ``ref_observed``."""
+    # Bounded as in upgrade(); env.py's hook restores lock_timeout after it too.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -95,4 +105,3 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS ref_observed
         """
     )
-    op.execute("RESET lock_timeout")
