@@ -30,7 +30,11 @@ withheld it on every memory route that reads or writes a row:
   FTS-only instead of being re-embedded.
 
 The coord service token and an operator user keep today's behaviour, and
-``tenant`` (and ``agent``) rows are unchanged for every principal.
+``tenant`` rows are unchanged for every principal. The corpus's ``agent`` row
+is keyed on the fixture device's own id, so it is the device's OWN agent row
+and reads as before; another device's agent row is hidden exactly like a
+session row, which ``test_memory_agent_partition_db`` pins (plan
+``2026-11-04-web-memory-agent-scope-accepts-any-device-scope-ref``).
 
 Every route assertion runs through the real router with the principal
 swapped on the shared ``MemoryClient``; SKIPS when the test PostgreSQL (or
@@ -60,7 +64,7 @@ from app.api.v1.endpoints.memory import (
     MemoryPrincipal,
     _refuse_withheld_scopes,
     _withheld_duplicate_conflict,
-    withheld_scopes,
+    scope_visibility,
 )
 from app.core.refusal import NextActionKind, RefusalCode, RefusalHTTPException
 from app.jobs.memory_lifecycle import reindex_once
@@ -68,6 +72,7 @@ from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import (
+    _FIXTURE_DEVICE_ID,
     _SETUP_SQL,
     MemoryClient,
     _client_vector,
@@ -79,6 +84,11 @@ from tests.test_memory_api_db import (
 _NOT_FOUND_BY_ID = {"detail": "memory record not found in your tenant"}
 
 _SESSION_REF = str(uuid4())
+
+# The fixture device's OWN agent partition: an agent row keyed here is one the
+# device principal may reach (plan
+# 2026-11-04-web-memory-agent-scope-accepts-any-device-scope-ref).
+_OWN_AGENT_REF = str(_FIXTURE_DEVICE_ID)
 
 
 @pytest.fixture(scope="module")
@@ -154,7 +164,7 @@ class _Corpus:
             mc,
             "the wombat note scoped to one agent",
             scope="agent",
-            scope_ref="agent-1",
+            scope_ref=_OWN_AGENT_REF,
         )
 
 
@@ -198,7 +208,7 @@ class TestWithheldScopesPredicate:
     @pytest.mark.parametrize("actor", ["coord_service", "operator"])
     def test_admitted_principals_are_withheld_nothing(self, actor: str) -> None:
         principal = MemoryPrincipal(tenant_id=uuid4(), device_id=None, actor=actor)
-        assert withheld_scopes(principal) == frozenset()
+        assert scope_visibility(principal).exclude_scopes == frozenset()
 
     @pytest.mark.parametrize("actor", ["device", "ci", "", "COORD_SERVICE"])
     def test_every_other_actor_is_withheld_the_session_partition(
@@ -207,7 +217,7 @@ class TestWithheldScopesPredicate:
         """``device`` and any actor this module does not name — an unknown
         one is treated like a device, never like the service."""
         principal = MemoryPrincipal(tenant_id=uuid4(), device_id=None, actor=actor)
-        assert withheld_scopes(principal) == frozenset({"session"})
+        assert scope_visibility(principal).exclude_scopes == frozenset({"session"})
 
 
 class TestRefusalEnvelopes:
@@ -470,7 +480,12 @@ class TestWrite:
     ) -> None:
         _as(mc, "device")
         _write(mc, "a device writes a shared fact")
-        _write(mc, "a device writes an agent note", scope="agent", scope_ref="a-1")
+        _write(
+            mc,
+            "a device writes an agent note",
+            scope="agent",
+            scope_ref=_OWN_AGENT_REF,
+        )
 
     @pytest.mark.parametrize("actor", ["coord_service", "operator"])
     def test_admitted_write_of_a_session_record_is_unchanged(
@@ -1223,7 +1238,7 @@ class TestLifecycleSelectors:
                 s, current_tag=EMBEDDING_MODEL_TAG, limit=1000
             ),
         )
-        ids = {memory_id for _tenant, memory_id, _content in batch}
+        ids = {row.memory_id for row in batch}
         assert shared in ids
         assert private not in ids
 
