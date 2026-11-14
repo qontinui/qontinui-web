@@ -1,7 +1,7 @@
 """overview.cost_categories: parent_id, so categories can have subcategories
 
 Revision ID: overview_06_cost_category_parent
-Revises: coord_agent_status_session_01
+Revises: overlord_04_runner_start_and_nudge_time
 Create Date: 2026-11-14
 
 A category may sit under another ("Computers" > "spaceship"), to any depth, so
@@ -32,7 +32,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "overview_06_cost_category_parent"
-down_revision: str | Sequence[str] | None = "coord_agent_status_session_01"
+down_revision: str | Sequence[str] | None = "overlord_04_runner_start_and_nudge_time"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
