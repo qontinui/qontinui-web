@@ -28,6 +28,7 @@ Two layers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -2139,7 +2140,11 @@ def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
     ``get_current_active_user_async`` → the real ``test_user`` row (needed
     because ``devenv.*.owner_user_id`` FKs ``auth.users.id``).
     """
-    from app.api.deps import get_async_db, get_current_active_user_async
+    from app.api.deps import (
+        current_active_user_optional,
+        get_async_db,
+        get_current_active_user_async,
+    )
     from app.api.v1.endpoints.devenv import router as devenv_router
     from app.api.v1.endpoints.devenv_agent import router as agent_router
 
@@ -2147,6 +2152,9 @@ def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
 
     if user is not None:
         app.dependency_overrides[get_current_active_user_async] = lambda: user
+        # The CI-node routes resolve their caller through
+        # ``get_audit_actor_principal``, whose operator arm reads this one.
+        app.dependency_overrides[current_active_user_optional] = lambda: user
 
     async def _db_override():
         yield db_session
@@ -3772,6 +3780,356 @@ class TestCallerTokenForwarding:
         # ...while the stored desired config keeps it as an explicit None, and
         # reads back as such rather than as a number.
         assert r.json()["requested"]["max_concurrent_builds"] is None
+
+
+def _device_app(*, db_session: AsyncSession) -> FastAPI:
+    """The devenv app as a RUNNER sees it: no browser session at all.
+
+    ``current_active_user_optional`` resolves ``None``, so
+    ``get_audit_actor_principal`` must take its device arm and verify the
+    ``Authorization`` bearer as a coord device JWT.
+    """
+    from app.api.deps import current_active_user_optional
+
+    app = _build_app(db_session=db_session, user=None)
+    app.dependency_overrides[current_active_user_optional] = lambda: None
+    return app
+
+
+_DEVICE_TOKEN = "coord-device-jwt"
+
+
+def _verified_device(monkeypatch, user) -> None:
+    """A coord device JWT that verifies and carries ``user_id`` = ``user``."""
+    claims = {
+        "sub_type": "device",
+        "device_id": str(uuid4()),
+        "user_id": str(user.id),
+        "tenant_id": str(uuid4()),
+    }
+    monkeypatch.setattr(
+        "app.api.deps._verify_device_jwt",
+        AsyncMock(return_value=(claims, user)),
+    )
+
+
+class TestCiNodeDeviceArm:
+    """Plan ``2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection``
+    Phase 0b: the CI-node GET/PUT admit a coord device JWT carrying
+    ``user_id``, act as that device's owning user, and forward the device's
+    bearer to coord's AGENT twin door — because coord's operator door refuses a
+    device JWT and the twin refuses a Cognito bearer."""
+
+    _CONFIG = {
+        "enabled": True,
+        "max_concurrent_builds": 1,
+        "repo_allowlist": ["qontinui/qontinui-runner"],
+        "min_free_disk_gb": 20,
+    }
+
+    async def _owned_machine(self, db: AsyncSession, user, name: str) -> str:
+        """A paired machine owned by ``user``, made through the operator door.
+
+        ``post_to_coord`` is stubbed for the enroll only, so setup never dials
+        a real coord; each test installs its own capture afterwards.
+        """
+        app = _build_app(db_session=db, user=user)
+        device_id = await _mk_coord_device(db, user_id=user.id, hostname=name)
+        with patch("app.api.v1.endpoints.devenv.post_to_coord", _capturing_post({})):
+            async with _client(app) as client:
+                r = await client.post(
+                    f"{API_PREFIX}/machines/dispatch-enroll",
+                    json={"name": name, "target_device_id": device_id},
+                )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_device_jwt_with_user_id_saves_and_routes_to_the_agent_door(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        machine_id = await self._owned_machine(async_db_session, test_user, "dev-box")
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["dispatched"] is True
+            # The durable record is the same row the operator panel reads.
+            got = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+        assert got.status_code == 200, got.text
+        assert got.json()["requested"]["repo_allowlist"] == ["qontinui/qontinui-runner"]
+        assert got.json()["configured"] is True
+
+        # Routed to the twin, never to the operator door...
+        assert set(captured) == {"/devenv/agent-ci-node-dispatch"}
+        sent = captured["/devenv/agent-ci-node-dispatch"]
+        # ...carrying the device's OWN bearer...
+        assert sent["headers"] == {"Authorization": f"Bearer {_DEVICE_TOKEN}"}
+        # ...and exactly the three keys the twin accepts: it 400s any other
+        # key, and a tenant comes from the token, never the body.
+        assert set(sent["body"]) == {"target_device_id", "machine_id", "ci_node"}
+        assert sent["body"]["machine_id"] == machine_id
+
+    @pytest.mark.asyncio
+    async def test_device_arm_forwards_the_verified_header_not_a_stray_cookie(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The device arm was proven by the ``Authorization`` header. A leftover
+        ``access_token`` cookie (an expired browser session) must not be what
+        reaches coord's agent door in its place."""
+        machine_id = await self._owned_machine(async_db_session, test_user, "ck-box")
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {_DEVICE_TOKEN}"},
+            cookies={"access_token": "stale-browser-session"},
+        ) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": False},
+            )
+        assert r.status_code == 200, r.text
+        assert captured["/devenv/agent-ci-node-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_DEVICE_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_device_jwt_without_user_id_is_401_and_nothing_is_written(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The verifier runs for real past the signature check: a token with no
+        ``user_id`` has no owning user whose machines it could act on."""
+        from app.services.coord_jwks import coord_jwks_client
+
+        machine_id = await self._owned_machine(async_db_session, test_user, "nu-box")
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        monkeypatch.setattr(
+            coord_jwks_client,
+            "verify_token",
+            AsyncMock(
+                return_value={
+                    "sub_type": "device",
+                    "device_id": str(uuid4()),
+                    "tenant_id": str(uuid4()),
+                }
+            ),
+        )
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            put = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+            get = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+        assert put.status_code == 401, put.text
+        assert get.status_code == 401, get.text
+        assert captured == {}
+
+        owner = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(owner) as client:
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+        assert r.json()["configured"] is False
+
+    @pytest.mark.asyncio
+    async def test_device_of_user_u_cannot_touch_user_v_machine(
+        self, async_db_session: AsyncSession, test_user, second_user, monkeypatch
+    ) -> None:
+        """Ownership, not existence: V's machine answers 404 to U's device on
+        both verbs — the same answer as an unknown id — and nothing is saved
+        or dispatched."""
+        victim_machine = await self._owned_machine(
+            async_db_session, second_user, "v-box"
+        )
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            put = await client.put(
+                f"{API_PREFIX}/machines/{victim_machine}/ci-node", json=self._CONFIG
+            )
+            get = await client.get(f"{API_PREFIX}/machines/{victim_machine}/ci-node")
+            unknown = await client.get(f"{API_PREFIX}/machines/{uuid4()}/ci-node")
+        assert put.status_code == 404, put.text
+        assert get.status_code == 404, get.text
+        assert unknown.status_code == 404
+        assert put.json() == unknown.json()
+        assert captured == {}
+
+        owner = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(owner) as client:
+            r = await client.get(f"{API_PREFIX}/machines/{victim_machine}/ci-node")
+        assert r.json()["configured"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_device_write_coord_refuses_saves_nothing(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Coord's agent door is narrower than this backend's device check and
+        is where the operator notification is recorded, so a device-arm write
+        it refuses must not reach the durable config the operator reads."""
+        machine_id = await self._owned_machine(async_db_session, test_user, "rf-box")
+
+        async def _refuse(path, *, headers, json_body, log_event, **kw):
+            return httpx.Response(
+                403,
+                json={
+                    "error": "presenter_class_refused",
+                    "message": "This credential class may not configure CI nodes.",
+                },
+            )
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _refuse)
+        _stub_ci_node_reachability(monkeypatch)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 403
+        assert body["dispatch_error"] == "presenter_class_refused"
+        assert body["configured"] is False
+        assert "Nothing was saved" in body["dispatch_detail"]
+
+        owner = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(owner) as client:
+            got = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+        assert got.json()["configured"] is False
+        assert got.json()["requested_at"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [503, 504])
+    async def test_an_ambiguous_device_transport_failure_records_the_request(
+        self, async_db_session: AsyncSession, test_user, monkeypatch, status_code
+    ) -> None:
+        """A timeout may have been applied by coord (an agent's disable, say),
+        so the device arm records the request without claiming it was sent."""
+        from fastapi import HTTPException
+
+        machine_id = await self._owned_machine(
+            async_db_session, test_user, f"to-{status_code}"
+        )
+
+        async def _timeout(path, *, headers, json_body, log_event, **kw):
+            raise HTTPException(status_code=status_code, detail="Coord timed out.")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _timeout)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": False},
+            )
+        body = r.json()
+        assert r.status_code == 200, r.text
+        assert body["dispatched"] is False
+        assert body["configured"] is True
+        assert body["requested"]["enabled"] is False
+        assert body["requested_at"] is not None
+        assert body["dispatched_at"] is None
+        assert "may already have applied" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    async def test_a_device_transport_error_with_no_answer_saves_nothing(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        from fastapi import HTTPException
+
+        machine_id = await self._owned_machine(async_db_session, test_user, "te-box")
+
+        async def _down(path, *, headers, json_body, log_event, **kw):
+            raise HTTPException(status_code=502, detail="Coord unreachable.")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _down)
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+        assert r.json()["configured"] is False
+        assert "Nothing was saved" in r.json()["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    async def test_device_arm_never_forwards_its_jwt_to_the_sso_routing_read(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Coord's routing read is SSO-only: a device caller gets ``unknown``
+        reachability without that door ever being asked."""
+        machine_id = await self._owned_machine(async_db_session, test_user, "rt-box")
+        routing_calls: list = []
+
+        async def _routing(*a, **kw):
+            routing_calls.append(kw)
+            return {"ws_session_id": "live"}
+
+        monkeypatch.setattr("app.services.coord_device.get_device_routing", _routing)
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post({})
+        )
+        _verified_device(monkeypatch, test_user)
+
+        app = _device_app(db_session=async_db_session)
+        async with _bearer_client(app, token=_DEVICE_TOKEN) as client:
+            put = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+            get = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+        assert put.json()["reachability"] == "unknown"
+        assert get.json()["reachability"] == "unknown"
+        assert routing_calls == []
+
+    @pytest.mark.asyncio
+    async def test_operator_session_still_routes_to_the_operator_door(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        machine_id = await self._owned_machine(async_db_session, test_user, "op-box")
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _cookie_client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node", json=self._CONFIG
+            )
+        assert r.status_code == 200, r.text
+        assert set(captured) == {"/devenv/ci-node-dispatch"}
 
 
 class TestCiNodeModelAccessRoundTrip:

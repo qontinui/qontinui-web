@@ -22,7 +22,10 @@ Mounted under ``/api/v1/devenv``. Endpoints:
 * ``GET``/``PUT /machines/{id}/ci-node`` — the machine's desired CI-node
   configuration (the runner's ``CiNodeSettings``). The PUT saves and then
   dispatches through coord to the paired runner; see the section comment above
-  those handlers for why that is the only write path.
+  those handlers for why that is the only write path. These two are the
+  module's exception to the user-JWT rule above: they also admit a coord
+  device JWT carrying ``user_id`` (``get_audit_actor_principal``), acting as
+  that device's owning user.
 * ``GET``/``PUT /auto-enroll-policy`` — the owner's connect-time
   auto-enrollment policy (may new boxes self-enroll, and into which
   environment). Owner-scoped; an absent row reads as enabled.
@@ -46,7 +49,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.coord_proxy import _extract_caller_token
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import (
+    ActorPrincipal,
+    get_async_db,
+    get_audit_actor_principal,
+    get_current_active_user_async,
+)
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import devenv_machine_crud
@@ -989,6 +997,43 @@ async def set_auto_enroll_policy(
 # `events.ci.settings_requested.<device_id>` on the family the runner's CI
 # socket already subscribes to.
 _COORD_CI_NODE_DISPATCH_PATH = "/devenv/ci-node-dispatch"
+# Its agent-authed twin (plan
+# 2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection,
+# Phase 0). Each coord door rejects the other tier's credential, so the
+# forwarded bearer must go to the door matching the arm that authenticated it
+# here — a Cognito bearer to the operator door, a coord device JWT to this one.
+# The twin derives the tenant from the token and refuses any body key outside
+# ``target_device_id`` / ``machine_id`` / ``ci_node`` — ``400 unknown_field``,
+# or ``400 tenant_in_body_refused`` for a ``tenant``/``tenant_id`` key — so the
+# body below must stay that exact shape for both doors.
+_COORD_AGENT_CI_NODE_DISPATCH_PATH = "/devenv/agent-ci-node-dispatch"
+
+
+def _ci_node_dispatch_path(principal: ActorPrincipal) -> str:
+    """The coord door for ``principal``'s credential — never sniffed from the
+    token: ``kind`` is the decision the auth dependency already made."""
+    if principal.kind == "device":
+        return _COORD_AGENT_CI_NODE_DISPATCH_PATH
+    return _COORD_CI_NODE_DISPATCH_PATH
+
+
+def _ci_node_forward_token(request: Request, principal: ActorPrincipal) -> str | None:
+    """The bearer to forward to coord: the one that PROVED ``principal``.
+
+    The operator arm keeps ``_extract_caller_token``'s cookie-then-header
+    order (the browser sends its session as the cookie only). The device arm
+    was proven by the ``Authorization`` header alone — ``_resolve_actor_principal``
+    verifies ``HTTPBearer`` credentials — so it forwards that header and never
+    a stray ``access_token`` cookie, which would send coord's agent door a
+    token other than the one this backend verified.
+    """
+    if principal.kind != "device":
+        return _extract_caller_token(request)
+    auth = request.headers.get("Authorization", "")
+    scheme, _, token = auth.partition(" ")
+    token = token.strip()
+    return token if scheme.lower() == "bearer" and token else None
+
 
 # What to say when coord refuses WITHOUT prose. Keyed by status because the
 # status is the only thing we know in that case; each sentence claims exactly
@@ -1019,7 +1064,7 @@ _COORD_STATUS_FALLBACKS: dict[int, str] = {
 
 async def _ci_node_reachability(
     request: Request,
-    current_user: User,
+    principal: ActorPrincipal,
     coord_device_id: UUID | None,
 ) -> CiNodeReachabilityT:
     """Ask coord whether the paired device could receive a directive at all.
@@ -1027,9 +1072,17 @@ async def _ci_node_reachability(
     Degrades honestly: a coord that cannot be reached yields ``"unknown"``
     rather than ``"offline"``, because "we could not ask" and "it is not there"
     are different claims and only one of them is evidence.
+
+    A DEVICE caller gets ``"unknown"`` without asking: coord's routing read
+    (``/coord/devices/:id/routing``) is an SSO-only door, so forwarding a device
+    JWT there could only be refused — and would hand coord a credential that
+    door never accepts. "We could not ask" is the true answer for that arm.
     """
     if coord_device_id is None:
         return "unlinked"
+    if principal.kind == "device":
+        return "unknown"
+    current_user = principal.user
     try:
         routing = await coord_device.get_device_routing(
             coord_device_id,
@@ -1047,7 +1100,7 @@ async def _ci_node_reachability(
     return "online" if routing.get("ws_session_id") is not None else "offline"
 
 
-def _coord_transport_detail(exc: HTTPException) -> str:
+def _coord_transport_detail(exc: HTTPException, *, saved: bool = True) -> str:
     """Human sentence for a `post_to_coord` transport failure.
 
     ``post_to_coord`` raises with ``detail`` as either a plain string
@@ -1065,10 +1118,22 @@ def _coord_transport_detail(exc: HTTPException) -> str:
         message = detail.get("message")
         if isinstance(message, str) and message:
             return message
+    if not saved:
+        return (
+            "qontinui.io could not reach the coordinator, so the settings were "
+            "not sent. Try again shortly."
+        )
     return (
         "qontinui.io could not reach the coordinator, so the settings were not "
         "sent. They are saved here — try again shortly."
     )
+
+
+#: ``post_to_coord`` transport statuses after which coord MAY have processed
+#: the request: 504 is a read timeout ("the operation may not have
+#: completed"), 503 is retries exhausted on gateway statuses, any of which may
+#: have reached coord. A 502 is a transport error before any answer.
+_AMBIGUOUS_TRANSPORT_STATUSES: frozenset[int] = frozenset({503, 504})
 
 
 #: ``dispatch_error`` when coord accepted the directive but its ``applied``
@@ -1123,7 +1188,9 @@ def _model_access_relay_problem(
     return CI_NODE_MODEL_ACCESS_NOT_RELAYED
 
 
-def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
+def _coord_dispatch_refusal(
+    resp: httpx.Response, *, saved: bool = True
+) -> tuple[str | None, str]:
     """Turn coord's non-2xx answer into ``(machine code, human sentence)``.
 
     This is the passthrough shape that ``operations.py``'s
@@ -1170,6 +1237,10 @@ def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
             resp.status_code,
             f"The coordinator refused to send these settings (HTTP {resp.status_code}).",
         )
+        if not saved:
+            # The fallbacks are written for the save-first operator arm; a
+            # device-arm refusal saved nothing, so the claim must not ride.
+            message = message.replace(" The settings are saved here.", "")
         if code is not None:
             message = f"{message} (coordinator said: {code})"
     return code, message
@@ -1208,20 +1279,23 @@ async def get_ci_node_config(
     machine_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> CiNodeConfigResponse:
     """Read the machine's desired CI-node config + its delivery state.
 
     ``dispatched`` is always ``None`` here: a read attempts no delivery, and a
     client must not be able to mistake a GET for a successful push.
+
+    Admits an operator session or a coord device JWT carrying ``user_id``; a
+    device acts as its owning user, so it sees exactly that user's machines.
     """
     machine = await machine_repo.get(
-        db, owner_id=current_user.id, machine_id=machine_id
+        db, owner_id=principal.user.id, machine_id=machine_id
     )
     if machine is None:
         raise _not_found("machine")
     reachability = await _ci_node_reachability(
-        request, current_user, machine.coord_device_id
+        request, principal, machine.coord_device_id
     )
     return _ci_node_response(machine, reachability)
 
@@ -1232,37 +1306,68 @@ async def set_ci_node_config(
     payload: CiNodeConfig,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> CiNodeConfigResponse:
     """Save the desired CI-node config and dispatch it to the paired runner.
 
-    The save ALWAYS happens; the dispatch is best-effort, exactly like
-    ``dispatch_enroll``. That ordering is deliberate: an owner who curates an
-    allowlist while their machine is asleep must not lose the work, and a
-    silent "saved but never sent" is precisely the state the response's
-    ``dispatched`` / ``dispatched_at`` / ``reachability`` triple exists to make
-    visible.
+    Two credentials reach it (plan
+    ``2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection``
+    Phase 0b): an operator's session, and a coord device JWT carrying
+    ``user_id`` — an agent that must enable, probe and DISABLE ci_node itself.
+    Either way the caller acts as one user (a device as its owning user), the
+    machine is looked up under that user, and the caller's bearer is forwarded
+    to the coord door matching its credential (:func:`_ci_node_dispatch_path`).
+    The tenant is never sent: coord derives it from the forwarded token. The
+    durable record is ``devenv.machines.ci_node_config`` on both arms, so the
+    panel never shows a config an agent changed behind it.
+
+    **The two arms order save and dispatch differently, on purpose.**
+
+    * OPERATOR — save first, dispatch best-effort, exactly like
+      ``dispatch_enroll``: an owner who curates an allowlist while their
+      machine is asleep must not lose the work, and a silent "saved but never
+      sent" is precisely the state the response's ``dispatched`` /
+      ``dispatched_at`` / ``reachability`` triple exists to make visible.
+    * DEVICE — dispatch first, save only once coord ACCEPTED. This backend
+      admits any coord-signed JWT carrying ``user_id``, while coord's agent
+      door is narrower (it refuses service, acting-user and bootstrap-class
+      presenters, and tokens with no tenant) and is where the operator
+      notification for an agent write is recorded. Saving first would let a
+      credential coord refuses rewrite the operator's desired config with no
+      notification at all. So a refused, unreachable or unpaired device-arm
+      write changes nothing here, and says so.
     """
     machine = await machine_repo.get(
-        db, owner_id=current_user.id, machine_id=machine_id
+        db, owner_id=principal.user.id, machine_id=machine_id
     )
     if machine is None:
         raise _not_found("machine")
+    save_first = principal.kind != "device"
 
-    now = utc_now()
-    await machine_repo.update(
-        db,
-        machine=machine,
-        fields={
-            "ci_node_config": payload.model_dump(mode="json"),
-            "ci_node_requested_at": now,
-        },
-    )
-    await db.commit()
-    await db.refresh(machine)
+    async def _save(**extra: object) -> None:
+        await machine_repo.update(
+            db,
+            machine=machine,
+            fields={
+                "ci_node_config": payload.model_dump(mode="json"),
+                "ci_node_requested_at": utc_now(),
+                **extra,
+            },
+        )
+        await db.commit()
+        await db.refresh(machine)
+
+    if save_first:
+        await _save()
 
     reachability = await _ci_node_reachability(
-        request, current_user, machine.coord_device_id
+        request, principal, machine.coord_device_id
+    )
+    not_saved = (
+        ""
+        if save_first
+        else " Nothing was saved: an agent's change is kept "
+        "only once the coordinator accepts it."
     )
     if machine.coord_device_id is None:
         return _ci_node_response(
@@ -1271,12 +1376,17 @@ async def set_ci_node_config(
             dispatched=False,
             dispatch_detail=(
                 "This machine is not paired with a runner, so there is nothing "
-                "to send the settings to. They are saved and will be sent the "
-                "next time you apply them after pairing."
+                "to send the settings to."
+                + (
+                    " They are saved and will be sent the next time you apply "
+                    "them after pairing."
+                    if save_first
+                    else not_saved
+                )
             ),
         )
 
-    token = _extract_caller_token(request)
+    token = _ci_node_forward_token(request, principal)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     coord_body: dict[str, object] = {
         "target_device_id": str(machine.coord_device_id),
@@ -1287,12 +1397,13 @@ async def set_ci_node_config(
     }
     try:
         resp = await post_to_coord(
-            _COORD_CI_NODE_DISPATCH_PATH,
+            _ci_node_dispatch_path(principal),
             headers=headers,
             json_body=coord_body,
             log_event="devenv_ci_node_dispatch",
             machine_id=str(machine.id),
             target_device_id=str(machine.coord_device_id),
+            principal_kind=principal.kind,
         )
     except HTTPException as exc:
         # A TRANSPORT failure, raised by `post_to_coord` itself (coord
@@ -1300,30 +1411,56 @@ async def set_ci_node_config(
         # coord never answered, so there is no coord status or code to forward
         # and both stay None. `dispatch_error` is left None on purpose — an
         # invented code here would be indistinguishable from one coord sent.
-        detail = _coord_transport_detail(exc)
+        if not save_first and exc.status_code in _AMBIGUOUS_TRANSPORT_STATUSES:
+            # The device arm saves only on acceptance, but a timeout (504) or
+            # a gateway-exhausted retry (503) may have reached coord and been
+            # APPLIED — an agent's disable included. Saving nothing would leave
+            # the operator's record claiming the old config while the runner
+            # runs the new one, and the next panel apply would revert it. So
+            # record the request (``dispatched_at`` stays put: delivery is not
+            # known) and say the outcome is unknown.
+            await _save()
+            return _ci_node_response(
+                machine,
+                reachability,
+                dispatched=False,
+                dispatch_detail=(
+                    _coord_transport_detail(exc, saved=False)
+                    + " The coordinator may already have applied this change, "
+                    "so it is recorded here as requested but not as sent; "
+                    "apply it again to confirm."
+                ),
+            )
+        detail = _coord_transport_detail(exc, saved=save_first)
         return _ci_node_response(
-            machine, reachability, dispatched=False, dispatch_detail=detail
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_detail=detail + not_saved,
         )
 
     if resp.status_code >= 400:
         # A REFUSAL: coord answered, with a reason. Forward its status and its
         # parsed body so the panel can say which class of refusal this was — a
         # value the user can fix here, or a device that is not theirs.
-        code, message = _coord_dispatch_refusal(resp)
+        code, message = _coord_dispatch_refusal(resp, saved=save_first)
         return _ci_node_response(
             machine,
             reachability,
             dispatched=False,
             dispatch_status=resp.status_code,
             dispatch_error=code,
-            dispatch_detail=message,
+            dispatch_detail=message + not_saved,
         )
 
-    await machine_repo.update(
-        db, machine=machine, fields={"ci_node_dispatched_at": utc_now()}
-    )
-    await db.commit()
-    await db.refresh(machine)
+    if save_first:
+        await machine_repo.update(
+            db, machine=machine, fields={"ci_node_dispatched_at": utc_now()}
+        )
+        await db.commit()
+        await db.refresh(machine)
+    else:
+        await _save(ci_node_dispatched_at=utc_now())
     relay_problem = _model_access_relay_problem(payload, resp)
     if relay_problem is not None:
         # Coord accepted and published the directive — so the other settings
