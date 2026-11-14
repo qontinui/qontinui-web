@@ -44,6 +44,7 @@ import {
   parseStatusTab,
 } from "@/components/sessions/SessionsConsole";
 import { TenantSwitcher } from "@/components/sessions/TenantSwitcher";
+import { SavedSessionListsPanel } from "@/components/sessions/SavedSessionListsPanel";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 
 export default function SessionsPage() {
@@ -110,6 +111,10 @@ export default function SessionsPage() {
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="px-6 py-4 space-y-4">
+          {/* Saved per-tab session lists, kept 14 days — collapsed by
+              default; its count stays in its header (plan
+              2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days). */}
+          <SavedSessionListsPanel hostnameFor={hostnameFor} />
           <SessionsConsole
             hostnameFor={hostnameFor}
             initialDevice={device}

@@ -117,6 +117,7 @@ from app.api.v1.endpoints import (
     runner_terminal_ws,
     runner_wake,
     runs_drift,
+    saved_session_lists,
     scheduled_runs,
     screenshots,
     security_endpoints,
@@ -557,6 +558,14 @@ api_router.include_router(files_sharing.router, prefix="/files", tags=["files-sh
 # Device bridge (cloud relay for physical mobile device UI Bridge connections)
 api_router.include_router(
     device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
+)
+# Saved per-tab lists of a runner's open sessions, kept 14 days (the /sessions
+# console). The capture relays GET /terminal-layout through the same runner
+# relay as the device bridge (app/services/runner_relay.py).
+api_router.include_router(
+    saved_session_lists.router,
+    prefix="/saved-session-lists",
+    tags=["saved-session-lists"],
 )
 # Agent sessions observability — Side D / Phase 4 of plan
 # coord-agent-session-id-tracking.md. Lists sessions from
