@@ -2139,7 +2139,11 @@ def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
     ``get_current_active_user_async`` → the real ``test_user`` row (needed
     because ``devenv.*.owner_user_id`` FKs ``auth.users.id``).
     """
-    from app.api.deps import get_async_db, get_current_active_user_async
+    from app.api.deps import (
+        current_active_user_optional,
+        get_async_db,
+        get_current_active_user_async,
+    )
     from app.api.v1.endpoints.devenv import router as devenv_router
     from app.api.v1.endpoints.devenv_agent import router as agent_router
 
@@ -2147,6 +2151,11 @@ def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
 
     if user is not None:
         app.dependency_overrides[get_current_active_user_async] = lambda: user
+    # The ``/machines/{id}/ci-node`` pair is dual-auth
+    # (``get_audit_actor_principal``), whose Cognito arm is
+    # ``current_active_user_optional``. Pinning it to the same user keeps those
+    # routes on the operator arm; ``None`` sends them to the device arm.
+    app.dependency_overrides[current_active_user_optional] = lambda: user
 
     async def _db_override():
         yield db_session

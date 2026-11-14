@@ -22,7 +22,10 @@ Mounted under ``/api/v1/devenv``. Endpoints:
 * ``GET``/``PUT /machines/{id}/ci-node`` — the machine's desired CI-node
   configuration (the runner's ``CiNodeSettings``). The PUT saves and then
   dispatches through coord to the paired runner; see the section comment above
-  those handlers for why that is the only write path.
+  those handlers for why that is the only write path. Unlike every other
+  route here these two are DUAL-AUTH (:func:`get_audit_actor_principal`): a
+  user-bound coord device JWT may read and write its OWN user's machines, and
+  its PUT is forwarded to coord's agent twin rather than the operator door.
 * ``GET``/``PUT /auto-enroll-policy`` — the owner's connect-time
   auto-enrollment policy (may new boxes self-enroll, and into which
   environment). Owner-scoped; an absent row reads as enabled.
@@ -46,7 +49,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.coord_proxy import _extract_caller_token
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import (
+    ActorPrincipal,
+    get_async_db,
+    get_audit_actor_principal,
+    get_current_active_user_async,
+)
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import devenv_machine_crud
@@ -989,6 +997,43 @@ async def set_auto_enroll_policy(
 # `events.ci.settings_requested.<device_id>` on the family the runner's CI
 # socket already subscribes to.
 _COORD_CI_NODE_DISPATCH_PATH = "/devenv/ci-node-dispatch"
+# Coord's DEVICE-JWT twin of the route above (qontinui-coord#4134, plan
+# `2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection`
+# Phase 0). Each coord door rejects the other's credential: the operator door
+# resolves its tenant solely from a Cognito ``OperatorContext`` and 403s a
+# device JWT, the twin sits behind ``require_jwt`` and 401s a Cognito bearer.
+# So the door is chosen by WHICH ARM authenticated the caller here
+# (``ActorPrincipal.kind``), never by sniffing the token. The twin takes the
+# tenant from the token's verified claim, refuses a body naming one, and
+# refuses any key outside its five-field directive contract — the body built
+# below carries exactly ``target_device_id``/``machine_id``/``ci_node``.
+_COORD_AGENT_CI_NODE_DISPATCH_PATH = "/devenv/agent-ci-node-dispatch"
+
+
+def _ci_node_dispatch_path(principal: ActorPrincipal) -> str:
+    """The coord door for this caller's credential arm."""
+    if principal.kind == "device":
+        return _COORD_AGENT_CI_NODE_DISPATCH_PATH
+    return _COORD_CI_NODE_DISPATCH_PATH
+
+
+def _ci_node_forward_token(request: Request, principal: ActorPrincipal) -> str | None:
+    """The bearer to forward to coord: the credential that PROVED the caller.
+
+    The operator arm keeps ``_extract_caller_token`` (cookie first, then the
+    header — the browser sends only the cookie). The device arm was proven
+    from the ``Authorization`` header alone (``HTTPBearer``), so that header is
+    what goes on: a stale ``access_token`` cookie riding the same request
+    would otherwise be forwarded in its place and 401 at the twin, reading as
+    "saved but not sent" for a caller whose own credential was fine.
+    """
+    if principal.kind == "device":
+        auth = request.headers.get("Authorization", "")
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip() or None
+        return None
+    return _extract_caller_token(request)
+
 
 # What to say when coord refuses WITHOUT prose. Keyed by status because the
 # status is the only thing we know in that case; each sentence claims exactly
@@ -1021,15 +1066,25 @@ async def _ci_node_reachability(
     request: Request,
     current_user: User,
     coord_device_id: UUID | None,
+    *,
+    credential_arm: str = "operator",
 ) -> CiNodeReachabilityT:
     """Ask coord whether the paired device could receive a directive at all.
 
     Degrades honestly: a coord that cannot be reached yields ``"unknown"``
     rather than ``"offline"``, because "we could not ask" and "it is not there"
     are different claims and only one of them is evidence.
+
+    A DEVICE-arm caller gets ``"unknown"`` without asking: coord's routing read
+    (``/coord/devices/:id/routing``) is Cognito-only (``require_sso``), so the
+    device JWT would be refused and the answer would be ``"unknown"`` anyway —
+    after a wasted round-trip. Widening coord's routing read for this is out of
+    the plan's scope (Phase 0b: "do not widen coord's routing read").
     """
     if coord_device_id is None:
         return "unlinked"
+    if credential_arm == "device":
+        return "unknown"
     try:
         routing = await coord_device.get_device_routing(
             coord_device_id,
@@ -1208,20 +1263,29 @@ async def get_ci_node_config(
     machine_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> CiNodeConfigResponse:
     """Read the machine's desired CI-node config + its delivery state.
 
     ``dispatched`` is always ``None`` here: a read attempts no delivery, and a
     client must not be able to mistake a GET for a successful push.
+
+    Dual-auth: a Cognito user, or a coord device JWT carrying ``user_id`` —
+    which reads as that device's owning user, so the ``owner_id`` scope below
+    is the same floor for both (a device for user U gets the same 404 for
+    user V's machine as for an absent one).
     """
+    current_user = principal.user
     machine = await machine_repo.get(
         db, owner_id=current_user.id, machine_id=machine_id
     )
     if machine is None:
         raise _not_found("machine")
     reachability = await _ci_node_reachability(
-        request, current_user, machine.coord_device_id
+        request,
+        current_user,
+        machine.coord_device_id,
+        credential_arm=principal.kind,
     )
     return _ci_node_response(machine, reachability)
 
@@ -1232,9 +1296,19 @@ async def set_ci_node_config(
     payload: CiNodeConfig,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> CiNodeConfigResponse:
     """Save the desired CI-node config and dispatch it to the paired runner.
+
+    Dual-auth (plan
+    ``2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection``
+    Phase 0b): an agent must be able to enable, probe and DISABLE a CI node
+    without an operator-cleared gate. A device-arm caller is scoped to its
+    owning user's machines exactly as a browser user is, its write still lands
+    in ``devenv.machines.ci_node_config`` (so the dashboard never shows a
+    stale config), and its dispatch goes to coord's agent twin, which records
+    an ``operator-notify`` finding server-side on every such write. The tenant
+    always comes from the forwarded token, never from this body.
 
     The save ALWAYS happens; the dispatch is best-effort, exactly like
     ``dispatch_enroll``. That ordering is deliberate: an owner who curates an
@@ -1243,6 +1317,7 @@ async def set_ci_node_config(
     ``dispatched`` / ``dispatched_at`` / ``reachability`` triple exists to make
     visible.
     """
+    current_user = principal.user
     machine = await machine_repo.get(
         db, owner_id=current_user.id, machine_id=machine_id
     )
@@ -1262,7 +1337,10 @@ async def set_ci_node_config(
     await db.refresh(machine)
 
     reachability = await _ci_node_reachability(
-        request, current_user, machine.coord_device_id
+        request,
+        current_user,
+        machine.coord_device_id,
+        credential_arm=principal.kind,
     )
     if machine.coord_device_id is None:
         return _ci_node_response(
@@ -1276,7 +1354,7 @@ async def set_ci_node_config(
             ),
         )
 
-    token = _extract_caller_token(request)
+    token = _ci_node_forward_token(request, principal)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     coord_body: dict[str, object] = {
         "target_device_id": str(machine.coord_device_id),
@@ -1287,10 +1365,11 @@ async def set_ci_node_config(
     }
     try:
         resp = await post_to_coord(
-            _COORD_CI_NODE_DISPATCH_PATH,
+            _ci_node_dispatch_path(principal),
             headers=headers,
             json_body=coord_body,
             log_event="devenv_ci_node_dispatch",
+            credential_arm=principal.kind,
             machine_id=str(machine.id),
             target_device_id=str(machine.coord_device_id),
         )
