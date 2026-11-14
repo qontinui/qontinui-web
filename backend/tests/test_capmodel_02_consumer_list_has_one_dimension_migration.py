@@ -31,7 +31,7 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "capmodel_02"
 # MUST equal the revision's own down_revision (first test enforces it).
-_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
+_PARENT_REVISION_ID = "coord_agent_status_session_02"
 _REVISION_FILENAME = "capmodel_02_consumer_list_has_one_dimension.py"
 
 _PARENT = "fleet_runtime_policy"
