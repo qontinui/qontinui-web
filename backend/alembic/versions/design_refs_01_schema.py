@@ -1,7 +1,7 @@
 """design_refs schema — the design reference library store and judgement layer
 
 Revision ID: design_refs_01
-Revises: coord_ci_runs_head_sha_idx_01
+Revises: runmem_01
 Create Date: 2026-11-13
 
 Phase 1 of plan
@@ -98,7 +98,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "design_refs_01"
-down_revision: str = "coord_ci_runs_head_sha_idx_01"
+down_revision: str = "runmem_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
