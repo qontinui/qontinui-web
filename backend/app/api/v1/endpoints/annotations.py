@@ -17,6 +17,7 @@ from app.api import deps
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.user import User
 from app.schemas.annotation import (
+    ANNOTATION_UPLOAD_PREFIX,
     AnnotationCreate,
     AnnotationResponse,
     AnnotationSetCreate,
@@ -61,7 +62,7 @@ async def upload_screenshot(
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # Upload to S3/MinIO using the backend directly
-        key = f"annotations/{str(current_user.id)}/{unique_filename}"
+        key = f"{ANNOTATION_UPLOAD_PREFIX}{current_user.id}/{unique_filename}"
         url = object_storage.backend.upload_file(
             file_obj=file_obj,
             key=key,
@@ -75,8 +76,12 @@ async def upload_screenshot(
             url=url,
         )
 
+        # ``url`` is the object's stable address, to store on the annotation
+        # set (responses presign it on read). It is not itself readable, so
+        # the caller gets a presigned ``preview_url`` to show right away.
         return {
             "url": url,
+            "preview_url": object_storage.presign_stored_url(url),
             "filename": file.filename,
         }
     except Exception as e:

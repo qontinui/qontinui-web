@@ -5,9 +5,14 @@ Pydantic schemas for annotation API
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.base import IsoDatetime
+from app.services.storage import object_storage
+
+#: Where ``POST /annotations/upload-screenshot`` stores screenshots. The
+#: endpoint builds its keys from this, and responses presign only keys under it.
+ANNOTATION_UPLOAD_PREFIX = "annotations/"
 
 # Screenshot schema for multi-screenshot support
 
@@ -162,6 +167,30 @@ class AnnotationSetResponse(AnnotationSetBase):
         if isinstance(v, UUID):
             return str(v)
         return v
+
+    # The stored URLs are what ``POST /annotations/upload-screenshot`` returned:
+    # bare object addresses no private store serves, so presign on every read.
+    # They are CLIENT-SUPPLIED on create/update, so only keys under the set
+    # owner's own upload prefix (``annotations/<created_by_id>/``) are signed;
+    # any other object's address - another user's included - stays as given.
+    @model_validator(mode="after")
+    def presign_owned_screenshot_urls(self) -> "AnnotationSetResponse":
+        prefix = f"{ANNOTATION_UPLOAD_PREFIX}{self.created_by_id}/"
+        self.screenshot_url = object_storage.presign_stored_url(
+            self.screenshot_url, key_prefix=prefix
+        )
+        if self.screenshots is not None:
+            self.screenshots = [
+                shot.model_copy(
+                    update={
+                        "url": object_storage.presign_stored_url(
+                            shot.url, key_prefix=prefix
+                        )
+                    }
+                )
+                for shot in self.screenshots
+            ]
+        return self
 
     @property
     def screenshot_count(self) -> int:
