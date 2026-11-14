@@ -75,6 +75,8 @@ let sent: Sent[] = [];
 let home = SYS;
 /** The system tenant's auto-publish candidates, as its status read serves them. */
 let systemCandidates: unknown[] = [];
+/** Run when a row write's PATCH arrives (before it is answered). */
+let onPatch: (() => void) | null = null;
 
 /**
  * Hold the `nth` (1-based) list read, or status read, served in a project
@@ -161,6 +163,7 @@ beforeEach(() => {
   sent = [];
   home = SYS;
   systemCandidates = [];
+  onPatch = null;
   holds = [];
   served = {};
   listTenantsMock.mockReset();
@@ -193,7 +196,10 @@ beforeEach(() => {
               }),
             });
       }
-      if (method === "PATCH") return json(200, row("bravo-only"));
+      if (method === "PATCH") {
+        onPatch?.();
+        return json(200, row("bravo-only"));
+      }
       if (method === "GET" && /\/coord\/prompt-documents(\?|$)/.test(url)) {
         const held = await heldIfAsked("list", project);
         if (held?.failWith) {
@@ -515,22 +521,30 @@ describe("this tab switches project through the provider", () => {
 });
 
 describe("another tab's switch", () => {
-  it("never offers Adopt all over rows a row write's re-read brought from that tab's project, even after it switches back", async () => {
+  it("an in-flight row write's re-read stays in the page's project; Adopt all stays withdrawn while another project is stored", async () => {
     mountIn(B, [SYS]);
     await screen.findByTestId("adopt-all", {}, { timeout: 5000 });
-    // Another tab stores the system tenant (no event reaches this tab). A
-    // row write here is not pinned, so it and its re-read go there.
-    localStorage.setItem(KEY, SYS);
-    const reread = hold({ kind: "list", tenant: SYS, nth: 1 });
+    // A row write here goes out in B; another tab stores the system tenant
+    // while it is in flight — past the page's call-time guard, with no event
+    // reaching this tab yet. The write's re-read is pinned to B, so it is B's
+    // second list read (the mount read was the first), not the system
+    // tenant's first.
+    onPatch = () => localStorage.setItem(KEY, SYS);
+    const reread = hold({ kind: "list", tenant: B, nth: 2 });
+    const before = sent.length;
     await setBravoTier();
     await waitFor(() => expect(reread.arrived()).toBe(true));
-    // That tab switches back before the re-read answers.
-    localStorage.setItem(KEY, B);
+    // While it is out, the system tenant is stored: Adopt all is withdrawn.
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    await waitFor(() =>
+      expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument()
+    );
+
     reread.release();
-    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
-    await settle();
-    // B is stored and B's refusal stands, but the rows on screen are the
-    // system tenant's: the read was SENT there.
+    await settle(100);
+    expect(listReads(after(before))).toEqual([B]);
+    expect(rowsShown()).toEqual(["bravo-only"]);
+    // B's own rows, but another project is stored: still withdrawn.
     expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
   }, 20_000);
 });

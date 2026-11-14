@@ -121,7 +121,8 @@ jobs:
     # member installs into a job venv rather than the shared tool-cache
     # interpreter. Plans 2026-11-05-web-guards-stays-hosted-for-pwsh-and-pip-and-carries-the-light-lane-queue-wait
     # and 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WEB_GUARDS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WEB_GUARDS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout

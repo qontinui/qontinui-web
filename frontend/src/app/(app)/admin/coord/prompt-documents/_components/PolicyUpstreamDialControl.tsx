@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, CloudDownload } from "lucide-react";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { usePolicyUpstreamPolicy } from "../_hooks/usePolicyUpstreamPolicy";
 import {
   POLICY_UPSTREAM_CONFIRMED_LEVELS,
@@ -68,7 +69,25 @@ import {
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
  */
-export function PolicyUpstreamDialControl() {
+export function PolicyUpstreamDialControl({
+  canWrite,
+  resolvePin,
+}: {
+  /**
+   * Checked at the moment of every write; `false` sends nothing (the caller
+   * says why). The prompt-documents page passes its cross-tab guard here:
+   * its disabled fieldset reaches neither a confirmation (rendered outside
+   * it) nor a click that lands before another tab's switch is seen.
+   */
+  canWrite?: () => boolean;
+  /**
+   * The project every read and write of this control is sent in, asked for
+   * as each goes out — the prompt-documents page passes the project its list
+   * is pinned to, so a request in flight when another tab switches project
+   * stays in the page's. Omitted, each is sent in the project stored then.
+   */
+  resolvePin?: ResolvePin;
+} = {}) {
   const {
     policy,
     loading,
@@ -80,8 +99,10 @@ export function PolicyUpstreamDialControl() {
     readbackError,
     lastWrite,
     reload,
-    setLevel,
-  } = usePolicyUpstreamPolicy();
+    setLevel: writeLevel,
+  } = usePolicyUpstreamPolicy({ resolvePin });
+  const setLevel = (level: Parameters<typeof writeLevel>[0]) =>
+    canWrite && !canWrite() ? Promise.resolve(false) : writeLevel(level);
 
   // Held between the operator picking a confirmed level and confirming it. The
   // RadioGroup stays controlled by `displayLevel` throughout, so cancelling

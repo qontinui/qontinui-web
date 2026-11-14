@@ -390,7 +390,11 @@ describe("when the Adopt all updates button is offered", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("stamps an armed publish-all with the project it was PINNED to, not the one stored when it answers", async () => {
+  // The hook's own half — an armed run's refusal stamped with the project
+  // it was SENT in — is pinned in `usePublishAll.test.ts`. From this page the
+  // run is never sent in another tab's project at all: the dialog's confirm
+  // is refused at call time.
+  it("refuses an armed publish-all confirmed after another tab switched, and keeps the system tenant's controls", async () => {
     localStorage.setItem(TENANT_KEY, "t-system");
     getMock.mockImplementation((url: string) => {
       if (url === STATUS) return Promise.resolve({ candidates: [], count: 1 });
@@ -443,19 +447,19 @@ describe("when the Adopt all updates button is offered", () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     localStorage.setItem(TENANT_KEY, "t-other");
     await user.click(confirm);
-    await waitFor(() => expect(answerArmed).toBeDefined());
+    // Nothing armed was sent; the page says why.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
+    expect(answerArmed).toBeUndefined();
     localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerArmed?.();
-    });
     await user.keyboard("{Escape}");
-    // Let the refusal land and latch.
+    // Let anything that would land, land.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    // It is stamped with the project it was sent in, so it says nothing about
-    // the system tenant: that tenant's publish controls stay, and Adopt all is
-    // not offered on it.
+    // No refusal latched, so nothing about the system tenant changed: its
+    // publish controls stay, and Adopt all is not offered on it.
     expect(
       screen.getByTestId("doc-publish-mode-policy-coordination")
     ).toBeInTheDocument();

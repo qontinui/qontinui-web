@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useOptionalTenant } from "@/contexts/tenant-context";
 import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocuments";
-import { readActiveTenantId } from "@/services/http-client";
+import {
+  ACTIVE_TENANT_STORAGE_KEY,
+  readActiveTenantId,
+  type ProjectPin,
+} from "@/services/http-client";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -14,6 +19,7 @@ import {
   NotebookText,
   Pencil,
   Plus,
+  RotateCw,
   Send,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
@@ -64,6 +70,10 @@ import {
   SESSION_BRIEFING_DOCUMENT_NAMES,
 } from "../types";
 
+/** What the page says when another tab has changed the stored project. */
+const CROSS_TAB_MESSAGE =
+  "The active project was changed in another tab — reload to continue.";
+
 /**
  * Ask coord, now, whether the active project is the system tenant, through
  * the publish-all status door: it answers `200` only to the system tenant and
@@ -113,6 +123,8 @@ function formatWhen(iso: string): string {
 export function PromptDocumentList({
   autoPublishRefreshKey = 0,
   publishAllState,
+  onCrossTabChange,
+  writeGuardRef,
 }: {
   /**
    * Bumped by the page when something outside this list changes what the
@@ -129,30 +141,78 @@ export function PromptDocumentList({
    * reads for itself — which is how it is mounted standalone.
    */
   publishAllState?: PublishAllState;
+  /**
+   * Told whether another tab's project switch is in effect, so the page can
+   * disable its own controls beside the list's. Called on every change.
+   */
+  onCrossTabChange?: (changed: boolean) => void;
+  /**
+   * Given the list's call-time write guard and the project its rows are pinned
+   * to ({@link WriteGuard}), so the page's own settings can check the guard at
+   * the moment they write and send every request in the same project as the
+   * rows.
+   */
+  writeGuardRef?: WriteGuardRef;
 } = {}) {
   return publishAllState ? (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
+      onCrossTabChange={onCrossTabChange}
+      writeGuardRef={writeGuardRef}
     />
   ) : (
     <SelfReadingPromptDocumentList
       autoPublishRefreshKey={autoPublishRefreshKey}
+      onCrossTabChange={onCrossTabChange}
+      writeGuardRef={writeGuardRef}
     />
   );
 }
 
-/** The list reading the publish-all surface itself — no page owns the read. */
+/** What the list hands the page through {@link WriteGuardRef}. */
+export interface WriteGuard {
+  /**
+   * The call-time write guard: `true`, send; `false`, another tab's switch is
+   * in effect — nothing is sent, and the notice is raised.
+   */
+  writeAllowed: () => boolean;
+  /**
+   * The project every row read and write is pinned to — the page's, kept
+   * through a provider refresh. `undefined` while the page's project has never
+   * been known, or is `null` (none selected), which no pin can hold a request
+   * to. The page sends its settings and its status read in it.
+   */
+  pin: ProjectPin | undefined;
+}
+
+/** Where the list hands the page its write guard and its pin. */
+export type WriteGuardRef = { current: WriteGuard | null };
+
+/**
+ * The list reading the publish-all surface itself — no page owns the read.
+ *
+ * Nothing hands this `usePublishAll` a resolver, so its dry run, armed run and
+ * publish-mode PATCH are pinned to the project stored when each is sent, and
+ * its status re-takes after a write go in whatever project is stored then. The
+ * page mount (`page.tsx`) passes the list's own pin instead.
+ */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
+  onCrossTabChange,
+  writeGuardRef,
 }: {
   autoPublishRefreshKey: number;
+  onCrossTabChange?: (changed: boolean) => void;
+  writeGuardRef?: WriteGuardRef;
 }) {
   const publishAllState = usePublishAll();
   return (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
+      onCrossTabChange={onCrossTabChange}
+      writeGuardRef={writeGuardRef}
     />
   );
 }
@@ -160,9 +220,13 @@ function SelfReadingPromptDocumentList({
 function PromptDocumentListBody({
   autoPublishRefreshKey,
   publishAllState,
+  onCrossTabChange,
+  writeGuardRef,
 }: {
   autoPublishRefreshKey: number;
   publishAllState: PublishAllState;
+  onCrossTabChange?: (changed: boolean) => void;
+  writeGuardRef?: WriteGuardRef;
 }) {
   // The project stored when this page mounted (`null`: none stored yet) —
   // the one its first status read is pinned to. Captured once, before any
@@ -238,11 +302,117 @@ function PromptDocumentListBody({
   /**
    * The page's project: as first resolved, until THIS tab switches project
    * through the provider — then the page follows it (re-reading below).
-   * Another tab's switch is not followed: Adopt all is withheld while the
-   * stored project differs from this one.
+   * Another tab's switch is not followed: it is detected (`crossTabChange`)
+   * and every write is withheld until the page is reloaded.
    */
   const pageTenant: string | null | undefined =
     followedTenant !== undefined ? followedTenant : resolvedPageTenant;
+
+  /**
+   * The project the cross-tab GUARD compares against: the page's project, or
+   * — once that has been known — the last one known while it is UNKNOWN
+   * again. A provider `refresh()` (a project rename, for one) puts the
+   * provider back into `loading`, which makes `pageTenant` UNKNOWN for that
+   * round trip; the rows on screen are still the last known project's, so
+   * the guard must not lift. Only the guard reads this: Adopt all and the
+   * list re-reads keep treating UNKNOWN as offering nothing.
+   */
+  const lastKnownPageTenant = useRef<string | null | undefined>(undefined);
+  if (pageTenant !== undefined) lastKnownPageTenant.current = pageTenant;
+  const guardTenant: string | null | undefined =
+    pageTenant !== undefined ? pageTenant : lastKnownPageTenant.current;
+
+  /**
+   * The project every row read and write is SENT in, on every attempt — the
+   * HTTP client otherwise reads the stored project per attempt, so a request
+   * retried or replayed after another tab's switch would land in, or answer
+   * from, that project. Taken from `guardTenant`, not bare `pageTenant`, so a
+   * provider `refresh()` neither drops the pin for its round trip nor flips
+   * the pinned readers' identity, which would re-fire an open dialog's reads.
+   *
+   * Only a NAMED project is pinned. `undefined` while the page's project has
+   * never been known, and while it is `null` (none selected): a `null` pin
+   * sends no header, so the client would fill in whatever project is stored on
+   * every attempt — another tab's, after a switch — and it would also give up
+   * the request's retries. Without a pin, the dialogs' readers below are
+   * refused at call time instead, like the write doors.
+   */
+  const pin = useMemo<ProjectPin | undefined>(
+    () =>
+      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
+    [guardTenant]
+  );
+
+  /**
+   * True while the stored project differs from the page's because ANOTHER
+   * tab changed it. The HTTP client reads the stored project per request, so
+   * from then on every unpinned write would land in that project while this
+   * page shows its own rows — so the page's controls are disabled, writes are
+   * refused at call time, and the page asks to be reloaded.
+   *
+   * Computed against `guardTenant` whenever that is (re-)anchored — first
+   * known, or followed to after THIS tab's own switch, whose storage write
+   * has already happened by then — and on every `storage` event for the key,
+   * which only OTHER tabs receive. Another tab switching back clears it. A
+   * page whose project has never been known has nothing to compare and is
+   * not guarded.
+   */
+  const [crossTabChange, setCrossTabChange] = useState(false);
+  useEffect(() => {
+    setCrossTabChange(
+      guardTenant !== undefined && readActiveTenantId() !== guardTenant
+    );
+    if (guardTenant === undefined) return;
+    const onStorage = (event: StorageEvent) => {
+      // `null`: the other tab cleared storage — which clears the project too.
+      if (event.key !== null && event.key !== ACTIVE_TENANT_STORAGE_KEY) return;
+      setCrossTabChange(readActiveTenantId() !== guardTenant);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [guardTenant]);
+  useEffect(() => {
+    onCrossTabChange?.(crossTabChange);
+  }, [crossTabChange, onCrossTabChange]);
+
+  // Read through a ref so `writeAllowed` — and every guarded door built on it
+  // below — keeps ONE identity for the page's lifetime. The dialogs' READERS
+  // are guarded only while there is no pin (`pinnedOrGuarded`), and change
+  // identity only with it: a reader with a new identity per render would
+  // re-fetch from a dialog's effect and reset the operator's selection.
+  const guardTenantRef = useRef(guardTenant);
+  guardTenantRef.current = guardTenant;
+
+  /**
+   * The call-time half of the guard: the listener above covers what is on
+   * screen, this covers the race (a switch whose event has not arrived, a
+   * dialog already open). `true` lets the request go; `false` sends nothing,
+   * says why, and raises the notice. A page whose project has never been
+   * known keeps the unguarded behaviour.
+   */
+  const writeAllowed = useCallback((): boolean => {
+    const tenant = guardTenantRef.current;
+    if (tenant === undefined || readActiveTenantId() === tenant) return true;
+    setCrossTabChange(true);
+    toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
+    return false;
+  }, []);
+  // Handed up with the pin, which the page's settings and its status read are
+  // sent in: the same project as the rows, asked for as each request goes out.
+  useEffect(() => {
+    if (!writeGuardRef) return;
+    writeGuardRef.current = { writeAllowed, pin };
+    return () => {
+      writeGuardRef.current = null;
+    };
+  }, [writeGuardRef, writeAllowed, pin]);
+  /** `fn`, answering `refused` without calling it while the guard says no. */
+  const guard = useCallback(
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
+      async (...args: A): Promise<R> =>
+        writeAllowed() ? fn(...args) : refused,
+    [writeAllowed]
+  );
 
   const {
     documents,
@@ -260,7 +430,7 @@ function PromptDocumentListBody({
     updateDocument,
     restoreDefault,
     restoreVersion,
-  } = usePromptDocuments();
+  } = usePromptDocuments({ pin });
 
   // Re-read the rows, pinned to the page's project, whenever that project
   // changes — first resolved, or followed to — and the NEWEST read sent (not
@@ -288,7 +458,53 @@ function PromptDocumentListBody({
     keepMine,
     fetchMergePreview,
     applyMerge,
-  } = usePromptDocumentPublications();
+  } = usePromptDocumentPublications({ pin });
+
+  /**
+   * The dialogs' READERS go to them pinned while the page's project is a named
+   * one: a read in flight across another tab's switch cannot leave it, and a
+   * refused read would render as an empty one ("No versions recorded yet.").
+   * Without a pin — the page's project `null`, or never known — nothing holds
+   * a read to the page's project, so each is refused at call time like a
+   * write door. One identity until the pin changes, so an open dialog's load
+   * effect does not re-fire on a re-render.
+   */
+  const pinnedOrGuarded = useCallback(
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
+      pin ? fn : guard(fn, refused),
+    [pin, guard]
+  );
+  const dialogFetchVersions = useMemo(
+    () => pinnedOrGuarded(fetchVersions, null),
+    [pinnedOrGuarded, fetchVersions]
+  );
+  const dialogFetchVersion = useMemo(
+    () => pinnedOrGuarded(fetchVersion, null),
+    [pinnedOrGuarded, fetchVersion]
+  );
+  const dialogFetchPublication = useMemo(
+    () => pinnedOrGuarded(fetchPublication, null),
+    [pinnedOrGuarded, fetchPublication]
+  );
+  const dialogFetchMergePreview = useMemo(
+    () => pinnedOrGuarded(fetchMergePreview, null),
+    [pinnedOrGuarded, fetchMergePreview]
+  );
+
+  // The dialogs' write doors, behind the guard. Memoized on the underlying
+  // function, so a stable door stays stable (see `guardTenantRef`).
+  const guardedCreate = useMemo(
+    () => guard(createDocument, null),
+    [guard, createDocument]
+  );
+  const guardedUpdate = useMemo(
+    () => guard(updateDocument, false),
+    [guard, updateDocument]
+  );
+  const guardedRestoreDefault = useMemo(
+    () => guard(restoreDefault, false),
+    [guard, restoreDefault]
+  );
 
   /**
    * The publish-all surface (plan
@@ -368,16 +584,19 @@ function PromptDocumentListBody({
   };
 
   const openEdit = async (doc: PromptDocumentSummary) => {
+    if (!writeAllowed()) return;
     setEditorOpen(true);
     await loadFull(doc);
   };
 
   const openHistory = async (doc: PromptDocumentSummary) => {
+    if (!writeAllowed()) return;
     setHistoryOpen(true);
     await loadFull(doc);
   };
 
   const openClauses = async (doc: PromptDocumentSummary) => {
+    if (!writeAllowed()) return;
     setClausesOpen(true);
     await loadFull(doc);
   };
@@ -387,6 +606,7 @@ function PromptDocumentListBody({
    * which the list does not carry — same fetch the editor and history views do.
    */
   const openUpstream = async (doc: PromptDocumentSummary) => {
+    if (!writeAllowed()) return;
     setUpstreamOpen(true);
     await loadFull(doc);
   };
@@ -424,6 +644,7 @@ function PromptDocumentListBody({
     doc: PromptDocument,
     publication: Publication
   ): Promise<boolean> =>
+    writeAllowed() &&
     settleDecision(
       doc,
       await adoptUpstream(
@@ -438,6 +659,7 @@ function PromptDocumentListBody({
     doc: PromptDocument,
     publication: Publication
   ): Promise<boolean> =>
+    writeAllowed() &&
     settleDecision(
       doc,
       await keepMine(
@@ -453,6 +675,7 @@ function PromptDocumentListBody({
     publication: Publication,
     resolutions: Record<string, ClauseConflictChoice>
   ): Promise<boolean> =>
+    writeAllowed() &&
     settleDecision(
       doc,
       await applyMerge(
@@ -470,6 +693,7 @@ function PromptDocumentListBody({
    * the version shown on this row is still the one coord holds.
    */
   const openPublish = (doc: PromptDocumentSummary) => {
+    if (!writeAllowed()) return;
     setPublishTarget(doc);
     setPublishOpen(true);
   };
@@ -485,6 +709,7 @@ function PromptDocumentListBody({
     version: number,
     changeNote: string
   ): Promise<boolean> => {
+    if (!writeAllowed()) return false;
     const ok = await restoreVersion(kind, name, version, changeNote);
     if (ok) {
       const full = await fetchDocument(kind, name);
@@ -706,114 +931,151 @@ function PromptDocumentListBody({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {/*
+      {crossTabChange ? (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200"
+          role="alert"
+          data-testid="prompt-documents-cross-tab"
+        >
+          <AlertTriangle className="size-4 shrink-0" />
+          <p className="min-w-0 flex-1">
+            {CROSS_TAB_MESSAGE} Until then this page sends no changes: its
+            controls are disabled, and a change confirmed in a dialog or
+            settings confirmation that was already open is refused. The
+            documents shown are still this page&apos;s project, and the active
+            project is now a different one.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => window.location.reload()}
+            data-testid="prompt-documents-cross-tab-reload"
+          >
+            <RotateCw className="size-4" />
+            Reload
+          </Button>
+        </div>
+      ) : null}
+      {/*
+        The list's controls are disabled while another tab's switch is in
+        effect — a disabled fieldset is the one switch that reaches them all.
+        The dialogs render outside it (and portal out of it in any case), so
+        their doors are refused at call time instead.
+      */}
+      <fieldset
+        disabled={crossTabChange}
+        className="m-0 min-w-0 space-y-6 border-0 p-0"
+        data-testid="prompt-documents-controls"
+      >
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/*
           D1 — visible only when N > 0. There is no disabled state and no "0
           changed" label: a button that can never do anything is noise on every
           page load in every tenant, and its absence already says the one thing
           it would say. The count is coord's dry run, not a local derivation.
         */}
-        {!publishAllRetired && changedCount > 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => void openPublishAll()}
-            data-testid="publish-all"
-          >
-            <Send className="size-4" />
-            Publish all changed ({changedCount})
-          </Button>
-        )}
-        {/*
+          {!publishAllRetired && changedCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => void openPublishAll()}
+              data-testid="publish-all"
+            >
+              <Send className="size-4" />
+              Publish all changed ({changedCount})
+            </Button>
+          )}
+          {/*
           The inbound twin of the control above: shown only when coord serves
           at least one `update_available === true` AND has answered that this
           is not the system tenant, with no disabled "0" state for the same
           reason.
         */}
-        {adoptAllOffered && (
+          {adoptAllOffered && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => void openAdoptAll()}
+              data-testid="adopt-all"
+            >
+              <ArrowDownToLine className="size-4" />
+              Adopt all updates ({updatesAvailable})
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="outline"
             className="gap-1.5"
-            onClick={() => void openAdoptAll()}
-            data-testid="adopt-all"
+            onClick={() => setCreateOpen(true)}
+            data-testid="new-document"
           >
-            <ArrowDownToLine className="size-4" />
-            Adopt all updates ({updatesAvailable})
+            <Plus className="size-4" />
+            New document
           </Button>
+        </div>
+
+        {initialLoading && (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            Loading documents…
+          </div>
         )}
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setCreateOpen(true)}
-          data-testid="new-document"
-        >
-          <Plus className="size-4" />
-          New document
-        </Button>
-      </div>
 
-      {initialLoading && (
-        <div className="py-10 text-center text-sm text-muted-foreground">
-          Loading documents…
-        </div>
-      )}
+        {/* Coord refused or is unreachable: we know nothing, and say so. */}
+        {error && (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
+            data-testid="prompt-documents-error"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              Couldn&apos;t reach coord: {error}.{" "}
+              {documents.length > 0
+                ? "Showing the last documents loaded — they may be out of date."
+                : "No documents could be loaded."}
+            </p>
+          </div>
+        )}
 
-      {/* Coord refused or is unreachable: we know nothing, and say so. */}
-      {error && (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
-          data-testid="prompt-documents-error"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            Couldn&apos;t reach coord: {error}.{" "}
-            {documents.length > 0
-              ? "Showing the last documents loaded — they may be out of date."
-              : "No documents could be loaded."}
-          </p>
-        </div>
-      )}
+        {/* Coord answered, but its store isn't provisioned yet (deploy window). */}
+        {degraded && (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+            data-testid="prompt-documents-degraded"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Coord reports its prompt-document store isn&apos;t provisioned yet
+              ({degraded}). This list is empty because the documents can&apos;t
+              be read — not because none exist.
+            </p>
+          </div>
+        )}
 
-      {/* Coord answered, but its store isn't provisioned yet (deploy window). */}
-      {degraded && (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
-          data-testid="prompt-documents-degraded"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Coord reports its prompt-document store isn&apos;t provisioned yet (
-            {degraded}). This list is empty because the documents can&apos;t be
-            read — not because none exist.
-          </p>
-        </div>
-      )}
-
-      {/*
+        {/*
         Publishing was offered, and coord (or this deployment's proxy) answered
         that it is not available here. The controls are gone from every row
         after that answer, so the answer has to be visible somewhere — a
         control that disappears without a word reads as a bug in the page.
       */}
-      {publishUnavailable && (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
-          data-testid="prompt-documents-publish-unavailable"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            {publishUnavailable.refusal === "not_system_tenant"
-              ? "Publishing to the fleet is available only from the system tenant, and coord says this is not it. The Publish controls are hidden for the rest of this visit."
-              : publishUnavailable.refusal === "not_proxied"
-                ? "This deployment does not carry the publish route yet, so the Publish controls are hidden for the rest of this visit. Nothing was published."
-                : publishUnavailable.detail}
-          </p>
-        </div>
-      )}
+        {publishUnavailable && (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+            data-testid="prompt-documents-publish-unavailable"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              {publishUnavailable.refusal === "not_system_tenant"
+                ? "Publishing to the fleet is available only from the system tenant, and coord says this is not it. The Publish controls are hidden for the rest of this visit."
+                : publishUnavailable.refusal === "not_proxied"
+                  ? "This deployment does not carry the publish route yet, so the Publish controls are hidden for the rest of this visit. Nothing was published."
+                  : publishUnavailable.detail}
+            </p>
+          </div>
+        )}
 
-      {/*
+        {/*
         A publish-mode write was refused in a way that points at the `pdpub_03`
         migration not being applied yet.
 
@@ -830,167 +1092,171 @@ function PromptDocumentListBody({
         migration lands during this page's lifetime and the operator needs the
         setting to still be there when it does.
       */}
-      {modeSchemaPending && (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
-          data-testid="publish-mode-schema-pending"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div className="text-sm text-amber-800 dark:text-amber-200">
-            <p className="font-medium">
-              Coord cannot record a publish mode yet.
-            </p>
-            <p className="mt-1">
-              Its <code className="font-mono">publish_mode</code> column is most
-              likely not migrated ( <code className="font-mono">pdpub_03</code>{" "}
-              ). Reading a mode degrades to &quot;undecided&quot; so this page
-              still works, but the write refuses rather than degrading — a
-              decision the schema cannot hold must not look like it was saved.
-              Nothing was changed. Coord said: {modeSchemaPending}
-            </p>
+        {modeSchemaPending && (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
+            data-testid="publish-mode-schema-pending"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="text-sm text-amber-800 dark:text-amber-200">
+              <p className="font-medium">
+                Coord cannot record a publish mode yet.
+              </p>
+              <p className="mt-1">
+                Its <code className="font-mono">publish_mode</code> column is
+                most likely not migrated ({" "}
+                <code className="font-mono">pdpub_03</code> ). Reading a mode
+                degrades to &quot;undecided&quot; so this page still works, but
+                the write refuses rather than degrading — a decision the schema
+                cannot hold must not look like it was saved. Nothing was
+                changed. Coord said: {modeSchemaPending}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {(documents.length > 0 || canAssertEmpty) &&
-        PROMPT_DOCUMENT_BANDS.map((band) => {
-          // Authority order is `PROMPT_DOCUMENT_KINDS`', preserved within the
-          // band — the band regroups the list, it does not re-rank it.
-          const populated = kindsInBand(band).filter((kind) =>
-            documents.some((d) => d.kind === kind)
-          );
-          return (
-            <section
-              key={band}
-              className="space-y-4"
-              data-testid={`kind-band-${band}`}
-            >
-              <div className="border-b border-border pb-1.5">
-                <h2 className="text-xs font-semibold uppercase tracking-wide">
-                  {BAND_META[band].label}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {BAND_META[band].question}
-                </p>
-              </div>
-
-              {populated.length === 0 ? (
-                // `canAssertEmpty` is re-checked HERE, not just on the outer
-                // gate. The outer gate passes on `documents.length > 0` alone,
-                // and a failed refetch KEEPS the last-good list on screen
-                // (`usePromptDocuments`, deliberately) — so a stale list with
-                // an error banner would otherwise reach this branch and state
-                // "nobody has authored one" on no evidence. Emptiness is a fact
-                // only when coord actually answered; otherwise render nothing
-                // and let the banner above say the view is stale.
-                canAssertEmpty ? (
-                  <p
-                    className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
-                    data-testid={`kind-band-empty-${band}`}
-                  >
-                    No {BAND_META[band].label.toLowerCase()} documents yet —
-                    nothing here says {BAND_META[band].question}.
+        {(documents.length > 0 || canAssertEmpty) &&
+          PROMPT_DOCUMENT_BANDS.map((band) => {
+            // Authority order is `PROMPT_DOCUMENT_KINDS`', preserved within the
+            // band — the band regroups the list, it does not re-rank it.
+            const populated = kindsInBand(band).filter((kind) =>
+              documents.some((d) => d.kind === kind)
+            );
+            return (
+              <section
+                key={band}
+                className="space-y-4"
+                data-testid={`kind-band-${band}`}
+              >
+                <div className="border-b border-border pb-1.5">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide">
+                    {BAND_META[band].label}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {BAND_META[band].question}
                   </p>
-                ) : null
-              ) : (
-                populated.map((kind) => {
-                  const group = documents.filter((d) => d.kind === kind);
-                  return (
-                    <section key={kind} data-testid={`kind-group-${kind}`}>
-                      <div className="mb-2">
-                        <h3 className="text-sm font-semibold">
-                          {KIND_META[kind].label}
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {KIND_META[kind].description}
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        {group.map((doc) => (
-                          <DocumentRow
-                            key={`${doc.kind}/${doc.name}`}
-                            doc={doc}
-                            saving={saving}
-                            onEdit={() => openEdit(doc)}
-                            onHistory={() => openHistory(doc)}
-                            onSetAgentWriteTier={(tier) =>
-                              updateDocument(doc.kind, doc.name, {
-                                // The explicit TIER, never the legacy boolean.
-                                // `agent_writable: true` is read by coord as
-                                // "at least allow", which cannot PRODUCE
-                                // `allow_with_notification` — so an operator
-                                // choosing the notification tier got plain
-                                // `allow` and the agent writes it authorised
-                                // landed unannounced.
-                                agent_write_tier: tier,
-                                change_description: `Agent write tier set to \`${tier}\` by an operator`,
-                              })
-                            }
-                            onClauses={
-                              doc.kind === "policy"
-                                ? () => openClauses(doc)
-                                : undefined
-                            }
-                            onUpstream={
-                              doc.update_available === true
-                                ? () => openUpstream(doc)
-                                : undefined
-                            }
-                            onPublish={
-                              isPublishableKind(doc.kind) &&
-                              publishUnavailable === null
-                                ? () => openPublish(doc)
-                                : undefined
-                            }
-                            // D4 — the publish-mode control sits on every
-                            // document of a publishable kind. It is withheld
-                            // once coord has said the publishing surface does
-                            // not apply here at all, for the same reason the
-                            // Publish button is: the mode is meaningful only on
-                            // system-tenant rows, and a control whose only
-                            // outcome is a refusal is a dead end.
-                            onSetPublishMode={
-                              isPublishableKind(doc.kind) && !publishAllRetired
-                                ? async (mode) => {
-                                    const ok = await setPublishMode(
-                                      doc.kind,
-                                      doc.name,
-                                      mode
-                                    );
-                                    // The mode takes coord's VERSIONING path,
-                                    // so a successful write bumps
-                                    // `current_version` and the row must be
-                                    // re-read or it shows a stale one beside
-                                    // its new mode.
-                                    if (ok) await reload();
-                                    return ok;
-                                  }
-                                : undefined
-                            }
-                            savingPublishMode={savingMode}
-                            // Absent ⇒ no badge. Coord did not name this
-                            // document as a candidate, which is UNKNOWN rather
-                            // than "nothing is scheduled".
-                            autoPublish={statusByDocument.get(
-                              `${doc.kind}/${doc.name}`
-                            )}
-                            autoPublishEnabled={autoPublishEnabled}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })
-              )}
-            </section>
-          );
-        })}
+                </div>
+
+                {populated.length === 0 ? (
+                  // `canAssertEmpty` is re-checked HERE, not just on the outer
+                  // gate. The outer gate passes on `documents.length > 0` alone,
+                  // and a failed refetch KEEPS the last-good list on screen
+                  // (`usePromptDocuments`, deliberately) — so a stale list with
+                  // an error banner would otherwise reach this branch and state
+                  // "nobody has authored one" on no evidence. Emptiness is a fact
+                  // only when coord actually answered; otherwise render nothing
+                  // and let the banner above say the view is stale.
+                  canAssertEmpty ? (
+                    <p
+                      className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
+                      data-testid={`kind-band-empty-${band}`}
+                    >
+                      No {BAND_META[band].label.toLowerCase()} documents yet —
+                      nothing here says {BAND_META[band].question}.
+                    </p>
+                  ) : null
+                ) : (
+                  populated.map((kind) => {
+                    const group = documents.filter((d) => d.kind === kind);
+                    return (
+                      <section key={kind} data-testid={`kind-group-${kind}`}>
+                        <div className="mb-2">
+                          <h3 className="text-sm font-semibold">
+                            {KIND_META[kind].label}
+                          </h3>
+                          <p className="text-xs text-muted-foreground">
+                            {KIND_META[kind].description}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {group.map((doc) => (
+                            <DocumentRow
+                              key={`${doc.kind}/${doc.name}`}
+                              doc={doc}
+                              saving={saving}
+                              onEdit={() => openEdit(doc)}
+                              onHistory={() => openHistory(doc)}
+                              onSetAgentWriteTier={(tier) =>
+                                guardedUpdate(doc.kind, doc.name, {
+                                  // The explicit TIER, never the legacy boolean.
+                                  // `agent_writable: true` is read by coord as
+                                  // "at least allow", which cannot PRODUCE
+                                  // `allow_with_notification` — so an operator
+                                  // choosing the notification tier got plain
+                                  // `allow` and the agent writes it authorised
+                                  // landed unannounced.
+                                  agent_write_tier: tier,
+                                  change_description: `Agent write tier set to \`${tier}\` by an operator`,
+                                })
+                              }
+                              onClauses={
+                                doc.kind === "policy"
+                                  ? () => openClauses(doc)
+                                  : undefined
+                              }
+                              onUpstream={
+                                doc.update_available === true
+                                  ? () => openUpstream(doc)
+                                  : undefined
+                              }
+                              onPublish={
+                                isPublishableKind(doc.kind) &&
+                                publishUnavailable === null
+                                  ? () => openPublish(doc)
+                                  : undefined
+                              }
+                              // D4 — the publish-mode control sits on every
+                              // document of a publishable kind. It is withheld
+                              // once coord has said the publishing surface does
+                              // not apply here at all, for the same reason the
+                              // Publish button is: the mode is meaningful only on
+                              // system-tenant rows, and a control whose only
+                              // outcome is a refusal is a dead end.
+                              onSetPublishMode={
+                                isPublishableKind(doc.kind) &&
+                                !publishAllRetired
+                                  ? async (mode) => {
+                                      if (!writeAllowed()) return false;
+                                      const ok = await setPublishMode(
+                                        doc.kind,
+                                        doc.name,
+                                        mode
+                                      );
+                                      // The mode takes coord's VERSIONING path,
+                                      // so a successful write bumps
+                                      // `current_version` and the row must be
+                                      // re-read or it shows a stale one beside
+                                      // its new mode.
+                                      if (ok) await reload();
+                                      return ok;
+                                    }
+                                  : undefined
+                              }
+                              savingPublishMode={savingMode}
+                              // Absent ⇒ no badge. Coord did not name this
+                              // document as a candidate, which is UNKNOWN rather
+                              // than "nothing is scheduled".
+                              autoPublish={statusByDocument.get(
+                                `${doc.kind}/${doc.name}`
+                              )}
+                              autoPublishEnabled={autoPublishEnabled}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })
+                )}
+              </section>
+            );
+          })}
+      </fieldset>
 
       <PromptDocumentCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         saving={saving}
-        onCreate={createDocument}
+        onCreate={guardedCreate}
         onCreated={openCreated}
       />
 
@@ -1000,8 +1266,8 @@ function PromptDocumentListBody({
         document={editing}
         loadingBody={loadingBody}
         saving={saving}
-        onUpdate={updateDocument}
-        onRestore={restoreDefault}
+        onUpdate={guardedUpdate}
+        onRestore={guardedRestoreDefault}
         onShowHistory={() => {
           setEditorOpen(false);
           setHistoryOpen(true);
@@ -1014,8 +1280,8 @@ function PromptDocumentListBody({
         target={historyTarget}
         currentBody={editing?.body ?? ""}
         currentVersion={editing?.current_version ?? 0}
-        fetchVersions={fetchVersions}
-        fetchVersion={fetchVersion}
+        fetchVersions={dialogFetchVersions}
+        fetchVersion={dialogFetchVersion}
         saving={saving}
         onRestoreVersion={handleRestoreVersion}
       />
@@ -1026,6 +1292,7 @@ function PromptDocumentListBody({
         doc={publishTarget}
         publishing={publishing}
         onPublish={async (target, releaseNote) => {
+          if (!writeAllowed()) return null;
           const res = await publish(
             target.kind,
             target.name,
@@ -1054,6 +1321,11 @@ function PromptDocumentListBody({
         previewing={previewingPublishAll}
         publishing={publishingAll}
         onPublishAll={async (selected, releaseNote) => {
+          // The confirm, not the preview: a confirm raced past the notice is
+          // refused here. The run itself is pinned — to the page's project
+          // when the page hands `usePublishAll` the list's pin, else to the
+          // project stored now.
+          if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
           // armed batch can move every row on the page at once.
@@ -1107,10 +1379,10 @@ function PromptDocumentListBody({
         onOpenChange={setUpstreamOpen}
         doc={editing}
         loadingBody={loadingBody}
-        fetchPublication={fetchPublication}
+        fetchPublication={dialogFetchPublication}
         onAdoptUpstream={handleAdoptUpstream}
         onKeepMine={handleKeepMine}
-        fetchMergePreview={fetchMergePreview}
+        fetchMergePreview={dialogFetchMergePreview}
         onMergeClauses={handleMergeClauses}
         saving={deciding}
       />
@@ -1121,6 +1393,8 @@ function PromptDocumentListBody({
         document={editing?.kind === "policy" ? editing : null}
         loadingBody={loadingBody}
         onDocsReload={reload}
+        canWrite={writeAllowed}
+        pin={pin}
       />
     </div>
   );
