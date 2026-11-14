@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PackageCodePreview } from "@/components/marketplace/PackageCodePreview";
+import { usePackageVersions } from "@/hooks/useCodePackages";
 import { formatDownloads } from "@/types/code-packages";
 import type { CodePackage } from "@/types/code-packages";
 import { formatDistanceToNow } from "date-fns";
@@ -28,6 +29,11 @@ export function PackageContentTabs({
   selectedTab,
   onTabChange,
 }: PackageContentTabsProps) {
+  const latest = pkg.latest_version ?? null;
+  const versionsQuery = usePackageVersions(pkg.id);
+  const versions = versionsQuery.data ?? [];
+  const dependencies = latest?.dependencies ?? [];
+
   return (
     <Tabs value={selectedTab} onValueChange={(v) => onTabChange(v as TabValue)}>
       <TabsList className="bg-muted w-full">
@@ -52,10 +58,10 @@ export function PackageContentTabs({
       <TabsContent value="readme" className="mt-6">
         <Card className="bg-muted/50 border-border">
           <CardContent className="p-6">
-            {pkg.latest_version.readme ? (
+            {latest?.readme ? (
               <div className="prose prose-invert prose-cyan max-w-none">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {pkg.latest_version.readme}
+                  {latest.readme}
                 </ReactMarkdown>
               </div>
             ) : (
@@ -68,12 +74,20 @@ export function PackageContentTabs({
       </TabsContent>
 
       <TabsContent value="code" className="mt-6">
-        <PackageCodePreview
-          code={pkg.latest_version.code}
-          language="python"
-          fileName={`${pkg.slug}.py`}
-          maxHeight="600px"
-        />
+        {latest ? (
+          <PackageCodePreview
+            code={latest.code}
+            language="python"
+            fileName={`${pkg.slug}.py`}
+            maxHeight="600px"
+          />
+        ) : (
+          <Card className="bg-muted/50 border-border">
+            <CardContent className="p-6 text-center py-12 text-muted-foreground">
+              No published version
+            </CardContent>
+          </Card>
+        )}
       </TabsContent>
 
       <TabsContent value="versions" className="mt-6">
@@ -86,7 +100,22 @@ export function PackageContentTabs({
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {pkg.versions.map((version) => (
+              {versionsQuery.isPending && (
+                <div className="text-sm text-muted-foreground">
+                  Loading versions...
+                </div>
+              )}
+              {versionsQuery.isError && !versionsQuery.data && (
+                <div className="text-sm text-muted-foreground">
+                  The package versions could not be loaded
+                </div>
+              )}
+              {versionsQuery.data !== undefined && versions.length === 0 && (
+                <div className="text-sm text-muted-foreground">
+                  No published version
+                </div>
+              )}
+              {versions.map((version) => (
                 <div
                   key={version.id}
                   className="flex items-start justify-between p-4 bg-muted rounded-lg border border-border"
@@ -96,7 +125,7 @@ export function PackageContentTabs({
                       <span className="font-mono font-semibold text-foreground">
                         v{version.version}
                       </span>
-                      {version.id === pkg.latest_version.id && (
+                      {version.id === latest?.id && (
                         <Badge variant="secondary">Latest</Badge>
                       )}
                     </div>
@@ -127,13 +156,15 @@ export function PackageContentTabs({
           <CardHeader>
             <CardTitle>Dependencies</CardTitle>
             <CardDescription>
-              Packages required by v{pkg.latest_version.version}
+              {latest
+                ? `Packages required by v${latest.version}`
+                : "No published version"}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {pkg.latest_version.dependencies.length > 0 ? (
+            {dependencies.length > 0 ? (
               <div className="space-y-2">
-                {pkg.latest_version.dependencies.map((dep, index) => (
+                {dependencies.map((dep, index) => (
                   <div
                     key={index}
                     className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border"

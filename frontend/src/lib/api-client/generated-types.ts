@@ -3353,6 +3353,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/code-packages/packages/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Package Details By Slug
+         * @description Get detailed package information by the package's URL slug.
+         */
+        get: operations["api_v1_code_packages_packages_by_slug_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/code-packages/packages/popular": {
         parameters: {
             query?: never;
@@ -62557,6 +62577,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_code_packages_packages_by_slug_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageDetailRead"];
                 };
             };
             /** @description Validation Error */
