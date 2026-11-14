@@ -117,7 +117,8 @@ jobs:
     # schema-order wait is not left waiting on a queued migration. Default
     # (unset) stays `ubuntu-latest`. Inline on purpose: a lane-picking job
     # would itself queue on hosted. Fallback is manual (unset and re-run).
-    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, qontinui-web-trusted, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted","ram-4g"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
       contents: read

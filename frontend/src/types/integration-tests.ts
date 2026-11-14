@@ -102,31 +102,3 @@ export interface VisualizationModeSelectorProps {
   onModeChange: (mode: VisualizationMode) => void;
   disabled?: boolean;
 }
-
-/**
- * Historical data statistics
- */
-export interface HistoricalDataStats {
-  totalSnapshotRuns: number;
-  totalActions: number;
-  totalScreenshots: number;
-  uniqueStates: number;
-  stateNames: string[];
-  hasHistoricalData: boolean;
-  oldestRun: string | null;
-  newestRun: string | null;
-  automationRunsCount?: number;
-  totalActionsCount?: number;
-  stateCoveragePercentage?: number;
-  transitionsRecorded?: number;
-  lastUpdated?: string;
-}
-
-/**
- * Props for HistoricalDataStatus component
- */
-export interface HistoricalDataStatusProps {
-  stats: HistoricalDataStats | null;
-  loading?: boolean;
-  error?: string | null;
-}
