@@ -17,9 +17,10 @@ What the column holds
 ``qontinui-runner`` publishes ``ci_reserved_gib`` on ``POST /coord/fleet/budget``
 (``BudgetPublishRequest.ci_reserved_gib`` in ``qontinui-coord``
 ``crates/coord/src/fleet.rs``): the GiB of host memory its CI may take, rounded **up**
-to a whole GiB. On a cgroup-v2 host that is the ``ci.slice`` bound — the smaller of the
-parent slice's bound and the sum of the ``ci.slice/*.slice`` ``memory.high`` (else
-``memory.max``) — and ``0`` means the host has no CI slice. On a host without cgroup v2
+to a whole GiB. On a cgroup-v2 host that is the ``ci.slice`` bound — the parent slice's
+own ``memory.high`` (else ``memory.max``), capped by the sum of its child
+``ci.slice/*.slice`` bounds when all of those are bounded (whichever side is bounded when
+only one is) — and ``0`` means the host has no CI slice. On a host without cgroup v2
 (Windows, macOS, cgroup v1) the runner publishes an estimate instead, CI job slots ×
 16 GiB, so ``0`` there means no CI slots. coord already consumes it as a
 term of ``derive_agent_capacity(memory_gb, cpu_cores, ci_reserved_gib)``, but until now
@@ -44,8 +45,11 @@ Nullable, no default, no backfill
 
 ``NULL`` is the correct value for every existing row and means "no publisher has
 asserted a CI reservation for this device" — which is exactly true until the coord
-writer ships, and stays true for any publisher that OMITS the field (an unbounded CI
-slice, or a runner older than the publisher). A default of ``0`` would be actively
+writer ships, and stays true for a device whose runner has never published the field
+(a runner older than the publisher, or one whose CI slice was unbounded at every
+publish). Whether a later publish that OMITS the field clears a stored value or keeps
+it is the coord writer's decision, not this column's; coord already keeps the last
+stored ``max_concurrent_agents`` in that case. A default of ``0`` would be actively
 wrong: ``0`` is a real published value meaning "no CI here", and it must remain
 distinguishable from "unknown". Readers must treat ``NULL`` as UNKNOWN, never as zero.
 
@@ -102,15 +106,16 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.devices.ci_reserved_gib IS
-            'GiB of host memory this device''s CI slices may take, as last '
+            'GiB of host memory this device''s CI may take, as last '
             'published by qontinui-runner on the fleet budget publish, '
             'rounded up. cgroup-v2 hosts: the ci.slice memory bound '
             '(memory.high, else memory.max); 0 = no CI slice. Other hosts: '
             'an estimate of CI job slots x 16 GiB; 0 = no CI slots. Written '
             'and read only by coord: it is the CI term of the worktree/agent '
             'cap formula, persisted so a worktree_slot refusal can name which '
-            'term bound. NULL = not published (an unbounded CI slice, or an '
-            'older runner) and reads as UNKNOWN, never as 0.'
+            'term bound. NULL = no value on record (never published: an older '
+            'runner, or a CI slice that was unbounded) and reads as UNKNOWN, '
+            'never as 0.'
         """
     )
 
