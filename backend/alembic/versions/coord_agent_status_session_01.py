@@ -1,7 +1,7 @@
 """coord.agent_status: a session column and its partial lookup index (expand)
 
 Revision ID: coord_agent_status_session_01
-Revises: coord_ci_runs_head_sha_idx_01
+Revises: runmem_01
 Create Date: 2026-11-11
 
 Phase 1 of plan ``2026-11-11-intent-overlap-excludes-the-callers-whole-device``
@@ -232,7 +232,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_status_session_01"
-down_revision: str | Sequence[str] | None = "coord_ci_runs_head_sha_idx_01"
+down_revision: str | Sequence[str] | None = "runmem_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

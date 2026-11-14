@@ -108,7 +108,7 @@ from tests._alembic_harness import (
 # cannot change what this test walks. `_PARENT_REVISION_ID` MUST equal the
 # revision's own `down_revision`, and the first test enforces it.
 _REVISION_ID = "coord_agent_status_session_01"
-_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
+_PARENT_REVISION_ID = "runmem_01"
 _REVISION_FILENAME = "coord_agent_status_session_01.py"
 
 _TABLE = "agent_status"
