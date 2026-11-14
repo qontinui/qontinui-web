@@ -83857,7 +83857,7 @@ export interface operations {
                 after_slug?: string | null;
                 /** @description Attach each unit's non-expired ``live_sessions`` (coord's agent-status join). Absent from a row = UNKNOWN; ``[]`` is a real zero. A session drops out within STATUS_TTL of its last heartbeat, not when it ends — compare ``expires_at``. */
                 include_live_sessions?: boolean | null;
-                /** @description With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN). */
+                /** @description With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved`` / ``declared`` + ``session_id`` + ``session_name``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN). */
                 resolve_session_names?: boolean | null;
             };
             header?: never;
