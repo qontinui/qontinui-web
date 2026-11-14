@@ -38,14 +38,19 @@ from sqlalchemy.engine import Engine
 
 from tests._alembic_harness import (
     admin_database_url,
+    alter_statement,
     backend_root,
+    backfill_statements,
     can_connect,
     column_comment,
     column_info,
     comment_body_from_source,
     declared_parent_revision_id,
+    drop_statements,
     ephemeral_database,
+    forbidden_add_clauses,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -145,17 +150,7 @@ def test_the_revision_names_the_columns_coord_reads_from_its_list() -> None:
 
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    module = _revision_module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_revision_module(), step, monkeypatch)
 
 
 def _alter_statements(statements: list[str], verb: str) -> dict[str, str]:
@@ -209,12 +204,41 @@ def test_both_directions_open_with_the_lock_bound(
 def test_upgrade_never_drops_defaults_or_constrains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    up = "\n".join(_recorded_sql(monkeypatch, "upgrade"))
-    ddl = "\n".join(line for line in up.split("\n") if "ADD COLUMN" in line)
-    assert not re.search(r"\bDROP\b", up)
-    assert not re.search(r"\bNOT NULL\b|\bDEFAULT\b|\bCHECK\b", ddl, re.I), (
-        "an ADD carries NOT NULL / DEFAULT / CHECK; NULL is load-bearing (UNKNOWN)"
+    """No NOT NULL, DEFAULT or constraint in either ADD, no DROP, no backfill.
+
+    Each table's WHOLE ADD statement is scanned, whitespace-collapsed and
+    word-bounded (``_alembic_harness.forbidden_add_clauses``): reading only
+    the ``ADD COLUMN`` lines let a clause on a continuation line, an
+    ``ADD CONSTRAINT`` in the same ALTER, or a ``NOT NULL`` split across two
+    lines pass, and the old three-clause list missed CONSTRAINT, REFERENCES
+    and UNIQUE.
+    """
+    statements = _recorded_sql(monkeypatch, "upgrade")
+    assert not drop_statements(statements), drop_statements(statements)
+    # The helpers skip COMMENT ON statements (prose bodies); this revision's
+    # comments name no DROP, so the whole text is held too, which also catches
+    # a DROP chained onto a comment with ``;``.
+    assert not re.search(r"\bDROP\b", "\n".join(statements), re.I)
+    adds = []
+    for table in sorted({table for table, _, _ in _EXPECTED_DDL}):
+        add = alter_statement(statements, _SCHEMA, table, "ADD")
+        found = forbidden_add_clauses(add)
+        assert not found, (
+            f"the ADD on {table} carries {found}; NULL is load-bearing (UNKNOWN)"
+        )
+        adds.append(add)
+    assert not backfill_statements(statements), (
+        "the revision backfills; rows written before it must keep NULL"
     )
+    # Pin the shape IN ORDER: the lock bound, the ADDs, then only column
+    # comments, so a second ALTER the finder's anchor does not match cannot
+    # slip past and no comment precedes the column it describes.
+    assert statements[0] == _LOCK_BOUND, statements[0]
+    head = statements[1 : 1 + len(adds)]
+    assert {id(sql) for sql in head} == {id(add) for add in adds}, head
+    others = statements[1 + len(adds) :]
+    assert others, "the added columns carry no COMMENT ON COLUMN"
+    assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others), others
 
 
 def test_the_column_comments_state_their_null_contract() -> None:
