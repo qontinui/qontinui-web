@@ -19131,9 +19131,10 @@ export interface paths {
          *     definition has no artifact to point at yet, so it may be posted with BOTH
          *     endpoints omitted::
          *
-         *         {"relation": "spawned_followup", "note": "<text>", "to_id": null}
+         *         {"relation": "spawned_followup", "note": "<text>", "to_id": null,
+         *          "unanchored_reason": "<why no file>", "size_class": "small"}
          *
-         *     ``note`` is then required and must not be blank — with no far end it is the
+         *     (or ``anchors`` in place of ``unanchored_reason``). ``note`` is then required and must not be blank — with no far end it is the
          *     entire content of the row, and an empty one puts an unactionable entry in
          *     the open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
          *     records a follow-up that already has an owner; ``from_id`` is not, because
@@ -19144,10 +19145,13 @@ export interface paths {
          *     A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
          *     ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),
          *     ``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and — when it names
-         *     no file — ``unanchored_reason``. All OPTIONAL for now (plan
-         *     ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:
-         *     the refusal of the note-only shape lands after every writer sends the new
-         *     one). They are stored atomically with a new follow-up; a re-post that lands
+         *     no file — ``unanchored_reason``. On the ONE-ENDED form they are REQUIRED
+         *     (plan ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+         *     D3): a non-empty ``anchors`` or a non-blank ``unanchored_reason``, and a
+         *     ``size_class`` — otherwise 422, because a note-only follow-up can never be
+         *     matched to the diff that would fix it. A follow-up written already owned
+         *     (``to_id`` supplied) is not open, is never matched, and may omit them. They
+         *     are stored atomically with a new follow-up; a re-post that lands
          *     on an existing one fills only what it lacks (anchors when it has none, a
          *     class when it is unclassified) and never overwrites —
          *     ``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's
@@ -56231,17 +56235,20 @@ export interface components {
          *     EXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).
          *
          *     For ``spawned_followup`` both may be omitted: that is the one-ended form,
-         *     ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
-         *     ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
+         *     ``{"relation": "spawned_followup", "note": "<text>", "to_id": null,
+         *     "unanchored_reason": "<why no file>", "size_class": "small"}`` (or
+         *     ``anchors`` in place of ``unanchored_reason``), and ``note`` is then
+         *     REQUIRED. Supplying ``to_id`` alongside it is still legal
          *     and records a follow-up that already has an owner.
          *
          *     A ``spawned_followup`` may also carry what makes it MATCHABLE (plan
          *     ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
          *     D2/D3): ``anchors`` (the files it is about), ``size_class`` and — when it
-         *     names no file — ``unanchored_reason``. All three are OPTIONAL on this
-         *     door for now: every writer still sends the note-only shape, and refusing
-         *     it before they send the new one would stop the queue filling (D3's refusal
-         *     is sequenced after the writers). They apply to ``spawned_followup`` only.
+         *     names no file — ``unanchored_reason``. They apply to ``spawned_followup``
+         *     only. On the one-ended form the endpoint REQUIRES ``size_class`` and either
+         *     a non-empty ``anchors`` or a non-blank ``unanchored_reason`` (D3, a 422
+         *     otherwise); they stay optional here because an owned follow-up (``to_id``
+         *     supplied) may omit them.
          */
         WorkArtifactEdgeCreate: {
             /** Anchors */
