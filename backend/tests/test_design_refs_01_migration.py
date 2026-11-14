@@ -36,7 +36,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "design_refs_01"
-_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
+_PARENT_REVISION_ID = "runmem_01"
 
 pytestmark = pytest.mark.skipif(
     not can_connect(admin_database_url()), reason="no test Postgres reachable"
