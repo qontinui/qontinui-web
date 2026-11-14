@@ -30,6 +30,7 @@ from app.crud import device_machine_credential_crud as dmk_crud
 from app.models.devenv import DeviceMachineCredential
 from app.services import coord_device
 from app.services.coord_service_account import coord_service_account
+from app.services.device_machine_key_automint import SELF_MINT_RENEWAL_WINDOW
 
 API_PREFIX = "/api/v1/devices"
 _USER_ID = uuid4()
@@ -60,11 +61,19 @@ def _device_credential_not_revoked():
     (plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-
     from-qontinui-web`` Phase 4). These tests run against a mock session, so
     the read is stubbed to "not revoked"; the revoked arm is covered in
-    ``test_devices_operator_credential_controls.py``."""
+    ``test_devices_operator_credential_controls.py``. ``/mint`` and
+    ``/self-mint`` re-read the deny through the locked anchor read just
+    before writing the key; that read is stubbed to "no row" (not revoked)
+    here, and tests that need an anchor patch it themselves."""
     from app.crud import device_crud
 
-    with patch.object(
-        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    with (
+        patch.object(
+            device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+        ),
+        patch.object(
+            device_crud, "get_credential_anchor", AsyncMock(return_value=None)
+        ),
     ):
         yield
 
@@ -440,7 +449,25 @@ def _mock_httpx_response(status_code: int = 201, json_data=None) -> MagicMock:
     return resp
 
 
+_PAIR_TENANT = uuid4()
+
+
+def _issued_device_jwt(tenant_id=_PAIR_TENANT) -> str:
+    """A device JWT shaped like the one coord's pair-cli issues (the
+    ``tenant_id`` claim is what pair-cli reads; the signature is not)."""
+    import jwt as pyjwt
+
+    claims = {"sub": f"device:{_DEVICE_ID}", "device_id": str(_DEVICE_ID)}
+    if tenant_id is not None:
+        claims["tenant_id"] = str(tenant_id)
+    return pyjwt.encode(claims, "test-only-signing-key-32-bytes-long!", "HS256")
+
+
 class TestPairCliAutoMint:
+    """pair-cli runs the shared auto-mint against a mock session: the device
+    anchor read is stubbed (``_anchor``) and coord's pair-cli answers with a
+    device JWT whose ``tenant_id`` claim names the pairing tenant."""
+
     def _app(self) -> FastAPI:
         from app.api.deps import get_async_db, get_current_active_user_async
         from app.api.v1.endpoints.devices import router
@@ -451,70 +478,138 @@ class TestPairCliAutoMint:
         app.include_router(router, prefix=API_PREFIX)
         return app
 
-    def _configure_client(self, MockClient) -> AsyncMock:
-        instance = AsyncMock()
-        instance.__aenter__ = AsyncMock(return_value=instance)
-        instance.__aexit__ = AsyncMock(return_value=False)
-        MockClient.return_value = instance
-        return instance
-
     _BODY = {"device_id": str(_DEVICE_ID), "hostname": "spaceship"}
 
-    def test_pairing_returns_auto_minted_dmk(self) -> None:
+    def _pair(
+        self,
+        *,
+        mint: AsyncMock,
+        token: str | None = None,
+        device_tenant=_PAIR_TENANT,
+    ) -> tuple[httpx.Response, list[str]]:
+        from app.crud import device_crud
+        from app.services import device_machine_key_automint as automint_mod
+
+        recorder = MagicMock()
+        self.recorder = recorder
+        anchor = device_crud.DeviceCredentialAnchor(
+            tenant_id=device_tenant, credential_revoked_at=None
+        )
         client = TestClient(self._app())
+        with (
+            _patch_enabled(),
+            patch("app.services.coord_proxy.httpx.AsyncClient") as MockClient,
+            patch.object(dmk_crud, "mint", mint),
+            patch.object(
+                device_crud, "get_credential_anchor", AsyncMock(return_value=anchor)
+            ) as anchor_read,
+            patch.object(automint_mod, "logger", recorder),
+        ):
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            instance.post.return_value = _mock_httpx_response(
+                json_data={
+                    "device_id": str(_DEVICE_ID),
+                    "token": token if token is not None else _issued_device_jwt(),
+                }
+            )
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json=self._BODY,
+                headers={"Authorization": "Bearer cognito-tok"},
+            )
+        # pair-cli holds no pair-code lock, so it locks the device row.
+        assert anchor_read.call_args.kwargs == {"lock_for_share": True}
+        outcomes = [
+            c.kwargs["outcome"]
+            for c in recorder.info.call_args_list + recorder.warning.call_args_list
+            if c.args and c.args[0] == "device_machine_key_automint"
+        ]
+        return resp, outcomes
+
+    def test_pairing_returns_auto_minted_dmk(self) -> None:
         cred = MagicMock()
         cred.dmk_prefix = "dmk_abcdef1234"
-        with (
-            _patch_enabled(),
-            patch("app.services.coord_proxy.httpx.AsyncClient") as MockClient,
-            patch.object(
-                dmk_crud,
-                "mint",
-                AsyncMock(return_value=("dmk_auto-minted-secret", cred)),
-            ) as mock_mint,
-        ):
-            instance = self._configure_client(MockClient)
-            instance.post.return_value = _mock_httpx_response(
-                json_data={"device_id": str(_DEVICE_ID), "token": "device-jwt"}
-            )
-            resp = client.post(
-                f"{API_PREFIX}/pair-cli",
-                json=self._BODY,
-                headers={"Authorization": "Bearer cognito-tok"},
-            )
+        mint = AsyncMock(return_value=("dmk_auto-minted-secret", cred))
+        resp, outcomes = self._pair(mint=mint)
 
         assert resp.status_code == 201, resp.text
         body = resp.json()
-        assert body["token"] == "device-jwt"
         assert body["device_machine_key"] == "dmk_auto-minted-secret"
-        assert mock_mint.call_args.kwargs["owner_user_id"] == _USER_ID
+        assert outcomes == ["minted"]
+        # pair-cli lets the helper commit, so its minted line is post-commit.
+        (minted_line,) = [
+            c.kwargs
+            for c in self.recorder.info.call_args_list
+            if c.args and c.args[0] == "device_machine_key_automint"
+        ]
+        assert minted_line["committed"] is True
+        kwargs = mint.call_args.kwargs
+        assert kwargs["owner_user_id"] == _USER_ID
+        assert kwargs["tenant_id"] == _PAIR_TENANT
+        assert kwargs["refuse_if_revoked"] is True
+        assert kwargs["refuse_if_usable_beyond"] == SELF_MINT_RENEWAL_WINDOW
 
     def test_mint_failure_does_not_break_pairing(self) -> None:
-        client = TestClient(self._app())
-        with (
-            _patch_enabled(),
-            patch("app.services.coord_proxy.httpx.AsyncClient") as MockClient,
-            patch.object(
-                dmk_crud,
-                "mint",
-                AsyncMock(side_effect=RuntimeError("db down")),
-            ),
-        ):
-            instance = self._configure_client(MockClient)
-            instance.post.return_value = _mock_httpx_response(
-                json_data={"device_id": str(_DEVICE_ID), "token": "device-jwt"}
-            )
-            resp = client.post(
-                f"{API_PREFIX}/pair-cli",
-                json=self._BODY,
-                headers={"Authorization": "Bearer cognito-tok"},
-            )
-
+        resp, outcomes = self._pair(mint=AsyncMock(side_effect=RuntimeError("db down")))
         # Pairing still succeeds; the dmk_ is simply absent.
         assert resp.status_code == 201, resp.text
-        body = resp.json()
-        assert body["token"] == "device-jwt"
-        assert body["device_machine_key"] is None
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["failed"]
+
+    def test_a_usable_key_is_kept(self) -> None:
+        resp, outcomes = self._pair(
+            mint=AsyncMock(
+                side_effect=dmk_crud.DeviceMachineKeyStillUsableError(_DEVICE_ID)
+            )
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["kept_usable_key"]
+
+    def test_a_lost_insert_race_is_reported_as_such(self) -> None:
+        resp, outcomes = self._pair(
+            mint=AsyncMock(
+                side_effect=dmk_crud.DeviceMachineKeyConcurrentMintError(_DEVICE_ID)
+            )
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["lost_insert_race"]
+
+    def test_a_pairing_into_another_tenant_mints_nothing(self) -> None:
+        """A pairing whose tenant is not the device's home tenant (a second
+        tenant binding, or someone else's device) never touches its key."""
+        mint = AsyncMock()
+        resp, outcomes = self._pair(mint=mint, device_tenant=uuid4())
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["token"]
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["foreign_tenant_key"]
+        mint.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "token",
+        ["not-a-jwt", _issued_device_jwt(tenant_id=None)],
+        ids=["unparseable", "no_tenant_claim"],
+    )
+    def test_an_unknown_pairing_tenant_mints_nothing(self, token: str) -> None:
+        mint = AsyncMock()
+        resp, outcomes = self._pair(mint=mint, token=token)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["pairing_tenant_unknown"]
+        mint.assert_not_called()
+
+    def test_an_unknown_device_tenant_mints_nothing(self) -> None:
+        mint = AsyncMock()
+        resp, outcomes = self._pair(mint=mint, device_tenant=None)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == ["device_tenant_unknown"]
+        mint.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

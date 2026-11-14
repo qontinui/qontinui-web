@@ -362,8 +362,12 @@ class TestMintSelfGuardsRaceAndBoundary:
             return await real_execute(stmt, *args, **kwargs)
 
         monkeypatch.setattr(async_db_session, "execute", execute)
-        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+        # Still the 409-mapped StillUsable for /self-mint, but as the precise
+        # subclass, so the pairing auto-mint can report a lost race rather
+        # than claim it found a usable key.
+        with pytest.raises(dmk_crud.DeviceMachineKeyConcurrentMintError) as exc:
             await _self_mint(async_db_session, device_id)
+        assert isinstance(exc.value, dmk_crud.DeviceMachineKeyStillUsableError)
         monkeypatch.undo()
 
         # Session still usable (savepoint), and the winner's key is intact.

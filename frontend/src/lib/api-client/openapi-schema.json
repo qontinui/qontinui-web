@@ -38176,13 +38176,25 @@
         "type": "object"
       },
       "PairCodeRedeemOut": {
-        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
+        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,\nplus ``device_machine_key`` (the same additive field pair-cli returns).\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
         "properties": {
           "device_id": {
             "description": "The runner's device UUID.",
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Device machine key (``dmk_``) minted for this device at redeem, returned exactly once \u2014 the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.",
+            "title": "Device Machine Key"
           },
           "device_token_jwt": {
             "description": "Coord-issued device-token JWT.",
@@ -84528,7 +84540,7 @@
     },
     "/api/v1/devices/{device_id}/authorize-redeem": {
       "post": {
-        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* deletes a REVOKED machine-key row so the runner's ``/self-mint`` can\n  enrol a fresh key (a usable key is left alone).\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
+        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* removes machine-key rows that must not outlive the authorization\n  (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):\n  when the device WAS under a deny, its key row whatever its state (any\n  key predating the re-arm is suspect); otherwise only a REVOKED row. A\n  usable key on a never-revoked device is kept \u2014 it is how a runner\n  offline past its JWT grace recovers on its own (``/exchange``).\n\nWhat re-keys a device whose row was removed is its next pairing, which\nmints a fresh key because no row exists: an operator pair code or\n``pair-cli``, or the bound code minted here IF the runner collects it\nthrough ``/pending-redeem`` (a runner build without that poller never\ndoes). ``/self-mint`` also enrols one, given a live paired device JWT.\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
         "operationId": "api_v1_devices_device_id_authorize_redeem_post",
         "parameters": [
           {

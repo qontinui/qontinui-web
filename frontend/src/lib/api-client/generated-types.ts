@@ -44152,7 +44152,8 @@ export interface components {
          *
          *     Mirrors the canonical ``PairCompleteResponse`` shape that the
          *     runner's ``pair.rs::PairCompleteResponse`` decoder consumes:
-         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.
+         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,
+         *     plus ``device_machine_key`` (the same additive field pair-cli returns).
          *     The runner uses the same decoder for both the paste-pair and the
          *     headless ``pair-cli`` paths.
          */
@@ -44163,6 +44164,11 @@ export interface components {
              * @description The runner's device UUID.
              */
             device_id: string;
+            /**
+             * Device Machine Key
+             * @description Device machine key (``dmk_``) minted for this device at redeem, returned exactly once — the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.
+             */
+            device_machine_key?: string | null;
             /**
              * Device Token Jwt
              * @description Coord-issued device-token JWT.
