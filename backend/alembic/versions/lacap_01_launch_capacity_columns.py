@@ -85,6 +85,23 @@ it stops a typo'd verdict from ever being stored as a value the admission
 grader does not recognise. NULL passes the CHECK by SQL semantics. The numeric
 columns carry no CHECK, as in ``lasac_01``.
 
+The CHECK is a separate ``ADD CONSTRAINT ... NOT VALID``, never inline on the
+``ADD COLUMN``. An inline CHECK makes Postgres validate every existing row of
+``coord.device_resource_samples`` while the ALTER holds ACCESS EXCLUSIVE
+(measured ~206 ms per 2M rows), and ``lock_timeout`` bounds only the WAIT for
+that lock, not how long it is held — so every sample INSERT and every coord
+read of the table would stall behind the scan. ``NOT VALID`` is catalogue-only:
+it skips the scan of existing rows and still checks every row inserted or
+updated afterwards, which is all the backstop needs. No ``VALIDATE
+CONSTRAINT`` follows, because there is nothing to validate: the column is new,
+so every pre-existing row holds NULL, which passes. ``convalidated`` stays
+false in ``pg_constraint``; that flag is the only observable difference.
+
+Postgres has no ``ADD CONSTRAINT IF NOT EXISTS``, so the ADD runs in a ``DO``
+block that first looks the constraint up in ``pg_constraint`` by name on this
+table. A re-run of ``upgrade()`` (a ``stamp`` back, or a deploy retried after a
+later step failed) therefore skips it rather than failing on a duplicate name.
+
 The ``coord.agent_logs`` retire index
 =====================================
 
@@ -116,17 +133,25 @@ concurrently; a re-run over a VALID index leaves it untouched.
 Ordering and locks
 ==================
 
-The column ALTER runs first, in the migration transaction, under the house
-``SET LOCAL lock_timeout = '3s'`` bound (``alembic/env.py`` resets
-``lock_timeout`` after each revision). All five ADDs are one ALTER so the table
-can never carry a subset. The index is then built in its own autocommit
-block. ``downgrade()`` is the exact reverse: the index is dropped concurrently
-first, then the five columns (their COMMENTs and the CHECK go with them).
+The index is built FIRST, in its own autocommit block, because a
+CONCURRENTLY build cannot run inside a transaction and committing it before the
+transactional part means a re-run finds it VALID and leaves it alone. The
+transactional part then runs under the house ``SET LOCAL lock_timeout = '3s'``
+bound (``alembic/env.py`` resets ``lock_timeout`` after each revision): one
+ALTER carrying all five ADDs, so the table can never carry a subset, then the
+guarded ``NOT VALID`` CHECK, then the COMMENTs. Every step is safe to re-run.
+``downgrade()`` drops the index concurrently, then the five columns; the
+COMMENTs and the CHECK constraint go with their columns.
 
 ``IF NOT EXISTS`` is type-blind: a pre-existing column of the right name and
 wrong type makes the ADD a silent no-op and leaves the wrong type, where
 coord's ``row.get`` panics. Re-running ``upgrade()`` is not a repair for that;
-fix it with an explicit ``ALTER COLUMN ... TYPE`` in a new revision.
+fix it with an explicit ``ALTER COLUMN ... TYPE`` in a new revision. The CHECK
+is separate from the ADD, so a pre-existing ``launch_verdict`` column still
+gets it — unless a constraint of that NAME already exists on the table, which
+the guard takes as present whatever its expression; a wrong expression under
+the right name is likewise repaired only by a new revision that drops and
+re-adds it.
 
 Every ``op.execute`` is a static string literal: coord's merge-train migration
 classifier (``pr_merge/migration_classifier.rs``) holds a revision whose SQL it
@@ -201,7 +226,27 @@ def _index_is_invalid(index_name: str) -> bool:
 
 
 def upgrade() -> None:
-    """Add the five launch-capacity columns, then the retire-hold index."""
+    """Build the retire-hold index, then add the five launch-capacity columns."""
+    with op.get_context().autocommit_block():
+        # A failed earlier CONCURRENTLY build leaves an INVALID index that
+        # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
+        if _index_is_invalid(_RETIRE_INDEX_NAME):
+            op.execute(
+                "DROP INDEX CONCURRENTLY IF EXISTS "
+                "coord.idx_agent_logs_deferred_load_retire_device"
+            )
+        # Plain literal, never an f-string: the `alembic-schema-arg-gate`
+        # pre-commit hook statically checks that every CREATE/DROP names its
+        # schema, and coord's migration classifier reads only static literals.
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS
+                idx_agent_logs_deferred_load_retire_device
+            ON coord.agent_logs (device_id, occurred_at DESC)
+            WHERE event = 'spawn_deferred_load_retire'
+            """
+        )
+
     # Bound the ACCESS EXCLUSIVE lock wait (house style): a QUEUED lock request
     # blocks every reader of the table behind it. env.py resets lock_timeout
     # after each revision.
@@ -210,14 +255,34 @@ def upgrade() -> None:
         """
         ALTER TABLE coord.device_resource_samples
             ADD COLUMN IF NOT EXISTS launch_headroom INTEGER,
-            ADD COLUMN IF NOT EXISTS launch_verdict TEXT
-                CONSTRAINT device_resource_samples_launch_verdict_check
-                CHECK (launch_verdict IN (
-                    'proceed', 'warn', 'critical', 'guard_disabled', 'unreadable'
-                )),
+            ADD COLUMN IF NOT EXISTS launch_verdict TEXT,
             ADD COLUMN IF NOT EXISTS thread_graded INTEGER,
             ADD COLUMN IF NOT EXISTS thread_warn_ceiling INTEGER,
             ADD COLUMN IF NOT EXISTS thread_critical_ceiling INTEGER
+        """
+    )
+    # NOT VALID: catalogue-only, no scan of existing rows under ACCESS
+    # EXCLUSIVE; new rows are still checked. Guarded because Postgres has no
+    # ADD CONSTRAINT IF NOT EXISTS. See the module docstring.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM pg_constraint
+                 WHERE conname = 'device_resource_samples_launch_verdict_check'
+                   AND conrelid = 'coord.device_resource_samples'::regclass
+            ) THEN
+                ALTER TABLE coord.device_resource_samples
+                    ADD CONSTRAINT device_resource_samples_launch_verdict_check
+                    CHECK (launch_verdict IN (
+                        'proceed', 'warn', 'critical', 'guard_disabled',
+                        'unreadable'
+                    )) NOT VALID;
+            END IF;
+        END
+        $$
         """
     )
 
@@ -274,26 +339,6 @@ def upgrade() -> None:
             'grade every reading critical.'
         """
     )
-
-    with op.get_context().autocommit_block():
-        # A failed earlier CONCURRENTLY build leaves an INVALID index that
-        # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
-        if _index_is_invalid(_RETIRE_INDEX_NAME):
-            op.execute(
-                "DROP INDEX CONCURRENTLY IF EXISTS "
-                "coord.idx_agent_logs_deferred_load_retire_device"
-            )
-        # Plain literal, never an f-string: the `alembic-schema-arg-gate`
-        # pre-commit hook statically checks that every CREATE/DROP names its
-        # schema, and coord's migration classifier reads only static literals.
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS
-                idx_agent_logs_deferred_load_retire_device
-            ON coord.agent_logs (device_id, occurred_at DESC)
-            WHERE event = 'spawn_deferred_load_retire'
-            """
-        )
 
 
 def downgrade() -> None:
