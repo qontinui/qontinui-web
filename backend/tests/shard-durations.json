@@ -113,6 +113,7 @@
   "tests/test_coord_pgss_ext_01_migration.py": 8.9,
   "tests/test_coord_plan_pr_citations_3a_backfill_migration.py": 8.0,
   "tests/test_coord_policy_outcome_counts_01_migration.py": 53.2,
+  "tests/test_coord_policy_outcome_counts_02_migration.py": 30.0,
   "tests/test_coord_pr_files_head_sha_01_migration.py": 10.2,
   "tests/test_coord_pr_holds_01_migration.py": 23.7,
   "tests/test_coord_pr_state_observed_at_01_migration.py": 16.6,
