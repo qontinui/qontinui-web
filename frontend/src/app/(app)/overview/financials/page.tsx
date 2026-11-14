@@ -38,13 +38,16 @@ import { useOverviewProject } from "../_hooks/useOverviewProject";
 import {
   AMOUNT_KIND_LABEL,
   CADENCE_LABEL,
-  CATEGORY_TABLE,
   CATEGORY_WRITABLE,
   ENTRY_WRITABLE,
   RECURRING_WRITABLE,
   STARTER_CATEGORIES,
+  categoryAndDescendants,
   categoryKey,
+  categoryRowProblem,
+  categoryTable,
   categoryToRow,
+  categoryTree,
   entryRowProblem,
   entryTable,
   entryToRow,
@@ -73,6 +76,7 @@ import {
 import { formatDay } from "../_lib/timeline";
 import { BaseCurrency } from "./_components/BaseCurrency";
 import { BillsToEnter } from "./_components/BillsToEnter";
+import { CategoryTree } from "./_components/CategoryTree";
 import { CostHeadline } from "./_components/CostHeadline";
 import { MonthTable } from "./_components/MonthTable";
 import { RecordSection } from "./_components/RecordSection";
@@ -188,15 +192,24 @@ export default function CostsPage() {
     [entries.list]
   );
   const choices = useMemo(
-    () => categoryItems.map((c) => ({ id: c.id, name: c.name })),
+    () =>
+      categoryItems.map((c) => ({
+        id: c.id,
+        name: c.name,
+        parent_id: c.parent_id,
+      })),
     [categoryItems]
   );
+  // Tree order, each category with the path that names it ("Computers ›
+  // spaceship"): what the pickers, the filter and the tables call it.
+  const tree = useMemo(() => categoryTree(categoryItems), [categoryItems]);
+  const treeRecords = useMemo(() => tree.map((n) => n.category), [tree]);
   const categoryName = useCallback(
     (id: string | null) =>
       id === null
         ? null
-        : (categoryItems.find((c) => c.id === id)?.name ?? null),
-    [categoryItems]
+        : (tree.find((n) => n.category.id === id)?.path ?? null),
+    [tree]
   );
   // Unknown until the summary loads — never guessed (`recurringBody`).
   const baseCurrency =
@@ -211,13 +224,15 @@ export default function CostsPage() {
 
   const entriesTable = useMemo(() => entryTable(choices), [choices]);
   const recurringDecl = useMemo(() => recurringTable(choices), [choices]);
-  const shownEntries = useMemo(
-    () =>
-      filter === ALL
-        ? entryItems
-        : entryItems.filter((e) => (e.category_id ?? "none") === filter),
-    [entryItems, filter]
-  );
+  const categoriesDecl = useMemo(() => categoryTable(choices), [choices]);
+  const categoryProblem = useMemo(() => categoryRowProblem(choices), [choices]);
+  // A category's filter shows its subcategories' costs too.
+  const shownEntries = useMemo(() => {
+    if (filter === ALL) return entryItems;
+    if (filter === "none") return entryItems.filter((e) => !e.category_id);
+    const wanted = categoryAndDescendants(choices, filter);
+    return entryItems.filter((e) => e.category_id && wanted.has(e.category_id));
+  }, [entryItems, filter, choices]);
 
   const createCategory = categories.create;
   const seedCategories = async () => {
@@ -289,7 +304,12 @@ export default function CostsPage() {
       row.notes && `Notes: ${row.notes}`,
     ]);
   const describeCategory = (row: CategoryRow) =>
-    lines([row.name, row.description]);
+    lines([
+      row.name,
+      row.parent_id &&
+        `Under ${categoryName(row.parent_id) ?? "a removed category"}`,
+      row.description,
+    ]);
 
   const periods = summary.state === "ready" ? summary.summary.periods : [];
 
@@ -384,9 +404,9 @@ export default function CostsPage() {
               data-ui-bridge-id="overview.costs.entries.filter"
             >
               <option value={ALL}>every category</option>
-              {categoryItems.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {tree.map((n) => (
+                <option key={n.category.id} value={n.category.id}>
+                  {n.path}
                 </option>
               ))}
               <option value="none">no category</option>
@@ -422,9 +442,25 @@ export default function CostsPage() {
       </Section>
 
       <Section
+        id="overview.costs.section.tree"
+        title="By category"
+        lede="What each category has cost to date. A category with subcategories (Computers, with one per machine) shows its own costs and what it comes to with everything below it."
+      >
+        {summary.state === "ready" ? (
+          <CategoryTree
+            categories={choices}
+            totals={summary.summary.categories}
+            currencies={summary.summary.currencies}
+          />
+        ) : (
+          <Loading uiBridgeId="overview.costs.tree.loading" />
+        )}
+      </Section>
+
+      <Section
         id="overview.costs.section.months"
         title="By month"
-        lede="What was spent each month, by category."
+        lede="What was spent each month, by category. Each cost is shown under its own category, not added into its parent's."
       >
         {summary.state === "ready" ? (
           <MonthTable
@@ -439,7 +475,7 @@ export default function CostsPage() {
       <Section
         id="overview.costs.section.categories"
         title="Categories"
-        lede="The headings costs are grouped under. A category still in use cannot be removed — move its costs first."
+        lede="The headings costs are grouped under. Put a category under another to split it up — Computers, with one subcategory per machine. A category still in use, or with subcategories, cannot be removed — move its costs or subcategories first."
       >
         <div className="space-y-3">
           {categoryItems.length === 0 && canEditCategories && (
@@ -470,11 +506,12 @@ export default function CostsPage() {
           )}
           <RecordSection<CostCategory, CategoryRow>
             resource={COST_CATEGORIES}
-            table={CATEGORY_TABLE}
-            records={categoryItems}
+            table={categoriesDecl}
+            records={treeRecords}
             toRow={categoryToRow}
             writable={CATEGORY_WRITABLE}
             matchKey={categoryKey}
+            rowProblem={categoryProblem}
             toBody={(fields) => ({ ...fields })}
             label={(row) => row.name || "A category"}
             describe={describeCategory}

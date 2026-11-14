@@ -12,8 +12,13 @@
 import type { RowText } from "./fields";
 import type { FieldDeclaration } from "./registry";
 
-const INPUT =
-  "w-full min-w-0 rounded-md border bg-background px-2 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+// The width is left out of the base: a width utility added beside `w-full`
+// does not reliably beat it (the stylesheet's order decides, not the class
+// list), which is how the currency box of a money field once swallowed the
+// row. Each use below states its own width.
+const INPUT_BASE =
+  "rounded-md border bg-background px-2 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const INPUT = `w-full min-w-0 ${INPUT_BASE}`;
 
 export function FieldEditor<Row>({
   field,
@@ -81,13 +86,16 @@ export function FieldEditor<Row>({
 
   if (field.kind === "money") {
     return (
-      <div className="flex gap-1">
+      // The cell is only as wide as its table column leaves it, so the pair
+      // claims a floor: the amount takes everything the currency does not
+      // (never under 8rem — room for 12,345.67), the currency a fixed 6rem.
+      <div className="flex min-w-[15rem] gap-1">
         <input
           aria-label={`${field.label}, amount`}
           inputMode="decimal"
           value={value(field.field)}
           onChange={(e) => set(field.field, e.target.value)}
-          className={`${INPUT} ${border} text-right tabular-nums`}
+          className={`${INPUT_BASE} ${border} min-w-[8rem] flex-1 text-right tabular-nums`}
           data-ui-bridge-id={`${uiBridgeId}.amount`}
           {...described}
         />
@@ -99,7 +107,7 @@ export function FieldEditor<Row>({
           onChange={(e) =>
             set(field.currencyField, e.target.value.toUpperCase())
           }
-          className={`${INPUT} ${border} w-16 shrink-0 uppercase`}
+          className={`${INPUT_BASE} ${border} w-24 shrink-0 uppercase`}
           data-ui-bridge-id={`${uiBridgeId}.currency`}
           {...described}
         />

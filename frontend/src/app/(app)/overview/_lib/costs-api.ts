@@ -35,6 +35,8 @@ interface Audited {
 
 export interface CostCategory extends Audited {
   name: string;
+  /** The category this one sits under; `null` at the top level. */
+  parent_id: string | null;
   description: string;
   sort_order: number;
 }
@@ -86,6 +88,25 @@ export interface CurrencyTotals {
   awaiting_delivery_micros: number;
 }
 
+/**
+ * All-time spend in one category and currency. `own_*` is the category's own
+ * costs; `rolled_*` adds every subcategory below it. A cost counts once in
+ * its own category and once in each ancestor's `rolled_*`, so rolled figures
+ * are not additive across a parent and its children — the grand total is
+ * `CurrencyTotals`. `category_id` is `null` for costs with no category.
+ */
+export interface CategoryTotal {
+  category_id: string | null;
+  parent_id: string | null;
+  currency: string;
+  own_recorded_micros: number;
+  own_scheduled_micros: number;
+  own_awaiting_amount_count: number;
+  rolled_recorded_micros: number;
+  rolled_scheduled_micros: number;
+  rolled_awaiting_amount_count: number;
+}
+
 export interface MonthCategoryTotal {
   /** The first day of the month. */
   month: string;
@@ -111,6 +132,7 @@ export interface CostSummary {
   today: string;
   base_currency: string;
   currencies: CurrencyTotals[];
+  categories: CategoryTotal[];
   months: MonthCategoryTotal[];
   /** Every period that has fallen due, newest first. */
   periods: RecurringPeriod[];

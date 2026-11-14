@@ -22,7 +22,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from app.models.overview import CostEntry, RecurringCost
+from app.models.overview import CostCategory, CostEntry, RecurringCost
 
 #: Months per period.
 CADENCE_MONTHS: dict[str, int] = {"monthly": 1, "quarterly": 3, "annual": 12}
@@ -85,16 +85,75 @@ class _MonthCell:
     scheduled: int = 0
 
 
+@dataclass
+class _CategoryCell:
+    """One category's own all-time spend in one currency."""
+
+    recorded: int = 0
+    scheduled: int = 0
+    awaiting_amount: int = 0
+
+
+def _category_totals(
+    own: dict[tuple[UUID | None, str], _CategoryCell],
+    parents: dict[UUID, UUID | None],
+) -> list[dict[str, Any]]:
+    """Each category's own figures and its subtree's, per currency.
+
+    A cost is added once to its own category and once to each ancestor's
+    ``rolled`` figure, so the grand total (the sum of ``own`` over every row)
+    counts it exactly once. The walk up stops at a category it has already
+    visited, so a cycle the store should have refused cannot loop forever.
+    """
+    rolled: dict[tuple[UUID | None, str], _CategoryCell] = defaultdict(_CategoryCell)
+    for (category, currency), cell in own.items():
+        node = category
+        seen: set[UUID] = set()
+        while node not in seen:
+            target = rolled[(node, currency)]
+            target.recorded += cell.recorded
+            target.scheduled += cell.scheduled
+            target.awaiting_amount += cell.awaiting_amount
+            if node is None:
+                break
+            seen.add(node)
+            node = parents.get(node)
+            if node is None:
+                break
+    rows = []
+    for key in sorted(rolled, key=lambda k: (k[1], str(k[0]))):
+        category, currency = key
+        mine = own.get(key, _CategoryCell())
+        total = rolled[key]
+        rows.append(
+            {
+                "category_id": category,
+                "parent_id": parents.get(category) if category is not None else None,
+                "currency": currency,
+                "own_recorded_micros": mine.recorded,
+                "own_scheduled_micros": mine.scheduled,
+                "own_awaiting_amount_count": mine.awaiting_amount,
+                "rolled_recorded_micros": total.recorded,
+                "rolled_scheduled_micros": total.scheduled,
+                "rolled_awaiting_amount_count": total.awaiting_amount,
+            }
+        )
+    return rows
+
+
 def summarize(
     entries: Iterable[CostEntry],
     recurring: Iterable[RecurringCost],
     *,
+    categories: Iterable[CostCategory] = (),
     today: date,
     base_currency: str,
 ) -> dict[str, object]:
     """The figures ``GET /overview/costs/summary`` serves, as a plain dict
     shaped like :class:`app.schemas.overview_costs.CostSummary`."""
     entries = list(entries)
+    parents: dict[UUID, UUID | None] = {c.id: c.parent_id for c in categories}
+    own: dict[tuple[UUID | None, str], _CategoryCell] = defaultdict(_CategoryCell)
     totals: dict[str, _Totals] = defaultdict(_Totals)
     months: dict[tuple[date, UUID | None, str], _MonthCell] = defaultdict(_MonthCell)
     this_month = _month(today)
@@ -110,6 +169,7 @@ def summarize(
             awaiting_delivery += 1
         cell = months[(_month(entry.incurred_on), entry.category_id, entry.currency)]
         cell.recorded += entry.amount_micros
+        own[(entry.category_id, entry.currency)].recorded += entry.amount_micros
 
     recorded = {
         (e.recurring_cost_id, e.period_start): e
@@ -143,9 +203,11 @@ def summarize(
                 months[
                     (_month(due), cost.category_id, cost.currency)
                 ].scheduled += amount
+                own[(cost.category_id, cost.currency)].scheduled += amount
                 state, shown = "scheduled", amount
             else:
                 awaiting_amount += 1
+                own[(cost.category_id, cost.currency)].awaiting_amount += 1
                 state, shown = "awaiting_amount", None
             periods.append(
                 {
@@ -176,6 +238,7 @@ def summarize(
                 totals.items(), key=lambda kv: (kv[0] != base_currency, kv[0])
             )
         ],
+        "categories": _category_totals(own, parents),
         "months": [
             {
                 "month": month,
