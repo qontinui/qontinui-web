@@ -19,7 +19,7 @@ import type {
  * Integration Testing Service
  *
  * Communicates with runner to run integration tests in MOCK mode.
- * Integration tests execute workflows using historical data instead of live GUI.
+ * Integration tests execute workflows against simulated data instead of a live GUI.
  */
 class IntegrationTestingService {
   /** The runner every runner call is for; the transport is resolved per request. */

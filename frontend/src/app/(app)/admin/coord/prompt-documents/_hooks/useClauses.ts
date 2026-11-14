@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { TenantPin } from "@/services/http-client";
 import {
   createPromptDocumentClause,
   deletePromptDocumentClause,
@@ -28,6 +29,28 @@ function unwrap(data: ListClausesResponse): Clause[] {
   return list.slice().sort((a, b) => a.position - b.position);
 }
 
+/** What `useClauses` is told beyond the document it manages. */
+export interface UseClausesOptions {
+  /**
+   * Called after a category default-tier edit, so the caller (which owns the
+   * document list) can re-read it.
+   */
+  onAttrsSaved?: () => void;
+  /**
+   * Checked before every write; `false` sends nothing (the caller says why).
+   * The prompt-documents page passes its cross-tab guard here, so a clause
+   * write raced past the page's notice is refused.
+   */
+  canWrite?: () => boolean;
+  /**
+   * The project the clause read and every write are sent in, on every attempt
+   * (`pinActiveTenant`) — the page's own, so a write in flight when another tab
+   * switches project cannot be re-issued into that project. Omitted, each
+   * request goes in the project stored when it is sent.
+   */
+  pin?: TenantPin;
+}
+
 /**
  * Loads and mutates the structured clauses of a single policy document via the
  * coord clause-route proxy
@@ -35,15 +58,23 @@ function unwrap(data: ListClausesResponse): Clause[] {
  * on tenant membership; writes are tenant-admin-gated (coord re-checks).
  *
  * Only meaningful for `kind === "policy"` documents; the caller passes `enabled`
- * false for other kinds so the hook doesn't fetch. `onAttrsSaved` lets the caller
- * (which owns the document list) refresh after a category default-tier edit.
+ * false for other kinds so the hook doesn't fetch. See {@link UseClausesOptions}
+ * for the re-read, write-guard and pin the caller hands in.
  */
 export function useClauses(
   kind: PromptDocumentKind,
   name: string,
   enabled: boolean,
-  onAttrsSaved?: () => void
+  { onAttrsSaved, canWrite, pin }: UseClausesOptions = {}
 ) {
+  // Keyed on the project, not on the caller's object: the clause read below
+  // re-fires only when the pinned project actually changes.
+  const pinTenant = pin?.tenant;
+  const projectPin = useMemo<TenantPin | undefined>(
+    () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
+    [pinTenant]
+  );
+  const blocked = () => canWrite !== undefined && !canWrite();
   const [clauses, setClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -53,7 +84,7 @@ export function useClauses(
     if (!enabled || !name) return;
     try {
       setLoading(true);
-      const data = await listPromptDocumentClauses(kind, name);
+      const data = await listPromptDocumentClauses(kind, name, projectPin);
       setClauses(unwrap(data));
       setError(null);
     } catch (err) {
@@ -61,16 +92,17 @@ export function useClauses(
     } finally {
       setLoading(false);
     }
-  }, [enabled, kind, name]);
+  }, [enabled, kind, name, projectPin]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const createClause = async (body: ClauseCreate): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
-      await createPromptDocumentClause(kind, name, body);
+      await createPromptDocumentClause(kind, name, body, projectPin);
       toast.success("Clause created");
       await load();
       return true;
@@ -86,9 +118,10 @@ export function useClauses(
     clauseId: string,
     body: ClauseUpdate
   ): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
-      await updatePromptDocumentClause(kind, name, clauseId, body);
+      await updatePromptDocumentClause(kind, name, clauseId, body, projectPin);
       toast.success("Clause updated");
       await load();
       return true;
@@ -101,9 +134,10 @@ export function useClauses(
   };
 
   const deleteClause = async (clauseId: string): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
-      await deletePromptDocumentClause(kind, name, clauseId);
+      await deletePromptDocumentClause(kind, name, clauseId, projectPin);
       toast.success("Clause deleted");
       await load();
       return true;
@@ -117,9 +151,10 @@ export function useClauses(
 
   /** Persist a new order (array of clause_ids). Optimistic: re-fetches after. */
   const reorderClauses = async (clauseIds: string[]): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
-      await reorderPromptDocumentClauses(kind, name, clauseIds);
+      await reorderPromptDocumentClauses(kind, name, clauseIds, projectPin);
       await load();
       return true;
     } catch (err) {
@@ -140,12 +175,20 @@ export function useClauses(
     candidates: ClauseCreate[]
   ): Promise<number> => {
     let created = 0;
+    let refused = false;
     const failures: string[] = [];
     try {
       setSaving(true);
       for (const c of candidates) {
+        // Before EVERY create, not once before the loop: the project can be
+        // switched in another tab while an import is part-way through, and
+        // the rest of it would land there. What was already created stays.
+        if (blocked()) {
+          refused = true;
+          break;
+        }
         try {
-          await createPromptDocumentClause(kind, name, c);
+          await createPromptDocumentClause(kind, name, c, projectPin);
           created += 1;
         } catch (err) {
           failures.push(`${c.clause_id}: ${message(err, "rejected")}`);
@@ -161,7 +204,11 @@ export function useClauses(
           `${failures.length} clause(s) not imported: ${failures.join("; ")}`
         );
       }
-      await load();
+      // The re-read shows what the run created. A refused run takes it only
+      // when it is pinned to a NAMED project: unpinned — or pinned to `null`,
+      // which sends no header, so the client fills in the stored project — it
+      // would be served by the project the other tab stored, not this page's.
+      if (!refused || projectPin?.tenant != null) await load();
     } finally {
       setSaving(false);
     }
@@ -176,12 +223,13 @@ export function useClauses(
    * REPLACES the stored attrs object with it wholesale.
    */
   const saveAttrs = async (attrs: PromptDocumentAttrs): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       // Safe to re-issue (`idempotent: true` in the client):
       // `update_prompt_document` replaces attrs in place with the merged
       // object; an attrs-only edit creates no version row.
-      await updatePromptDocumentAttrs(kind, name, attrs);
+      await updatePromptDocumentAttrs(kind, name, attrs, projectPin);
       toast.success("Category settings saved");
       onAttrsSaved?.();
       return true;

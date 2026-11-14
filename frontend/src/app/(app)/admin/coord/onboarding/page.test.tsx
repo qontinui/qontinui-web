@@ -53,4 +53,21 @@ describe("onboarding page ?connect= hand-off", () => {
     render(<OnboardingPage />);
     expect(screen.getByTestId("connect-installed-org-stub")).toHaveTextContent("");
   });
+
+  it("explains what coord-managed PRs look like on GitHub", () => {
+    render(<OnboardingPage />);
+    const block = screen.getByTestId("coord-onboarding-github-expectations");
+    expect(block).toHaveTextContent("What you'll see on GitHub");
+    const items = block.querySelectorAll("li");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Coord lands pull requests on its own");
+    // A green PR can still be held (escalate path, operator decision), so the
+    // copy names the merge gate, as coord's PR-body notice does, and never
+    // promises a land on passing checks alone.
+    expect(items[0]).toHaveTextContent("once their merge gate clears");
+    expect(items[0]).toHaveTextContent('"Qontinui merge gate" check');
+    expect(items[0]).not.toHaveTextContent(/checks pass/i);
+    expect(items[1]).toHaveTextContent("GitHub reviews are optional");
+    expect(items[2]).toHaveTextContent("Don't use the Merge button");
+  });
 });

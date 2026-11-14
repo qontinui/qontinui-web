@@ -42,6 +42,10 @@
  *   a publisher that has stopped, red would report a network partition that is
  *   not happening. It is also not the `unknown` catch-all — coord OBSERVED
  *   this, it did not fail to say anything.
+ * - **`ci_unrefreshed` is its own bucket too, and it is amber.** Coord's
+ *   registrar has not refreshed a CI registration recently, and nothing
+ *   contradicts it. Coord raises no degradation for it, so it never turns the
+ *   strip red, but it is not healthy, so it never lets the strip read green.
  */
 
 import type {
@@ -50,6 +54,7 @@ import type {
 } from "@/lib/api/operations/coordFleet";
 import {
   abandonedNotCountedSentence,
+  ciUnrefreshedPhrase,
   countDegradingStates,
   emptyRosterSentence,
   isRosterComplete,
@@ -105,6 +110,12 @@ export interface FleetLivenessSummary {
   stale: number;
   /** `ci_offline` — coord's verdict that the machine's CI runner is offline. */
   ciOffline: number;
+  /**
+   * `ci_unrefreshed` — a CI registration coord's registrar has not refreshed
+   * recently, with no contrary measurement. Not a degradation, not unknown,
+   * and never healthy.
+   */
+  ciUnrefreshed: number;
   /** No state, or a state this build does not recognise. Never `healthy`. */
   unknown: number;
   /** `abandoned` listed — silent past coord's timer, and in no other count. */
@@ -171,6 +182,8 @@ export function summarizeFleetLiveness(input: {
     notDegradations.abandoned > 0 && `${notDegradations.abandoned} abandoned`,
     notDegradations.noVerdict > 0 &&
       `${notDegradations.noVerdict} with no health verdict`,
+    notDegradations.ciUnrefreshed > 0 &&
+      ciUnrefreshedPhrase(notDegradations.ciUnrefreshed),
     notDegradations.placeholders > 0 &&
       `${notDegradations.placeholders} placeholder ${notDegradations.placeholders === 1 ? "row" : "rows"}`,
   ].filter((part): part is string => part !== false);
@@ -183,6 +196,7 @@ export function summarizeFleetLiveness(input: {
     unreachable,
     stale: states.stale,
     ciOffline: states.ciOffline,
+    ciUnrefreshed: roster.counts.ciUnrefreshed,
     unknown: roster.counts.noVerdict,
     abandoned: roster.counts.abandoned,
     abandonedIsFloor: roster.cut.kind !== "whole",
@@ -284,12 +298,18 @@ export function summarizeFleetLiveness(input: {
     states.degraded > 0 ||
     states.stale > 0 ||
     states.ciOffline > 0 ||
+    roster.counts.ciUnrefreshed > 0 ||
     roster.counts.noVerdict > 0
   ) {
     const parts: string[] = [];
     if (states.degraded > 0) parts.push(`${states.degraded} degraded`);
     if (states.stale > 0) parts.push(`${states.stale} with a silent sampler`);
     if (states.ciOffline > 0) parts.push(`${states.ciOffline} with CI offline`);
+    if (roster.counts.ciUnrefreshed > 0) {
+      parts.push(
+        `${roster.counts.ciUnrefreshed} not refreshed by the registrar`
+      );
+    }
     if (roster.counts.noVerdict > 0) {
       parts.push(`${roster.counts.noVerdict} with no health verdict`);
     }
@@ -307,8 +327,14 @@ export function summarizeFleetLiveness(input: {
               ? "Coord's recent checks of one failed, and it has not given up on it."
               : "Coord's recent checks of them failed, and it has not given up on them."
             : states.ciOffline === 1
-              ? "GitHub reports its CI runner offline."
-              : "GitHub reports their CI runners offline.";
+              ? "Its CI runner is offline, or GitHub no longer lists its registration."
+              : states.ciOffline > 1
+                ? "Their CI runners are offline, or GitHub no longer lists their registrations."
+                : // Only registrations the registrar has not refreshed.
+                  "A CI registration coord's registrar has not refreshed " +
+                  "recently is not healthy, but nothing says it is offline " +
+                  "either: its refresh is late, and coord does not count that " +
+                  "as a degradation.";
     return {
       ...counts,
       level: "amber",
