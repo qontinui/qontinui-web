@@ -38,7 +38,7 @@ import { OPERATIONS_BASE, readJson } from "./base";
  *  `is_active` / `account_selection_mode` as null on a deployment whose
  *  `coord.claude_account_usage` predates alembic `coord_claude_acct_usage_02`,
  *  and null there means UNKNOWN — never `false`, and never the
- *  `least_usage` default. */
+ *  runner's default mode. */
 export interface ClaudeAccountRow {
   device_id: string;
   account_label: string;
@@ -57,7 +57,10 @@ export interface ClaudeAccountRow {
   /** Which account the machine's rotation actually picked. `null`/absent =
    *  unknown (the reporting runner predates the field). */
   is_active?: boolean | null;
-  /** `manual` | `least_usage` | null. Null = unknown, NOT `least_usage`. */
+  /** A runner `AccountSelectionMode` wire spelling (`manual` |
+   *  `least_usage` | `highest_expected_usage` | `weighted_random` |
+   *  `alternating_handoff`) or null. Null = unknown, NOT the runner's
+   *  default. */
   account_selection_mode?: string | null;
 }
 

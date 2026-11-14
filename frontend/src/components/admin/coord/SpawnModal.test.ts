@@ -26,8 +26,10 @@ import {
   filterAccountsForDevice,
   formatUtilization,
   parsePlanPhase,
+  SELECTION_MODE_LABELS,
 } from "./spawnModel";
 import type { ClaudeAccountRow } from "@/lib/api/operations/agents";
+import { ACCOUNT_SELECTION_LEVELS } from "@/app/(app)/admin/coord/tenant-policy/types";
 
 const base = {
   workUnitSlug: "2026-07-28-coord-post-plan-slug-surfaces-rename",
@@ -392,6 +394,38 @@ describe("describeSelectionMode", () => {
     ).toMatch(/pinned in its own settings/i);
   });
 
+  it("labels every runner mode the tenant-policy console offers", () => {
+    // Console-vs-modal drift guard (the runner enum itself lives in another
+    // repo): a mode added to the console but not here would print as its raw
+    // wire spelling in the spawn modal.
+    expect(Object.keys(SELECTION_MODE_LABELS).sort()).toEqual(
+      ACCOUNT_SELECTION_LEVELS.filter((l) => l !== "off").sort()
+    );
+    for (const mode of ACCOUNT_SELECTION_LEVELS.filter((l) => l !== "off")) {
+      const described = describeSelectionMode(
+        [{ device_id: "d", account_label: ".a", account_selection_mode: mode }],
+        true
+      );
+      expect(described.known).toBe(true);
+      expect(described.text).toBe(SELECTION_MODE_LABELS[mode]);
+    }
+  });
+
+  it("does not resolve a mode through Object.prototype", () => {
+    expect(
+      describeSelectionMode(
+        [
+          {
+            device_id: "d",
+            account_label: ".a",
+            account_selection_mode: "constructor",
+          },
+        ],
+        true
+      )
+    ).toEqual({ known: true, text: "constructor" });
+  });
+
   it("passes an unrecognised mode through rather than inventing a label", () => {
     expect(
       describeSelectionMode(
@@ -408,7 +442,8 @@ describe("describeSelectionMode", () => {
   });
 
   it("reports a null mode as UNKNOWN and never as the least_usage default", () => {
-    // `least_usage` is the runner's `#[default]`. Printing it here would
+    // Neither runner `#[default]` (`alternating_handoff` now, `least_usage`
+    // on older builds) may be printed here: it would
     // state a machine-global behaviour nobody observed — which is exactly
     // the failure this whole surface exists to avoid.
     for (const mode of [null, undefined, "", "   "]) {
@@ -424,7 +459,7 @@ describe("describeSelectionMode", () => {
       );
       expect(described.known).toBe(false);
       expect(described.text).toMatch(/unknown/i);
-      expect(described.text).toMatch(/not necessarily least-usage/i);
+      expect(described.text).toMatch(/not necessarily the runner's default/i);
     }
   });
 
