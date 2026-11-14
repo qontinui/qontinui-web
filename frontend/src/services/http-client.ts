@@ -129,6 +129,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // project's queue under another project's name. Plan
   // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
   "/api/v1/taste/",
+  // The design reference library — `get_memory_tenant`'s operator arm for
+  // every read and write, and `require_coord_tenant_admin_target` for
+  // principle approval: every `design_refs.*` row is the selected project's,
+  // so without the header a multi-tenant operator would review (and confirm)
+  // the home project's corpus under another project's name. Plan
+  // 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query.
+  "/api/v1/design-refs/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.

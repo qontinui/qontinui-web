@@ -49,6 +49,7 @@ from app.api.v1.endpoints import (
     constraints,
     custom_functions,
     design_policies,
+    design_refs,
     devenv,
     devenv_agent,
     device_bridge_ws,
@@ -511,6 +512,14 @@ api_router.include_router(
 # labelled by coord-tenant admins (plan
 # 2026-10-13-image-generation-and-visual-judgment, Phase 23).
 api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The design reference library — the design_refs schema: captured third-party
+# web examples with descriptions and perception judgements, tenant-scoped under
+# the memory credential (plan
+# 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query,
+# Phase 1). No public route: public serving is Phase 6.
+api_router.include_router(
+    design_refs.router, prefix="/design-refs", tags=["design-refs"]
+)
 # The presentation scope — web.presentation_scopes: the first-party owners and
 # confidential terms the console's presentation lens redacts by, read by any
 # member of the active project and written by its admins (plan
