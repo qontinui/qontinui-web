@@ -307,6 +307,125 @@ class TestCategories:
         assert response.json()["error"] == "category_not_found"
 
 
+class TestSubcategories:
+    async def test_parent_id_is_read_set_moved_and_cleared(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        computers = await _category(admin, "Computers")
+        assert computers["parent_id"] is None
+        spaceship = await _post(
+            admin, "cost-categories", name="spaceship", parent_id=computers["id"]
+        )
+        assert spaceship["parent_id"] == computers["id"]
+        # A third level.
+        gpu = await _post(
+            admin, "cost-categories", name="spaceship GPUs", parent_id=spaceship["id"]
+        )
+        assert gpu["parent_id"] == spaceship["id"]
+        top = await _category(admin, "Hardware")
+        moved = await _patch(
+            admin, f"cost-categories/{gpu['id']}", {"parent_id": top["id"]}, 1
+        )
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["item"]["parent_id"] == top["id"]
+        cleared = await _patch(
+            admin, f"cost-categories/{gpu['id']}", {"parent_id": None}, 2
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["item"]["parent_id"] is None
+        listed = (await admin.get(f"{API}/cost-categories")).json()["items"]
+        parents = {c["name"]: c["parent_id"] for c in listed}
+        assert parents["spaceship"] == computers["id"]
+
+    async def test_the_parent_must_be_this_projects(
+        self, admin: httpx.AsyncClient, other_project: httpx.AsyncClient
+    ) -> None:
+        foreign = await _category(other_project, "Theirs")
+        response = await admin.post(
+            f"{API}/cost-categories",
+            json={"name": "Mine", "parent_id": foreign["id"]},
+        )
+        assert response.status_code == 422
+        assert response.json()["error"] == "category_not_found"
+        missing = await admin.post(
+            f"{API}/cost-categories",
+            json={"name": "Mine", "parent_id": str(uuid4())},
+        )
+        assert missing.status_code == 422
+
+    async def test_an_update_refuses_a_foreign_parent_and_takes_rename_with_move(
+        self, admin: httpx.AsyncClient, other_project: httpx.AsyncClient
+    ) -> None:
+        foreign = await _category(other_project, "Theirs")
+        mine = await _category(admin, "Mine")
+        top = await _category(admin, "Top")
+        refused = await _patch(
+            admin, f"cost-categories/{mine['id']}", {"parent_id": foreign["id"]}, 1
+        )
+        assert refused.status_code == 422
+        assert refused.json()["error"] == "category_not_found"
+        both = await _patch(
+            admin,
+            f"cost-categories/{mine['id']}",
+            {"name": "Renamed", "parent_id": top["id"]},
+            1,
+        )
+        assert both.status_code == 200, both.text
+        item = both.json()["item"]
+        assert (item["name"], item["parent_id"]) == ("Renamed", top["id"])
+
+    async def test_a_category_cannot_become_its_own_descendant(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        a = await _category(admin, "A")
+        b = await _post(admin, "cost-categories", name="B", parent_id=a["id"])
+        c = await _post(admin, "cost-categories", name="C", parent_id=b["id"])
+        for target in (a["id"], b["id"], c["id"]):
+            refused = await _patch(
+                admin, f"cost-categories/{a['id']}", {"parent_id": target}, 1
+            )
+            assert refused.status_code == 409, (target, refused.text)
+            assert refused.json()["error"] == "category_cycle"
+        # Nothing was written: the version did not move.
+        again = await admin.get(f"{API}/cost-categories/{a['id']}")
+        assert again.json()["item"]["version"] == 1
+        # Moving a leaf up the tree is not a cycle.
+        up = await _patch(
+            admin, f"cost-categories/{c['id']}", {"parent_id": a["id"]}, 1
+        )
+        assert up.status_code == 200, up.text
+
+    async def test_names_stay_unique_across_the_tree(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        a = await _category(admin, "Computers")
+        again = await admin.post(
+            f"{API}/cost-categories",
+            json={"name": "computers", "parent_id": a["id"]},
+        )
+        assert again.status_code == 409
+        assert again.json()["error"] == "name_taken"
+
+    async def test_a_category_with_subcategories_cannot_be_deleted(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        computers = await _category(admin, "Computers")
+        nawa = await _post(
+            admin, "cost-categories", name="nawa", parent_id=computers["id"]
+        )
+        refused = await _delete(admin, f"cost-categories/{computers['id']}", 1)
+        assert refused.status_code == 409
+        body = refused.json()
+        assert body["error"] == "category_has_subcategories"
+        assert "1 subcategory" in body["message"]
+        assert (
+            await _delete(admin, f"cost-categories/{nawa['id']}", 1)
+        ).status_code == 204
+        assert (
+            await _delete(admin, f"cost-categories/{computers['id']}", 1)
+        ).status_code == 204
+
+
 # ===========================================================================
 # Cost entries
 # ===========================================================================
@@ -640,6 +759,37 @@ class TestSummaryRoute:
             ("2026-02-15", "scheduled"),
         ]
 
+    async def test_category_totals_roll_up_the_tree(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        computers = await _category(admin, "Computers")
+        spaceship = await _post(
+            admin, "cost-categories", name="spaceship", parent_id=computers["id"]
+        )
+        nawa = await _post(
+            admin, "cost-categories", name="nawa", parent_id=computers["id"]
+        )
+        await _entry(admin, category_id=computers["id"], amount_micros=10_000_000)
+        await _entry(admin, category_id=spaceship["id"], amount_micros=100_000_000)
+        await _entry(admin, category_id=nawa["id"], amount_micros=1_000_000)
+        await _entry(admin, amount_micros=5_000_000)  # uncategorised
+        summary = (await admin.get(f"{API}/costs/summary")).json()
+        rows = {
+            c["category_id"]: c for c in summary["categories"] if c["currency"] == "EUR"
+        }
+        assert rows[computers["id"]]["own_recorded_micros"] == 10_000_000
+        assert rows[computers["id"]]["rolled_recorded_micros"] == 111_000_000
+        assert rows[computers["id"]]["parent_id"] is None
+        assert rows[spaceship["id"]]["rolled_recorded_micros"] == 100_000_000
+        assert rows[spaceship["id"]]["parent_id"] == computers["id"]
+        assert rows[None]["rolled_recorded_micros"] == 5_000_000
+        # The grand total counts every cost once: own figures add up to it.
+        eur = next(c for c in summary["currencies"] if c["currency"] == "EUR")
+        own = sum(
+            r["own_recorded_micros"] + r["own_scheduled_micros"] for r in rows.values()
+        )
+        assert own == eur["spent_to_date_micros"] == 116_000_000
+
 
 # ===========================================================================
 # The arithmetic (pure)
@@ -665,7 +815,92 @@ class _Entry:
         self.__dict__.update(kw)
 
 
+class _Cat:
+    def __init__(self, id: UUID, parent_id: UUID | None) -> None:
+        self.id = id
+        self.parent_id = parent_id
+
+
 class TestArithmetic:
+    def test_category_totals_roll_up_without_double_counting(self) -> None:
+        root, mid, leaf, other = uuid4(), uuid4(), uuid4(), uuid4()
+        tree = [
+            _Cat(root, None),
+            _Cat(mid, root),
+            _Cat(leaf, mid),
+            _Cat(other, None),
+        ]
+        fixed = _Cost(
+            cadence="monthly",
+            amount_kind="fixed",
+            amount_micros=20,
+            currency="USD",
+            start_date=date(2026, 9, 1),
+            category_id=leaf,
+        )
+        variable = _Cost(
+            cadence="monthly",
+            amount_kind="variable",
+            amount_micros=None,
+            currency="USD",
+            start_date=date(2026, 10, 1),
+            category_id=mid,
+        )
+        entries = [
+            _Entry(
+                incurred_on=date(2026, 10, 3),
+                amount_micros=n,
+                currency="USD",
+                category_id=c,
+            )
+            for n, c in ((1, root), (2, mid), (4, leaf), (8, other))
+        ]
+        out = summarize(
+            entries,
+            [fixed, variable],
+            categories=tree,
+            today=date(2026, 10, 27),
+            base_currency="USD",
+        )
+        rows = {r["category_id"]: r for r in out["categories"]}  # type: ignore[attr-defined]
+        assert rows[leaf]["own_recorded_micros"] == 4
+        assert rows[leaf]["own_scheduled_micros"] == 40  # Sep + Oct
+        assert rows[leaf]["rolled_recorded_micros"] == 4
+        assert rows[mid]["own_recorded_micros"] == 2
+        assert rows[mid]["own_awaiting_amount_count"] == 1
+        assert rows[mid]["rolled_recorded_micros"] == 6
+        assert rows[mid]["rolled_scheduled_micros"] == 40
+        assert rows[mid]["rolled_awaiting_amount_count"] == 1
+        assert rows[root]["rolled_recorded_micros"] == 7
+        assert rows[root]["rolled_awaiting_amount_count"] == 1
+        assert rows[other]["rolled_recorded_micros"] == 8
+        usd = out["currencies"][0]  # type: ignore[index]
+        own = sum(
+            r["own_recorded_micros"] + r["own_scheduled_micros"]
+            for r in out["categories"]  # type: ignore[attr-defined]
+        )
+        assert own == usd["spent_to_date_micros"] == 15 + 40
+
+    def test_a_cyclic_tree_cannot_hang_the_rollup(self) -> None:
+        a, b = uuid4(), uuid4()
+        out = summarize(
+            [
+                _Entry(
+                    incurred_on=date(2026, 1, 1),
+                    amount_micros=3,
+                    currency="USD",
+                    category_id=a,
+                )
+            ],
+            [],
+            categories=[_Cat(a, b), _Cat(b, a)],
+            today=date(2026, 1, 2),
+            base_currency="USD",
+        )
+        rows = {r["category_id"]: r for r in out["categories"]}  # type: ignore[attr-defined]
+        assert rows[a]["rolled_recorded_micros"] == 3
+        assert rows[b]["rolled_recorded_micros"] == 3
+
     def test_months_clamp_to_the_end_and_do_not_drift(self) -> None:
         start = date(2026, 1, 31)
         assert [add_months(start, n) for n in range(4)] == [

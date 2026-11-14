@@ -302,7 +302,22 @@ export function RecordTable<Row extends object>({
                           : ""
                       }`}
                     >
-                      {cellText(field, row)}
+                      {!sort && field.indent && field.indent(row) > 0 ? (
+                        <span
+                          className="inline-flex items-baseline gap-1"
+                          style={{
+                            marginLeft: `${field.indent(row) * 1.25}rem`,
+                          }}
+                          data-depth={field.indent(row)}
+                        >
+                          <span aria-hidden className="text-muted-foreground">
+                            ↳
+                          </span>
+                          {cellText(field, row)}
+                        </span>
+                      ) : (
+                        cellText(field, row)
+                      )}
                     </td>
                   ))}
                   {canEdit && (
