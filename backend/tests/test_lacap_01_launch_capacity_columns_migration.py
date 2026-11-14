@@ -71,7 +71,7 @@ from tests._alembic_harness import (
 # cannot silently change what this test walks. MUST equal the revision's own
 # down_revision (the first test enforces it); re-point BOTH together.
 _REVISION_ID = "lacap_01"
-_PARENT_REVISION_ID = "coord_agent_status_session_02"
+_PARENT_REVISION_ID = "coord_agent_questions_ref_observed_01"
 _REVISION_FILENAME = "lacap_01_launch_capacity_columns.py"
 
 _TABLE = "device_resource_samples"
@@ -483,6 +483,35 @@ def test_live_columns_check_and_null_semantics() -> None:
             "the CHECK must be added NOT VALID (no scan of existing rows under "
             "ACCESS EXCLUSIVE)"
         )
+
+
+def test_live_rerun_skips_the_existing_check_for_any_role() -> None:
+    """Stamp back and re-run upgrade: no error, still exactly ONE CHECK.
+
+    Needs no superuser, so the pg_constraint guard is exercised on every role.
+    Mutation: delete the guard's ``IF NOT EXISTS`` lookup -- the re-run's
+    ``ADD CONSTRAINT`` then raises duplicate_object and alembic fails.
+    """
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, "lacap01s") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+
+        with engine.connect() as conn:
+            count = conn.execute(
+                text(
+                    """
+                    SELECT count(*) FROM pg_constraint
+                     WHERE conname = :c
+                       AND conrelid = 'coord.device_resource_samples'::regclass
+                    """
+                ),
+                {"c": _module()._VERDICT_CHECK_NAME},
+            ).scalar_one()
+        assert count == 1
+        _assert_columns_present(engine)
+        _assert_index_present(engine)
 
 
 def test_live_rerun_repairs_an_invalid_index_and_skips_the_existing_check() -> None:

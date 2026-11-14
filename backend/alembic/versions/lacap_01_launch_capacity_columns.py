@@ -1,7 +1,7 @@
 """coord launch capacity: the runner's own launch verdict on the sample row, and the retire-hold index
 
 Revision ID: lacap_01
-Revises: coord_agent_status_session_02
+Revises: coord_agent_questions_ref_observed_01
 Create Date: 2026-11-14
 
 Phase 1 of plan
@@ -88,8 +88,8 @@ columns carry no CHECK, as in ``lasac_01``.
 The CHECK is a separate ``ADD CONSTRAINT ... NOT VALID``, never inline on the
 ``ADD COLUMN``. An inline CHECK makes Postgres validate every existing row of
 ``coord.device_resource_samples`` while the ALTER holds ACCESS EXCLUSIVE
-(measured ~206 ms per 2M rows), and ``lock_timeout`` bounds only the WAIT for
-that lock, not how long it is held — so every sample INSERT and every coord
+(a measured scan of a 2M-row scratch table took ~0.2 s), and ``lock_timeout``
+bounds only the WAIT for that lock, not how long it is held — so every sample INSERT and every coord
 read of the table would stall behind the scan. ``NOT VALID`` is catalogue-only:
 it skips the scan of existing rows and still checks every row inserted or
 updated afterwards, which is all the backstop needs. No ``VALIDATE
@@ -166,12 +166,12 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "lacap_01"
-down_revision: str | Sequence[str] | None = "coord_agent_status_session_02"
+down_revision: str | Sequence[str] | None = "coord_agent_questions_ref_observed_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # down_revision is the single alembic head of origin/main at authoring time
-# (web 97406769a). If `alembic-heads-pr` reports HEAD_COUNT=2 after another
+# (web 14b36aa79). If `alembic-heads-pr` reports HEAD_COUNT=2 after another
 # revision lands first, re-point this line, the `Revises:` line above and
 # `_PARENT_REVISION_ID` in
 # tests/test_lacap_01_launch_capacity_columns_migration.py together.
@@ -346,6 +346,14 @@ def downgrade() -> None:
 
     The column COMMENTs and the launch_verdict CHECK go with their columns; no
     sample row and no log row is deleted.
+
+    The index DROP runs in an autocommit block, so it is COMMITTED before the
+    column ALTER starts. If that ALTER then fails (for example on the 3 s
+    ``lock_timeout`` behind a long reader), the database is left at
+    ``lacap_01`` WITHOUT the retire index but WITH the five columns. That is
+    harmless to coord (the hold read only loses its index) and recoverable:
+    re-running the downgrade finishes it, because every step is
+    ``IF EXISTS``. Re-running the upgrade instead rebuilds the index.
     """
     with op.get_context().autocommit_block():
         op.execute(
