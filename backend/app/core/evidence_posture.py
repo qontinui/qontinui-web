@@ -968,6 +968,22 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         "runs, so a device mutates nothing through this door; a person's write "
         "is coord's, proxied, and outside this table's scope"
     ),
+    # ── devenv ci-node (plan 2026-09-27-ci-node-shadow-dispatch-…, Phase 0b) ──
+    # A device JWT carrying ``user_id`` saves its owning user's desired
+    # ci_node config and has it dispatched through coord's agent door.
+    ("PUT", f"{_V1}/devenv/machines/{{machine_id}}/ci-node"): Evidence(
+        closed_fields=(),
+        correction=SupersedeArg(
+            property="the machine_id in the path",
+            how=(
+                "a PUT replaces the machine's whole desired ci_node config "
+                "(devenv.machines.ci_node_config) with the body and dispatches "
+                "it again, so a wrong config — an over-wide repo_allowlist, an "
+                "enabled node that should be off — is corrected by PUTting the "
+                "right one, enabled: false included"
+            ),
+        ),
+    ),
 }
 
 
