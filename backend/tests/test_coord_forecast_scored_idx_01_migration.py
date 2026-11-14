@@ -79,7 +79,7 @@ from tests._alembic_harness import (
     upgrade_execute_calls,
 )
 
-_PARENT_REVISION_ID = "pr_events_mergeability_head_idx_01"
+_PARENT_REVISION_ID = "coord_agent_status_session_01"
 _REVISION_ID = "coord_forecast_scored_idx_01"
 _REVISION_FILENAME = "coord_forecast_scored_idx_01_process_forecasts_resolved_family.py"
 _INDEX_NAME = "ix_process_forecasts_resolved_family_issued"

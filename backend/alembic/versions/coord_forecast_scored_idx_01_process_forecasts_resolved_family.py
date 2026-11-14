@@ -120,7 +120,7 @@ block, and the upgrade path is one guarded ``CREATE INDEX CONCURRENTLY IF NOT EX
 there, as a static literal. The test file pins that shape.
 
 Revision ID: coord_forecast_scored_idx_01
-Revises: pr_events_mergeability_head_idx_01
+Revises: coord_agent_status_session_01
 Create Date: 2026-11-05
 
 """
@@ -131,7 +131,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_forecast_scored_idx_01"
-down_revision: str | Sequence[str] | None = "pr_events_mergeability_head_idx_01"
+down_revision: str | Sequence[str] | None = "coord_agent_status_session_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
