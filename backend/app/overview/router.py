@@ -60,12 +60,15 @@ from app.overview.permissions import (
 )
 from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
+from app.overview.reports import router as reports_routes
+from app.overview.reports import withhold_logged_text
 from app.overview.resource import (
     RecordNotFound,
     ResourceSpec,
     StaleVersion,
     StoreContext,
     StoreRefused,
+    WithheldSlot,
 )
 
 logger = structlog.get_logger(__name__)
@@ -164,6 +167,11 @@ class ChangeLogEntry(BaseModel):
     #: The session the client reported (``X-Overview-Session``) — a label,
     #: never proof.
     via_session: str | None
+    #: The fields of ``before`` / ``after`` this read did not serve
+    #: (``after.title``): for a resource whose reads withhold text naming
+    #: the project's current confidential terms (``ResourceSpec.served_text``),
+    #: each such field reads ``[withheld]``. The logged row is unchanged.
+    withheld: list[WithheldSlot]
 
 
 class ChangeLogPage(BaseModel):
@@ -202,7 +210,11 @@ async def read_change_log(
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> ChangeLogPage:
-    """Newest first. Readable by any member, like the records it describes."""
+    """Newest first. Readable by any member, like the records it describes,
+    and served as their reads are: a resource whose reads withhold text
+    naming the project's current confidential terms (``served_text``) has the
+    same fields withheld from the copies here, which were logged before a
+    term may have been added."""
     if resource not in REGISTRY:
         raise HTTPException(status_code=404, detail="unknown_resource")
     rows = await change_log.history(
@@ -212,6 +224,13 @@ async def read_change_log(
         record_id=record_id,
         limit=limit,
         source=source,
+    )
+    page = rows[:limit]
+    served = await withhold_logged_text(
+        db,
+        access.tenant_id,
+        REGISTRY[resource].served_text,
+        [(r.before, r.after) for r in page],
     )
     return ChangeLogPage(
         entries=[
@@ -225,12 +244,13 @@ async def read_change_log(
                 created_at=r.created_at,
                 version_before=r.version_before,
                 version_after=r.version_after,
-                before=r.before,
-                after=r.after,
+                before=before,
+                after=after,
                 via_device=r.via_device,
                 via_session=r.via_session,
+                withheld=withheld,
             )
-            for r in rows[:limit]
+            for r, (before, after, withheld) in zip(page, served, strict=True)
         ],
         truncated=len(rows) > limit,
     )
@@ -269,6 +289,18 @@ async def _run_after_commit(context: StoreContext) -> None:
         except Exception:  # noqa: BLE001 — the write is committed; report, don't raise
             logger.exception("overview_after_commit_failed")
     context.after_commit.clear()
+
+
+async def _served(store: Any, context: StoreContext, record: BaseModel) -> BaseModel:
+    """A write's answer. A store whose reads withhold part of a record returns
+    the STORED copy from create, update and adopt (the copy the change log
+    keeps) and serves it through its ``served`` hook; any other store's
+    record is answered as it was returned."""
+    serve = getattr(store, "served", None)
+    if serve is None:
+        return record
+    answer: BaseModel = await serve(context, record)
+    return answer
 
 
 def _audit(spec: ResourceSpec, record: BaseModel | None) -> dict[str, Any] | None:
@@ -372,8 +404,12 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 # A keyed create refused as a duplicate may be refusing its OWN
                 # earlier attempt, whose answer (and so its change-log row) was
                 # lost. The store decides whether the record there is that one.
+                # A store whose body carries its own identity says so
+                # (``adopts_without_key``): there, an unkeyed re-post is that
+                # create arriving again too.
                 adopt = getattr(store, "adopt_existing", None)
-                if key is None or exc.error != "name_taken" or adopt is None:
+                keyed = key is not None or getattr(store, "adopts_without_key", False)
+                if not keyed or exc.error != "name_taken" or adopt is None:
                     return _refused(exc)
 
                 async def created_through_overview(record_id: str) -> bool:
@@ -431,7 +467,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             if adopted:
                 response.headers["Idempotent-Replayed"] = "true"
             response.headers["ETag"] = _etag(created.version)
-            return item_model(item=created, can_edit=True)
+            return item_model(
+                item=await _served(store, context, created), can_edit=True
+            )
 
         async def _replay(
             record_id: str, context: StoreContext, store: Any, response: Response
@@ -508,7 +546,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 await db.commit()
                 await _run_after_commit(context)
             response.headers["ETag"] = _etag(after.version)
-            return item_model(item=after, can_edit=True)
+            return item_model(item=await _served(store, context, after), can_edit=True)
 
         router.add_api_route(
             f"{base}/{{record_id}}",
@@ -573,10 +611,11 @@ for _spec in REGISTRY.values():
         _mount(_spec)
 
 # The routes beyond the generic contract, on the same prefix: the estimate's
-# rollup and forecast; page versions, revert and backlinks; file upload and
-# download.
+# rollup and forecast; page versions, revert and backlinks; a report's view,
+# versions and revert; file upload and download.
 router.include_router(estimates_routes)
 router.include_router(costs_routes)
 router.include_router(timeline_routes)
 router.include_router(pages_routes)
+router.include_router(reports_routes)
 router.include_router(files_routes)

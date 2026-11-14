@@ -32,7 +32,8 @@ What this module adds to the generic contract (``app.overview.router``):
   ``source_mismatch``) a page whose source is absent or different, so a
   publish never overwrites a hand-written page, and a PATCH carrying
   ``source_sha`` at all must name the source. ``source_sha`` is content: a new
-  sha is a new version even when the body is unchanged.
+  sha is a new version even when the body is unchanged. Those rules, and the
+  source fields' shapes, are shared with reports (:mod:`app.overview.sourced`).
 * **Who wrote each version.** A version records the coord device the write
   came through and the session the client reported; a page read serves both
   for its CURRENT version (``via_device``, ``via_session``).
@@ -53,12 +54,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import delete, func, literal_column, select, union
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
 from app.models.overview import Page, PageLink, PageVersion
-from app.overview import change_log
 from app.overview import http as contract_http
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
 from app.overview.resource import (
@@ -67,6 +66,24 @@ from app.overview.resource import (
     StaleVersion,
     StoreContext,
     StoreRefused,
+)
+from app.overview.sourced import (
+    NO_PROVENANCE,
+    Provenance,
+    SourceFields,
+    bump_version,
+    changes_anything,
+    content_changes,
+    current_provenance,
+    holds_content,
+    insert_or_refuse,
+    log_revert,
+    normalize_source_repo,
+    refuse_source_mismatch,
+    restored_source,
+    version_or_404,
+    versions_of,
+    write_provenance,
 )
 
 PageKind = Literal["document", "wiki"]
@@ -79,9 +96,6 @@ MAX_BODY_CHARS = 500_000
 MAX_META = 200
 MAX_RELATED = 50
 EXCERPT_CHARS = 240
-MAX_SOURCE_REPO = 200
-MAX_SOURCE_PATH = 1000
-MAX_SOURCE_SHA = 100
 
 # ---------------------------------------------------------------------------
 # Slugs and links
@@ -174,156 +188,7 @@ def _meta(value: str | None) -> str | None:
     return value or None
 
 
-#: ``owner/name`` — the full GitHub slug, stored lowercased (GitHub's own
-#: slugs are case-insensitive, so one repository has one spelling here).
-#: Matched AFTER lowercasing. The owner is GitHub's account shape (letters,
-#: digits, ``-``, and ``_`` for a managed user; no dots; at most 39); the name
-#: is GitHub's repository shape (at most 100), never ``.`` and never holding
-#: ``..`` — :func:`_clean_source_repo` checks those two.
-_SOURCE_REPO = re.compile(r"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$")
-#: Unicode categories no stored path may hold: ``Cc`` (every C0 and C1
-#: control — newline, carriage return, NUL, tab, NEL — and DEL), ``Cf`` (the
-#: format characters: bidi marks, embeddings, overrides and isolates, zero-width
-#: spaces, word joiners, invisible operators, the BOM and the rest of the
-#: category; most of them draw nothing, so they make a path DISPLAY as one it is
-#: not) and the line and paragraph separators ``Zl`` / ``Zp`` (U+2028, U+2029),
-#: which break a line wherever the path is shown or logged.
-_PATH_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
-#: The format characters ordinary spellings need, let back in BY NAME so the
-#: rule stays fail-closed for the rest of ``Cf``: the soft hyphen (U+00AD), the
-#: zero-width non-joiner and joiner (U+200C, U+200D: Persian and Indic
-#: spellings, emoji ZWJ sequences) and the visible prepended number signs
-#: (U+0600–U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2, U+110BD, U+110CD).
-#: What the carve-out costs: a joiner or a soft hyphen draws nothing where it
-#: is not needed, so ``runbooks/ci\u200c.md`` and ``runbooks/ci\u00ad.md``
-#: are different paths that DISPLAY as ``runbooks/ci.md``. The unassigned code
-#: points Unicode reserves as default-ignorable (U+2065, U+FFF0–U+FFF8,
-#: U+E0000–U+E0FFF) are refused as well, since they also draw nothing.
-#: The tag characters (U+E0001, U+E0020–U+E007F) are format characters
-#: too, so emoji tag sequences such as subdivision flags are refused with
-#: them. Nor is the rule a complete anti-spoofing guarantee: invisible or
-#: look-alike characters outside these categories (variation selectors,
-#: U+034F, U+3164, the NFC and NFD spellings of one name) are accepted. A
-#: path is part of a page's identity, so it is refused rather than edited
-#: (``files.py`` instead strips the other ``Cf`` characters from an upload's
-#: display name, and keeps these).
-SPELLING_FORMAT_CHARS = frozenset(
-    "\u00ad\u200c\u200d"
-    "\u0600\u0601\u0602\u0603\u0604\u0605\u06dd\u070f\u0890\u0891\u08e2"
-    "\U000110bd\U000110cd"
-)
-
-
-def _is_path_forbidden_char(c: str) -> bool:
-    category = unicodedata.category(c)
-    if category == "Cn":
-        # Unassigned, but reserved by Unicode as default-ignorable: renderers
-        # draw these as nothing. Any other unassigned code point is accepted,
-        # so a character Unicode assigns after this runtime's version is not
-        # refused for being new.
-        cp = ord(c)
-        return cp == 0x2065 or 0xFFF0 <= cp <= 0xFFF8 or 0xE0000 <= cp <= 0xE0FFF
-    return category in _PATH_FORBIDDEN_CATEGORIES and c not in SPELLING_FORMAT_CHARS
-
-
-#: A git COMMIT sha — the newest commit on the published ref touching the
-#: path — in SHA-1 (40) or SHA-256 (64) form, lowercase.
-_SOURCE_SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
-
-
-def normalize_source_repo(v: str) -> str:
-    """The one stored spelling of a ``source_repo``, shared by writes and the
-    list filter so a lookup matches what a write stored."""
-    return v.strip().lower()
-
-
-def _clean_source_repo(v: str | None) -> str | None:
-    if v is None:
-        return None
-    v = normalize_source_repo(v)
-    if not v:
-        return None
-    if not _SOURCE_REPO.fullmatch(v) or ".." in v or v.endswith("/."):
-        raise ValueError(
-            "source_repo is the repository's full owner/name slug (exactly one "
-            "/, and no . or .. name)"
-        )
-    return v
-
-
-def _clean_source_path(v: str | None) -> str | None:
-    if v is None:
-        return None
-    v = v.strip()
-    if not v:
-        return None
-    segments = v.split("/")
-    if (
-        v.startswith("/")
-        or v.startswith("./")
-        or "\\" in v
-        or any(_is_path_forbidden_char(c) for c in v)
-        or any(segment in ("", ".", "..") for segment in segments)
-    ):
-        raise ValueError(
-            "source_path is the file's path relative to the repository root "
-            "(no leading / or ./, no backslash, no control character, line or "
-            "paragraph separator, or format character other than a zero-width "
-            "(non-)joiner, soft hyphen or prepended number sign, or reserved "
-            "invisible (default-ignorable) code point, such as a newline, "
-            "NUL, U+2028, U+202E, U+200B or U+E0002, and no empty, . or .. "
-            "segment)"
-        )
-    return v
-
-
-def _clean_source_sha(v: str | None) -> str | None:
-    if v is None:
-        return None
-    v = v.strip().lower()
-    if not v:
-        return None
-    if not _SOURCE_SHA.fullmatch(v):
-        raise ValueError("source_sha is a full 40- or 64-hex git commit sha")
-    return v
-
-
-class _SourceFields(BaseModel):
-    """The source a published page mirrors. ``source_repo`` and
-    ``source_path`` are given together or not at all; ``source_sha`` only
-    with them."""
-
-    source_repo: str | None = Field(default=None, max_length=MAX_SOURCE_REPO)
-    source_path: str | None = Field(default=None, max_length=MAX_SOURCE_PATH)
-    source_sha: str | None = Field(default=None, max_length=MAX_SOURCE_SHA)
-
-    @field_validator("source_repo")
-    @classmethod
-    def _repo(cls, v: str | None) -> str | None:
-        return _clean_source_repo(v)
-
-    @field_validator("source_path")
-    @classmethod
-    def _path(cls, v: str | None) -> str | None:
-        return _clean_source_path(v)
-
-    @field_validator("source_sha")
-    @classmethod
-    def _sha(cls, v: str | None) -> str | None:
-        return _clean_source_sha(v)
-
-    def _check_source(self) -> None:
-        if (self.source_repo is None) != (self.source_path is None):
-            raise ValueError("source_repo and source_path are given together")
-        if self.source_sha is not None and self.source_repo is None:
-            raise ValueError("source_sha needs source_repo and source_path")
-
-    @property
-    def has_source(self) -> bool:
-        return self.source_repo is not None
-
-
-class PageCreate(_SourceFields):
+class PageCreate(SourceFields):
     kind: PageKind
     title: str = Field(min_length=1, max_length=MAX_TITLE)
     #: Derived from the title when omitted.
@@ -362,7 +227,7 @@ class PageCreate(_SourceFields):
         return self
 
 
-class PageUpdate(_SourceFields):
+class PageUpdate(SourceFields):
     """Absent fields are left alone; ``null`` clears the metadata fields.
     ``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:
     links name it, and renaming would orphan every one of them.
@@ -395,13 +260,7 @@ class PageUpdate(_SourceFields):
         if "title" in fields and self.title is not None and not self.title.strip():
             raise ValueError("title cannot be blank")
         self._check_source()
-        if "source_sha" in fields and not self.has_source:
-            # Even a null: it would clear the commit a mirrored page records,
-            # and only a publish naming the page's source may move that.
-            raise ValueError(
-                "source_sha is a publish's commit; name source_repo and "
-                "source_path with it"
-            )
+        self._check_sha_names_source()
         return self
 
 
@@ -475,25 +334,15 @@ async def _related_of(db: AsyncSession, page_id: UUID) -> list[str]:
     return [r for (r,) in rows.all()]
 
 
-#: ``(via_device, via_session)`` of a page's current version.
-Provenance = tuple[UUID | None, str | None]
-_NO_PROVENANCE: Provenance = (None, None)
-
-
 async def _provenance_of(db: AsyncSession, pages: list[Page]) -> dict[UUID, Provenance]:
     """Who wrote each page's CURRENT version, in one query."""
-    if not pages:
-        return {}
-    rows = await db.execute(
-        select(PageVersion.page_id, PageVersion.via_device, PageVersion.via_session)
-        .join(
-            Page,
-            (Page.id == PageVersion.page_id)
-            & (Page.current_version == PageVersion.version),
-        )
-        .where(PageVersion.page_id.in_([p.id for p in pages]))
+    return await current_provenance(
+        db,
+        pages,
+        record_model=Page,
+        version_model=PageVersion,
+        record_fk=PageVersion.page_id,
     )
-    return {page_id: (device, session) for page_id, device, session in rows.all()}
 
 
 def _to_read(
@@ -501,7 +350,7 @@ def _to_read(
     related: list[str],
     *,
     with_body: bool,
-    provenance: Provenance = _NO_PROVENANCE,
+    provenance: Provenance = NO_PROVENANCE,
 ) -> PageRead:
     return PageRead(
         id=str(page.id),
@@ -562,10 +411,7 @@ class PageStore:
 
     def _snapshot(self, ctx: StoreContext, page: Page) -> Provenance:
         """Append the page as it now stands as a version; returns who wrote it."""
-        provenance: Provenance = (
-            ctx.access.via_device,
-            change_log.reported_session(ctx.request),
-        )
+        provenance = write_provenance(ctx)
         ctx.db.add(
             PageVersion(
                 tenant_id=page.tenant_id,
@@ -656,7 +502,7 @@ class PageStore:
                     p,
                     related[p.id],
                     with_body=False,
-                    provenance=provenance.get(p.id, _NO_PROVENANCE),
+                    provenance=provenance.get(p.id, NO_PROVENANCE),
                 )
                 for p in pages
             ]
@@ -672,7 +518,7 @@ class PageStore:
             page,
             await _related_of(ctx.db, page.id),
             with_body=True,
-            provenance=provenance.get(page.id, _NO_PROVENANCE),
+            provenance=provenance.get(page.id, NO_PROVENANCE),
         )
 
     async def create(self, ctx: StoreContext, payload: PageCreate) -> PageRead:
@@ -693,11 +539,8 @@ class PageStore:
             created_by=ctx.access.actor,
             updated_by=ctx.access.actor,
         )
-        try:
-            async with ctx.db.begin_nested():
-                ctx.db.add(page)
-                await ctx.db.flush()
-        except IntegrityError as exc:
+
+        async def taken() -> StoreRefused:
             # Either unique rule — the slug, or the source — is a duplicate
             # name; both are ``name_taken``, which is what lets the router
             # offer a keyed create to :meth:`adopt_existing`.
@@ -705,19 +548,21 @@ class PageStore:
                 if await self._by_source(
                     ctx, payload.kind, payload.source_repo, payload.source_path
                 ):
-                    raise StoreRefused(
+                    return StoreRefused(
                         409,
                         "name_taken",
                         f"There is already a {payload.kind} mirroring "
                         f"{payload.source_repo}/{payload.source_path}; "
                         "update it instead.",
-                    ) from exc
-            raise StoreRefused(
+                    )
+            return StoreRefused(
                 409,
                 "name_taken",
                 f"There is already a {payload.kind} called that "
                 f"(its address would be “{payload.slug}”).",
-            ) from exc
+            )
+
+        await insert_or_refuse(ctx, page, taken)
         provenance = self._snapshot(ctx, page)
         await self._write_links(ctx, page, payload.related)
         await ctx.db.flush()
@@ -765,27 +610,19 @@ class PageStore:
         order: the payload's is Python's code-point ``sorted()`` and the stored
         one is read in :data:`RELATED_SLUG_ORDER`, the collation that agrees
         with it (the database default does not)."""
-        stored = (
-            page.slug,
-            page.title,
-            page.body_md,
-            page.source_sha,
-            page.doc_number,
-            page.doc_status,
-            page.owner,
-        )
-        offered = (
-            payload.slug,
-            payload.title,
-            payload.body_md,
-            payload.source_sha,
-            payload.doc_number,
-            payload.doc_status,
-            payload.owner,
-        )
-        return stored == offered and (
-            await _related_of(ctx.db, page.id) == payload.related
-        )
+        return holds_content(
+            page,
+            payload,
+            (
+                "slug",
+                "title",
+                "body_md",
+                "source_sha",
+                "doc_number",
+                "doc_status",
+                "owner",
+            ),
+        ) and (await _related_of(ctx.db, page.id) == payload.related)
 
     async def update(
         self,
@@ -801,41 +638,13 @@ class PageStore:
             page,
             related,
             with_body=True,
-            provenance=before_provenance.get(page.id, _NO_PROVENANCE),
+            provenance=before_provenance.get(page.id, NO_PROVENANCE),
         )
-        if payload.has_source and (
-            page.source_repo is None
-            or (page.source_repo, page.source_path)
-            != (payload.source_repo, payload.source_path)
-        ):
-            mirrored = (
-                f"mirrors {page.source_repo}/{page.source_path}"
-                if page.source_repo is not None
-                else "was not published from a repository"
-            )
-            raise StoreRefused(
-                409,
-                "source_mismatch",
-                f"This {page.kind} {mirrored}; a publish of "
-                f"{payload.source_repo}/{payload.source_path} may not overwrite it.",
-            )
+        refuse_source_mismatch(page, payload, noun=page.kind)
         if page.current_version != expected_version:
             raise StaleVersion(before)
 
-        changes = payload.model_dump(exclude_unset=True)
-        # The source identity was checked above and is never changed here;
-        # ``source_sha`` stays in ``changes`` because it IS content.
-        changes.pop("source_repo", None)
-        changes.pop("source_path", None)
-        # New content that names no commit no longer mirrors the stored one:
-        # the sha becomes unknown rather than vouching for a body it never
-        # produced (the same rule ``revert`` keeps).
-        if (
-            page.source_sha is not None
-            and "source_sha" not in changes
-            and changes.get("body_md", page.body_md) != page.body_md
-        ):
-            changes["source_sha"] = None
+        changes = content_changes(page, payload)
         new_related = related
         if "related" in changes:
             if page.kind != "document":
@@ -843,17 +652,10 @@ class PageStore:
                     422, "rejected", "Only documents list related documents."
                 )
             new_related = _clean_related(changes.pop("related") or [], own=page.slug)
-        if "title" in changes and changes["title"] is not None:
-            changes["title"] = changes["title"].strip()
-        content_changed = any(getattr(page, k) != v for k, v in changes.items())
-        if not content_changed and new_related == related:
+        if not changes_anything(page, changes) and new_related == related:
             return before, before
 
-        for key, value in changes.items():
-            setattr(page, key, value)
-        page.current_version += 1
-        page.updated_by = ctx.access.actor
-        page.updated_at = func.now()  # type: ignore[assignment]
+        bump_version(page, changes, ctx.access.actor)
         provenance = self._snapshot(ctx, page)
         await self._write_links(ctx, page, new_related)
         await ctx.db.flush()
@@ -914,12 +716,12 @@ async def list_page_versions(
 ) -> PageVersionList:
     """Every version of a page, newest first. Readable by any member."""
     page = await _page_or_404(_ctx(access, db, request), page_id)
-    rows = await db.execute(
-        select(PageVersion)
-        .where(
-            PageVersion.page_id == page.id, PageVersion.tenant_id == access.tenant_id
-        )
-        .order_by(PageVersion.version.desc())
+    rows = await versions_of(
+        db,
+        tenant_id=access.tenant_id,
+        version_model=PageVersion,
+        record_fk=PageVersion.page_id,
+        record_id=page.id,
     )
     return PageVersionList(
         versions=[
@@ -932,7 +734,7 @@ async def list_page_versions(
                 via_device=v.via_device,
                 via_session=v.via_session,
             )
-            for v in rows.scalars().all()
+            for v in rows
         ],
         current_version=page.current_version,
     )
@@ -941,24 +743,14 @@ async def list_page_versions(
 async def _version_or_404(
     db: AsyncSession, tenant_id: UUID, page: Page, version: int
 ) -> PageVersion:
-    row = (
-        (
-            await db.execute(
-                select(PageVersion).where(
-                    PageVersion.page_id == page.id,
-                    PageVersion.tenant_id == tenant_id,
-                    PageVersion.version == version,
-                )
-            )
-        )
-        .scalars()
-        .first()
+    row: PageVersion = await version_or_404(
+        db,
+        tenant_id=tenant_id,
+        version_model=PageVersion,
+        record_fk=PageVersion.page_id,
+        record_id=page.id,
+        version=version,
     )
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "not_found", "message": "That version does not exist."},
-        )
     return row
 
 
@@ -1017,45 +809,28 @@ async def revert_page(
     except RecordNotFound as exc:
         raise HTTPException(status_code=404, detail="not_found") from exc
     target = await _version_or_404(db, access.tenant_id, page, version)
-    # A published page's version mirrored a commit; restoring its content
-    # restores the sha that content came from, so the page never claims to
-    # mirror a commit its body is not.
-    source: dict[str, Any] = (
-        {
-            "source_repo": page.source_repo,
-            "source_path": page.source_path,
-            "source_sha": target.source_sha,
-        }
-        if page.source_repo is not None
-        else {}
-    )
     payload = PageUpdate(
         title=target.title,
         body_md=target.body_md,
         doc_number=target.doc_number,
         doc_status=target.doc_status,
         owner=target.owner,
-        **source,
+        **restored_source(page, target.source_sha),
     )
     try:
         before, after = await store.update(ctx, page_id, payload, expected)
     except StaleVersion as exc:
         return contract_http.stale(exc)
-    if after.version != before.version:
-        await change_log.record(
-            db,
-            tenant_id=access.tenant_id,
-            resource="pages",
-            record_id=after.id,
-            action="update",
-            source=change_log.change_source(request),
-            **change_log.attribution(access, request),
-            before=_audit_view(before),
-            after={**_audit_view(after), "reverted_to_version": version},
-            version_before=before.version,
-            version_after=after.version,
-        )
-        await db.commit()
+    await log_revert(
+        db,
+        access=access,
+        request=request,
+        resource="pages",
+        before=before,
+        after=after,
+        reverted_to=version,
+        audit_exclude=frozenset({"body_md"}),
+    )
     response.headers["ETag"] = contract_http.etag(after.version)
     return PageItem(item=after, can_edit=True)
 
@@ -1086,12 +861,6 @@ async def page_backlinks(
         PageRef(id=str(p.id), kind=p.kind, slug=p.slug, title=p.title)  # type: ignore[arg-type]
         for p in rows.scalars().all()
     ]
-
-
-def _audit_view(page: PageRead) -> dict[str, Any]:
-    """A page as the change log records it: without its body, which
-    ``page_versions`` already keeps in full for every version."""
-    return page.model_dump(mode="json", exclude={"body_md"})
 
 
 __all__ = [

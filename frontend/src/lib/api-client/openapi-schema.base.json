@@ -7390,6 +7390,58 @@
         "title": "CategoryRead",
         "type": "object"
       },
+      "CellChange": {
+        "properties": {
+          "column_id": {
+            "title": "Column Id",
+            "type": "string"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "new": {
+            "title": "New",
+            "type": "boolean"
+          },
+          "row_id": {
+            "title": "Row Id",
+            "type": "string"
+          },
+          "table_id": {
+            "title": "Table Id",
+            "type": "string"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          }
+        },
+        "required": [
+          "table_id",
+          "row_id",
+          "column_id",
+          "from",
+          "to",
+          "new"
+        ],
+        "title": "CellChange",
+        "type": "object"
+      },
       "ChangeLogEntry": {
         "properties": {
           "action": {
@@ -7497,6 +7549,13 @@
               }
             ],
             "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
           }
         },
         "required": [
@@ -7512,7 +7571,8 @@
           "before",
           "after",
           "via_device",
-          "via_session"
+          "via_session",
+          "withheld"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -21498,6 +21558,31 @@
         "title": "EvaluationExperimentResponse",
         "type": "object"
       },
+      "EventInInterval": {
+        "description": "An item event dated after the previous stop and up to this one.",
+        "properties": {
+          "at": {
+            "format": "date",
+            "title": "At",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "at",
+          "label"
+        ],
+        "title": "EventInInterval",
+        "type": "object"
+      },
       "ExecutionContext": {
         "description": "Context available during code execution.",
         "properties": {
@@ -24544,6 +24629,65 @@
           "message"
         ],
         "title": "FeedbackSubmission",
+        "type": "object"
+      },
+      "FigureChange": {
+        "properties": {
+          "figure_id": {
+            "title": "Figure Id",
+            "type": "string"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "new": {
+            "title": "New",
+            "type": "boolean"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          },
+          "verdict_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict From"
+          },
+          "verdict_to": {
+            "title": "Verdict To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "figure_id",
+          "from",
+          "to",
+          "verdict_from",
+          "verdict_to",
+          "new"
+        ],
+        "title": "FigureChange",
         "type": "object"
       },
       "FileContentResponse": {
@@ -29011,6 +29155,41 @@
           "updated"
         ],
         "title": "IssuesSyncResponse",
+        "type": "object"
+      },
+      "ItemChange": {
+        "properties": {
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "new": {
+            "title": "New",
+            "type": "boolean"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "from_status",
+          "to_status",
+          "new"
+        ],
+        "title": "ItemChange",
         "type": "object"
       },
       "JobItem": {
@@ -45970,6 +46149,1085 @@
         "title": "RepoUnbindRequest",
         "type": "object"
       },
+      "ReportCreate": {
+        "properties": {
+          "body_md": {
+            "default": "",
+            "maxLength": 500000,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ReportCreate",
+        "type": "object"
+      },
+      "ReportItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReportRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "ReportItem",
+        "type": "object"
+      },
+      "ReportRead": {
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "summary",
+          "body_md",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "source_repo",
+          "source_path",
+          "source_sha",
+          "via_device",
+          "via_session",
+          "withheld"
+        ],
+        "title": "ReportRead",
+        "type": "object"
+      },
+      "ReportSnapshotCreate": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "description": "A report-snapshot/v1 document. Checked by the server against the contract; a failure is 422 snapshot_rejected listing each slot and rule, never a value.",
+            "properties": {
+              "as_of": {
+                "format": "date-time",
+                "title": "As Of",
+                "type": "string"
+              },
+              "figures": {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotFigure"
+                },
+                "maxItems": 32,
+                "title": "Figures",
+                "type": "array"
+              },
+              "groups": {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotGroup"
+                },
+                "maxItems": 24,
+                "title": "Groups",
+                "type": "array"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotItem"
+                },
+                "maxItems": 300,
+                "title": "Items",
+                "type": "array"
+              },
+              "label": {
+                "maxLength": 80,
+                "minLength": 1,
+                "title": "Label",
+                "type": "string"
+              },
+              "method": {
+                "$ref": "#/components/schemas/SnapshotMethod"
+              },
+              "notes": {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotNote"
+                },
+                "maxItems": 10,
+                "title": "Notes",
+                "type": "array"
+              },
+              "schema": {
+                "const": "report-snapshot/v1",
+                "title": "Schema",
+                "type": "string"
+              },
+              "summary": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Summary"
+              },
+              "tables": {
+                "items": {
+                  "$ref": "#/components/schemas/SnapshotTable"
+                },
+                "maxItems": 8,
+                "title": "Tables",
+                "type": "array"
+              }
+            },
+            "required": [
+              "schema",
+              "label",
+              "as_of",
+              "method",
+              "summary",
+              "groups",
+              "tables",
+              "figures",
+              "items",
+              "notes"
+            ],
+            "title": "ReportSnapshotDoc",
+            "type": "object"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "required": [
+          "report_id",
+          "data"
+        ],
+        "title": "ReportSnapshotCreate",
+        "type": "object"
+      },
+      "ReportSnapshotDoc": {
+        "additionalProperties": false,
+        "description": "One ``report-snapshot/v1`` document.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotFigure"
+            },
+            "maxItems": 32,
+            "title": "Figures",
+            "type": "array"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotGroup"
+            },
+            "maxItems": 24,
+            "title": "Groups",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotItem"
+            },
+            "maxItems": 300,
+            "title": "Items",
+            "type": "array"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "method": {
+            "$ref": "#/components/schemas/SnapshotMethod"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotNote"
+            },
+            "maxItems": 10,
+            "title": "Notes",
+            "type": "array"
+          },
+          "schema": {
+            "const": "report-snapshot/v1",
+            "title": "Schema",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotTable"
+            },
+            "maxItems": 8,
+            "title": "Tables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "label",
+          "as_of",
+          "method",
+          "summary",
+          "groups",
+          "tables",
+          "figures",
+          "items",
+          "notes"
+        ],
+        "title": "ReportSnapshotDoc",
+        "type": "object"
+      },
+      "ReportSnapshotRead": {
+        "properties": {
+          "allowlist_version": {
+            "title": "Allowlist Version",
+            "type": "integer"
+          },
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "method_kind": {
+            "enum": [
+              "full_review",
+              "light_check",
+              "measured",
+              "manual"
+            ],
+            "title": "Method Kind",
+            "type": "string"
+          },
+          "method_label": {
+            "title": "Method Label",
+            "type": "string"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "scope_version": {
+            "title": "Scope Version",
+            "type": "integer"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
+          },
+          "withdrawn": {
+            "title": "Withdrawn",
+            "type": "boolean"
+          },
+          "withdrawn_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn At"
+          },
+          "withdrawn_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn Reason"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "report_id",
+          "seq",
+          "version",
+          "label",
+          "as_of",
+          "method_kind",
+          "method_label",
+          "source_path",
+          "content_sha256",
+          "allowlist_version",
+          "scope_version",
+          "withdrawn",
+          "withdrawn_at",
+          "withdrawn_reason",
+          "created_at",
+          "created_by",
+          "via_device",
+          "via_session",
+          "data",
+          "withheld"
+        ],
+        "title": "ReportSnapshotRead",
+        "type": "object"
+      },
+      "ReportSnapshotUpdate": {
+        "description": "Withdraw (``withdrawn: true`` with a ``withdrawn_reason``) or restore\n(``withdrawn: false``, no reason) \u2014 the only change a snapshot takes.",
+        "properties": {
+          "withdrawn": {
+            "title": "Withdrawn",
+            "type": "boolean"
+          },
+          "withdrawn_reason": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn Reason"
+          }
+        },
+        "required": [
+          "withdrawn"
+        ],
+        "title": "ReportSnapshotUpdate",
+        "type": "object"
+      },
+      "ReportSnapshotsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReportSnapshotRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "ReportSnapshotsItem",
+        "type": "object"
+      },
+      "ReportSnapshotsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSnapshotRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "ReportSnapshotsList",
+        "type": "object"
+      },
+      "ReportUpdate": {
+        "description": "Absent fields are left alone. ``title``, ``summary`` and ``body_md`` can\nbe changed, never cleared (``summary`` may be set to \"\"). The slug is\nfixed: blocks in other pages name the report by it.\n\n``source_repo`` + ``source_path`` name the source the writer believes the\nreport mirrors (409 ``source_mismatch`` when it does not); ``source_sha``\nis the commit the new content mirrors.",
+        "properties": {
+          "body_md": {
+            "anyOf": [
+              {
+                "maxLength": 500000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Md"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ReportUpdate",
+        "type": "object"
+      },
+      "ReportVersionList": {
+        "properties": {
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/ReportVersionSummary"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions",
+          "current_version"
+        ],
+        "title": "ReportVersionList",
+        "type": "object"
+      },
+      "ReportVersionRead": {
+        "properties": {
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
+          "withheld",
+          "summary",
+          "body_md"
+        ],
+        "title": "ReportVersionRead",
+        "type": "object"
+      },
+      "ReportVersionSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "created_at",
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
+          "withheld"
+        ],
+        "title": "ReportVersionSummary",
+        "type": "object"
+      },
+      "ReportView": {
+        "description": "A report's timeline (D10).",
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/ReportRead"
+          },
+          "shown": {
+            "title": "Shown",
+            "type": "integer"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/ViewSnapshot"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldEntry"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "report",
+          "snapshots",
+          "withheld",
+          "shown",
+          "total",
+          "truncated"
+        ],
+        "title": "ReportView",
+        "type": "object"
+      },
+      "ReportsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ReportRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "ReportsItem",
+        "type": "object"
+      },
+      "ReportsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "ReportsList",
+        "type": "object"
+      },
       "ReposApplyDispatchRequest": {
         "description": "Ask a machine's runner to reconcile its cloned repositories.\n\nThe server **requests**; the box decides and acts. Nothing here runs a clone\non a developer's machine \u2014 the target's own runner receives the directive,\napplies its LOCAL policy (workspace-root resolution, the incomparable-scope\nrefusal, the disk floor, per-repo auth), and reports. That separation is the\nsame one that retired the agent-dispatch model on 2026-07-13: a clone is\narbitrary code arriving on disk, so the authority to perform one stays with\nthe box that owns the box.",
         "properties": {
@@ -52694,6 +53952,521 @@
         "title": "SlotCandidateUpsertResponse",
         "type": "object"
       },
+      "SnapshotCell": {
+        "additionalProperties": false,
+        "properties": {
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "unknown_reason"
+        ],
+        "title": "SnapshotCell",
+        "type": "object"
+      },
+      "SnapshotChanges": {
+        "description": "What changed since the previous stop a reader is shown.",
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/CellChange"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventInInterval"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/FigureChange"
+            },
+            "title": "Figures",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemChange"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "method_changed": {
+            "title": "Method Changed",
+            "type": "boolean"
+          },
+          "previous_seq": {
+            "title": "Previous Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "previous_seq",
+          "method_changed",
+          "cells",
+          "figures",
+          "items",
+          "events"
+        ],
+        "title": "SnapshotChanges",
+        "type": "object"
+      },
+      "SnapshotColumn": {
+        "additionalProperties": false,
+        "properties": {
+          "help": {
+            "maxLength": 300,
+            "title": "Help",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 40,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "help"
+        ],
+        "title": "SnapshotColumn",
+        "type": "object"
+      },
+      "SnapshotEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date",
+            "title": "At",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 160,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "label"
+        ],
+        "title": "SnapshotEvent",
+        "type": "object"
+      },
+      "SnapshotFigure": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "better": {
+            "enum": [
+              "higher",
+              "lower"
+            ],
+            "title": "Better",
+            "type": "string"
+          },
+          "help": {
+            "maxLength": 300,
+            "title": "Help",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "source": {
+            "maxLength": 160,
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "unit": {
+            "maxLength": 24,
+            "title": "Unit",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "verdict": {
+            "enum": [
+              "met",
+              "missed",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "help",
+          "unit",
+          "value",
+          "unknown_reason",
+          "baseline",
+          "target",
+          "better",
+          "verdict",
+          "source",
+          "measured_at"
+        ],
+        "title": "SnapshotFigure",
+        "type": "object"
+      },
+      "SnapshotGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "due": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due"
+          },
+          "help": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Help"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "help",
+          "due"
+        ],
+        "title": "SnapshotGroup",
+        "type": "object"
+      },
+      "SnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotEvent"
+            },
+            "maxItems": 20,
+            "title": "Events",
+            "type": "array"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "help": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Help"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 160,
+            "title": "Label",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotLink"
+            },
+            "maxItems": 10,
+            "title": "Links",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "in_progress",
+              "done",
+              "blocked",
+              "unknown",
+              "dropped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_note": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Note"
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "label",
+          "help",
+          "status",
+          "status_note",
+          "events",
+          "links"
+        ],
+        "title": "SnapshotItem",
+        "type": "object"
+      },
+      "SnapshotLink": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 500,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "url"
+        ],
+        "title": "SnapshotLink",
+        "type": "object"
+      },
+      "SnapshotMethod": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "full_review",
+              "light_check",
+              "measured",
+              "manual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "note"
+        ],
+        "title": "SnapshotMethod",
+        "type": "object"
+      },
+      "SnapshotNote": {
+        "additionalProperties": false,
+        "properties": {
+          "body_md": {
+            "maxLength": 4000,
+            "title": "Body Md",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body_md"
+        ],
+        "title": "SnapshotNote",
+        "type": "object"
+      },
+      "SnapshotRow": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SnapshotCell"
+            },
+            "title": "Cells",
+            "type": "object"
+          },
+          "help": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Help"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "help",
+          "cells"
+        ],
+        "title": "SnapshotRow",
+        "type": "object"
+      },
       "SnapshotRun": {
         "properties": {
           "created_at": {
@@ -53072,6 +54845,139 @@
           }
         },
         "title": "SnapshotRunUpdate",
+        "type": "object"
+      },
+      "SnapshotScale": {
+        "additionalProperties": false,
+        "properties": {
+          "better": {
+            "enum": [
+              "higher",
+              "lower"
+            ],
+            "title": "Better",
+            "type": "string"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "target",
+          "better"
+        ],
+        "title": "SnapshotScale",
+        "type": "object"
+      },
+      "SnapshotSummaryRow": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SnapshotCell"
+            },
+            "title": "Cells",
+            "type": "object"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "cells"
+        ],
+        "title": "SnapshotSummaryRow",
+        "type": "object"
+      },
+      "SnapshotTable": {
+        "additionalProperties": false,
+        "properties": {
+          "caption": {
+            "maxLength": 600,
+            "title": "Caption",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotColumn"
+            },
+            "maxItems": 12,
+            "title": "Columns",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "row_header": {
+            "maxLength": 40,
+            "title": "Row Header",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotRow"
+            },
+            "maxItems": 80,
+            "title": "Rows",
+            "type": "array"
+          },
+          "scale": {
+            "$ref": "#/components/schemas/SnapshotScale"
+          },
+          "summary_rows": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotSummaryRow"
+            },
+            "maxItems": 4,
+            "title": "Summary Rows",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 120,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "caption",
+          "row_header",
+          "scale",
+          "columns",
+          "rows",
+          "summary_rows"
+        ],
+        "title": "SnapshotTable",
         "type": "object"
       },
       "StateAnnotation": {
@@ -64645,6 +66551,137 @@
         "title": "VersionSnapshotCreate",
         "type": "object"
       },
+      "ViewSnapshot": {
+        "properties": {
+          "allowlist_version": {
+            "title": "Allowlist Version",
+            "type": "integer"
+          },
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "changes_since_previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotChanges"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "method_kind": {
+            "title": "Method Kind",
+            "type": "string"
+          },
+          "method_label": {
+            "title": "Method Label",
+            "type": "string"
+          },
+          "scope_version": {
+            "title": "Scope Version",
+            "type": "integer"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "version",
+          "label",
+          "as_of",
+          "method_kind",
+          "method_label",
+          "source_path",
+          "content_sha256",
+          "allowlist_version",
+          "scope_version",
+          "created_at",
+          "created_by",
+          "via_device",
+          "via_session",
+          "data",
+          "changes_since_previous"
+        ],
+        "title": "ViewSnapshot",
+        "type": "object"
+      },
       "VisionResults": {
         "description": "Vision extraction results from the runner.",
         "properties": {
@@ -64978,6 +67015,49 @@
           "expires_at"
         ],
         "title": "WakeRequiredResponse",
+        "type": "object"
+      },
+      "WithheldEntry": {
+        "description": "A slot the view did not serve. When ``seq`` is absent from\n``snapshots`` the whole stop was withheld, and ``slot`` names why.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "slot",
+          "reason"
+        ],
+        "title": "WithheldEntry",
+        "type": "object"
+      },
+      "WithheldSlot": {
+        "description": "A slot a read did not serve, and why: a contract violation kind\n(``confidential_term`` for a string or a field naming one of the\nproject's current confidential terms), a link's\n``link_owner_not_first_party`` / ``presentation_scope_unknown``, or\n``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry\nnames the copy too (``after.title``).",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot",
+          "reason"
+        ],
+        "title": "WithheldSlot",
         "type": "object"
       },
       "WorkArtifactDetail": {
@@ -109529,7 +111609,7 @@
     },
     "/api/v1/overview/change-log": {
       "get": {
-        "description": "Newest first. Readable by any member, like the records it describes.",
+        "description": "Newest first. Readable by any member, like the records it describes,\nand served as their reads are: a resource whose reads withhold text\nnaming the project's current confidential terms (``served_text``) has the\nsame fields withheld from the copies here, which were logged before a\nterm may have been added.",
         "operationId": "api_v1_overview_change_log_get",
         "parameters": [
           {
@@ -112321,6 +114401,765 @@
         "tags": [
           "overview",
           "overview:recurring-costs"
+        ]
+      }
+    },
+    "/api/v1/overview/report-snapshots": {
+      "get": {
+        "operationId": "api_v1_overview_report_snapshots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSnapshotsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Report Snapshots",
+        "tags": [
+          "overview",
+          "overview:report-snapshots"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_report_snapshots_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportSnapshotCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSnapshotsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Report Snapshots",
+        "tags": [
+          "overview",
+          "overview:report-snapshots"
+        ]
+      }
+    },
+    "/api/v1/overview/report-snapshots/{record_id}": {
+      "get": {
+        "operationId": "api_v1_overview_report_snapshots_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSnapshotsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Report Snapshots",
+        "tags": [
+          "overview",
+          "overview:report-snapshots"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_report_snapshots_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportSnapshotUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSnapshotsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Report Snapshots",
+        "tags": [
+          "overview",
+          "overview:report-snapshots"
+        ]
+      }
+    },
+    "/api/v1/overview/reports": {
+      "get": {
+        "operationId": "api_v1_overview_reports_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Reports",
+        "tags": [
+          "overview",
+          "overview:reports"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_reports_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Reports",
+        "tags": [
+          "overview",
+          "overview:reports"
+        ]
+      }
+    },
+    "/api/v1/overview/reports/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_reports_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Reports",
+        "tags": [
+          "overview",
+          "overview:reports"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_reports_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Reports",
+        "tags": [
+          "overview",
+          "overview:reports"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_reports_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Reports",
+        "tags": [
+          "overview",
+          "overview:reports"
+        ]
+      }
+    },
+    "/api/v1/overview/reports/{report_id}/versions": {
+      "get": {
+        "description": "Every version of a report's narrative, newest first. A title naming\none of the project's current confidential terms reads ``[withheld]``.",
+        "operationId": "api_v1_overview_reports_report_id_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportVersionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Report Versions",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/reports/{report_id}/versions/{version}": {
+      "get": {
+        "description": "One version of a report's narrative. A field naming one of the\nproject's current confidential terms reads ``[withheld]``.",
+        "operationId": "api_v1_overview_reports_report_id_versions_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Report Version",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/reports/{report_id}/versions/{version}/revert": {
+      "post": {
+        "description": "Restore an earlier version of the narrative by writing it as a NEW\nversion, under the same contract as any write: ``If-Match`` names the\nversion the reader saw, and a report that has moved on is a 409 carrying\nthe server's copy. The restored narrative is scanned as any write is.",
+        "operationId": "api_v1_overview_reports_report_id_versions_version_revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revert Report",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/reports/{report_id}/view": {
+      "get": {
+        "description": "The report and its stops in time order, each with what changed since\nthe previous stop a reader is shown (D10). At most the newest\n``PAGE_SIZE`` (48) stops; ``before=<seq>`` pages back.",
+        "operationId": "api_v1_overview_reports_report_id_view_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Read the stops ordered before the stop with this seq.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Read the stops ordered before the stop with this seq.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Report View",
+        "tags": [
+          "overview"
         ]
       }
     },

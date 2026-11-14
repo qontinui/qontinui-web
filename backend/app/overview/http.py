@@ -67,7 +67,7 @@ def stale(exc: StaleVersion) -> JSONResponse:
 def refused(exc: StoreRefused) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.error, "message": exc.message},
+        content={**exc.extra, "error": exc.error, "message": exc.message},
     )
 
 

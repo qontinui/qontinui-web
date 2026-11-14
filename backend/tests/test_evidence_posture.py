@@ -80,7 +80,14 @@ from app.core.evidence_posture import (
 #: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
 #:   phase progress and ids, this plan;
 #: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
-GAP_COUNT_PIN = 10
+#:
+#: One more with the stakeholder reports (2026-11-08, plan
+#: ``2026-11-07-interactive-stakeholder-reports-in-the-project-overview``):
+#:
+#: * ``DELETE /overview/reports/{record_id}`` [what a re-create loses] — the
+#:   narrative's earlier versions and every snapshot's document, which cascade
+#:   with the report while the change log keeps neither, owned by that plan.
+GAP_COUNT_PIN = 11
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;

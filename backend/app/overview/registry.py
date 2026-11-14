@@ -31,6 +31,18 @@ from app.overview.intent_documents import (
 from app.overview.milestones import milestone_store
 from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
 from app.overview.phase_progress import phase_progress_store
+from app.overview.reports import (
+    REPORT_SERVED_TEXT,
+    SNAPSHOT_SERVED_TEXT,
+    ReportCreate,
+    ReportRead,
+    ReportSnapshotCreate,
+    ReportSnapshotRead,
+    ReportSnapshotUpdate,
+    ReportUpdate,
+    report_snapshot_store,
+    report_store,
+)
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
@@ -246,6 +258,76 @@ REGISTRY: dict[str, ResourceSpec] = {
             store=page_store,
             tables=("pages", "page_versions", "page_links"),
             audit_exclude=frozenset({"body_md"}),
+        ),
+        ResourceSpec(
+            name="reports",
+            path="reports",
+            title="Reports",
+            description=(
+                "Progress reports for stakeholders: a slug, a title, a "
+                "plain-language summary and a markdown body, with full version "
+                "history (GET /reports/{id}/versions, POST "
+                "…/versions/{n}/revert). GET /reports/{id}/view serves the "
+                "report with its stops in time order and what changed between "
+                "them. Filters: slug, source_repo + source_path (exact: the "
+                "repository file a published report mirrors, with the same "
+                "source rules as pages — 409 source_mismatch, keyed creates "
+                "converge only on identical content). A list read carries no "
+                "bodies. The narrative, and at create the slug and the source, "
+                "are refused (422 report_rejected) when they name one of the "
+                "project's confidential terms, an email address, an IP address "
+                "or an AWS account id; a narrative or source field naming a "
+                "term added after the write reads [withheld] in every read and "
+                "in the change log (withheld names the field). The slug is "
+                "fixed and always served."
+            ),
+            permission="editing_roles",
+            read_model=ReportRead,
+            create_model=ReportCreate,
+            update_model=ReportUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("slug", "source_repo", "source_path"),
+            store=report_store,
+            tables=("reports", "report_versions"),
+            audit_exclude=frozenset({"body_md"}),
+            served_text=REPORT_SERVED_TEXT,
+        ),
+        ResourceSpec(
+            name="report_snapshots",
+            path="report-snapshots",
+            title="Report snapshots",
+            description=(
+                "The dated stops on a report's timeline. Each carries a "
+                "report-snapshot/v1 document checked against the report "
+                "contract; a refusal is 422 snapshot_rejected listing each "
+                "failing slot and rule, never a value, and a document with a "
+                "GitHub link is 503 presentation_scope_unknown while the "
+                "project's first-party owners cannot be read. A source_path "
+                "or a withdrawn_reason naming a confidential term, an email "
+                "address, an IP address or an account id is refused the same "
+                "way, naming that field, and one naming a term added later "
+                "reads [withheld] in every read and in the change log. "
+                "Snapshots are "
+                "never changed or deleted: PATCH withdraws one (withdrawn: true "
+                "with a withdrawn_reason) or restores it. Re-posting the same "
+                "source_path with the same content answers the stored snapshot; "
+                "other content there is 409 snapshot_changed_at_source. A list "
+                "read carries no documents (data is null); a single read serves "
+                "the document under today's checks, except a withdrawn "
+                "snapshot's, which no read serves (data is null and withheld "
+                "names data, withdrawn). Filters: report_id, source_path, "
+                "withdrawn (true / false)."
+            ),
+            permission="editing_roles",
+            read_model=ReportSnapshotRead,
+            create_model=ReportSnapshotCreate,
+            update_model=ReportSnapshotUpdate,
+            operations=frozenset({"list", "get", "create", "update"}),
+            list_filters=("report_id", "source_path", "withdrawn"),
+            store=report_snapshot_store,
+            tables=("report_snapshots",),
+            audit_exclude=frozenset({"data"}),
+            served_text=SNAPSHOT_SERVED_TEXT,
         ),
         ResourceSpec(
             name="files",

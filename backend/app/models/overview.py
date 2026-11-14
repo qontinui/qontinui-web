@@ -1273,3 +1273,214 @@ class OverviewFile(Base):
         default=_now,
         server_default=text("now()"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Stakeholder reports (overview_reports_01_create)
+# ---------------------------------------------------------------------------
+
+#: How a report snapshot's state was measured. ``full_review`` — a complete
+#: re-assessment; ``light_check`` — a partial check against the last review;
+#: ``measured`` — read from an instrument; ``manual`` — entered by hand.
+#: Enforced by ``ck_overview_report_snapshots_method_kind``.
+REPORT_METHOD_KINDS: tuple[str, ...] = (
+    "full_review",
+    "light_check",
+    "measured",
+    "manual",
+)
+
+
+class Report(Base):
+    """A stakeholder report's narrative: slug, title, plain-language summary
+    and markdown body, versioned like a page (plan
+    ``2026-11-07-interactive-stakeholder-reports-in-the-project-overview`` D1).
+
+    ``current_version`` moves on every content write and is the version a
+    write must name; every such write also appends :class:`ReportVersion`.
+    ``(tenant_id, source_repo, source_path)`` is unique among reports with a
+    source (``uq_overview_reports_source``), so re-publishing a file finds the
+    report it made (D7).
+    """
+
+    __tablename__ = "reports"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_overview_reports_slug"),
+        Index(
+            "uq_overview_reports_source",
+            "tenant_id",
+            "source_repo",
+            "source_path",
+            unique=True,
+            postgresql_where=text("source_repo IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "source_repo IS NULL OR source_repo = lower(source_repo)",
+            name="ck_overview_reports_source_repo_lowercase",
+        ),
+        CheckConstraint(
+            "(source_repo IS NULL) = (source_path IS NULL)",
+            name="ck_overview_reports_source_pair",
+        ),
+        CheckConstraint(
+            "source_sha IS NULL OR source_repo IS NOT NULL",
+            name="ck_overview_reports_source_sha_needs_source",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    body_md: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    source_repo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+
+
+class ReportVersion(Base):
+    """A report's narrative as it stood after one content write. Append-only,
+    as :class:`PageVersion`; a revert writes a NEW version copying an old one."""
+
+    __tablename__ = "report_versions"
+    __table_args__ = (
+        UniqueConstraint("report_id", "version", name="uq_overview_report_versions"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    report_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.reports.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The source commit this version mirrored.
+    source_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The coord device the write came through and the session the client
+    #: reported, as on :class:`PageVersion`.
+    via_device: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    via_session: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )
+
+
+class ReportSnapshot(Base):
+    """One dated stop on a report's timeline: a ``report-snapshot/v1``
+    document, frozen (D1, D4).
+
+    ``data`` is the document exactly as the writer sent it, after validation;
+    ``label``, ``as_of`` and the method are copied out of it for ordering and
+    listing. ``content_sha256`` is the sha256 of its canonical JSON form. A
+    snapshot is never edited or deleted: a correction is a new snapshot and
+    the wrong one is withdrawn (``withdrawn_at`` + ``withdrawn_reason``), which
+    hides it from readers and keeps it as history. ``version`` moves on every
+    withdraw or restore. ``allowlist_version`` and ``scope_version`` record
+    the contract and the presentation scope it was checked against, so a read
+    knows when to check it again.
+    """
+
+    __tablename__ = "report_snapshots"
+    __table_args__ = (
+        UniqueConstraint("report_id", "seq", name="uq_overview_report_snapshots_seq"),
+        Index(
+            "uq_overview_report_snapshots_source",
+            "report_id",
+            "source_path",
+            unique=True,
+            postgresql_where=text("source_path IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "method_kind IN ('full_review', 'light_check', 'measured', 'manual')",
+            name="ck_overview_report_snapshots_method_kind",
+        ),
+        CheckConstraint(
+            "(withdrawn_at IS NULL) = (withdrawn_reason IS NULL)",
+            name="ck_overview_report_snapshots_withdrawn_pair",
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    report_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.reports.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: Creation order, unique per report. Timeline order is ``(as_of, seq)``.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    method_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    method_label: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Up to the contract's cap (256 KiB canonical), so it is loaded only
+    #: when asked for.
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, deferred=True)
+    content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    allowlist_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    scope_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    withdrawn_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    via_device: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    via_session: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        server_default=text("now()"),
+    )

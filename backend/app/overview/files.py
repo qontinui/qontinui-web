@@ -67,7 +67,6 @@ from app.api.deps import get_async_db
 from app.models.overview import OverviewFile, Page
 from app.overview import change_log
 from app.overview import http as contract_http
-from app.overview.pages import SPELLING_FORMAT_CHARS
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
 from app.overview.resource import (
     ListResult,
@@ -75,6 +74,7 @@ from app.overview.resource import (
     StaleVersion,
     StoreContext,
 )
+from app.overview.sourced import SPELLING_FORMAT_CHARS
 from app.services.storage import object_storage
 
 logger = structlog.get_logger(__name__)
@@ -268,7 +268,7 @@ def _clean_format_chars(name: str) -> str:
     real one, so every format character goes from the extension, and the ones
     that spell nothing go from everywhere. The stem keeps the ones that are
     spelling, the same set a page's source path accepts
-    (:data:`pages.SPELLING_FORMAT_CHARS`), so a Persian plural or an emoji ZWJ
+    (:data:`sourced.SPELLING_FORMAT_CHARS`), so a Persian plural or an emoji ZWJ
     sequence is not stored misspelled. Whitespace, dots, the joiners and the
     soft hyphen spell nothing at the start of a name or at the end of a stem.
     """
