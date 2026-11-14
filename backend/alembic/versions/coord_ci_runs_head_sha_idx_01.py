@@ -25,27 +25,26 @@ Mechanics
 ------------------------------------------------------------------------------
 ``CREATE INDEX CONCURRENTLY`` inside ``autocommit_block()``: ``coord.ci_runs``
 is written on every ``workflow_run`` webhook, and an in-transaction build would
-take a write-blocking ``SHARE`` lock. Additive and forward-only: ``upgrade``
+take a write-blocking ``SHARE`` lock. Additive (no data is changed): ``upgrade``
 creates the index ``IF NOT EXISTS``, ``downgrade`` drops it ``IF EXISTS``. The
 coord read is correct, only slower, without it, so deploy order is not
 load-bearing for correctness.
 
-A killed build leaves an INVALID index of the same name. ``IF NOT EXISTS`` then
-skips it and reports success, so re-running alembic does NOT repair it. Check
-``indisvalid`` after the deploy instead::
+A killed or failed build leaves an INVALID index of the same name, which
+``IF NOT EXISTS`` alone would skip and report as success. ``upgrade`` therefore
+checks ``indisvalid`` first and, when the index is INVALID, drops it
+``CONCURRENTLY`` before the ``CREATE`` rebuilds it, so re-running alembic
+(``stamp`` to the parent, then ``upgrade``) repairs a failed build. A VALID
+index is left untouched. To check after a deploy::
 
     SELECT c.relname, i.indisvalid
       FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
      WHERE c.relname = 'ix_ci_runs_repo_head_sha';
 
-``false`` means:
-
-1. Wait until ``pg_stat_progress_create_index`` is empty (a live build also
-   reads ``false``).
-2. Run ``DROP INDEX CONCURRENTLY coord.ix_ci_runs_repo_head_sha``. Never use a
-   plain ``DROP INDEX``: its ACCESS EXCLUSIVE lock queues behind any long reader
-   and stalls every coord read and write on the table behind it.
-3. Re-run the ``CREATE INDEX CONCURRENTLY`` statement in ``upgrade()`` by hand.
+A live build also reads ``false``: wait until ``pg_stat_progress_create_index``
+is empty before re-running. Never repair by hand with a plain ``DROP INDEX``:
+its ACCESS EXCLUSIVE lock queues behind any long reader and stalls every coord
+read and write on the table behind it.
 
 Revision ID: coord_ci_runs_head_sha_idx_01
 Revises: repair_rerun_01_partial_idx
@@ -53,6 +52,8 @@ Create Date: 2026-11-09
 """
 
 from collections.abc import Sequence
+
+from sqlalchemy import text
 
 from alembic import op
 
@@ -63,9 +64,38 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _index_is_invalid(index_name: str) -> bool:
+    """True when ``coord.<index_name>`` exists and is INVALID (a failed build)."""
+    return bool(
+        op.get_bind()
+        .execute(
+            text(
+                """
+                SELECT NOT i.indisvalid
+                  FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = :idx
+                """
+            ),
+            {"idx": index_name},
+        )
+        .scalar()
+    )
+
+
 def upgrade() -> None:
-    """Additive: one CONCURRENTLY index. Idempotent."""
+    """Additive: one CONCURRENTLY index. Idempotent, and repairs a failed build."""
     with op.get_context().autocommit_block():
+        # A failed earlier CONCURRENTLY build leaves an INVALID index that
+        # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
+        if _index_is_invalid("ix_ci_runs_repo_head_sha"):
+            op.execute(
+                "DROP INDEX CONCURRENTLY IF EXISTS coord.ix_ci_runs_repo_head_sha"
+            )
+        # Plain literal, never an f-string: the `alembic-schema-arg-gate`
+        # pre-commit hook statically checks that every CREATE/DROP names its
+        # schema.
         op.execute(
             """
             CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ci_runs_repo_head_sha
