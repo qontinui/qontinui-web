@@ -54,9 +54,7 @@ permissions:
 # interpolating only `github.event_name` / `github.ref` and collapsing every
 # other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
 # and run_is_reaper_at_risk never matches an empty group, so no push run here is
-# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
-# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
-# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# modelled as reapable by a land.
 # RESIDUAL: two pushes seconds apart can have
 # their runs CREATED out of order, so the older head's run cancels the newer
 # head's; the next push (or a close+reopen) heals it.
@@ -71,7 +69,8 @@ jobs:
     # p50 7.10 / p90 7.41 / max 7.73 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 20
     name: Lint and TypeScript check
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-4g"]' || '"ubuntu-latest"') }}
     env:
       # vitest defaults to nproc - 1 workers: 3 on the hosted 4-core VM, 127 on
       # a nawa runner. Pin the hosted value on both lanes.
@@ -230,7 +229,8 @@ jobs:
     # two things the deployment depends on — the overlay resolves, and the
     # marker the deployment serves is valid JSON naming that same pin.
     name: Vercel install script (composed deploy path)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-4g"]' || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout qontinui-web
@@ -340,7 +340,8 @@ jobs:
     #
     # See frontend/docs/composed-cloud-build.md.
     name: Composed cloud build (with @qontinui/cloud-control)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-16g"]' || '"ubuntu-latest"') }}
     env:
       # As in `lint` above: vitest would otherwise start nproc - 1 workers
       # (127 on a nawa runner). Pin the hosted value on both lanes.

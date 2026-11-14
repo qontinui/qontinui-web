@@ -104,7 +104,8 @@ jobs:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
     # p50 0.23 / p90 0.28 / max 0.37 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     outputs:
       relevant: ${{ steps.detect.outputs.relevant }}
     steps:
@@ -153,7 +154,8 @@ jobs:
   reverse:
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
     # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes -- not a
     # value this repo chose. This workflow is named in the plan's own Why
@@ -177,6 +179,14 @@ jobs:
     # migration count. 3.2x headroom today will erode; re-measure rather than
     # assuming this bound still holds in six months.
     timeout-minutes: 25
+    # The ONE place this job names the postgres major, as in `tested`. It
+    # MUST equal the service image tag below -- `services.*.image` cannot read
+    # the `env` context, so the tag is spelled literally there. Only the
+    # self-hosted provisioning check reads it: this job runs unversioned psql
+    # DDL, so its `Install postgresql-client` uses the image's own psql, or
+    # installs the distro default when there is none.
+    env:
+      PG_MAJOR: '16'
 
     services:
       postgres:
@@ -240,7 +250,7 @@ jobs:
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
           tools: git
-          pg-major: 16
+          pg-major: '${{ env.PG_MAJOR }}'
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
@@ -954,7 +964,8 @@ jobs:
     name: Migration Reversal Tested
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Read the repo only: the checkout and the base/head object reads. Narrower
     # than the workflow default (which adds `actions: read` for the
     # explainer's run lookup -- the explainer here falls back to that lookup
@@ -1284,24 +1295,63 @@ jobs:
       - name: Install postgresql-client
         if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         id: apt_psql
-        # Same guarded, apt-only, bounded step as `reverse` -- see the long
-        # note there for why only apt lives here and why it is bounded.
-        # This job ALSO needs the pg_dump of the job's PG_MAJOR (which must
-        # match the service image tag): the reversibility step compares schema
-        # dumps and refuses a pg_dump whose major is not the server's. The
-        # runner image normally ships it, so apt is skipped.
+        # Bounded and apt-only, like `reverse`'s step of the same name -- see
+        # the long note there for why only apt lives here and why it is
+        # bounded. This job ALSO needs the pg_dump of the job's PG_MAJOR
+        # (which must match the service image tag): the reversibility step
+        # compares schema dumps and refuses a pg_dump whose major is not the
+        # server's.
         #
-        # One failure here is NOT the mirror: `apt-get update` succeeded but
-        # the index has no install candidate for postgresql-client-$PG_MAJOR
-        # (a major the runner's apt sources do not carry). That step then
-        # EXITS 0 with an `::error::` naming the package, so the timeout
-        # explainer -- which reads any `failure` of this step as an apt-mirror
-        # stall -- does not misname it; the reversibility step then fails on
-        # the missing pg_dump. It also sets the output `unavailable=1`, which
-        # "Name an unavailable postgresql client" reads to name that cause
-        # (the explainer body cannot: it must stay byte-identical across its
-        # eight carriers, and on this path it reports a real red). Best-effort:
-        # an install that fails for any other reason still fails this step.
+        # The guard skips apt only when psql AND that pg_dump are already
+        # present. The ubuntu-24.04 image ships PostgreSQL 16, so there the
+        # guard hits. `ubuntu-latest` is moving to Ubuntu 26.04 (resolute), a
+        # rollout begun 2026-10-19, so until it completes a run can land on
+        # either image. Resolute ships PostgreSQL 18 and its own archive has no
+        # postgresql-client-16, so a run there takes the apt path and installs
+        # the client from PGDG (apt.postgresql.org, which serves every
+        # supported major for each codename it serves). On resolute the
+        # 10-minute bound is therefore a per-run exposure, not a fallback's.
+        #
+        # Only apt reaches the network. The suite is `<VERSION_CODENAME>-pgdg`,
+        # read from /etc/os-release. The step first looks for a live entry
+        # for it, judged per entry -- per line in the one-line format, per
+        # stanza in deb822 -- never per file: an uncommented entry that names
+        # apt.postgresql.org (deb822: in its URIs; one-line: anywhere in the
+        # line), which lists that suite and, in deb822, is
+        # not disabled by any value apt reads as false. Such an entry, deb or
+        # deb-src, is used as configured, because a second entry for the same
+        # URI and suite with another Signed-By breaks every `apt-get update`
+        # (a deb-src-only one then reports no candidate, not a mirror stall).
+        # Anything else -- a commented-out line, another codename's suite, a
+        # disabled stanza (even beside a live one for another host), or a
+        # host and suite split across two entries -- gets this
+        # step's own pgdg.sources, signed by
+        # /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc. That key
+        # ships in postgresql-client-common on resolute (290ubuntu1) but not
+        # on noble (257build1), so only the writing branch acquires it: when
+        # it is absent, the step installs that package from the runner's own
+        # sources and checks again. There is no curl, no gpg and no second
+        # host. This stays inline: the tree is the BASE by now, so a helper
+        # file would be the base's copy, not the PR's.
+        #
+        # Three outcomes are deterministic, NOT the mirror, and EXIT 0 with an
+        # `::error::` naming the cause and the output `unavailable=1`:
+        # /etc/os-release names no VERSION_CODENAME; the step must write its
+        # own source and the key is still missing after installing
+        # postgresql-client-common; or `apt-get update` succeeded with PGDG
+        # configured and there is still no install candidate for
+        # postgresql-client-$PG_MAJOR. Exiting 0 keeps them away
+        # from the timeout explainer, which reads any `failure` here as an
+        # apt-mirror stall, and from a setup-failure re-run, which would loop
+        # on them. "Name an unavailable postgresql client" reads `unavailable`
+        # to name the red (the explainer body cannot: it must stay
+        # byte-identical across its eight carriers, and on this path it
+        # reports a real red), and the reversibility step then fails on the
+        # missing pg_dump. One deterministic outcome still FAILS this step: a
+        # codename PGDG does not serve makes `apt-get update` exit 100 on a
+        # missing Release file. That reads as apt, and a re-run cannot fix it;
+        # the log's "does not have a Release file" line names it. Best-effort:
+        # an install that fails for any other reason also fails this step.
         timeout-minutes: 10
         run: |
           set -euo pipefail
@@ -1310,10 +1360,69 @@ jobs:
             echo "psql and the major-$PG_MAJOR pg_dump are present; no apt needed."
             exit 0
           fi
+          codename=$(. /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}") || codename=
+          if [ -z "$codename" ]; then
+            echo "::error title=Migration Reversal Tested - client package unavailable::/etc/os-release names no VERSION_CODENAME, so the PGDG suite cannot be named. This is NOT an apt-mirror stall. Change PG_MAJOR together with the service image tag, or run on an image that names its codename."
+            echo "unavailable=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          configured=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -r "$f" ] || continue
+            case "$f" in *.sources) deb822=1 ;; *) deb822=0 ;; esac
+            # One entry per line (one-line format) or per stanza (deb822,
+            # paragraphs split by blank lines; a line opening with blank space
+            # continues the field above it). An entry is live when its URI
+            # names apt.postgresql.org, it lists the suite, and (deb822) its
+            # `Enabled:` is not one of apt's false values. deb-src counts too:
+            # apt keeps one Signed-By per URI and suite across deb and deb-src.
+            if awk -v suite="${codename}-pgdg" -v deb822="$deb822" '
+              function flush() { if (uri && hit && !off) found = 1; uri = hit = off = 0; field = "" }
+              deb822 && /^[[:space:]]*$/ { flush(); next }
+              {
+                line = $0; sub(/#.*/, "", line); value = line
+                if (deb822 && line ~ /^[^[:space:]]/) {
+                  if (!index(line, ":")) next
+                  field = tolower(substr(line, 1, index(line, ":") - 1))
+                  value = substr(line, index(line, ":") + 1)
+                }
+                if (!deb822 || field == "uris") if (index(value, "apt.postgresql.org")) uri = 1
+                if (!deb822 || field == "suites") {
+                  n = split(value, w, /[[:space:]]+/)
+                  for (i = 1; i <= n; i++) if (w[i] == suite) hit = 1
+                }
+                if (deb822 && field == "enabled") {
+                  v = tolower(value); gsub(/[[:space:]]/, "", v)
+                  if (v ~ /^(no|false|off|without|disable|0)$/) off = 1
+                }
+              }
+              !deb822 { flush() }
+              END { flush(); exit !found }
+            ' "$f"; then
+              configured=$f
+              break
+            fi
+          done
+          if [ -n "$configured" ]; then
+            echo "$configured already names apt.postgresql.org and '${codename}-pgdg'; using it as configured."
+          else
+            key=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+            if [ ! -r "$key" ]; then
+              sudo apt-get update
+              sudo apt-get install -y postgresql-client-common
+              if [ ! -r "$key" ]; then
+                echo "::error title=Migration Reversal Tested - client package unavailable::postgresql-client-common from the runner's apt sources ships no PGDG signing key at $key, so a PGDG source for '${codename}-pgdg' cannot be verified. This is NOT an apt-mirror stall. Change PG_MAJOR together with the service image tag."
+                echo "unavailable=1" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            printf '%s\n' 'Types: deb' 'URIs: https://apt.postgresql.org/pub/repos/apt' "Suites: ${codename}-pgdg" 'Components: main' "Signed-By: $key" \
+              | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          fi
           sudo apt-get update
           candidate=$(apt-cache policy "$pkg" | sed -n 's/^ *Candidate: *//p')
           if [ -z "$candidate" ] || [ "$candidate" = "(none)" ]; then
-            echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update'. This is NOT an apt-mirror stall: the runner's apt sources do not carry the client for PG_MAJOR=$PG_MAJOR. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+            echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update' with a PGDG source for '${codename}-pgdg' configured. This is NOT an apt-mirror stall: neither the runner's apt sources nor PGDG carry the client for PG_MAJOR=$PG_MAJOR on '$codename'. Change PG_MAJOR together with the service image tag."
             echo "unavailable=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1826,18 +1935,21 @@ jobs:
           echo "$verdict"
 
       # The one red the explainer below cannot name: `Install postgresql-client`
-      # found no install candidate for the PG_MAJOR client, exited 0 (so the
-      # explainer, which blames any `failure` of that step on the apt mirror,
-      # does not misname it), and then either "Create named schemas" had no
-      # psql or the reversibility step had no pg_dump -- whichever the image
-      # lacked first. The explainer sees no failed apt step and reports "a
-      # real one"; this step says which real one. It is separate because the
-      # explainer body must stay byte-identical across its eight carriers
-      # (backend/tests/test_ci_timeout_marker.py).
+      # reported the PG_MAJOR client unavailable -- /etc/os-release named no
+      # codename, the PGDG signing key was still missing after installing
+      # postgresql-client-common, or there was no install candidate even with
+      # PGDG configured -- and exited 0 (so the explainer, which blames any
+      # `failure` of that step on the apt mirror, does not misname it). Then
+      # either "Create named schemas" had no psql or the reversibility step
+      # had no pg_dump -- whichever the image lacked first. The explainer sees
+      # no failed apt step and reports "a real one"; this step says which real
+      # one, and that step's own `::error::` says which of the three causes.
+      # It is separate because the explainer body must stay byte-identical
+      # across its eight carriers (backend/tests/test_ci_timeout_marker.py).
       - name: Name an unavailable postgresql client
         if: failure() && steps.apt_psql.outputs.unavailable == '1' && (steps.reversibility.outcome == 'failure' || steps.schemas.outcome == 'failure')
         run: |
-          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR - NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR - NOT your diff::'Install postgresql-client' reported postgresql-client-$PG_MAJOR unavailable (its own ::error above names the cause: no OS codename, no PGDG signing key, or no install candidate even with PGDG consulted), and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner image's client provisioning, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Change PG_MAJOR together with the service image tag."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -2189,7 +2301,8 @@ jobs:
     name: Migration Reversal Gate
     needs: [detect, reverse]
     if: always()
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     steps:
       - name: Aggregate
         env:

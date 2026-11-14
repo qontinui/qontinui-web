@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
 import { usePolicyWritePolicy } from "../_hooks/usePolicyWritePolicy";
 import {
   POLICY_WRITE_CONFIRMED_LEVELS,
@@ -70,6 +71,7 @@ import {
  */
 export function PolicyWriteDialControl({
   canWrite,
+  resolvePin,
 }: {
   /**
    * Checked at the moment of every write; `false` sends nothing (the caller
@@ -78,6 +80,13 @@ export function PolicyWriteDialControl({
    * it) nor a click that lands before another tab's switch is seen.
    */
   canWrite?: () => boolean;
+  /**
+   * The project every read and write of this control is sent in, asked for
+   * as each goes out — the prompt-documents page passes the project its list
+   * is pinned to, so a request in flight when another tab switches project
+   * stays in the page's. Omitted, each is sent in the project stored then.
+   */
+  resolvePin?: ResolvePin;
 } = {}) {
   const {
     policy,
@@ -91,7 +100,7 @@ export function PolicyWriteDialControl({
     lastWrite,
     reload,
     setLevel: writeLevel,
-  } = usePolicyWritePolicy();
+  } = usePolicyWritePolicy({ resolvePin });
   const setLevel = (level: Parameters<typeof writeLevel>[0]) =>
     canWrite && !canWrite() ? Promise.resolve(false) : writeLevel(level);
 

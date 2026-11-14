@@ -67,8 +67,11 @@ write (see `normalize.ts` + `normalizeSnapshotForAnalyzer` in the spec):
 - **analyzer visual/interactivity fields** — `interactable` (forced
   `false` first for an **inert** element — `state.disabled`/`ariaDisabled`,
   `state.enabled === false`, computed `pointer-events: none`, or opacity 0 —
-  then from category/actions/tag/role; an _absent_ inert signal is UNKNOWN and
-  never suppresses, see `inertReason`), `fg_color`/`bg_color` (parsed from
+  then from category/customActions/tag/role — the built-in `actions` list is
+  the element kind's verb table, which media rows advertise too since SDK
+  0.46, so it is not a handler signal, see `deriveInteractable`; an _absent_
+  inert signal is UNKNOWN and never suppresses, see `inertReason`),
+  `fg_color`/`bg_color` (parsed from
   `state.computedStyles.color`/`backgroundColor`), `font_size_px`/
   `line_height_px` (parsed from computed px), `font_family` (if the SDK ever
   exposes it), `text`/`role` (visible text / a11y role). Absent fields are
