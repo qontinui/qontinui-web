@@ -48111,6 +48111,11 @@ export interface components {
              */
             panicMessage: string;
             /**
+             * Pid
+             * @description Pid of the crashed process, if the dump recorded one.
+             */
+            pid?: number | null;
+            /**
              * Reportedat
              * @description ISO 8601 timestamp when the crash was reported.
              */
