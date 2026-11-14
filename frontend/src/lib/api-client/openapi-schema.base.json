@@ -80788,7 +80788,7 @@
     },
     "/api/v1/devenv/machines/{machine_id}/ci-node": {
       "get": {
-        "description": "Read the machine's desired CI-node config + its delivery state.\n\n``dispatched`` is always ``None`` here: a read attempts no delivery, and a\nclient must not be able to mistake a GET for a successful push.",
+        "description": "Read the machine's desired CI-node config + its delivery state.\n\n``dispatched`` is always ``None`` here: a read attempts no delivery, and a\nclient must not be able to mistake a GET for a successful push.\n\nAdmits an operator session or a coord device JWT carrying ``user_id``; a\ndevice acts as its owning user, so it sees exactly that user's machines.",
         "operationId": "api_v1_devenv_machines_machine_id_ci_node_get",
         "parameters": [
           {
@@ -80827,6 +80827,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Ci Node Config",
@@ -80835,7 +80838,7 @@
         ]
       },
       "put": {
-        "description": "Save the desired CI-node config and dispatch it to the paired runner.\n\nThe save ALWAYS happens; the dispatch is best-effort, exactly like\n``dispatch_enroll``. That ordering is deliberate: an owner who curates an\nallowlist while their machine is asleep must not lose the work, and a\nsilent \"saved but never sent\" is precisely the state the response's\n``dispatched`` / ``dispatched_at`` / ``reachability`` triple exists to make\nvisible.",
+        "description": "Save the desired CI-node config and dispatch it to the paired runner.\n\nTwo credentials reach it (plan\n``2026-09-27-ci-node-shadow-dispatch-never-passes-checkout-race-lost-leases-unfiltered-selection``\nPhase 0b): an operator's session, and a coord device JWT carrying\n``user_id`` \u2014 an agent that must enable, probe and DISABLE ci_node itself.\nEither way the caller acts as one user (a device as its owning user), the\nmachine is looked up under that user, and the caller's bearer is forwarded\nto the coord door matching its credential (:func:`_ci_node_dispatch_path`).\nThe tenant is never sent: coord derives it from the forwarded token. The\ndurable record is ``devenv.machines.ci_node_config`` on both arms, so the\npanel never shows a config an agent changed behind it.\n\n**The two arms order save and dispatch differently, on purpose.**\n\n* OPERATOR \u2014 save first, dispatch best-effort, exactly like\n  ``dispatch_enroll``: an owner who curates an allowlist while their\n  machine is asleep must not lose the work, and a silent \"saved but never\n  sent\" is precisely the state the response's ``dispatched`` /\n  ``dispatched_at`` / ``reachability`` triple exists to make visible.\n* DEVICE \u2014 dispatch first, save only once coord ACCEPTED. This backend\n  admits any coord-signed JWT carrying ``user_id``, while coord's agent\n  door is narrower (it refuses service, acting-user and bootstrap-class\n  presenters, and tokens with no tenant) and is where the operator\n  notification for an agent write is recorded. Saving first would let a\n  credential coord refuses rewrite the operator's desired config with no\n  notification at all. So a refused, unreachable or unpaired device-arm\n  write changes nothing here, and says so.",
         "operationId": "api_v1_devenv_machines_machine_id_ci_node_put",
         "parameters": [
           {
@@ -80884,6 +80887,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Set Ci Node Config",
