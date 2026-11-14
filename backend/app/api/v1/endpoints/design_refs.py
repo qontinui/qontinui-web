@@ -129,7 +129,6 @@ from app.schemas.design_refs import (
     CompareHit,
     CompareRequest,
     CompareResponse,
-    ComparisonCreate,
     ComparisonOut,
     ComponentCreate,
     ComponentOut,
@@ -141,6 +140,11 @@ from app.schemas.design_refs import (
     DescriptionCreate,
     DescriptionOut,
     DescriptionUpdate,
+    DesignRefComparisonCreate,
+    DesignRefPageCreate,
+    DesignRefPageUpdate,
+    DesignRefRatingCreate,
+    DesignRefSearchRequest,
     DimensionOut,
     DimensionWrite,
     DoNotCaptureOut,
@@ -153,9 +157,7 @@ from app.schemas.design_refs import (
     FlowUpdate,
     JudgeBenchRunCreate,
     JudgeBenchRunOut,
-    PageCreate,
     PageOut,
-    PageUpdate,
     PersonalityConfirm,
     PersonalityCreate,
     PersonalityOut,
@@ -163,7 +165,6 @@ from app.schemas.design_refs import (
     PrincipleEvidenceOut,
     PrincipleOut,
     PrincipleRetire,
-    RatingCreate,
     RatingDistribution,
     RatingList,
     RatingOut,
@@ -171,7 +172,6 @@ from app.schemas.design_refs import (
     ReplayBundleOut,
     ReviewWrite,
     SearchHit,
-    SearchRequest,
     SearchResponse,
     SimilarByStyleRequest,
     SimilarByStyleResponse,
@@ -902,7 +902,9 @@ async def confirm_context(
 
 
 @router.post("/pages", response_model=PageOut, status_code=status.HTTP_201_CREATED)
-async def create_page(body: PageCreate, principal: Principal, db: Db) -> PageOut:
+async def create_page(
+    body: DesignRefPageCreate, principal: Principal, db: Db
+) -> PageOut:
     site = await _site_or_404(db, principal, body.site_id)
     if await svc.blocked_by_do_not_capture(db, principal.tenant_id, body.url):
         raise _refusal(
@@ -948,7 +950,7 @@ async def get_page(page_id: UUID, principal: Principal, db: Db) -> PageOut:
 
 @router.patch("/pages/{page_id}", response_model=PageOut)
 async def update_page(
-    page_id: UUID, body: PageUpdate, principal: Principal, db: Db
+    page_id: UUID, body: DesignRefPageUpdate, principal: Principal, db: Db
 ) -> PageOut:
     page, _site = await _page_and_site(db, principal, page_id)
     _apply_edits(db, principal, page, "page", body.model_dump(exclude_unset=True))
@@ -1797,7 +1799,7 @@ async def update_capture_job(
 
 @router.post("/search", response_model=SearchResponse, summary="search_examples")
 async def search_examples(
-    body: SearchRequest, principal: Principal, db: Db
+    body: DesignRefSearchRequest, principal: Principal, db: Db
 ) -> SearchResponse:
     include_holdout = gate_include_holdout(principal, body.include_holdout)
     vector_arm, hits = await svc.search(
@@ -2127,7 +2129,9 @@ async def _require_target(
 
 
 @router.post("/ratings", response_model=RatingOut, status_code=status.HTTP_201_CREATED)
-async def create_rating(body: RatingCreate, principal: Principal, db: Db) -> RatingOut:
+async def create_rating(
+    body: DesignRefRatingCreate, principal: Principal, db: Db
+) -> RatingOut:
     """Append one rating. A re-rating is a new row; nothing is overwritten."""
     rater_kind, rater_id = derive_rater(principal, body.model_id, body.prompt_version)
     if rater_kind == "ai" and not (body.positive_evidence or body.negative_evidence):
@@ -2214,7 +2218,7 @@ async def list_ratings(
     "/comparisons", response_model=ComparisonOut, status_code=status.HTTP_201_CREATED
 )
 async def create_comparison(
-    body: ComparisonCreate, principal: Principal, db: Db
+    body: DesignRefComparisonCreate, principal: Principal, db: Db
 ) -> ComparisonOut:
     rater_kind, rater_id = derive_rater(principal, body.model_id, body.prompt_version)
     dim = await _dimension(db, body.dimension_key)
