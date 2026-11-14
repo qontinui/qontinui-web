@@ -312,6 +312,11 @@ class Device(Base):
 
         Mirrors the SQL predicate
         ``capability_user_paired = false AND ci_runner_labels IS NOT NULL``.
+
+        A display answer, NOT coord's CI-registrar marker
+        (``capabilities @> '["ci_runner"]'``), which is what decides who may
+        WRITE a row — see ``device_crud.CI_RUNNER_CAPABILITY``. A squatted,
+        claimed registrar row reads False here and carries the marker.
         """
         return not self.capability_user_paired and self.ci_runner_labels is not None
 

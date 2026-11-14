@@ -73,27 +73,41 @@ import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialContr
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import {
   PromptDocumentList,
+  type WriteGuard,
   type WriteGuardRef,
 } from "./_components/PromptDocumentList";
 import { usePublishAll } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
+  // The fieldset covers what is on the page; a settings confirmation renders
+  // outside it, so every settings write also asks the list's call-time guard —
+  // the stored project against the page's — at the moment it is sent.
+  const writeGuardRef = useRef<WriteGuard | null>(null) as WriteGuardRef;
+  const canWrite = useCallback(
+    () => writeGuardRef.current?.writeAllowed() ?? true,
+    []
+  );
+  // The project the list's rows are pinned to, asked for as each request
+  // below is SENT: every settings read and write and the status read go to
+  // the project the page shows, so one in flight when another tab switches
+  // project — re-issued after a 429, replayed after a token refresh — cannot
+  // land in, or answer from, that tab's project. It names a project or
+  // nothing: while the page's project is `null` (none selected) or never
+  // known, no pin can hold a request to it, and each request goes as before.
+  // One identity for the page's lifetime, so no hook's mount read re-fires on
+  // it (plan `2026-11-09-prompt-documents-cross-tab-write-guard` D10).
+  const resolvePin = useCallback(() => writeGuardRef.current?.pin, []);
   // ONE auto-publish status read for the whole page (plan
   // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the
   // list's badges and the dial's observed worker are two readings of the same
   // response, so they must not come from two fetches that can disagree. A
   // write to the D5 switch re-takes it, because the badges key on the switch.
-  const publishAllState = usePublishAll();
+  const publishAllState = usePublishAll({ resolvePin });
   // Whether another tab's project switch is in effect, as the list detected
   // it. The settings below write through the same per-request project as the
   // list's rows, so they are disabled with them; the list carries the notice.
   const [crossTabChange, setCrossTabChange] = useState(false);
-  // The fieldset covers what is on the page; a settings confirmation renders
-  // outside it, so every settings write also asks the list's call-time guard —
-  // the stored project against the page's — at the moment it is sent.
-  const writeGuardRef = useRef<(() => boolean) | null>(null) as WriteGuardRef;
-  const canWrite = useCallback(() => writeGuardRef.current?.() ?? true, []);
   return (
     <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
@@ -149,11 +163,14 @@ export default function PromptDocumentsPage() {
         is the case the per-document control structurally cannot reach.
       */}
         <div className="border-t border-border pt-8">
-          <KindAuthorshipTierControl canWrite={canWrite} />
+          <KindAuthorshipTierControl
+            canWrite={canWrite}
+            resolvePin={resolvePin}
+          />
         </div>
 
         <div className="border-t border-border pt-8">
-          <PolicyWriteDialControl canWrite={canWrite} />
+          <PolicyWriteDialControl canWrite={canWrite} resolvePin={resolvePin} />
         </div>
 
         {/*
@@ -165,7 +182,10 @@ export default function PromptDocumentsPage() {
         without leaving the page.
       */}
         <div className="border-t border-border pt-8">
-          <PolicyUpstreamDialControl canWrite={canWrite} />
+          <PolicyUpstreamDialControl
+            canWrite={canWrite}
+            resolvePin={resolvePin}
+          />
         </div>
 
         {/*
@@ -181,6 +201,7 @@ export default function PromptDocumentsPage() {
             onLevelChanged={() => void publishAllState.reload()}
             observed={observedFromPublishAll(publishAllState)}
             canWrite={canWrite}
+            resolvePin={resolvePin}
           />
         </div>
 
@@ -191,7 +212,10 @@ export default function PromptDocumentsPage() {
         the text it enforces is exactly how the two drift apart.
       */}
         <div className="border-t border-border pt-8">
-          <SessionComplianceSection canWrite={canWrite} />
+          <SessionComplianceSection
+            canWrite={canWrite}
+            resolvePin={resolvePin}
+          />
         </div>
       </fieldset>
     </div>

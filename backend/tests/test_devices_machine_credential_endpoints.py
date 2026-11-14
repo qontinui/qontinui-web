@@ -330,11 +330,110 @@ class TestExchangeEndpoint:
             patch.object(
                 coord_service_account,
                 "mint_device_token",
-                AsyncMock(return_value=(400, {"error": "bad device"})),
+                AsyncMock(return_value=(400, {"error": "device_not_paired"})),
             ),
         ):
             resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
         assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["code"] == "coord_mint_rejected"
+        # A `{"error": <code>}` refusal still names itself, with web's own
+        # sentence because coord sent none.
+        assert detail["coord_code"] == "device_not_paired"
+        assert "coord_reason" not in detail
+        assert detail["message"] == "Coord rejected the device-token mint."
+
+    def test_coord_revoked_refusal_keeps_its_code_and_message(self) -> None:
+        client = TestClient(self._app(self._cred()))
+        with (
+            _patch_enabled(),
+            patch.object(dmk_crud, "bump_last_used", AsyncMock()),
+            patch.object(
+                coord_service_account,
+                "mint_device_token",
+                AsyncMock(
+                    return_value=(
+                        403,
+                        {
+                            "error": "device_credential_revoked",
+                            "code": "device_credential_revoked",
+                            "message": "revoked by an operator",
+                        },
+                    )
+                ),
+            ),
+        ):
+            resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert detail["coord_code"] == "device_credential_revoked"
+        assert detail["message"] == "revoked by an operator"
+
+    def test_coord_owner_not_member_reason_reaches_the_client(self) -> None:
+        coord_message = (
+            "this device's owner is no longer a member of the tenant this token "
+            "is for, so it is not re-minted; a tenant admin must restore the "
+            "owner's membership"
+        )
+        client = TestClient(self._app(self._cred()))
+        with (
+            _patch_enabled(),
+            patch.object(dmk_crud, "bump_last_used", AsyncMock()),
+            patch.object(
+                coord_service_account,
+                "mint_device_token",
+                AsyncMock(
+                    return_value=(
+                        403,
+                        {
+                            "error": "owner_not_member",
+                            "code": "owner_not_member",
+                            "reason": "no_membership",
+                            "message": coord_message,
+                        },
+                    )
+                ),
+            ),
+        ):
+            resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert detail["code"] == "coord_mint_rejected"
+        assert detail["coord_code"] == "owner_not_member"
+        assert detail["coord_reason"] == "no_membership"
+        assert detail["message"] == coord_message
+
+    @pytest.mark.parametrize(
+        "coord_body",
+        [
+            # What `_post` makes of a non-JSON answer from anything before coord.
+            {"error": "<html>403 Forbidden</html>"},
+            # What coord's `authorize_service_mint` answers: prose, not a code.
+            {"error": "service principal not authorized for device mint"},
+            # What `_post` makes of an empty body.
+            None,
+        ],
+    )
+    def test_coord_4xx_with_no_code_keeps_web_s_own_refusal(
+        self, coord_body: dict[str, str] | None
+    ) -> None:
+        client = TestClient(self._app(self._cred()))
+        with (
+            _patch_enabled(),
+            patch.object(dmk_crud, "bump_last_used", AsyncMock()),
+            patch.object(
+                coord_service_account,
+                "mint_device_token",
+                AsyncMock(return_value=(403, coord_body)),
+            ),
+        ):
+            resp = client.post(f"{API_PREFIX}/{_DEVICE_ID}/machine-credential/exchange")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == {
+            "error": "coord_mint_rejected",
+            "code": "coord_mint_rejected",
+            "message": "Coord rejected the device-token mint.",
+        }
 
 
 # ---------------------------------------------------------------------------

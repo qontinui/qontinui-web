@@ -323,6 +323,84 @@ class TestResourceSamplesProxy:
         assert "cpu_temp_c" in rows[0] and rows[0]["cpu_temp_c"] is None
         assert rows[1]["cpu_temp_c"] == 71.5
 
+    def test_forwards_slice_telemetry_untouched(self, auth_client: TestClient):
+        """``cgroup_slices`` / ``psi`` / ``slice_source`` cross the proxy unchanged.
+
+        Plan ``2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role``
+        Phase 0b. The strip tells four states apart from these three columns
+        alone — NULL (older publisher), ``not_supported`` (no cgroup v2), an
+        empty map beside ``linux_cgroup_v2`` (read, no watched slice present)
+        and a measured map — so the proxy must not drop the non-slice
+        ``cpu_attribution`` key, collapse ``{}`` to null, turn the ``"max"``
+        limit string into a number, or default an absent PSI figure to 0.
+        """
+        measured_row = {
+            **SAMPLE_ROW,
+            "device_id": str(uuid4()),
+            "slice_source": "linux_cgroup_v2",
+            "cgroup_slices": {
+                "ci-runners.slice": {
+                    "memory_current": 1_073_741_824,
+                    "memory_high": 8_589_934_592,
+                    "memory_max": "max",
+                    "events": {"high": 17, "max": 3, "oom_kill": 0},
+                },
+                "cpu_attribution": {"session_usec": 1_000, "ci_usec": 2_000},
+            },
+            "psi": {
+                "system": {"memory": {"some": {"avg10": 0.0, "avg60": 0.75}}},
+                "slices": {"ci-runners.slice": {"memory": {"full": {"avg10": 12.5}}}},
+            },
+        }
+        empty_row = {
+            **SAMPLE_ROW,
+            "device_id": str(uuid4()),
+            "slice_source": "linux_cgroup_v2",
+            "cgroup_slices": {},
+            "psi": None,
+        }
+        unsupported_row = {
+            **SAMPLE_ROW,
+            "device_id": str(uuid4()),
+            "slice_source": "not_supported",
+            "cgroup_slices": None,
+            "psi": None,
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200,
+                    {
+                        "latest": [
+                            SAMPLE_ROW,
+                            measured_row,
+                            empty_row,
+                            unsupported_row,
+                        ],
+                        "count": 4,
+                    },
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        assert resp.status_code == 200
+        older, measured, empty, unsupported = resp.json()["latest"]
+        # A coord predating the columns sends no key; none is invented here.
+        for key in ("cgroup_slices", "psi", "slice_source"):
+            assert key not in older
+        assert measured["slice_source"] == "linux_cgroup_v2"
+        assert measured["cgroup_slices"] == measured_row["cgroup_slices"]
+        assert measured["psi"] == measured_row["psi"]
+        assert empty["slice_source"] == "linux_cgroup_v2"
+        assert empty["cgroup_slices"] == {}
+        assert empty["psi"] is None
+        assert unsupported["slice_source"] == "not_supported"
+        assert unsupported["cgroup_slices"] is None
+        assert unsupported["psi"] is None
+
     def test_absent_floor_bands_are_not_defaulted_in(self, auth_client: TestClient):
         """A coord without the floor fields must arrive WITHOUT them.
 
