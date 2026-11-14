@@ -53,7 +53,6 @@ from app.models.collaboration import (
     ProjectLock,
     ResourceType,
 )
-from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.design_policy import DesignPolicy
 from app.models.detected_issue import DetectedIssue
@@ -114,7 +113,6 @@ from app.models.overview import (
     TaskEffort,
 )
 from app.models.pair_code import PairCode
-from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
 from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
@@ -158,7 +156,6 @@ from app.models.snapshot import (
     SnapshotPattern,
     SnapshotRun,
 )
-from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.state_discovery_result import DiscoverySourceType, StateDiscoveryResult
 from app.models.state_machine_config import StateMachineConfig
 from app.models.state_transition import StateTransition
@@ -187,14 +184,7 @@ from app.models.task_run import (  # New unified names; Backward compatibility a
 from app.models.task_run_verification_result import TaskRunVerificationResult
 from app.models.taste import TasteLabelClock, TastePair, TasteSettings
 from app.models.template_candidate import TemplateCandidate
-from app.models.test_deficiency import (
-    DeficiencySeverity,
-    DeficiencyStatus,
-    DeficiencyType,
-    TestDeficiency,
-)
 from app.models.test_result import TestResult, TestResultStatus
-from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.test_target import TestTarget
 from app.models.training_dataset import (
     AnnotationSource,
@@ -209,11 +199,6 @@ from app.models.training_dataset import (
     TrainingDatasetImage,
 )
 from app.models.training_job import TrainingJob, TrainingJobModelType, TrainingJobStatus
-from app.models.transition_execution import (
-    TransitionExecution,
-    TransitionExecutionStatus,
-)
-from app.models.transition_reliability import TransitionReliability
 from app.models.ui_bridge_state import (
     DomainKnowledge,
     UIBridgeExplorationSession,
@@ -229,21 +214,6 @@ from app.models.verification_test import (
     VerificationTest,
     VerificationTestCategory,
     VerificationTestType,
-)
-from app.models.video_capture import (
-    ActionFrame,
-    FrameIndex,
-    HistoricalResult,
-    InputEvent,
-    InputEventType,
-    StorageBackend,
-    VideoCaptureSession,
-)
-from app.models.visual_baseline import VisualBaseline
-from app.models.visual_comparison_result import (
-    ReviewDecision,
-    VisualComparisonResult,
-    VisualComparisonStatus,
 )
 from app.models.work_artifact import (
     WorkArtifact,
@@ -400,33 +370,6 @@ __all__ = [
     "CaptureDetectedElement",
     "ScreenshotStateMatch",
     "LearnedWorkflow",
-    # Video Capture & Historical Data
-    "VideoCaptureSession",
-    "InputEvent",
-    "InputEventType",
-    "FrameIndex",
-    "ActionFrame",
-    "HistoricalResult",
-    "StorageBackend",
-    # Software Testing
-    "SoftwareTestRun",
-    "TestRunStatus",
-    "TransitionExecution",
-    "TransitionExecutionStatus",
-    "TestDeficiency",
-    "DeficiencySeverity",
-    "DeficiencyType",
-    "DeficiencyStatus",
-    "TestScreenshot",
-    "TestScreenshotType",
-    "CoverageSnapshot",
-    "PathDiscovery",
-    "TransitionReliability",
-    # Visual Regression
-    "VisualBaseline",
-    "VisualComparisonResult",
-    "VisualComparisonStatus",
-    "ReviewDecision",
     # Unified Execution (NEW - replaces fragmented systems)
     "ExecutionRun",
     "ExecutionRunType",

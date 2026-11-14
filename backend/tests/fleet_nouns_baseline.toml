@@ -99,15 +99,6 @@
 ["app/api/v1/endpoints/served_routes.py".repo_layout]
 "qontinui-dev-notes" = 1
 
-["app/api/v1/endpoints/testing/deps.py".machine_path]
-"D:/qontinui-root" = 1
-
-["app/api/v1/endpoints/testing/deps.py".repo_layout]
-"qontinui-root" = 1
-
-["app/api/v1/endpoints/testing_ws.py".dev_ports]
-"localhost:8000" = 1
-
 ["app/core/config.py".dev_ports]
 "localhost:3001" = 1
 "localhost:8000" = 3
