@@ -29769,6 +29769,40 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /**
+         * CategoryTotal
+         * @description All-time spend in one category and currency, on the same terms as
+         *     :class:`CurrencyTotals` (recorded plus scheduled; a variable period still
+         *     awaiting its amount is counted, never added).
+         *
+         *     ``own_*`` is the category's own costs; ``rolled_*`` adds every
+         *     subcategory below it, to any depth. Each cost counts once in its own
+         *     category and once in each ancestor's ``rolled_*`` — so rolled figures are
+         *     NOT additive across a parent and its children. The grand total is
+         *     ``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist
+         *     for a category with anything in its own subtree; ``category_id`` is
+         *     ``null`` for costs with no category.
+         */
+        CategoryTotal: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Own Awaiting Amount Count */
+            own_awaiting_amount_count: number;
+            /** Own Recorded Micros */
+            own_recorded_micros: number;
+            /** Own Scheduled Micros */
+            own_scheduled_micros: number;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Rolled Awaiting Amount Count */
+            rolled_awaiting_amount_count: number;
+            /** Rolled Recorded Micros */
+            rolled_recorded_micros: number;
+            /** Rolled Scheduled Micros */
+            rolled_scheduled_micros: number;
+        };
         /** ChangeLogEntry */
         ChangeLogEntry: {
             /** Action */
@@ -31744,6 +31778,8 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id?: string | null;
             /**
              * Sort Order
              * @default 0
@@ -31765,6 +31801,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id: string | null;
             /** Sort Order */
             sort_order: number;
             /**
@@ -31777,12 +31815,19 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** CostCategoryUpdate */
+        /**
+         * CostCategoryUpdate
+         * @description Every field optional; ``null`` moves the category to the top level. A
+         *     category cannot be moved under itself or one of its own subcategories
+         *     (409 ``category_cycle``).
+         */
         CostCategoryUpdate: {
             /** Description */
             description?: string | null;
             /** Name */
             name?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
             /** Sort Order */
             sort_order?: number | null;
         };
@@ -31994,6 +32039,8 @@ export interface components {
             awaiting_delivery_count: number;
             /** Base Currency */
             base_currency: string;
+            /** Categories */
+            categories: components["schemas"]["CategoryTotal"][];
             /** Currencies */
             currencies: components["schemas"]["CurrencyTotals"][];
             /** Months */
@@ -48063,11 +48110,6 @@ export interface components {
              * @description Panic message captured from the runner process.
              */
             panicMessage: string;
-            /**
-             * Pid
-             * @description Pid of the crashed process, if the dump recorded one.
-             */
-            pid?: number | null;
             /**
              * Reportedat
              * @description ISO 8601 timestamp when the crash was reported.

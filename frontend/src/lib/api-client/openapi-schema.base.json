@@ -7390,6 +7390,76 @@
         "title": "CategoryRead",
         "type": "object"
       },
+      "CategoryTotal": {
+        "description": "All-time spend in one category and currency, on the same terms as\n:class:`CurrencyTotals` (recorded plus scheduled; a variable period still\nawaiting its amount is counted, never added).\n\n``own_*`` is the category's own costs; ``rolled_*`` adds every\nsubcategory below it, to any depth. Each cost counts once in its own\ncategory and once in each ancestor's ``rolled_*`` \u2014 so rolled figures are\nNOT additive across a parent and its children. The grand total is\n``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist\nfor a category with anything in its own subtree; ``category_id`` is\n``null`` for costs with no category.",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "own_awaiting_amount_count": {
+            "title": "Own Awaiting Amount Count",
+            "type": "integer"
+          },
+          "own_recorded_micros": {
+            "title": "Own Recorded Micros",
+            "type": "integer"
+          },
+          "own_scheduled_micros": {
+            "title": "Own Scheduled Micros",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "rolled_awaiting_amount_count": {
+            "title": "Rolled Awaiting Amount Count",
+            "type": "integer"
+          },
+          "rolled_recorded_micros": {
+            "title": "Rolled Recorded Micros",
+            "type": "integer"
+          },
+          "rolled_scheduled_micros": {
+            "title": "Rolled Scheduled Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category_id",
+          "parent_id",
+          "currency",
+          "own_recorded_micros",
+          "own_scheduled_micros",
+          "own_awaiting_amount_count",
+          "rolled_recorded_micros",
+          "rolled_scheduled_micros",
+          "rolled_awaiting_amount_count"
+        ],
+        "title": "CategoryTotal",
+        "type": "object"
+      },
       "ChangeLogEntry": {
         "properties": {
           "action": {
@@ -11952,6 +12022,18 @@
             "title": "Name",
             "type": "string"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "sort_order": {
             "default": 0,
             "maximum": 1000000.0,
@@ -11996,6 +12078,18 @@
             "title": "Name",
             "type": "string"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -12029,6 +12123,7 @@
           "updated_by",
           "id",
           "name",
+          "parent_id",
           "description",
           "sort_order"
         ],
@@ -12036,6 +12131,7 @@
         "type": "object"
       },
       "CostCategoryUpdate": {
+        "description": "Every field optional; ``null`` moves the category to the top level. A\ncategory cannot be moved under itself or one of its own subcategories\n(409 ``category_cycle``).",
         "properties": {
           "description": {
             "anyOf": [
@@ -12061,6 +12157,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "sort_order": {
             "anyOf": [
@@ -12763,6 +12871,13 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryTotal"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/CurrencyTotals"
@@ -12794,6 +12909,7 @@
           "today",
           "base_currency",
           "currencies",
+          "categories",
           "months",
           "periods",
           "awaiting_delivery_count",
@@ -46477,19 +46593,6 @@
             "description": "Panic message captured from the runner process.",
             "title": "Panicmessage",
             "type": "string"
-          },
-          "pid": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Pid of the crashed process, if the dump recorded one.",
-            "title": "Pid"
           },
           "reportedAt": {
             "description": "ISO 8601 timestamp when the crash was reported.",
