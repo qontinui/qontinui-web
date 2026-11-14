@@ -182,7 +182,7 @@ class SiteOut(_Out):
     updated_at: datetime
 
 
-class PageCreate(_Strict):
+class DesignRefPageCreate(_Strict):
     site_id: UUID
     url: str = Field(min_length=1, max_length=4000)
     title: str | None = None
@@ -195,7 +195,7 @@ class PageCreate(_Strict):
     tags: list[str] = Field(default_factory=list)
 
 
-class PageUpdate(_Strict):
+class DesignRefPageUpdate(_Strict):
     title: str | None = None
     page_type: str | None = None
     page_job: str | None = None
@@ -539,7 +539,7 @@ class CaptureJobOut(_Out):
 # ═════════════════════════════ search ═════════════════════════════
 
 
-class SearchRequest(_Strict):
+class DesignRefSearchRequest(_Strict):
     level: Level
     text: str | None = Field(default=None, max_length=1000)
     #: Exact facet match (JSON containment) on the target's descriptions.
@@ -560,7 +560,7 @@ class SearchRequest(_Strict):
     limit: int = Field(default=20, ge=1, le=200)
 
     @model_validator(mode="after")
-    def _shape(self) -> SearchRequest:
+    def _shape(self) -> DesignRefSearchRequest:
         if (self.query_embedding is None) != (self.query_embedding_model is None):
             raise ValueError(
                 "query_embedding and query_embedding_model are sent together"
@@ -678,7 +678,7 @@ class EvidenceItem(_Strict):
         return self
 
 
-class RatingCreate(_Strict):
+class DesignRefRatingCreate(_Strict):
     target_kind: JudgementTargetKind
     target_id: UUID
     dimension_key: str = Field(min_length=1, max_length=64)
@@ -732,7 +732,7 @@ class RatingList(BaseModel):
     distributions: list[RatingDistribution]
 
 
-class ComparisonCreate(_Strict):
+class DesignRefComparisonCreate(_Strict):
     target_kind: JudgementTargetKind
     a_id: UUID
     b_id: UUID
@@ -748,7 +748,7 @@ class ComparisonCreate(_Strict):
     prompt_version: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
-    def _distinct(self) -> ComparisonCreate:
+    def _distinct(self) -> DesignRefComparisonCreate:
         if self.a_id == self.b_id:
             raise ValueError("a comparison compares two different targets")
         return self
