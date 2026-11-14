@@ -137,6 +137,7 @@ function laptopIneligible() {
             status: "pin_ineligible",
             deviceId: input.preferred,
             reason: "offline",
+            rawReason: "offline",
             detail: "no heartbeat for 12 minutes",
             missingCapabilities: [],
           }
@@ -146,6 +147,7 @@ function laptopIneligible() {
             via: "pool",
             pinReleased: {
               reason: "offline",
+              rawReason: "offline",
               detail: "no heartbeat for 12 minutes",
             },
           };
