@@ -16,9 +16,12 @@ What the column holds
 
 ``qontinui-runner`` publishes ``ci_reserved_gib`` on ``POST /coord/fleet/budget``
 (``BudgetPublishRequest.ci_reserved_gib`` in ``qontinui-coord``
-``crates/coord/src/fleet.rs``): the GiB of host memory its CI slices may take — the sum
-of the ``ci.slice/*.slice`` ``memory.high`` (else ``memory.max``), rounded **up** to a
-whole GiB, and ``0`` only when the host has no CI slice. coord already consumes it as a
+``crates/coord/src/fleet.rs``): the GiB of host memory its CI may take, rounded **up**
+to a whole GiB. On a cgroup-v2 host that is the ``ci.slice`` bound — the smaller of the
+parent slice's bound and the sum of the ``ci.slice/*.slice`` ``memory.high`` (else
+``memory.max``) — and ``0`` means the host has no CI slice. On a host without cgroup v2
+(Windows, macOS, cgroup v1) the runner publishes an estimate instead, CI job slots ×
+16 GiB, so ``0`` there means no CI slots. coord already consumes it as a
 term of ``derive_agent_capacity(memory_gb, cpu_cores, ci_reserved_gib)``, but until now
 it was explicitly "not stored in a column of its own", so once the publish was handled
 the value was gone. A ``worktree_slot`` refusal therefore could not say WHICH term of
@@ -41,9 +44,9 @@ Nullable, no default, no backfill
 
 ``NULL`` is the correct value for every existing row and means "no publisher has
 asserted a CI reservation for this device" — which is exactly true until the coord
-writer ships, and stays true for any publisher that OMITS the field (an unbounded
-slice, no cgroup v2, an older runner). A default of ``0`` would be actively wrong: ``0``
-is a real published value meaning "this host has no CI slice", and it must remain
+writer ships, and stays true for any publisher that OMITS the field (an unbounded CI
+slice, or a runner older than the publisher). A default of ``0`` would be actively
+wrong: ``0`` is a real published value meaning "no CI here", and it must remain
 distinguishable from "unknown". Readers must treat ``NULL`` as UNKNOWN, never as zero.
 
 Deploy ordering
@@ -60,7 +63,11 @@ not — ``Unknown`` must never fail open).
 No table rewrite, no index
 ==========================
 
-Adding a nullable column with no default is a catalogue-only ``ALTER`` in PostgreSQL.
+Adding a nullable column with no default is a catalogue-only ``ALTER`` in PostgreSQL;
+it still takes a brief ACCESS EXCLUSIVE lock on ``coord.devices``, which coord writes on
+every heartbeat, so both directions open with ``SET LOCAL lock_timeout = '3s'`` (the
+house style ``env.py`` documents): a lock request queued behind a long reader fails
+fast instead of stalling every device read and write behind it.
 The column is only ever read per device alongside the rest of its budget row, on a
 small table, so an index would be dead weight.
 
@@ -84,6 +91,7 @@ def upgrade() -> None:
     """Add the nullable published-CI-reservation column."""
     # `IF NOT EXISTS` matches on NAME only; acceptable because no revision in this
     # chain spells `ci_reserved_gib` (it was never a column before this one).
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
         ALTER TABLE coord.devices
@@ -95,17 +103,19 @@ def upgrade() -> None:
         """
         COMMENT ON COLUMN coord.devices.ci_reserved_gib IS
             'GiB of host memory this device''s CI slices may take, as last '
-            'published by qontinui-runner on the fleet budget publish '
-            '(sum of ci.slice/*.slice memory.high, else memory.max, rounded '
-            'up; 0 = the host has no CI slice). Written and read only by '
-            'coord: it is the CI term of the worktree/agent cap formula, '
-            'persisted so a worktree_slot refusal can name which term bound. '
-            'NULL = no publisher has asserted it (unbounded slice, no cgroup '
-            'v2, older runner) and reads as UNKNOWN, never as 0.'
+            'published by qontinui-runner on the fleet budget publish, '
+            'rounded up. cgroup-v2 hosts: the ci.slice memory bound '
+            '(memory.high, else memory.max); 0 = no CI slice. Other hosts: '
+            'an estimate of CI job slots x 16 GiB; 0 = no CI slots. Written '
+            'and read only by coord: it is the CI term of the worktree/agent '
+            'cap formula, persisted so a worktree_slot refusal can name which '
+            'term bound. NULL = not published (an unbounded CI slice, or an '
+            'older runner) and reads as UNKNOWN, never as 0.'
         """
     )
 
 
 def downgrade() -> None:
     """Exact inverse — drop the column (its comment goes with it)."""
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("ALTER TABLE coord.devices DROP COLUMN IF EXISTS ci_reserved_gib")
