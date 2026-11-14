@@ -87,10 +87,10 @@ columns carry no CHECK, as in ``lasac_01``.
 
 The CHECK is a separate ``ADD CONSTRAINT ... NOT VALID``, never inline on the
 ``ADD COLUMN``. An inline CHECK makes Postgres validate every existing row of
-``coord.device_resource_samples`` while the ALTER holds ACCESS EXCLUSIVE
-(a measured scan of a 2M-row scratch table took ~0.2 s), and ``lock_timeout``
-bounds only the WAIT for that lock, not how long it is held — so every sample INSERT and every coord
-read of the table would stall behind the scan. ``NOT VALID`` is catalogue-only:
+``coord.device_resource_samples`` while the ALTER holds ACCESS EXCLUSIVE,
+and ``lock_timeout`` bounds only the WAIT for that lock, not how long it is
+held — so every sample INSERT and every coord read of the table would stall
+behind a scan whose length grows with the table. ``NOT VALID`` is catalogue-only:
 it skips the scan of existing rows and still checks every row inserted or
 updated afterwards, which is all the backstop needs. No ``VALIDATE
 CONSTRAINT`` follows, because there is nothing to validate: the column is new,
@@ -128,7 +128,11 @@ CONCURRENTLY IF NOT EXISTS`` inside ``autocommit_block()``, so the build takes
 no lock that blocks coord's log writes. A failed CONCURRENTLY build leaves an
 INVALID index of this name that ``IF NOT EXISTS`` would silently keep, so the
 upgrade first checks ``pg_index.indisvalid`` and drops an invalid one
-concurrently; a re-run over a VALID index leaves it untouched.
+concurrently; a re-run over a VALID index leaves it untouched. The
+CONCURRENTLY build and drop run in autocommit with no ``lock_timeout`` or
+``statement_timeout`` (the same posture as ``agent_questions_alert_id_idx_01``),
+so a long-running transaction on ``coord.agent_logs`` delays the deploy until
+it ends rather than failing it.
 
 Ordering and locks
 ==================
@@ -153,9 +157,16 @@ the guard takes as present whatever its expression; a wrong expression under
 the right name is likewise repaired only by a new revision that drops and
 re-adds it.
 
-Every ``op.execute`` is a static string literal: coord's merge-train migration
-classifier (``pr_merge/migration_classifier.rs``) holds a revision whose SQL it
-cannot read.
+Every ``op.execute`` is a static string literal, so coord's merge-train
+migration classifier (``pr_merge/migration_classifier.rs``) can read all of it.
+That does NOT make this revision auto-landable: the classifier fails closed on
+any dollar-quoted string (the ``DO $$`` guard around the CHECK) and on any DROP
+statement in ``upgrade()`` (the invalid-index repair), so the merge train HOLDS
+this revision for review by design. Both are kept deliberately: the guard is
+what makes a re-run of ``upgrade()`` safe (Postgres has no ``ADD CONSTRAINT IF
+NOT EXISTS``), and the repair is what stops a failed CONCURRENTLY build from
+being kept INVALID forever. Re-runnability and self-repair outrank an
+unattended land for a migration on two hot coord tables.
 """
 
 from collections.abc import Sequence
@@ -353,7 +364,11 @@ def downgrade() -> None:
     ``lacap_01`` WITHOUT the retire index but WITH the five columns. That is
     harmless to coord (the hold read only loses its index) and recoverable:
     re-running the downgrade finishes it, because every step is
-    ``IF EXISTS``. Re-running the upgrade instead rebuilds the index.
+    ``IF EXISTS``. Re-running the upgrade does NOT rebuild the index, because
+    the database is still stamped ``lacap_01`` and the upgrade is a no-op. To
+    restore the index instead, run ``alembic stamp
+    coord_agent_questions_ref_observed_01`` and then ``alembic upgrade
+    lacap_01``.
     """
     with op.get_context().autocommit_block():
         op.execute(
