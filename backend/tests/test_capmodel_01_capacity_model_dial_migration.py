@@ -27,6 +27,7 @@ from tests._alembic_harness import (
     column_info,
     ephemeral_database,
     load_revision_module,
+    recorded_sql,
     run_alembic,
 )
 
@@ -61,17 +62,7 @@ def _module() -> ModuleType:
 
 
 def _recorded(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    module = _module()
-    out: list[str] = []
-
-    class _Op:
-        @staticmethod
-        def execute(sql: object) -> None:
-            out.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _Op)
-    getattr(module, step)()
-    return out
+    return recorded_sql(_module(), step, monkeypatch)
 
 
 def test_pinned_parent_matches_down_revision() -> None:
