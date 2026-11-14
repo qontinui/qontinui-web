@@ -126,7 +126,9 @@ def test_upgrade_path_is_a_shape_coords_migration_classifier_admits() -> None:
     lock_timeout``, copied from a sibling that predates env.py's reset hook.
     The statement list below has the same shape as the sibling
     ``coord_agent_questions_recommendation`` revision, which that classifier
-    answers ``AutoSafe`` for. This pins call shapes; it is not a port of the
+    answers ``AutoSafe`` for. Checked against qontinui-coord ``6064209a0``,
+    whose ``classify_add_column_action`` does not inspect the column type, so
+    ``JSONB`` is admitted as ``TEXT`` is. This pins call shapes; it is not a port of the
     classifier, which also refuses things that are not calls.
     """
     upgrade_path, downgrade_body = _upgrade_path_and_downgrade_calls(_revision_path())

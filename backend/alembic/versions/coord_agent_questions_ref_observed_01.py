@@ -16,8 +16,9 @@ the ask" from "already landed when asked", it dates the land from
 ``coord.repo_branches`` / ``coord.pr_events`` evidence. That evidence is pruned
 by its own age. So for an ask older than the observation window (default 120
 days), coord cannot trust a coord-dated land and answers
-``LandTime::Unverifiable``. A PR that coord ff-lands reads closed on GitHub, so
-it never carries GitHub's ``merged_at``, and such a question is kept forever.
+``LandTime::Unverifiable``. A PR that coord ff-lands by replaying it onto new
+shas reads closed on GitHub and carries no GitHub ``merged_at``, so such a
+question is kept forever.
 
 The fix is to persist the fact the evidence would otherwise have to
 re-derive: what the cited PR's state was when coord first looked at it after
@@ -68,6 +69,10 @@ This lands BEFORE coord's PR [served policy ``production-and-cost``
 ``alembic-sole-authorship``]. That PR must read the column only when
 ``schema_readiness`` reports it present, and otherwise degrade to the current
 rule. Both directions are idempotent.
+
+The downgrade loses data. Once coord records readings, ``ref_observed`` holds
+first readings taken precisely because the evidence behind them ages out, so a
+dropped value cannot be recomputed.
 """
 
 from collections.abc import Sequence
