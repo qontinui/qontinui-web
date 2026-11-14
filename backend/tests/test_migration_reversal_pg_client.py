@@ -601,12 +601,50 @@ def _pgdg_deb822(suite: str) -> str:
             "etc/apt/sources.list.d/postgresql.sources",
             _pgdg_deb822("resolute-pgdg") + "Enabled: yes\n",
         ),
+        # Review A8: `Enabled:` is per stanza. A disabled stanza for another
+        # suite does not disable the live one beside it.
+        (
+            "etc/apt/sources.list.d/postgresql.sources",
+            _pgdg_deb822("noble-pgdg")
+            + "Enabled: no\n\n"
+            + _pgdg_deb822("resolute-pgdg"),
+        ),
+        # deb-src only: apt keeps one Signed-By per URI and suite across deb
+        # and deb-src, so a second source would break `apt-get update`.
+        (
+            "etc/apt/sources.list.d/postgresql.list",
+            "deb-src" + _pgdg_one_line("resolute-pgdg")[len("deb") :],
+        ),
+        (
+            "etc/apt/sources.list.d/postgresql.sources",
+            _pgdg_deb822("resolute-pgdg").replace("Types: deb", "Types: deb-src"),
+        ),
+        # apt's deb822 needs no space after the colon, and folds continuation
+        # lines into the field above.
+        (
+            "etc/apt/sources.list.d/postgresql.sources",
+            _pgdg_deb822("resolute-pgdg").replace(
+                "Suites: resolute-pgdg", "Suites:noble-pgdg\n resolute-pgdg"
+            ),
+        ),
+        # A comment line inside a stanza does not end it.
+        (
+            "etc/apt/sources.list.d/postgresql.sources",
+            _pgdg_deb822("resolute-pgdg").replace(
+                "Suites:", "# the image codename\nSuites:"
+            ),
+        ),
     ],
     ids=[
         "one-line-in-sources-list",
         "one-line-in-sources-list-d",
         "deb822",
         "deb822-enabled-yes",
+        "deb822-live-stanza-beside-a-disabled-one",
+        "one-line-deb-src-only",
+        "deb822-deb-src-only",
+        "deb822-suite-on-a-continuation-line",
+        "deb822-comment-inside-the-stanza",
     ],
 )
 def test_apt_psql_uses_a_live_pgdg_entry_for_the_codename_suite_as_configured(
@@ -617,7 +655,8 @@ def test_apt_psql_uses_a_live_pgdg_entry_for_the_codename_suite_as_configured(
     A second entry for the same suite with another Signed-By breaks every
     `apt-get update`, so the step adds nothing and installs from what is there.
     In deb822 the suite sits on its own `Suites:` line, so the match is per
-    file, not per line. An explicit `Enabled: yes` is still live.
+    stanza, not per line -- and not per file: a disabled stanza beside a live
+    one disables only itself. An explicit `Enabled: yes` is still live.
     """
     run = _run_apt_psql(tmp_path, existing_source=(relative, content))
     assert run.returncode == 0, run.explain()
@@ -652,6 +691,20 @@ def test_apt_psql_uses_a_live_pgdg_entry_for_the_codename_suite_as_configured(
             "etc/apt/sources.list.d/postgresql.list.save",
             _pgdg_one_line("resolute-pgdg"),
         ),
+        # Review A8: a disabled `resolute-pgdg` stanza is not revived by a
+        # live stanza for another host in the same file.
+        (
+            "etc/apt/sources.list.d/mixed.sources",
+            # Disabled stanza FIRST, so a stanza flush that kept the URI or
+            # suite seen would carry them into the live Ubuntu stanza.
+            _pgdg_deb822("resolute-pgdg") + "Enabled: no\n\n" + UBUNTU_SOURCES,
+        ),
+        # Host and suite on two different one-line entries name no PGDG suite.
+        (
+            "etc/apt/sources.list.d/mixed.list",
+            "deb https://apt.postgresql.org/pub/repos/apt noble-pgdg main\n"
+            "deb http://ppa.example.invalid/x resolute-pgdg main\n",
+        ),
     ],
     ids=[
         "commented-out-in-sources-list",
@@ -659,6 +712,8 @@ def test_apt_psql_uses_a_live_pgdg_entry_for_the_codename_suite_as_configured(
         "other-suite",
         "deb822-other-suite",
         "not-a-source-file",
+        "deb822-disabled-stanza-beside-a-live-other-host",
+        "one-line-host-and-suite-on-different-entries",
     ],
 )
 def test_apt_psql_writes_its_own_source_when_no_live_entry_names_the_codename_suite(
@@ -721,14 +776,17 @@ def test_apt_psql_uses_a_live_entry_without_acquiring_the_pgdg_key(tmp_path):
 
 @requires_bash
 @pytest.mark.parametrize(
-    "enabled", ["Enabled: no", "enabled: False"], ids=["no", "false-any-case"]
+    "enabled",
+    ["Enabled: no", "enabled: False", "Enabled:no", "Enabled: off", "Enabled: 0"],
+    ids=["no", "false-any-case", "no-without-space", "off", "zero"],
 )
 def test_apt_psql_does_not_count_a_disabled_deb822_stanza_as_configured(
     tmp_path, enabled
 ):
     """T4, a deb822 `resolute-pgdg` stanza that says `Enabled: no|false`.
 
-    apt skips a disabled stanza (field name and boolean are case-insensitive),
+    apt skips a disabled stanza (field name and boolean are case-insensitive,
+    and off/0 are false too),
     so it configures nothing for this image: the step writes its own
     pgdg.sources and leaves the disabled file alone.
     """
