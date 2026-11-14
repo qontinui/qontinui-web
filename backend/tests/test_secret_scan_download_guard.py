@@ -1,275 +1,183 @@
-"""Arm-by-arm tests for secret-scan.yml's gitleaks download guard.
+"""Tests for secret-scan.yml's gitleaks fetch and its outcome mapping.
 
-The "Run gitleaks" step downloads a pinned gitleaks release, extracts it, and
-scans the diff. Before this guard existed, `curl ... | tar -xz gitleaks`
-reported TAR's exit status, so a failed download surfaced as
-"gzip: stdin: unexpected end of file" -- indistinguishable from a corrupt
-release. The fix (see the step's own comments) downloads to a file with `-f`,
-checks curl's own exit code, checks tar's extraction separately, and checks
-the extracted binary is executable -- each with a distinct `::error::` so the
-red check says which infrastructure failure it was, never "secrets found".
+The secret scan used to download gitleaks inside its scan step. A GitHub
+release-CDN failure then read as a red secret gate (coord dossier
+gitleaks-red-not-a-leak). The download now lives in
+`.github/scripts/fetch-gitleaks.sh`, a byte-identical copy of the canonical,
+tested script in qontinui-coord (plan
+2026-11-09-gitleaks-release-cdn-504-reds-prs-and-blocks-the-merge-train). It
+verifies the pinned sha256, keeps a per-runner cache, and on any failure prints
+`::error title=Gitleaks DID NOT RUN (not a verdict on this PR)::` and exits 75.
 
-The PR that shipped this ("ci(secret-scan): make a failed gitleaks download
-say so, instead of dying at tar") verified all four arms by hand, against the
-block extracted from the workflow file itself, under `bash -e` -- but that
-verification left no trace after merge. Per this repo's own stated philosophy
-(see pre-commit-hook-tests.yml: "a test that never runs cannot fail"), an
-edit that quietly reintroduces the unguarded pipe, or drops one of the three
-checks, would go green with nothing to catch it. These tests run the SHIPPED
-`run:` body -- extracted from the workflow YAML, not a copy pasted in here --
-against a stubbed `curl`, covering all three guarded failure modes plus the
-control, and add a fourth failure mode (extracted-but-not-executable) that
-the PR's own four-arm table did not enumerate even though the step guards it.
+These tests pin the shape this repo depends on:
+- the workflow's fetch step checks the script against a sha256 pinned in the
+  YAML, and that pin matches the script on disk, so a change to the script is
+  also a change to the workflow file;
+- the fetch step is not named with a prefix coord's INFRA_STEP_PREFIXES lists,
+  which would make a failed fetch bypass-landable;
+- the scan step runs with `--exit-code 3` and titles both of its outcomes;
+- the script, run against a stubbed `curl`, exits 75 with the titled line on a
+  refused download and on a served error page, and yields an executable binary
+  on a good tarball.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
+import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
-import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "secret-scan.yml"
+SCRIPT = REPO_ROOT / ".github" / "scripts" / "fetch-gitleaks.sh"
 
-STEP_NAME = "Run gitleaks (binary — the marketplace action requires a paid org license)"
-
-GL_VERSION = "8.30.1"
-
-ERR_DOWNLOAD_FAILED = f"Could not download gitleaks v{GL_VERSION}"
-ERR_BAD_TARBALL = (
-    f"The file served for gitleaks v{GL_VERSION} is not a usable gitleaks tarball"
+FETCH_STEP = "Fetch gitleaks (pinned, sha256-verified, host-cached)"
+RUN_STEP = "Run gitleaks"
+TITLE = "::error title=Gitleaks DID NOT RUN (not a verdict on this PR)::"
+# coord's bypass_policy.rs INFRA_STEP_PREFIXES: a failed step with one of these
+# names is bypass-landable on merge-candidate CI. A secret scan must block.
+INFRA_STEP_PREFIXES = (
+    "Set up job",
+    "Checkout",
+    "Clone",
+    "Configure AWS credentials",
+    "Login to Amazon ECR",
+    "Cache",
+    "Set up ",
+    "Setup ",
 )
-ERR_NOT_EXECUTABLE = f"Extracted gitleaks v{GL_VERSION} but it is not executable"
 
 bash = shutil.which("bash")
-
-requires_bash = pytest.mark.skipif(
-    not bash,
-    reason="the guard is a bash `run:` body; this always runs on the ubuntu CI runner",
+requires_linux_bash = pytest.mark.skipif(
+    not bash or sys.platform != "linux" or platform.machine() != "x86_64",
+    reason="the fetch script is a linux_x64 bash script; CI runs it on Linux x86_64",
 )
 
 
-def _gitleaks_step_body() -> str:
-    doc = yaml.safe_load((WORKFLOWS / "secret-scan.yml").read_text(encoding="utf-8"))
-    for step in doc["jobs"]["gitleaks"]["steps"]:
-        if step.get("name") == STEP_NAME:
-            return step["run"]
-    raise AssertionError(
-        f"secret-scan.yml has no step named {STEP_NAME!r} -- did it get renamed?"
+def _steps() -> dict[str, dict]:
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return {s.get("name", ""): s for s in doc["jobs"]["gitleaks"]["steps"]}
+
+
+def test_fetch_step_pins_the_script_it_runs() -> None:
+    body = _steps()[FETCH_STEP]["run"]
+    pinned = re.search(
+        r'echo "([0-9a-f]{64})  \.github/scripts/fetch-gitleaks\.sh"', body
     )
+    assert pinned, "the fetch step no longer pins fetch-gitleaks.sh by sha256"
+    actual = hashlib.sha256(SCRIPT.read_bytes()).hexdigest()
+    assert pinned.group(1) == actual, (
+        "fetch-gitleaks.sh changed without updating the pin in secret-scan.yml "
+        f"(pinned {pinned.group(1)}, on disk {actual})"
+    )
+    assert "bash .github/scripts/fetch-gitleaks.sh" in body
 
 
-def _detemplate(script: str) -> str:
-    """Stand in for GitHub's own `${{ }}` substitution.
+def test_backend_ci_runs_on_changes_to_what_this_module_reads() -> None:
+    """This module is a gate only on the changes that trigger backend-ci."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "backend-ci.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    for event in ("pull_request", "push"):
+        paths = triggers[event]["paths"]
+        for needed in (
+            ".github/workflows/secret-scan.yml",
+            ".github/scripts/fetch-gitleaks.sh",
+        ):
+            assert needed in paths, f"backend-ci {event} paths miss {needed}"
 
-    GitHub replaces every `${{ ... }}` expression with its literal value
-    BEFORE handing the body to bash -- `${{ ... }}` is not valid bash syntax
-    (bash would raise "bad substitution" trying to parse it as a parameter
-    expansion). This step inlines `github.token` and the base/head SHA range
-    directly rather than routing them through `env:`, so the harness has to
-    do the same substitution GitHub would, or the body under test would not
-    parse at all -- not even on the arms these tokens are irrelevant to.
-    """
-    return re.sub(r"\$\{\{[^}]*\}\}", "TEST_TEMPLATE_VALUE", script)
+
+def test_no_gitleaks_step_is_bypass_eligible() -> None:
+    for name in _steps():
+        if "gitleaks" in name.lower():
+            assert not name.startswith(INFRA_STEP_PREFIXES), name
 
 
-def _build_tarball(dest: Path, *, executable: bool) -> Path:
-    """A real gzip tarball with one member named `gitleaks`.
+def test_scan_step_uses_exit_code_3_and_titles_its_outcomes() -> None:
+    step = _steps()[RUN_STEP]
+    assert step["env"]["GITLEAKS"] == "${{ steps.gitleaks.outputs.bin }}"
+    body = step["run"]
+    assert "--exit-code 3" in body
+    assert "::error title=Gitleaks found leaks::" in body
+    assert "::error title=Gitleaks errored (exit $rc)::" in body
+    assert "(not a verdict on this PR)" not in body, "a scan outcome IS a verdict"
 
-    `tar -xzf ... gitleaks` extracts that specific member, so the fixture
-    must be a genuine tar.gz -- a fake bash `curl` can fake the network, but
-    it cannot fake tar's own decoding.
-    """
+
+def _tarball(dest: Path) -> Path:
     payload = b"#!/bin/sh\nexit 0\n"
-    tarball = dest / "gitleaks.tar.gz"
-    with tarfile.open(tarball, "w:gz") as tf:
+    path = dest / "good.tgz"
+    with tarfile.open(path, "w:gz") as tf:
         info = tarfile.TarInfo(name="gitleaks")
         info.size = len(payload)
-        info.mode = 0o755 if executable else 0o644
+        info.mode = 0o755
         tf.addfile(info, io.BytesIO(payload))
-    return tarball
+    return path
 
 
-def _exec_bit_is_honored() -> bool:
-    """Whether extracting a 0o644 tar member yields a file `[ -x ]` rejects.
-
-    This has to replicate the ACTUAL extraction path -- `tar -xzf` via
-    whatever `tar` this shell resolves -- not just a plain `chmod`. Measured
-    on Windows/git-bash: a plain `chmod 0o644` file correctly reads as
-    non-executable, but the SAME mode carried on a tar member does not
-    survive that `tar`'s extraction, so probing chmod alone would give a
-    false "honored" and let `test_extracted_but_not_executable...` fail here
-    for a platform reason unrelated to the guard it is testing. Real CI runs
-    on ubuntu-latest, where the mode always survives extraction; only the
-    local dev-box arm needs this gate.
-    """
-    if not bash:
-        return False
-    with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        workdir = tmp / "work"
-        workdir.mkdir()
-        # Built directly in workdir and referenced by its RELATIVE name below:
-        # MSYS tar parses an absolute `C:\...` path's drive-letter colon as an
-        # `rsh`-style "host:path" remote-archive spec ("Cannot connect to C:
-        # resolve failed"), which the real harness never hits because its
-        # tarball is likewise always a same-directory relative filename.
-        _build_tarball(workdir, executable=False)
-        proc = subprocess.run(
-            [bash, "-c", "tar -xzf gitleaks.tar.gz gitleaks && [ -x ./gitleaks ]"],
-            cwd=workdir,
-        )
-        return proc.returncode != 0
-
-
-requires_honored_exec_bit = pytest.mark.skipif(
-    not _exec_bit_is_honored(),
-    reason=(
-        "this platform's `tar` does not preserve a non-executable mode bit "
-        "through extraction (seen on MSYS/git-bash tar on Windows); ubuntu "
-        "CI always preserves it"
-    ),
-)
-
-
-def _write_curl_stub(bin_dir: Path, scenario: str, tarball: Path | None) -> None:
-    """A fake `curl` that answers both calls this step makes.
-
-    The version-resolution call (to api.github.com) always succeeds, pinned
-    to GL_VERSION, so every scenario exercises the same download URL. The
-    download call's behaviour is baked in per scenario -- mirroring
-    test_ci_timeout_marker.py's stubbed `gh`, rather than reading an env var
-    inside a generic script, so each scenario's fixture is self-contained.
-    """
-    curl = bin_dir / "curl"
-    lines = [
-        "#!/usr/bin/env bash",
-        'for a in "$@"; do',
-        '  case "$a" in',
-        f'    *api.github.com*) echo \'{{"tag_name": "v{GL_VERSION}"}}\'; exit 0 ;;',
-        "  esac",
-        "done",
-        'out=""',
-        'prev=""',
-        'for a in "$@"; do',
-        '  if [ "$prev" = "-o" ]; then out="$a"; fi',
-        '  prev="$a"',
-        "done",
-    ]
-    if scenario == "download_refused":
-        # curl's own connection-refused exit code; no file is written, so this
-        # arm also proves the guard does not depend on a file existing.
-        lines.append("exit 7")
-    elif scenario == "html_error_page":
-        # HTTP 200 with an error PAGE body -- curl -f does not treat this as
-        # a failure, since the status line was 2xx.
-        lines.append("printf '<html><body>502 Bad Gateway</body></html>' > \"$out\"")
-        lines.append("exit 0")
-    elif scenario == "zero_byte":
-        lines.append(': > "$out"')
-        lines.append("exit 0")
-    elif scenario in ("ok", "not_executable"):
-        assert tarball is not None
-        lines.append(f'cp "{tarball.as_posix()}" "$out"')
-        lines.append("exit 0")
-    else:
-        raise ValueError(f"unknown scenario {scenario!r}")
-    curl.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+def _run(tmp_path: Path, scenario: str, sha: str) -> subprocess.CompletedProcess[str]:
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    curl = stub / "curl"
+    body = {
+        "refused": "exit 7",
+        "html": 'printf "<html>504</html>" > "$out"',
+        "ok": f'cp "{(tmp_path / "good.tgz").as_posix()}" "$out"',
+    }[scenario]
+    curl.write_text(
+        "#!/usr/bin/env bash\n"
+        'out=""; prev=""\n'
+        'for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done\n'
+        f"{body}\n",
+        encoding="utf-8",
+    )
     curl.chmod(0o755)
-
-
-def _run_step(tmp_path: Path, scenario: str) -> subprocess.CompletedProcess[str]:
-    stub_dir = tmp_path / "stub-bin"
-    stub_dir.mkdir(exist_ok=True)
-    workdir = tmp_path / "work"
-    workdir.mkdir(exist_ok=True)
-
-    tarball = None
-    if scenario in ("ok", "not_executable"):
-        tarball = _build_tarball(tmp_path, executable=(scenario == "ok"))
-    _write_curl_stub(stub_dir, scenario, tarball)
-
-    script = _detemplate(_gitleaks_step_body())
+    (tmp_path / "rt").mkdir()
+    out = tmp_path / "gho"
+    out.write_text("")
+    env = {
+        **os.environ,
+        "PATH": f"{stub}:{os.environ['PATH']}",
+        "RUNNER_TEMP": str(tmp_path / "rt"),
+        "RUNNER_TOOL_CACHE": str(tmp_path / "cache"),
+        "GITHUB_OUTPUT": str(out),
+        "GITLEAKS_VERSION": "8.30.1",
+        "GITLEAKS_SHA256": sha,
+    }
     return subprocess.run(
-        # GitHub invokes multi-line `run:` bodies as
-        # `bash --noprofile --norc -eo pipefail {0}` on ubuntu runners.
-        [bash, "--noprofile", "--norc", "-eo", "pipefail", "-s"],
-        input=script,
-        cwd=workdir,
-        env={"PATH": f"{stub_dir}:/usr/bin:/bin"},
-        capture_output=True,
-        text=True,
+        [bash, str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60
     )
 
 
-@requires_bash
-def test_step_exists_with_the_expected_name():
-    """Fail loudly, not vacuously, if the step is ever renamed."""
-    assert _gitleaks_step_body().strip()
+@requires_linux_bash
+@pytest.mark.parametrize("scenario", ["refused", "html"])
+def test_a_failed_fetch_exits_75_with_the_no_verdict_title(
+    tmp_path: Path, scenario: str
+) -> None:
+    sha = hashlib.sha256(_tarball(tmp_path).read_bytes()).hexdigest()
+    proc = _run(tmp_path, scenario, sha)
+    assert proc.returncode == 75, proc.stdout + proc.stderr
+    assert TITLE in proc.stdout
+    assert (tmp_path / "gho").read_text() == ""
 
 
-@requires_bash
-def test_control_a_real_tarball_reaches_the_scan(tmp_path):
-    proc = _run_step(tmp_path, "ok")
+@requires_linux_bash
+def test_a_good_tarball_yields_an_executable_binary(tmp_path: Path) -> None:
+    sha = hashlib.sha256(_tarball(tmp_path).read_bytes()).hexdigest()
+    proc = _run(tmp_path, "ok", sha)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert f"gitleaks v{GL_VERSION}" in proc.stdout
-    assert "::error::" not in proc.stdout
-
-
-@requires_bash
-def test_download_refused_names_the_infrastructure_failure(tmp_path):
-    proc = _run_step(tmp_path, "download_refused")
-    assert proc.returncode == 1
-    assert ERR_DOWNLOAD_FAILED in proc.stdout
-    assert "NOT a leak finding" in proc.stdout
-    assert ERR_BAD_TARBALL not in proc.stdout
-    assert ERR_NOT_EXECUTABLE not in proc.stdout
-
-
-@requires_bash
-def test_html_error_page_is_reported_as_a_bad_tarball_not_a_download_failure(tmp_path):
-    """THE REGRESSION CASE.
-
-    curl exits 0 on this arm (HTTP 200), so only the extraction guard can
-    catch it. Getting this wrong either regresses to the pre-fix silence
-    (tar's own cryptic failure) or misattributes it as a download failure,
-    which the step's own comments call out as a misdescription: nothing
-    resembling gitleaks was ever downloaded.
-    """
-    proc = _run_step(tmp_path, "html_error_page")
-    assert proc.returncode == 1
-    assert ERR_BAD_TARBALL in proc.stdout
-    assert ERR_DOWNLOAD_FAILED not in proc.stdout
-    assert ERR_NOT_EXECUTABLE not in proc.stdout
-
-
-@requires_bash
-def test_zero_byte_body_is_reported_as_a_bad_tarball(tmp_path):
-    proc = _run_step(tmp_path, "zero_byte")
-    assert proc.returncode == 1
-    assert ERR_BAD_TARBALL in proc.stdout
-    assert ERR_DOWNLOAD_FAILED not in proc.stdout
-
-
-@requires_bash
-@requires_honored_exec_bit
-def test_extracted_but_not_executable_is_its_own_distinct_failure(tmp_path):
-    """The third guard, uncovered by the PR's own stated four-arm table.
-
-    A tarball can extract cleanly and still not be usable -- e.g. a release
-    asset built without the executable bit. That must not be folded into
-    "not a usable tarball" (tar succeeded) or "download failed" (curl
-    succeeded); it is a third, distinct infrastructure failure.
-    """
-    proc = _run_step(tmp_path, "not_executable")
-    assert proc.returncode == 1
-    assert ERR_NOT_EXECUTABLE in proc.stdout
-    assert ERR_BAD_TARBALL not in proc.stdout
-    assert ERR_DOWNLOAD_FAILED not in proc.stdout
+    line = (tmp_path / "gho").read_text().strip()
+    assert line.startswith("bin=")
+    assert os.access(line[len("bin=") :], os.X_OK)

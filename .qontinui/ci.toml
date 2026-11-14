@@ -117,9 +117,10 @@
 #        entries, so "not in the registry" alone would be a weak argument — it
 #        is a judgement that gitleaks is not ambient on a developer machine the
 #        way those four are, not an absolute bar.
-#    So secret-scan stays Actions-only and its logic stays inline: extracting it
-#    to a script would buy nothing, because there is no second lane to share the
-#    script with. The OTHER THREE shell-scan workflows that used to be listed
+#    So secret-scan stays Actions-only. Its fetch now lives in
+#    .github/scripts/fetch-gitleaks.sh (a copy shared across the fleet's repos,
+#    not with this lane), and the PR-range blocker above still keeps the scan
+#    itself off this lane. The OTHER THREE shell-scan workflows that used to be listed
 #    here — web-boundary-lint.yml, forbid-public-schema.yml and
 #    alembic-graph-pr.yml — are now expressible and ARE expressed below: Phase 5
 #    of plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity moved
