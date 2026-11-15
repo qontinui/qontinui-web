@@ -54182,7 +54182,6 @@
         "description": "One settable spawn type as coord resolves it.",
         "properties": {
           "description": {
-            "default": "",
             "title": "Description",
             "type": "string"
           },
@@ -54258,6 +54257,7 @@
         },
         "required": [
           "spawn_type",
+          "description",
           "model",
           "effort",
           "source"

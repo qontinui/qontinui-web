@@ -172,6 +172,12 @@ class TestGet:
             {**COORD_GET, "settings": [{**ROW_STORED, "model": "gpt-5"}]},
             {**COORD_GET, "settings": [{**ROW_STORED, "effort": "extreme"}]},
             {**COORD_GET, "settings": [{**ROW_STORED, "source": "guessed"}]},
+            {
+                **COORD_GET,
+                "settings": [
+                    {k: v for k, v in ROW_STORED.items() if k != "description"}
+                ],
+            },
             ["not", "an", "object"],
         ],
     )
@@ -183,6 +189,43 @@ class TestGet:
             resp = client.get(API_PREFIX)
         assert resp.status_code == 502
         assert "unknown" in resp.json()["detail"]
+
+
+NO_SUCH_ROUTE = {
+    "error": "no_such_route",
+    "message": "coord serves no such route",
+    "did_you_mean": [],
+}
+
+
+class TestRouteAbsentFallback:
+    def test_get_no_such_route_body_is_deploy_order_502(self, client: TestClient):
+        with (
+            _coord(get=AsyncMock(return_value=_mock_response(404, NO_SUCH_ROUTE))),
+            _patch_identity(),
+        ):
+            resp = client.get(API_PREFIX)
+        assert resp.status_code == 502
+        assert resp.json()["detail"].startswith("coord does not serve ")
+
+    def test_put_no_such_route_body_is_deploy_order_502(self, client: TestClient):
+        put = AsyncMock(return_value=_mock_response(404, NO_SUCH_ROUTE))
+        with _coord(put=put):
+            resp = client.put(
+                f"{API_PREFIX}/post_merge", json={"model": None, "effort": None}
+            )
+        assert resp.status_code == 502
+        assert resp.json()["detail"].startswith("coord does not serve ")
+
+    def test_application_404_passes_through(self, client: TestClient):
+        put = AsyncMock(
+            return_value=_mock_response(404, {"error": "unknown_spawn_type"})
+        )
+        with _coord(put=put):
+            resp = client.put(
+                f"{API_PREFIX}/post_merge", json={"model": None, "effort": None}
+            )
+        assert resp.status_code == 404
 
 
 class TestPut:

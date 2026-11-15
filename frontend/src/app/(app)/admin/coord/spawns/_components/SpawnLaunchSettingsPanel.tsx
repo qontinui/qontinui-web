@@ -192,24 +192,36 @@ function SettingRow({
         )}
       </td>
       <td className="py-1.5 pr-3">
-        <Badge
-          variant="outline"
-          className={cn("text-[11px] font-medium", INERT)}
-          title={
-            row.source === "stored"
-              ? "An operator saved a setting for this spawn type."
-              : "Nothing saved for this spawn type: both fields inherit."
-          }
-          data-testid="spawn-launch-source"
-        >
-          {row.source}
-        </Badge>
+        {unknown !== null ? (
+          <Badge
+            variant="outline"
+            className={cn("text-[11px] font-medium", UNKNOWN_AMBER)}
+            data-testid="spawn-launch-source-unknown"
+          >
+            UNKNOWN
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className={cn("text-[11px] font-medium", INERT)}
+            title={
+              row.source === "stored"
+                ? "An operator saved a setting for this spawn type."
+                : "Nothing saved for this spawn type: both fields inherit."
+            }
+            data-testid="spawn-launch-source"
+          >
+            {row.source}
+          </Badge>
+        )}
       </td>
       <td
         className="py-1.5 pr-3 text-xs text-muted-foreground"
         data-testid="spawn-launch-last-set"
       >
-        {row.updated_by || when ? (
+        {unknown !== null ? (
+          "unknown until a re-read answers"
+        ) : row.updated_by || when ? (
           <>
             {row.updated_by ?? "unknown writer"}
             {when && <div>{when}</div>}
@@ -352,8 +364,9 @@ export function SpawnLaunchSettingsPanel() {
                 <tbody>
                   {data.settings.map((row) => (
                     <SettingRow
-                      // Re-keyed on coord's row so a read-back resets the draft.
-                      key={`${row.spawn_type}:${row.model}:${row.effort}:${row.updated_at}`}
+                      // Keyed on the type alone: a refresh never discards an
+                      // unsaved draft; a settled save clears it (SettingRow).
+                      key={row.spawn_type}
                       row={row}
                       families={data.model_families}
                       levels={data.effort_levels}

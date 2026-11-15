@@ -50686,10 +50686,7 @@ export interface components {
          * @description One settable spawn type as coord resolves it.
          */
         SpawnLaunchSettingRow: {
-            /**
-             * Description
-             * @default
-             */
+            /** Description */
             description: string;
             /** Effort */
             effort: ("low" | "medium" | "high" | "xhigh" | "max") | null;

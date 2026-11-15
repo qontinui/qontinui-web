@@ -242,6 +242,13 @@ describe("SpawnLaunchSettingsPanel", () => {
     expect(
       within(row("vet_plan")).getByTestId("spawn-launch-model-unknown")
     ).toBeTruthy();
+    // The pre-write source and writer are not shown as current either.
+    expect(
+      within(row("vet_plan")).getByTestId("spawn-launch-source-unknown")
+    ).toBeTruthy();
+    expect(
+      within(row("vet_plan")).queryByTestId("spawn-launch-source")
+    ).toBeNull();
   });
 
   it("a refusal keeps coord's value and says it was not applied", async () => {
