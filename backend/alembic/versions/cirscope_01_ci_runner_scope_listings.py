@@ -68,6 +68,22 @@ A scope with no row, a missing relation (SQLSTATE 42P01, while this revision is
 unapplied), or a read error is UNKNOWN to coord's roster — never ``listed`` and
 never ``not_listed`` (``[policy: unknown-must-not-render-as-a-default]``).
 
+Owner-only
+==========
+
+The table has no ``tenant_id`` column: a scope's GitHub listing is one fact
+shared by every tenant whose devices sit in it, so a row cannot be attributed to
+a single tenant. It is therefore ``system_only``, the way ``ingcred_01`` treats
+``coord.ingest_credential_tally`` and ``coordrls_01`` treats its census tables.
+``coordrls_01``'s ``ALTER DEFAULT PRIVILEGES`` gives ``coord_tenant`` and
+``coord_tenant_preflight`` DML on every coord table created after it, and with no
+``tenant_id`` column neither r10's oracle nor ``coord_tenant_tables_unenforced``
+would ever revisit this one, so ``upgrade()`` revokes both roles here. The REVOKE
+is unguarded exactly as in ``ingcred_01``: both roles are created by
+``coordrls_01``, an ancestor of this revision, so they always exist when it
+runs. coord itself connects as the owning migrator role, so its reads and writes
+are unaffected.
+
 No index beyond the primary key
 ===============================
 
@@ -80,20 +96,22 @@ Merge-train classifier disposition
 
 The verdict of the coord migration classifier
 (``crates/coord/src/pr_merge/migration_classifier.rs``) on this file is UNKNOWN:
-it was not run against it. Every statement in ``upgrade()`` is one the
+it was not run against it. Every statement but one in ``upgrade()`` is one the
 ``sessruns_01_session_runs`` revision documents as an admitted branch
 (``CREATE SCHEMA IF NOT EXISTS``, plain ``CREATE TABLE``, ``COMMENT ON`` with
-plain literals), so ``AutoSafeIfNewTables`` is the expected verdict, subject to
-coord's trunk proof that the table is new. Every SQL string is a static literal.
+plain literals). The exception is the owner-only ``REVOKE``, the same statement
+``ingcred_01`` carries; whether the classifier admits it is part of the UNKNOWN
+above. ``AutoSafeIfNewTables`` is the expected verdict, subject to coord's trunk
+proof that the table is new. Every SQL string is a static literal.
 
 Safety
 ======
 
-One new empty table: ``CREATE TABLE IF NOT EXISTS`` and re-runnable
-``COMMENT ON``, so a partial apply re-runs cleanly. No existing table is
-altered, so no lock on a hot table is taken. ``downgrade()`` drops the table,
-``IF EXISTS``; its rows are a cache of GitHub's listing that the leader rebuilds
-on its next complete poll, so dropping them loses no state that is not
+One new empty table: ``CREATE TABLE IF NOT EXISTS``, re-runnable ``COMMENT ON``
+and an idempotent ``REVOKE``, so a partial apply re-runs cleanly. No existing
+table is altered, so no lock on a hot table is taken. ``downgrade()`` drops the
+table, ``IF EXISTS``; its rows are a cache of GitHub's listing that the leader
+rebuilds on its next complete poll, so dropping them loses no state that is not
 reconstructible.
 
 Not mirrored by a SQLAlchemy model: the web backend neither reads nor writes
@@ -127,6 +145,12 @@ def upgrade() -> None:
         )
         """
     )
+    # system_only: undo the DML coordrls_01's default privileges just gave the
+    # tenant roles on this new table (module docs, "Owner-only").
+    op.execute(
+        "REVOKE ALL ON coord.ci_runner_scope_listings "
+        "FROM coord_tenant, coord_tenant_preflight"
+    )
     op.execute(
         """
         COMMENT ON TABLE coord.ci_runner_scope_listings IS
@@ -136,7 +160,8 @@ def upgrade() -> None:
             'with no 401/403, rate limit or stale cached-body replay. Durable '
             'so any replica can tell the fleet roster whether GitHub still '
             'lists a CI registration. A scope with no row is UNKNOWN, never '
-            'listed and never not listed. Written and read only by coord.'
+            'listed and never not listed. Written and read only by coord; '
+            'no tenant_id, so system_only: the tenant roles hold no privilege.'
         """
     )
     op.execute(

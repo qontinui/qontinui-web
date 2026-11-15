@@ -10,7 +10,10 @@ Phase 2) rely on:
    no row can carry evidence a listing did not produce.
 3. **One row per scope** — a second insert for the same scope is refused; an
    upsert replaces the names and time; an empty name list is accepted.
-4. **Re-running is harmless** — with a row present, ``stamp <parent>`` then
+4. **Owner-only** — ``coord_tenant`` and ``coord_tenant_preflight`` (which
+   coord's default privileges would grant on a new table) hold no privilege on
+   it, because it has no ``tenant_id`` to scope a tenant's read by.
+5. **Re-running is harmless** — with a row present, ``stamp <parent>`` then
    ``upgrade`` again changes nothing.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
@@ -65,6 +68,8 @@ _EXPECTED_INDEXES = {
         "ON coord.ci_runner_scope_listings USING btree (scope)"
     ),
 }
+
+_TENANT_ROLES = ("coord_tenant", "coord_tenant_preflight")
 
 _T1 = datetime(2026, 11, 15, 10, 0, tzinfo=UTC)
 _T2 = datetime(2026, 11, 15, 10, 5, tzinfo=UTC)
@@ -151,6 +156,55 @@ def _assert_shape(engine: Engine) -> None:
     comment = _table_comment(engine)
     assert comment is not None and "COMPLETE" in comment
     assert "UNKNOWN" in comment
+    _assert_owner_only(engine)
+
+
+def _scalar(engine: Engine, sql: str, params: dict[str, object]) -> object:
+    with engine.connect() as conn:
+        return conn.execute(text(sql), params).scalar_one()
+
+
+def _assert_owner_only(engine: Engine) -> None:
+    """Neither tenant role holds any privilege, directly or through PUBLIC."""
+    rel = f"coord.{_TABLE}"
+    # Non-vacuity: both roles exist, and coord's default privileges grant them
+    # on a new table, so their absence below is the REVOKE's doing.
+    assert (
+        _scalar(
+            engine,
+            "SELECT count(*) FROM pg_roles WHERE rolname = ANY(:roles)",
+            {"roles": list(_TENANT_ROLES)},
+        )
+        == 2
+    )
+    assert (
+        _scalar(
+            engine,
+            """
+            SELECT count(DISTINCT r.rolname)
+              FROM pg_class c
+              JOIN pg_default_acl d ON d.defaclrole = c.relowner
+              JOIN pg_namespace n ON n.oid = d.defaclnamespace
+              CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+              JOIN pg_roles r ON r.oid = a.grantee
+             WHERE c.oid = to_regclass(:rel)
+               AND n.nspname = 'coord' AND d.defaclobjtype = 'r'
+               AND r.rolname = ANY(:roles)
+            """,
+            {"rel": rel, "roles": list(_TENANT_ROLES)},
+        )
+        == 2
+    )
+    for role in _TENANT_ROLES:
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            assert (
+                _scalar(
+                    engine,
+                    "SELECT has_table_privilege(:role, :rel, :privilege)",
+                    {"role": role, "rel": rel, "privilege": privilege},
+                )
+                is False
+            ), (role, privilege)
 
 
 def _assert_absent(engine: Engine) -> None:
@@ -201,7 +255,7 @@ _UPSERT = (
 def test_cirscope_01_creates_the_scope_listing_table_and_enforces_its_contract() -> (
     None
 ):
-    """Shape, no defaults, one row per scope, re-run, reversal."""
+    """Shape, owner-only, no defaults, one row per scope, re-run, reversal."""
     root = backend_root()
 
     with ephemeral_database(admin_database_url(), "cirscope01_test") as (
@@ -212,7 +266,7 @@ def test_cirscope_01_creates_the_scope_listing_table_and_enforces_its_contract()
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         _assert_absent(engine)
 
-        # 2. Apply — exact columns, constraint, index, comment.
+        # 2. Apply — exact columns, constraint, index, comment, owner-only.
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
 
