@@ -87,7 +87,7 @@ are unaffected.
 No index beyond the primary key
 ===============================
 
-The table holds one row per polled scope (a handful per tenant fleet), is read
+The table holds one row per polled GitHub scope across every tenant, is read
 by primary key or in full, and is written by one leader. The primary-key index
 is all it needs.
 

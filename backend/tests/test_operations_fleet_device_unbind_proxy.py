@@ -502,6 +502,31 @@ class TestCallerRefusalAborts:
         # DEVICE_B was never sent to coord.
         assert len(stub.calls) == 1
 
+    def test_an_aborted_batch_still_logs_its_earlier_lost_row(
+        self, auth_client: TestClient
+    ):
+        import structlog
+
+        stub = _CoordStub(
+            {
+                DEVICE_A: [
+                    _mock_response(503, None, "<html>" + "x" * 2000 + "</html>")
+                ],
+                DEVICE_B: [_mock_response(403, {"error": "operator_role_required"})],
+            }
+        )
+        with structlog.testing.capture_logs() as logs:
+            resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 403
+        rows = [e for e in logs if e["event"] == "fleet_devices_unbind_row"]
+        assert [r["device_id"] for r in rows] == [DEVICE_A, DEVICE_B]
+        assert rows[0]["outcome"] == "unknown"
+        assert len(rows[0]["error"]["upstream"]) == 501
+        aborted = [e for e in logs if e["event"] == "fleet_devices_unbind_aborted"]
+        assert len(aborted) == 1
+        assert aborted[0]["unknown"] == 1
+        assert aborted[0]["failed"] == 1
+
     def test_403_on_later_id_aborts_keeping_recorded_results(
         self, auth_client: TestClient
     ):

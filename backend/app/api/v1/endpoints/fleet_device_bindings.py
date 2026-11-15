@@ -328,6 +328,36 @@ async def _unbind_one(
     return _classify_response(device_id, resp)
 
 
+_LOG_UPSTREAM_MAX_CHARS = 500
+
+
+def _log_unsettled_rows(
+    results: list[FleetDeviceUnbindResult], tenant_id: UUID
+) -> None:
+    """Log every id whose outcome is unknown or failed, server-side.
+
+    An unknown row may be a binding coord already removed, so it is recorded
+    here even when the batch later aborts. A gateway's raw body is truncated
+    so an HTML error page cannot flood the log line.
+    """
+    for result in results:
+        if result.outcome not in ("unknown", "failed"):
+            continue
+        error = result.error
+        if isinstance(error, dict) and isinstance(error.get("upstream"), str):
+            upstream = error["upstream"]
+            if len(upstream) > _LOG_UPSTREAM_MAX_CHARS:
+                error = {**error, "upstream": upstream[:_LOG_UPSTREAM_MAX_CHARS] + "…"}
+        logger.warning(
+            "fleet_devices_unbind_row",
+            tenant_id=str(tenant_id),
+            device_id=str(result.device_id),
+            outcome=result.outcome,
+            status=result.status,
+            error=error,
+        )
+
+
 @router.post("/fleet/devices/unbind", response_model=FleetDeviceUnbindResponse)
 async def post_fleet_devices_unbind(
     body: FleetDeviceUnbindRequest,
@@ -364,6 +394,7 @@ async def post_fleet_devices_unbind(
                     for d in ids[index + 1 :]
                 )
                 partial = _tally(results)
+                _log_unsettled_rows(results, tenant_id)
                 logger.warning(
                     "fleet_devices_unbind_aborted",
                     tenant_id=str(tenant_id),
@@ -371,6 +402,11 @@ async def post_fleet_devices_unbind(
                     coord_status=refused_status,
                     reached=index + 1,
                     requested=len(ids),
+                    unbound=partial.unbound,
+                    already_absent=partial.already_absent,
+                    unknown=partial.unknown,
+                    failed=partial.failed,
+                    not_attempted=partial.not_attempted,
                 )
                 raise HTTPException(
                     status_code=_ABORT_STATUS,
@@ -383,16 +419,7 @@ async def post_fleet_devices_unbind(
                     },
                 )
 
-    for result in results:
-        if result.outcome in ("unknown", "failed"):
-            logger.warning(
-                "fleet_devices_unbind_row",
-                tenant_id=str(tenant_id),
-                device_id=str(result.device_id),
-                outcome=result.outcome,
-                status=result.status,
-                error=result.error,
-            )
+    _log_unsettled_rows(results, tenant_id)
     response = _tally(results)
     logger.info(
         "fleet_devices_unbind",
