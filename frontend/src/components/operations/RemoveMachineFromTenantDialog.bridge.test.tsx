@@ -126,8 +126,12 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     expect(el?.label).toBe(`Remove ${CI} from this tenant`);
     const action = el?.customActions?.["remove-from-tenant"];
     expect(action?.effect).toBe("destructive");
+    // The count is not baked into a registration that can outlive a read.
     expect(action?.description).toContain(
-      "removes this tenant's binding of 2 devices"
+      "removes this tenant's binding of every device row the roster lists for this machine"
+    );
+    expect(action?.description).toContain(
+      "Refused while a removal is in flight."
     );
 
     const before = fetchMock.mock.calls.length;
@@ -171,11 +175,53 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
       )
     );
 
+    let staleResult: unknown;
     await act(async () => {
-      await stale!.handler(undefined);
+      staleResult = await stale!.handler(undefined);
+    });
+    // Its result names the count as the roster reads now, not at registration.
+    expect(staleResult).toEqual({
+      opened: true,
+      effect: "removes this tenant's binding of 1 device",
     });
     const rows = screen.getAllByTestId("fleet-roles-remove-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain(DEV_1);
+  });
+
+  it("the handler refuses while a removal is in flight", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") await held;
+      return base(url, init);
+    });
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText(CI));
+    const action = registered.get(`fleet-roles-remove:host:${CI}`)
+      ?.customActions?.["remove-from-tenant"];
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-confirm"));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([, init]) => (init as RequestInit | undefined)?.method === "POST"
+        )
+      ).toBe(true)
+    );
+    let resolved: unknown;
+    await act(async () => {
+      resolved = await action!.handler(undefined);
+    });
+    expect(resolved).toEqual({
+      opened: false,
+      reason: "a removal is in flight",
+    });
+    await act(async () => {
+      release();
+    });
   });
 });

@@ -710,6 +710,7 @@ export function FleetRolesSection() {
                               roster={{
                                 rosterTruncated: read.rosterTruncated,
                                 omitted: read.omitted,
+                                unidentifiable: read.unidentifiable,
                               }}
                               controller={removal}
                             />

@@ -58,10 +58,18 @@ export interface DeviceUnbindResponseWire {
 }
 
 /**
- * `POST /fleet/devices/unbind` with `{device_ids}` (1–64 unique ids). Never
- * re-issued on a 5xx (`idempotent: false`), the same policy as
- * `postFleetDrain`: a repeat is harmless here (it reads `already_absent`), but
- * it would misreport the first attempt's `unbound` as `already_absent`.
+ * `POST /fleet/devices/unbind` with `{device_ids}` (1–64 unique ids).
+ *
+ * Sent at most once by the retry chain: `maxRetries: 0` suppresses both the
+ * 429 arm and any 5xx re-issue (`idempotent: false` alone would still retry
+ * a 429). A repeat would misreport the first attempt's `unbound` rows as
+ * `already_absent`.
+ *
+ * NOT covered: `httpClient` replays a request once after a 401 that arrives
+ * while the access token is stale and a refresh succeeds
+ * (`replayAfterRefresh` in `services/http-client.ts`), and it has no
+ * per-request option to suppress that replay. The route re-raises coord's 401
+ * with coord's status, so on that one path a batch could be sent twice.
  *
  * A 401/403 aborts the batch and rejects with that status (an auth failure is
  * a property of the caller, not of any row); every other per-id failure comes
@@ -75,6 +83,9 @@ export async function unbindFleetDevices(
     method: "POST",
     body: JSON.stringify({ device_ids: deviceIds }),
     idempotent: false,
+    // Exactly one request: no 429 or 5xx re-issue. (A repeat would read the
+    // first attempt's `unbound` rows back as `already_absent`.)
+    maxRetries: 0,
   });
   return readJson<DeviceUnbindResponseWire>(res, `POST ${url}`, {
     unparseable: "null",

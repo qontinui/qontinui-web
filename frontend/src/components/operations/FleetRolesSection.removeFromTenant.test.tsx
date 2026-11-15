@@ -166,6 +166,7 @@ function serve() {
       roles_table: "present",
       roster_truncated: false,
       older_machines_omitted: 0,
+      unidentifiable_ci_runner_rows: 0,
       machines,
       ...rosterExtras,
     });
@@ -330,13 +331,18 @@ describe("removal rules", () => {
 
   it("the last CI host is the one whose rows cover every CI-host row", () => {
     const only = readMachine(ciHost());
-    const complete = { rosterTruncated: false, omitted: 0 };
+    const complete = { rosterTruncated: false, omitted: 0, unidentifiable: 0 };
     expect(isLastCiHost([only], only, complete)).toBe("yes");
     // Over a cut, gappy or unreported roster read it is only "maybe".
     for (const roster of [
-      { rosterTruncated: true, omitted: 0 },
-      { rosterTruncated: false, omitted: 2 },
-      { rosterTruncated: null, omitted: null },
+      { rosterTruncated: true, omitted: 0, unidentifiable: 0 },
+      { rosterTruncated: false, omitted: 2, unidentifiable: 0 },
+      // Not reported is not zero.
+      { rosterTruncated: false, omitted: null, unidentifiable: 0 },
+      { rosterTruncated: false, omitted: 0, unidentifiable: null },
+      // An unnamed CI registration may be another CI host.
+      { rosterTruncated: false, omitted: 0, unidentifiable: 2 },
+      { rosterTruncated: null, omitted: null, unidentifiable: null },
     ]) {
       expect(isLastCiHost([only], only, roster)).toBe("maybe");
     }
@@ -528,7 +534,7 @@ describe("the dialog, per GitHub listing and heartbeat", () => {
       "Opens a confirmation; removes this tenant's binding of 2 devices."
     );
     expect(open.getAttribute("aria-label")).toBe(
-      `Remove ${CI_HOST_LABEL} from this tenant`
+      `Remove from this tenant… (${CI_HOST_LABEL})`
     );
     // The live region is mounted before there is anything to say.
     expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe("");
@@ -599,7 +605,7 @@ describe("the answer", () => {
     expect(
       within(result).getByTestId("fleet-roles-remove-refusal").textContent
     ).toContain(
-      "Coord refused the removal (HTTP 401): only an operator of this tenant may remove a machine from it. Nothing was removed."
+      "This console refused the removal (HTTP 401): only an operator of this tenant may remove a machine from it. Nothing was removed."
     );
     expect(toastMock.success).not.toHaveBeenCalled();
   });
@@ -772,7 +778,7 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await screen.findByTestId("fleet-roles-remove-result");
     expect(confirmButton().textContent).toBe(
-      "Retry the 1 not confirmed removed"
+      "Retry the 1 device row not confirmed removed"
     );
     expect(
       screen.getByTestId("fleet-roles-remove-retry-scope").textContent
@@ -798,6 +804,15 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     fireEvent.click(confirmButton());
     await waitFor(() => expect(posts).toHaveLength(1));
+    // Cancel cannot close a dialog whose removal is in flight: it says so by
+    // being disabled.
+    expect(
+      (
+        screen.getByTestId(
+          "fleet-roles-remove-dialog-cancel"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
     expect(confirmButton().disabled).toBe(true);
     release();
     await waitFor(() =>
@@ -819,7 +834,7 @@ describe("the answer", () => {
     expect(toastMock.success).not.toHaveBeenCalled();
     // Nothing is known per id, so a retry sends both again.
     expect(confirmButton().textContent).toBe(
-      "Retry the 2 not confirmed removed"
+      "Retry the 2 device rows not confirmed removed"
     );
   });
 
@@ -914,7 +929,7 @@ describe("the answer", () => {
     );
     expect(toastMock.success).not.toHaveBeenCalled();
     expect(confirmButton().textContent).toBe(
-      "Retry the 1 not confirmed removed"
+      "Retry the 1 device row not confirmed removed"
     );
     fireEvent.click(confirmButton());
     await waitFor(() =>
@@ -945,7 +960,7 @@ describe("the answer", () => {
     release();
     await waitFor(() => expect(confirmButton().disabled).toBe(false));
     expect(confirmButton().textContent).toBe(
-      "Retry the 1 not confirmed removed"
+      "Retry the 1 device row not confirmed removed"
     );
     expect(posts).toHaveLength(1);
   });
@@ -1007,10 +1022,10 @@ describe("the answer", () => {
     ).toContain(
       "The batch stopped there; some bindings may have been removed."
     );
+    // Said once, in the refusal: no second "may have been removed" line.
     expect(
-      within(result).getByTestId("fleet-roles-remove-may-have-applied")
-        .textContent
-    ).toBe(MAY_HAVE_APPLIED_TEXT);
+      within(result).queryByTestId("fleet-roles-remove-may-have-applied")
+    ).toBeNull();
     expect(
       within(result)
         .getAllByTestId("fleet-roles-remove-outcome-row")
@@ -1028,5 +1043,43 @@ describe("the answer", () => {
       within(result).getByTestId("fleet-roles-remove-may-have-applied")
         .textContent
     ).toBe(MAY_HAVE_APPLIED_TEXT);
+  });
+
+  it("sends the removal exactly once: no retry of a 429 or a 5xx", async () => {
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(1));
+    const call = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST"
+    );
+    expect(call?.[1]).toMatchObject({ maxRetries: 0, idempotent: false });
+  });
+
+  it("a retry never sends another machine's ids", async () => {
+    machines = [ciHost(), workstation({ heartbeat_fresh: false })];
+    postAnswers = [
+      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
+      answer([unbound(DEV_A)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    expect(confirmButton().textContent).toBe(
+      "Retry the 1 device row not confirmed removed"
+    );
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-cancel"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    // Another machine's dialog sends that machine's ids, not the retry's.
+    fireEvent.click(screen.getByText(HOST_A));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    expect(confirmButton().textContent).toBe("Remove from this tenant");
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]).toEqual([DEV_A]);
   });
 });

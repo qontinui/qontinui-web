@@ -142,6 +142,7 @@ beforeEach(() => {
       roles_table: "present",
       roster_truncated: false,
       older_machines_omitted: 0,
+      unidentifiable_ci_runner_rows: 0,
       machines,
     });
   });
