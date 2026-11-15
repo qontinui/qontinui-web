@@ -6,9 +6,9 @@ import { usePageWriteGuardContext } from "../_hooks/usePageWriteGuardContext";
 const WAITING_FOR_PROJECT =
   "Waiting for this page's project to be known before reading these settings. If this does not change, select a project or reload the page.";
 
-/** The line once the page's red notice says its project list failed. */
+/** The line while a red notice at the top of the page says why and what to do. */
 const SEE_PROJECT_LIST_NOTICE =
-  "Not read: this page's project is unknown. See the notice at the top of the page.";
+  "Not read until this page has a project: see the notice at the top of the page.";
 
 /**
  * What a settings section shows while the page has no project to read its
@@ -18,10 +18,11 @@ const SEE_PROJECT_LIST_NOTICE =
  * and names the way out in words.
  *
  * When the layout's provider has said its membership read failed and the
- * page has no project to pin to (`projectListFailed`), nothing will read the
- * list again: the provider shows ONE red notice with a Reload, outside the
- * fieldset (`PageWriteGuardProvider`), and the section points to it instead
- * of repeating it.
+ * page has no project to pin to (`projectListFailed`), nothing on this page
+ * reads the list again: the provider shows ONE red notice saying why and what
+ * to do — its own, or the cross-tab notice while the page is locked
+ * (`PageWriteGuardProvider`) — and the section points to it instead of
+ * repeating it.
  */
 export function WaitingForProject({ testId }: { testId: string }) {
   const listFailed = usePageWriteGuardContext()?.projectListFailed ?? false;

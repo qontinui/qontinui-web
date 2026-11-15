@@ -22,10 +22,11 @@ export interface PageWriteGuardValue {
   tenantContext: ReturnType<typeof useOptionalTenant>;
   /**
    * The layout's provider has said its membership read failed, and the page
-   * has no project to pin a request to (`pin` undefined). Nothing reads the
-   * list again, so no setting is read and no change is sent until the
-   * operator reloads: the provider shows its red notice, and a settings
-   * section that waits for the page's project points to it.
+   * has no project to pin a request to (`pin` undefined). Nothing on this
+   * page reads the list again, so no setting is read and no change is sent
+   * until the operator acts: the provider shows a red notice (its own, or the
+   * cross-tab notice while the page is locked), and a settings section that
+   * waits for the page's project points to it.
    */
   projectListFailed: boolean;
   /**

@@ -861,7 +861,7 @@ const WAITING_COPY =
  * failed: a pointer to the page's one red notice, which says the rest.
  */
 const SEE_NOTICE_COPY =
-  "Not read: this page's project is unknown. See the notice at the top of the page.";
+  "Not read until this page has a project: see the notice at the top of the page.";
 /** The page's red notice for that state. */
 const LIST_FAILED_NOTICE =
   "The list of your projects could not be read, so this page's project is unknown. Until you reload, no setting on this page is read and no change made on it is sent.";

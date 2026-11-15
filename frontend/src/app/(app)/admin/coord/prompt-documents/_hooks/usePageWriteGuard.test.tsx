@@ -33,10 +33,14 @@
  * 7. **Focus moves to Reload when the page locks** (H07), from a control the
  *    fieldset disabled or from `<body>`, and never out of an open dialog.
  *    While locked, the fieldset is described by the notice.
- * 8. **A membership read that failed is a red notice too** (round 7), shown
- *    only while nothing pins the page: no project stored at mount. Only the
- *    operator's Reload reads the list again, so it is R3's red row, outside
- *    the fieldset with its Reload enabled.
+ * 8. **A membership read that failed is a red notice too** (rounds 7-8),
+ *    shown only while nothing pins the page (no project stored at mount),
+ *    the provider is not re-reading the list, and the page is not locked.
+ *    Nothing on this page reads the list again, so it is R3's red row,
+ *    outside the fieldset. It shows the provider's error text, and names
+ *    creating or joining a project, with no Reload, for an operator in no
+ *    project (`tenant_not_resolved`). Locked as well, the page shows ONE
+ *    alert, the cross-tab notice, naming the page's project unknown.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -76,6 +80,7 @@ import {
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { WaitingForProject } from "../_components/WaitingForProject";
 
 const KEY = "qontinui.active_tenant_id";
 const B = "t-bravo";
@@ -410,15 +415,35 @@ describe("the notice", () => {
 });
 
 describe("the project-list notice", () => {
-  /** The layout's provider, its membership read refused, under the page. */
-  function mountAfterTheListFailed(stored: string | null) {
-    listTenantsMock.mockRejectedValue(new Error("membership read failed"));
+  /** The tenants list's message for a refusal the backend names (`listTenants`). */
+  const NO_PROJECT =
+    "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)";
+  const UNREACHABLE =
+    "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)";
+  /** The provider's `refresh`, captured from under it. */
+  let refresh: () => Promise<boolean> = async () => false;
+  function Refresher() {
+    refresh = useTenant().refresh;
+    return null;
+  }
+
+  /**
+   * The layout's provider, its membership read refused with `message`, under
+   * the page and one settings section waiting for the page's project.
+   */
+  function mountAfterTheListFailed(
+    stored: string | null,
+    message = UNREACHABLE
+  ) {
+    listTenantsMock.mockRejectedValue(new Error(message));
     if (stored !== null) localStorage.setItem(KEY, stored);
     render(
       <TenantProvider>
         <PageWriteGuardProvider>
           <button data-testid="edit">Edit</button>
+          <WaitingForProject testId="section-waiting" />
           <Probe />
+          <Refresher />
         </PageWriteGuardProvider>
       </TenantProvider>
     );
@@ -431,7 +456,7 @@ describe("the project-list notice", () => {
       "prompt-documents-project-list-failed"
     );
     expect(notice).toHaveAttribute("role", "alert");
-    // Red (R3): only the operator's Reload reads the list again.
+    // Red (R3): nothing on this page reads the list again.
     expect(notice).toHaveClass(
       "border-red-500/40",
       "bg-red-500/10",
@@ -449,6 +474,106 @@ describe("the project-list notice", () => {
     // Nothing is locked: the page's controls stay enabled, and refuse each
     // write at call time for want of a pin.
     expect(screen.getByTestId("edit")).toBeEnabled();
+    // What the server answered, so a failure a reload may clear reads as one.
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-error")
+    ).toHaveTextContent(UNREACHABLE);
+    expect(notice).toHaveTextContent(/Until you reload/);
+    expect(screen.getByTestId("section-waiting")).toHaveTextContent(
+      "Not read until this page has a project: see the notice at the top of the page."
+    );
+  });
+
+  it("names creating or joining a project, and offers no Reload, for an operator in no project", async () => {
+    // `tenant_not_resolved` answers every reload alike: Reload would loop.
+    mountAfterTheListFailed(null, NO_PROJECT);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(notice).toHaveTextContent(
+      "Your account is not in any project yet, so this page has no project to read settings in or send a change to. Create one with “+ New” in the sidebar's project selector and open it, or ask a project's admin to add you."
+    );
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-error")
+    ).toHaveTextContent(NO_PROJECT);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed-reload")
+    ).not.toBeInTheDocument();
+    expect(notice).not.toHaveTextContent(/reload/i);
+  });
+
+  it("is absent while a refresh re-reads the list after it failed", async () => {
+    // The provider outlives a client-side navigation, and its `refresh()` is
+    // called elsewhere in the app (the members page's rename dialog), so a
+    // re-read can be in flight while this page is mounted. While it is, the
+    // provider still holds the old error, and nothing has failed yet.
+    mountAfterTheListFailed(null);
+    await screen.findByTestId("prompt-documents-project-list-failed");
+    let answer: (list: unknown) => void = () => {};
+    listTenantsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    let refreshing: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      refreshing = refresh();
+    });
+    await waitFor(() => expect(latest().tenantContext?.loading).toBe(true));
+
+    expect(latest().tenantContext?.error).not.toBeNull();
+    expect(latest().projectListFailed).toBe(false);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+
+    // The re-read answers: the page has its project, and no notice.
+    await act(async () => {
+      answer({
+        tenants: [{ id: B, slug: "b", name: "Bravo" }],
+        active_tenant_id: B,
+      });
+      await refreshing;
+    });
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+  });
+
+  it("with the list failed, another tab storing a project raises ONE alert, coherent, its Reload enabled under the disabled fieldset", async () => {
+    // Ported from the round-8 review's reproduction: before, both notices
+    // showed, the cross-tab one naming "your home project (none selected)"
+    // beside one saying the page's project is unknown.
+    mountAfterTheListFailed(null);
+    await screen.findByTestId("prompt-documents-project-list-failed");
+
+    await act(async () => anotherTabStores("t-other"));
+
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    const crossTab = screen.getByTestId("prompt-documents-cross-tab");
+    expect(alerts[0]).toBe(crossTab);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+    expect(crossTab).toHaveTextContent(
+      "everything below belongs to an unknown project (the list of your projects could not be read), and the active project is now project t-other."
+    );
+    expect(crossTab).not.toHaveTextContent(/home project/);
+    // The one Reload, outside the fieldset the lock disabled.
+    expect(screen.getByTestId("edit")).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /reload/i })).toHaveLength(1);
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toBeEnabled();
+    // The section points to the notice that is up.
+    expect(screen.getByTestId("section-waiting")).toHaveTextContent(
+      "see the notice at the top of the page"
+    );
   });
 
   it("is absent while the membership read is in flight", async () => {
