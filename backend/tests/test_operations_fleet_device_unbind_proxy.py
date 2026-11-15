@@ -450,7 +450,7 @@ class TestStillMemberViaPointer:
 # ---------------------------------------------------------------------------
 
 
-def _not_attempted(device_id: str, reason: str) -> dict[str, Any]:
+def _expected_not_attempted(device_id: str, reason: str) -> dict[str, Any]:
     return {
         "device_id": device_id,
         "outcome": "not_attempted",
@@ -490,7 +490,7 @@ class TestCallerRefusalAborts:
                         "error": coord_body,
                         "still_member_via_pointer": None,
                     },
-                    _not_attempted(DEVICE_B, _ABORTED),
+                    _expected_not_attempted(DEVICE_B, _ABORTED),
                 ],
                 "unbound": 0,
                 "already_absent": 0,
@@ -552,7 +552,7 @@ class TestCallerRefusalAborts:
                         "error": coord_body,
                         "still_member_via_pointer": None,
                     },
-                    _not_attempted(DEVICE_D, _ABORTED),
+                    _expected_not_attempted(DEVICE_D, _ABORTED),
                 ],
                 "unbound": 1,
                 "already_absent": 1,
@@ -660,6 +660,20 @@ class TestTransportFailures:
             }
         ]
         assert resp.json()["unknown"] == 1
+
+    def test_gateway_503_with_its_own_json_body_is_unknown(
+        self, auth_client: TestClient
+    ):
+        gateway_body = {"message": "Service Unavailable"}
+        stub = _CoordStub({DEVICE_A: [_mock_response(503, gateway_body)]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        row = resp.json()["results"][0]
+        assert row["outcome"] == "unknown"
+        assert row["status"] == 503
+        assert row["error"]["error"] == "coord_answer_lost"
+        assert resp.json()["unknown"] == 1
+        assert resp.json()["failed"] == 0
 
     def test_coords_own_structured_502_stays_failed(self, auth_client: TestClient):
         coord_body = {"error": "github_unreachable"}
@@ -814,8 +828,8 @@ class TestDeadline:
                     "error": None,
                     "still_member_via_pointer": None,
                 },
-                _not_attempted(DEVICE_B, _OUT_OF_BUDGET),
-                _not_attempted(DEVICE_C, _OUT_OF_BUDGET),
+                _expected_not_attempted(DEVICE_B, _OUT_OF_BUDGET),
+                _expected_not_attempted(DEVICE_C, _OUT_OF_BUDGET),
             ],
             "unbound": 1,
             "already_absent": 0,
@@ -867,7 +881,7 @@ class TestDeadline:
                     },
                     "still_member_via_pointer": None,
                 },
-                _not_attempted(DEVICE_B, _OUT_OF_BUDGET),
+                _expected_not_attempted(DEVICE_B, _OUT_OF_BUDGET),
             ],
             "unbound": 0,
             "already_absent": 0,

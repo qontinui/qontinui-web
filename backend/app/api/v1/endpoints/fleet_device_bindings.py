@@ -243,9 +243,12 @@ def _classify_response(
             still_member_via_pointer=pointer if isinstance(pointer, bool) else None,
         )
     detail = _coord_error_detail(resp)
-    if status in _GATEWAY_STATUSES and not isinstance(detail, dict):
-        # A gateway in front of coord answered, not coord: coord never
-        # replied with its own body, and the request may have been applied.
+    is_coord_body = isinstance(detail, dict) and isinstance(detail.get("error"), str)
+    if status in _GATEWAY_STATUSES and not is_coord_body:
+        # A gateway in front of coord answered, not coord: every structured
+        # error coord returns carries a string `error` key, so anything else
+        # (text, or a gateway's own JSON such as {"message": ...}) is not
+        # coord's reply, and the request may have been applied.
         return FleetDeviceUnbindResult(
             device_id=device_id,
             outcome="unknown",
@@ -380,6 +383,16 @@ async def post_fleet_devices_unbind(
                     },
                 )
 
+    for result in results:
+        if result.outcome in ("unknown", "failed"):
+            logger.warning(
+                "fleet_devices_unbind_row",
+                tenant_id=str(tenant_id),
+                device_id=str(result.device_id),
+                outcome=result.outcome,
+                status=result.status,
+                error=result.error,
+            )
     response = _tally(results)
     logger.info(
         "fleet_devices_unbind",
