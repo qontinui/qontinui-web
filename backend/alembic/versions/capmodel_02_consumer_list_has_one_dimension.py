@@ -1,7 +1,7 @@
 """capacity_model_off_consumers holds at most one dimension
 
 Revision ID: capmodel_02
-Revises: coord_ci_runs_head_sha_idx_01
+Revises: coord_agent_questions_ref_observed_01
 Create Date: 2026-11-13
 
 Coord finding ``c096b745`` (plan
@@ -90,7 +90,7 @@ revision: str = "capmodel_02"
 # three sites together: this line, the docstring's `Revises:` line, and
 # `_PARENT_REVISION_ID` in
 # tests/test_capmodel_02_consumer_list_has_one_dimension_migration.py.
-down_revision = "coord_ci_runs_head_sha_idx_01"
+down_revision = "coord_agent_questions_ref_observed_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
