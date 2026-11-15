@@ -201,6 +201,16 @@ export type UnbindRowOutcome =
   | "answer_lost"
   /** Wire `not_attempted`: the batch hit its deadline before this id. */
   | "deadline_not_attempted"
+  /**
+   * Batched removals: this id's batch was never sent, because an earlier
+   * batch was refused or lost. Nothing happened to it.
+   */
+  | "not_sent"
+  /**
+   * This console's own gate refused the request carrying this id (a 401/403
+   * with no `refused_device_id`): it never reached coord.
+   */
+  | "console_refused"
   /** An id the route did not answer for, or an outcome this build does not know. */
   | "unreported";
 
@@ -225,6 +235,8 @@ export interface UnbindSummary {
   notAttempted: number;
   answerLost: number;
   deadlineNotAttempted: number;
+  notSent: number;
+  consoleRefused: number;
   unreported: number;
   /** Every id read `unbound` or `already_absent` — the only case for a toast. */
   allSettled: boolean;
@@ -256,6 +268,8 @@ const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
   "not_attempted",
   "answer_lost",
   "deadline_not_attempted",
+  "not_sent",
+  "console_refused",
   "unreported",
 ]);
 
@@ -282,7 +296,9 @@ function errorReading(
 export function summarizeUnbind(
   requested: readonly string[],
   body: DeviceUnbindResponseWire | null,
-  abort: UnbindAbort | null = null
+  abort: UnbindAbort | null = null,
+  /** Some batch's 2xx body could not be read (its ids are unreported). */
+  unreadable = false
 ): UnbindSummary {
   const refused = abort?.refusedDeviceId?.toLowerCase() ?? null;
   const served = new Map<string, Record<string, unknown>>();
@@ -333,10 +349,55 @@ export function summarizeUnbind(
           status,
           error: errorReading(r.error, status),
         };
+      // Synthesised by this console for batches, never sent by the route.
+      case "not_sent":
+        return { deviceId, outcome: "not_sent", status: null, error: null };
+      case "console_refused":
+        return {
+          deviceId,
+          outcome: "console_refused",
+          status: null,
+          error: null,
+        };
       default:
         return { deviceId, outcome: "unreported", status, error: null };
     }
   });
+  return summarizeRows(rows, body === null || unreadable);
+}
+
+/**
+ * The machine-level summary after a retry: each id's latest outcome — the
+ * retry's for the ids it sent, the earlier attempt's for the rest.
+ */
+export function combineSummaries(
+  requested: readonly string[],
+  earlier: UnbindSummary,
+  later: UnbindSummary
+): UnbindSummary {
+  const byId = (s: UnbindSummary) =>
+    new Map(s.rows.map((r) => [r.deviceId.toLowerCase(), r]));
+  const before = byId(earlier);
+  const after = byId(later);
+  const rows = requested.map(
+    (deviceId) =>
+      after.get(deviceId.toLowerCase()) ??
+      before.get(deviceId.toLowerCase()) ?? {
+        deviceId,
+        outcome: "unreported" as const,
+        status: null,
+        error: null,
+      }
+  );
+  return summarizeRows(rows, false);
+}
+
+/** Count rows and say them in one sentence. */
+export function summarizeRows(
+  rows: UnbindRowResult[],
+  /** Unreported rows come from an answer that could not be read. */
+  unreadable: boolean
+): UnbindSummary {
   const count = (o: UnbindRowOutcome) =>
     rows.filter((r) => r.outcome === o).length;
   const removed = count("removed");
@@ -348,6 +409,8 @@ export function summarizeUnbind(
   const notAttemptedCount = count("not_attempted");
   const answerLost = count("answer_lost");
   const deadlineNotAttempted = count("deadline_not_attempted");
+  const notSent = count("not_sent");
+  const consoleRefused = count("console_refused");
   const unreported = count("unreported");
   const bindingsRemoved = removed + stillListed + pointerUnknown;
 
@@ -386,9 +449,15 @@ export function summarizeUnbind(
     );
   if (deadlineNotAttempted > 0)
     parts.push(`${deadlineNotAttempted} not attempted (time limit) — retry`);
+  if (consoleRefused > 0)
+    parts.push(
+      `${consoleRefused} not attempted (this console refused the request)`
+    );
+  if (notSent > 0)
+    parts.push(`${notSent} not sent (an earlier batch was refused)`);
   if (unreported > 0)
     parts.push(
-      body === null
+      unreadable
         ? `${unreported} unreported (the answer could not be read; the list re-reads to show what coord now holds)`
         : `${unreported} not reported by the route`
     );
@@ -405,6 +474,8 @@ export function summarizeUnbind(
     notAttempted: notAttemptedCount,
     answerLost,
     deadlineNotAttempted,
+    notSent,
+    consoleRefused,
     unreported,
     // Settled = coord answered for every id and none needs another try.
     allSettled: n > 0 && rows.every((r) => !UNSETTLED.has(r.outcome)),
@@ -461,14 +532,35 @@ export function describeUnbindRejection(
    */
   batches: {
     prior: readonly DeviceUnbindResultWire[];
+    /** The ids of the batch this rejection answered. */
+    current: readonly string[];
     neverSent: readonly string[];
-  } = { prior: [], neverSent: [] }
+    /** An earlier batch's 2xx body could not be read. */
+    unreadable: boolean;
+  } = { prior: [], current: requested, neverSent: [], unreadable: false }
 ): UnbindRefusal {
+  const synth = (ids: readonly string[], outcome: string) =>
+    ids.map((device_id) => ({
+      device_id,
+      outcome,
+      status: null,
+      error: null,
+      still_member_via_pointer: null,
+    }));
+  // Later batches were never sent, whatever refused this one.
+  const notSentRows = synth(batches.neverSent, "not_sent");
+  // A lost answer (no status): this batch's ids stay unreported — it may have
+  // acted — and only the rows earlier batches answered are known.
   const priorOnly = (): UnbindSummary | null =>
-    batches.prior.length > 0
-      ? summarizeUnbind(requested, {
-          results: [...batches.prior],
-        } as DeviceUnbindResponseWire)
+    batches.prior.length > 0 || notSentRows.length > 0
+      ? summarizeUnbind(
+          requested,
+          {
+            results: [...batches.prior, ...notSentRows],
+          } as unknown as DeviceUnbindResponseWire,
+          null,
+          batches.unreadable
+        )
       : null;
   if (isBackendErrorReading(err) || err instanceof BackendError) {
     const reading = isBackendErrorReading(err) ? err : err.reading;
@@ -517,23 +609,18 @@ export function describeUnbindRejection(
     inner !== null && Array.isArray(inner.results) ? inner.results : [];
   // After an auth abort, a later batch's ids were never sent: the same
   // "not attempted (aborted by an auth refusal)" as the route's own rows.
-  const unsent =
-    abort !== null
-      ? batches.neverSent.map((device_id) => ({
-          device_id,
-          outcome: "not_attempted",
-          status: null,
-          error: null,
-          still_member_via_pointer: null,
-        }))
-      : [];
-  const merged = [...batches.prior, ...chunkRows, ...unsent];
+  // This console's own gate (a 401/403 with no `refused_device_id`): the
+  // batch reached nothing.
+  const gateRows =
+    auth && abort === null ? synth(batches.current, "console_refused") : [];
+  const merged = [...batches.prior, ...chunkRows, ...gateRows, ...notSentRows];
   const partial =
     merged.length > 0 || abort !== null
       ? summarizeUnbind(
           requested,
           { results: merged } as unknown as DeviceUnbindResponseWire,
-          abort
+          abort,
+          batches.unreadable
         )
       : null;
   // Coord's own refusal, when the route relayed it as `coord_error`.

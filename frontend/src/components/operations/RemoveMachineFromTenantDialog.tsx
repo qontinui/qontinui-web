@@ -51,6 +51,7 @@ import {
   STILL_LISTED_TEXT,
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
+  combineSummaries,
   confirmPhraseFor,
   isLastCiHost,
   listingText,
@@ -80,6 +81,8 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
   answer_lost:
     "may have been removed — coord's answer was lost; reload to check",
   deadline_not_attempted: "not attempted (time limit) — retry",
+  not_sent: "not sent (an earlier batch was refused)",
+  console_refused: "not attempted (this console refused the request)",
   unreported: "not reported",
 };
 
@@ -148,6 +151,9 @@ export function useRemoveMachineFromTenant(
   // Cleared by every `openFor`, which is the only way the target changes, so
   // a retry can never send another machine's ids.
   const [retryIds, setRetryIds] = useState<string[] | null>(null);
+  // The machine-level rows so far: a retry's answer is merged over them, so
+  // the acknowledgement counts the whole machine, not the retried subset.
+  const [soFar, setSoFar] = useState<UnbindSummary | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
@@ -167,6 +173,7 @@ export function useRemoveMachineFromTenant(
     ) => {
       reset();
       setRetryIds(null);
+      setSoFar(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
       setOpenState(true);
@@ -209,8 +216,14 @@ export function useRemoveMachineFromTenant(
       setRetryIds(null);
       setOpenState(false);
     };
+    // Over a retry, each id's latest outcome across the attempts.
+    const whole = (s: UnbindSummary) =>
+      retryIds !== null && soFar !== null
+        ? combineSummaries(m.deviceIds, soFar, s)
+        : s;
     if (outcome.state === "answered") {
-      const s = outcome.summary;
+      const s = whole(outcome.summary);
+      setSoFar(s);
       if (s.allSettled) {
         settle(s, s.sentence);
         return;
@@ -222,7 +235,12 @@ export function useRemoveMachineFromTenant(
       setRetryIds(unsettledIds(s));
       return;
     }
-    const r = outcome.refusal;
+    const refusal = outcome.refusal;
+    const r: UnbindRefusal =
+      refusal.partial !== null
+        ? { ...refusal, partial: whole(refusal.partial) }
+        : refusal;
+    if (r.partial !== null) setSoFar(r.partial);
     // A non-auth error whose rows leave nothing unsettled is settled: there
     // is nothing to retry, so no "Retry the 0…" dialog is left behind.
     if (!r.auth && r.partial !== null && r.partial.allSettled) {
@@ -236,7 +254,7 @@ export function useRemoveMachineFromTenant(
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
     setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [retryIds, status, target, unbind]);
+  }, [retryIds, soFar, status, target, unbind]);
 
   return {
     target,
