@@ -2,15 +2,21 @@ import { toast } from "sonner";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
 /**
+ * Who resolves a dial's level, WITH its verb: "devices resolve", "coord
+ * resolves", "the worker resolves". Typed so the verb is mandatory: a bare
+ * "runners" would read 'Wrote "on", but runners "off"'.
+ */
+export type Resolvers = `${string} resolve` | `${string} resolves`;
+
+/**
  * What a dial says when what resolves is not the level it wrote: a write that
  * landed and a value that resolves are different facts. `resolvers` names who
- * resolves it, with its verb ("devices resolve", "the worker resolves"). One
- * sentence for every dial that reads its level back, so the copies cannot
- * drift.
+ * resolves it, with its verb. One sentence for every dial that reads its level
+ * back, so the copies cannot drift.
  */
 export function resolvedOtherwise(
   level: string,
-  resolvers: string,
+  resolvers: Resolvers,
   view: FleetPolicyView
 ): string {
   return (
@@ -33,7 +39,7 @@ export interface RereadAfterWrite {
   /** The read-back's success sentence for `level` ("… now \"on\" …"). */
   confirmed: string;
   /** Who resolves the level, with its verb, for `resolvedOtherwise`. */
-  resolvers: string;
+  resolvers: Resolvers;
   /** Say that the re-read itself threw, as the dial's read error. */
   onError: (err: unknown) => void;
 }

@@ -19,6 +19,7 @@ import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import {
   rereadAfterFailedReadBack,
   resolvedOtherwise,
+  type RereadAfterWrite,
 } from "./fleetPolicyReadBack";
 
 function view(level: string, scope = "tenant"): FleetPolicyView {
@@ -34,7 +35,10 @@ function view(level: string, scope = "tenant"): FleetPolicyView {
 }
 
 /** What a dial hands the helper after writing `on`. */
-const AFTER_WRITING_ON = {
+const AFTER_WRITING_ON: Pick<
+  RereadAfterWrite,
+  "level" | "confirmed" | "resolvers"
+> = {
   level: "on",
   confirmed: 'Some dial: now "on" for this tenant.',
   resolvers: "devices resolve",

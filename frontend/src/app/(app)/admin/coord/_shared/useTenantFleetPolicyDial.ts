@@ -11,6 +11,7 @@ import {
 import {
   rereadAfterFailedReadBack,
   resolvedOtherwise,
+  type Resolvers,
 } from "./fleetPolicyReadBack";
 import {
   useFirstPinnedRead,
@@ -113,7 +114,7 @@ function capitalise(s: string): string {
 export function useTenantFleetPolicyDial<L extends string>(
   domain: string,
   label: string,
-  resolvers: string = "devices resolve",
+  resolvers: Resolvers = "devices resolve",
   { resolvePin }: SendTimePinOptions = {}
 ) {
   // One identity whatever the caller passes, so the first read runs once: the

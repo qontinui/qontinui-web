@@ -11,6 +11,7 @@ import {
 import {
   rereadAfterFailedReadBack,
   resolvedOtherwise,
+  type Resolvers,
 } from "../../_shared/fleetPolicyReadBack";
 import {
   useFirstPinnedRead,
@@ -31,7 +32,7 @@ function message(err: unknown, fallback: string): string {
 }
 
 /** Who resolves this dial's level, for its read-back's warning. */
-const RESOLVERS = "the worker resolves";
+const RESOLVERS: Resolvers = "the worker resolves";
 
 /**
  * The `policy_auto_publish` fleet-policy dial — whether this tenant's settled
