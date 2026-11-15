@@ -741,6 +741,46 @@ export function entryToRow(e: CostEntry): EntryRow {
   };
 }
 
+/** Newest first: by the day incurred, then by when it was recorded. */
+function newestFirst(a: CostEntry, b: CostEntry): number {
+  if (a.incurred_on !== b.incurred_on)
+    return a.incurred_on < b.incurred_on ? 1 : -1;
+  const ta = Date.parse(a.created_at);
+  const tb = Date.parse(b.created_at);
+  if (ta !== tb && !Number.isNaN(ta) && !Number.isNaN(tb)) return tb - ta;
+  return 0;
+}
+
+/**
+ * The order the Costs table is shown in before the reader sorts a column:
+ * latest entry at the top, earliest at the bottom. Entries just added in this
+ * view (`pinned`: one batch per add or paste, most recent batch first) sit
+ * above everything else — directly under the add buttons — even when their
+ * day is older, until the page is reloaded. Within a batch the same
+ * newest-first order applies. Does not mutate `entries`.
+ */
+export function arrangeEntries(
+  entries: CostEntry[],
+  pinned: readonly (readonly string[])[] = []
+): CostEntry[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const placed = new Set<string>();
+  const top: CostEntry[] = [];
+  for (const batch of pinned) {
+    const found: CostEntry[] = [];
+    for (const id of batch) {
+      const e = byId.get(id);
+      if (e && !placed.has(id)) {
+        placed.add(id);
+        found.push(e);
+      }
+    }
+    top.push(...found.sort(newestFirst));
+  }
+  const rest = entries.filter((e) => !placed.has(e.id)).sort(newestFirst);
+  return [...top, ...rest];
+}
+
 /** The server's cross-field rule, refused before sending. */
 export function entryRowProblem(row: {
   expects_delivery: boolean;
