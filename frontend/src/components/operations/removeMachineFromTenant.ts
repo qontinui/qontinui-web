@@ -477,6 +477,33 @@ export function combineSummaries(
   return summarizeRows(rows);
 }
 
+/**
+ * A fresh attempt after an EARLIER dialog session whose answer for some ids
+ * was lost or unreported: those ids now reading "already absent" are "absent
+ * now" — no cause claimed, and never "Nothing to remove".
+ */
+export function creditEarlierAttempt(
+  summary: UnbindSummary,
+  possiblyAppliedIds: readonly string[]
+): UnbindSummary {
+  if (possiblyAppliedIds.length === 0) return summary;
+  const earlier = new Set(possiblyAppliedIds.map((id) => id.toLowerCase()));
+  return summarizeRows(
+    summary.rows.map((r) =>
+      r.outcome === "already_absent" && earlier.has(r.deviceId.toLowerCase())
+        ? { ...r, outcome: "removed_earlier" }
+        : r
+    )
+  );
+}
+
+/** The ids a summary leaves possibly removed (lost or unreported). */
+export function possiblyAppliedIds(summary: UnbindSummary): string[] {
+  return summary.rows
+    .filter((r) => POSSIBLY_APPLIED.has(r.outcome))
+    .map((r) => r.deviceId);
+}
+
 /** Count rows and say them in one sentence. */
 export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const count = (o: UnbindRowOutcome) =>

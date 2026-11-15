@@ -53,7 +53,9 @@ import {
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
   combineSummaries,
+  creditEarlierAttempt,
   mergeRefusalOver,
+  possiblyAppliedIds,
   summarizeRows,
   confirmPhraseFor,
   isLastCiHost,
@@ -121,9 +123,23 @@ function refusalSentence(r: UnbindRefusal): string {
 /** One machine's last removal outcome, kept by its machine key. */
 export interface RemovalAck {
   name: string;
+  /** What the row shows: with an earlier session, "Earlier attempt: … This attempt: …". */
   sentence: string;
+  /** This dialog session's own whole-machine sentence. */
+  attemptSentence: string;
   /** Every id read `unbound` or `already_absent`. */
   settled: boolean;
+  /** This session removed, or may have removed, something. */
+  hadEffect: boolean;
+  /** Ids this session left possibly removed (answer lost or unreported). */
+  possiblyApplied: string[];
+}
+
+/** An earlier dialog session's acknowledgement, kept as it was. */
+interface EarlierAttempt {
+  sentence: string;
+  hadEffect: boolean;
+  possiblyApplied: string[];
 }
 
 /** What the dialog acts on: a snapshot taken when it opened. */
@@ -142,6 +158,8 @@ export interface RemoveMachineController {
    */
   status: UnbindState;
   busy: boolean;
+  /** The request itself is out (not just the roster re-read after it). */
+  requesting: boolean;
   /** Ids a retry will send (only those not confirmed removed); `null` = all. */
   retryIds: string[] | null;
   /** The machine key whose dialog is open, or `null`. */
@@ -189,16 +207,9 @@ export function useRemoveMachineFromTenant(
   const [attemptIds, setAttemptIds] = useState<string[]>([]);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
-  // Each machine's whole-machine rows and retry scope, kept across Cancel
-  // and reopen: a reopened attempt merges over them, so earlier removals and
-  // lost-answer credit survive.
-  const saved = useRef<
-    Record<string, { soFar: UnbindSummary | null; retryIds: string[] | null }>
-  >({});
-  useEffect(() => {
-    if (target !== null)
-      saved.current[target.machine.key] = { soFar, retryIds };
-  }, [target, soFar, retryIds]);
+  // A reopened dialog is a fresh whole-machine attempt; the earlier
+  // session's acknowledgement is kept beside it, never overwritten.
+  const [earlier, setEarlier] = useState<EarlierAttempt | null>(null);
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
 
   const showAck = useCallback((key: string) => {
@@ -215,27 +226,35 @@ export function useRemoveMachineFromTenant(
       roster: RosterCompleteness
     ) => {
       reset();
-      // Resume this machine's unsettled ids, as far as it still has them.
-      const kept = saved.current[m.key];
-      const current = new Set(m.deviceIds.map((id) => id.toLowerCase()));
-      const resumed =
-        kept?.retryIds?.filter((id) => current.has(id.toLowerCase())) ?? [];
-      setRetryIds(resumed.length > 0 ? resumed : null);
-      setSoFar(resumed.length > 0 ? (kept?.soFar ?? null) : null);
+      setRetryIds(null);
+      setSoFar(null);
+      const prior = acks[m.key];
+      setEarlier(
+        prior !== undefined
+          ? {
+              sentence: prior.attemptSentence,
+              hadEffect: prior.hadEffect,
+              possiblyApplied: prior.possiblyApplied,
+            }
+          : null
+      );
       setBase(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
       setOpenState(true);
     },
-    [reset]
+    [acks, reset]
   );
 
+  // Only the REQUEST holds the dialog open; once its answer is shown, Cancel
+  // and Escape work even while the roster re-read is still out.
+  const requesting = status.state === "busy";
   const setOpen = useCallback(
     (o: boolean) => {
-      if (!o && busy) return;
+      if (!o && requesting) return;
       setOpenState(o);
     },
-    [busy]
+    [requesting]
   );
 
   const confirm = useCallback(async () => {
@@ -251,6 +270,42 @@ export function useRemoveMachineFromTenant(
     setPrevious(retryIds !== null ? (acks[m.key]?.sentence ?? null) : null);
     const outcome: UnbindOutcome = await unbind(ids);
     if (outcome.state === "in_flight") return;
+    // The machine's acknowledgement: this session's whole-machine sentence,
+    // beside an earlier session's when there was one.
+    const writeAck = (
+      attemptSentence: string,
+      settled: boolean,
+      summary: UnbindSummary | null,
+      mayHaveApplied: boolean
+    ) => {
+      const strip = (x: string) => x.replace(/\.\s*$/, "");
+      const sentence =
+        earlier !== null
+          ? `Earlier attempt: ${strip(earlier.sentence)}. This attempt: ${attemptSentence}`
+          : attemptSentence;
+      const possiblyApplied =
+        summary !== null
+          ? possiblyAppliedIds(summary)
+          : mayHaveApplied
+            ? [...ids]
+            : [];
+      const hadEffect =
+        possiblyApplied.length > 0 ||
+        (summary !== null &&
+          summary.bindingsRemoved + summary.removedEarlier > 0);
+      setAcks((prev) => ({
+        ...prev,
+        [m.key]: {
+          name: m.name,
+          sentence,
+          attemptSentence,
+          settled,
+          hadEffect,
+          possiblyApplied,
+        },
+      }));
+      return sentence;
+    };
     const settle = (s: UnbindSummary, summarySentence: string) => {
       // The re-read still lists the machine while some row says there was no
       // binding (already absent) or did not say whether the home tenant keeps
@@ -268,30 +323,38 @@ export function useRemoveMachineFromTenant(
             x.deviceIds.some((id) => sent.has(id.toLowerCase()))
         );
       const nothingRemoved = s.bindingsRemoved === 0 && s.removedEarlier === 0;
+      // Still listed after a removal that answered for its ids — removed,
+      // already absent, or with the pointer unreported — is worth saying.
       const homeTenant =
-        stillListedAfter && s.alreadyAbsent + s.pointerUnknown > 0;
-      const sentence = homeTenant
-        ? `${summarySentence} ${STILL_LISTED_HOME_TENANT_TEXT}`
-        : summarySentence;
-      setAcks((prev) => ({
-        ...prev,
-        [m.key]: { name: m.name, sentence, settled: true },
-      }));
+        stillListedAfter && s.alreadyAbsent + s.pointerUnknown + s.removed > 0;
+      const sentence = writeAck(
+        homeTenant
+          ? `${summarySentence} ${STILL_LISTED_HOME_TENANT_TEXT}`
+          : summarySentence,
+        true,
+        s,
+        false
+      );
       // Every id unbound or already absent. A binding the home-tenant
       // pointer keeps listed (or may keep listed), a machine still listed,
       // or an absence nothing confirmed is not a clean removal: a warning.
       if (s.stillListed + s.pointerUnknown + s.removedEarlier > 0 || homeTenant)
         toast.warning(`${m.name}: ${sentence}`);
       else if (nothingRemoved)
-        // Every id already absent: nothing happened, so nothing to celebrate.
-        toast.info(`${m.name}: ${sentence}`);
+        // Nothing happened this time. After an earlier attempt that removed
+        // (or may have removed) something, that is not calm news: a warning.
+        (earlier?.hadEffect ? toast.warning : toast.info)(
+          `${m.name}: ${sentence}`
+        );
       else toast.success(`${m.name}: ${sentence}`);
       setRetryIds(null);
       setOpenState(false);
     };
     // Over a retry, each id's latest outcome across the attempts.
+    const credit = (s: UnbindSummary) =>
+      earlier !== null ? creditEarlierAttempt(s, earlier.possiblyApplied) : s;
     const whole = (s: UnbindSummary) =>
-      baseNow !== null ? combineSummaries(m.deviceIds, baseNow, s) : s;
+      credit(baseNow !== null ? combineSummaries(m.deviceIds, baseNow, s) : s);
     if (outcome.state === "answered") {
       const s = whole(outcome.summary);
       setSoFar(s);
@@ -299,20 +362,21 @@ export function useRemoveMachineFromTenant(
         settle(s, s.sentence);
         return;
       }
-      setAcks((prev) => ({
-        ...prev,
-        [m.key]: { name: m.name, sentence: s.sentence, settled: false },
-      }));
+      writeAck(s.sentence, false, s, false);
       setRetryIds(unsettledIds(s));
       return;
     }
     const refusal = outcome.refusal;
     // Over a retry, every refusal — with rows or without — is merged over
     // the whole-machine rows, so the dialog and the ack keep the totals.
-    const r: UnbindRefusal =
+    const merged: UnbindRefusal =
       baseNow !== null
         ? mergeRefusalOver(m.deviceIds, baseNow, refusal, ids)
         : refusal;
+    const r: UnbindRefusal =
+      merged.partial !== null
+        ? { ...merged, partial: credit(merged.partial) }
+        : merged;
     if (r.partial !== null) setSoFar(r.partial);
     else if (r.mayHaveApplied)
       // No rows, but it may have acted: remember every id as unreported, so
@@ -335,20 +399,22 @@ export function useRemoveMachineFromTenant(
       settle(r.partial, r.partial.sentence);
       return;
     }
-    setAcks((prev) => ({
-      ...prev,
-      [m.key]: { name: m.name, sentence: refusalSentence(r), settled: false },
-    }));
+    writeAck(refusalSentence(r), false, r.partial, r.mayHaveApplied);
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
     setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [acks, readNow, retryIds, soFar, target, unbind]);
+  }, [acks, earlier, readNow, retryIds, soFar, target, unbind]);
 
-  // Over a retry, show the merge — never the retried subset alone.
+  // Over a retry, show the merge — never the retried subset alone — and
+  // credit an earlier session's lost answers the same way the ack does.
+  const creditShown = (sum: UnbindSummary) =>
+    earlier !== null ? creditEarlierAttempt(sum, earlier.possiblyApplied) : sum;
   const merge = (sum: UnbindSummary) =>
-    base !== null && target !== null
-      ? combineSummaries(target.machine.deviceIds, base, sum)
-      : sum;
+    creditShown(
+      base !== null && target !== null
+        ? combineSummaries(target.machine.deviceIds, base, sum)
+        : sum
+    );
   const shown: UnbindState =
     status.state === "answered"
       ? { state: "answered", summary: merge(status.summary) }
@@ -369,6 +435,7 @@ export function useRemoveMachineFromTenant(
     open,
     status: shown,
     busy,
+    requesting,
     retryIds,
     openKey: open && target !== null ? target.machine.key : null,
     previous,
@@ -620,8 +687,17 @@ export function RemoveMachineFromTenantDialog({
 }: {
   controller: RemoveMachineController;
 }) {
-  const { target, open, setOpen, status, busy, retryIds, previous, confirm } =
-    controller;
+  const {
+    target,
+    open,
+    setOpen,
+    status,
+    busy,
+    requesting,
+    retryIds,
+    previous,
+    confirm,
+  } = controller;
   if (target === null) return null;
   const m = target.machine;
   const rows = removalRows(m);
@@ -651,7 +727,7 @@ export function RemoveMachineFromTenantDialog({
       }
       confirmPhrase={confirmPhraseFor(m)}
       busy={busy}
-      cancelDisabled={busy}
+      cancelDisabled={requesting}
       confirmDisabled={retrying && retryIds.length === 0}
       onConfirm={() => void confirm()}
       testId="fleet-roles-remove-dialog"
