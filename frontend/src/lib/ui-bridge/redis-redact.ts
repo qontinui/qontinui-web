@@ -118,8 +118,14 @@ export function redactRedisSecrets(
   for (const secret of knownSecrets(extraUrls)) {
     out = out.split(secret).join(REDACTED);
   }
-  out = out.replace(SCHEME_USERINFO, `$1${REDACTED}@`);
-  out = out.replace(SCHEMELESS_USERPASS, `$1${REDACTED}@`);
+  out = out.replace(
+    SCHEME_USERINFO,
+    (_m, prefix: string) => `${prefix}${REDACTED}@`
+  );
+  out = out.replace(
+    SCHEMELESS_USERPASS,
+    (_m, prefix: string) => `${prefix}${REDACTED}@`
+  );
   return out;
 }
 
