@@ -497,6 +497,22 @@ export function creditEarlierAttempt(
   );
 }
 
+/**
+ * Ids an attempt did not act on: it never reached coord for them, coord
+ * refused the caller, or coord failed them. An earlier session's "may have
+ * been removed" for such an id is still the latest word on it.
+ */
+export function notActedOnIds(summary: UnbindSummary): string[] {
+  return summary.rows
+    .filter(
+      (r) =>
+        NEVER_SENT.has(r.outcome) ||
+        r.outcome === "refused_auth" ||
+        r.outcome === "failed"
+    )
+    .map((r) => r.deviceId);
+}
+
 /** The ids a summary leaves possibly removed (lost or unreported). */
 export function possiblyAppliedIds(summary: UnbindSummary): string[] {
   return summary.rows
