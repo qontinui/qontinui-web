@@ -17,6 +17,9 @@ type AResolver<T extends Resolvers> = T;
 /** Who resolves, with its verb, as the dials' callers pass it. */
 export type ResolversWithTheirVerb = [
   AResolver<"devices resolve">,
+  AResolver<"agents resolve">,
+  AResolver<"runners resolve">,
+  AResolver<"readers resolve">,
   AResolver<"coord resolves">,
   AResolver<"the worker resolves">,
 ];
