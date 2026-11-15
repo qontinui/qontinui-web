@@ -47,11 +47,18 @@ function message(err: unknown, fallback: string): string {
  * write below is sent in it on EVERY attempt (`pinActiveTenant`). The HTTP
  * client otherwise reads the stored project per attempt, so a request retried
  * (429), or replayed after a token refresh, after another tab switched project
- * would land in, or answer from, that project. The one exception is the mount
- * read, which goes out before the page's project is known and is superseded
- * by a pinned read once it is (`PromptDocumentList`). Each returned function
- * keeps one identity until the pinned project changes — the dialogs hold the
- * readers in their effect dependencies.
+ * would land in, or answer from, that project. The mount read is pinned too,
+ * to the pin the hook is handed on its first render: the page's provider
+ * names the project the page shows from that render on, the project stored at
+ * mount while the page's own is not yet known (`usePageProject`). Nothing
+ * else re-reads the rows when the page's project turns out to be that same
+ * project, so an unpinned mount read retried or replayed after another tab's
+ * switch would leave that tab's rows on the page as its own. With no pin on
+ * the first render (nothing stored, or none selected) it goes unpinned, and
+ * the page re-reads pinned once its project resolves, if this read went out
+ * in a different one (`PromptDocumentList`). Each returned function keeps one
+ * identity until the pinned project changes — the dialogs hold the readers in
+ * their effect dependencies.
  *
  * The re-read each write takes, and `reload()` by default, go in the pin as
  * it stands when they are SENT, not the one the write was made in. Another
@@ -142,17 +149,18 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
     []
   );
 
-  // The mount read: UNPINNED, because it goes out before the page's project is
-  // known. The page re-reads pinned once that project resolves, if this read
-  // went out in a different one (`newestReadTenant`).
-  useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
-
-  // The pin as it stands now, for the re-reads sent after an answer arrives
-  // (see the hook's docs): one identity, read when each is sent.
+  // The pin as it stands now: for the mount read, and for the re-reads sent
+  // after an answer arrives (see the hook's docs). One identity, read when
+  // each is sent.
   const currentPin = useRef(projectPin);
   currentPin.current = projectPin;
+
+  // The mount read, in the pin the hook has on its first render (see the
+  // hook's docs). The page re-reads pinned once its project resolves, if this
+  // read went out in a different one (`newestReadTenant`).
+  useEffect(() => {
+    loadDocuments(currentPin.current);
+  }, [loadDocuments]);
 
   /**
    * Re-read the list — in the pin as it stands when the read is sent, unless

@@ -34,9 +34,10 @@ export interface PageProject {
    *   trip; the rows on screen are still the last known project's, so the
    *   guard must not lift.
    * - While it has never been known, the project stored at mount: the one the
-   *   page's first reads went out in, and were answered in. A change from it
-   *   while the layout's provider is still reading, or after its read failed,
-   *   is a change the page must not write through.
+   *   page's first reads went out in, pinned (the list's mount read included,
+   *   `usePromptDocuments`), and so were answered in. A change from it while
+   *   the layout's provider is still reading, or after its read failed, is a
+   *   change the page must not write through.
    *
    * The guard compares against this, and `pin` names it. Adopt all and the
    * list re-reads keep treating UNKNOWN as offering nothing.
@@ -51,9 +52,10 @@ export interface PageProject {
    * drops the pin for its round trip nor flips the pinned readers' identity,
    * which would re-fire an open dialog's reads — else, while the page's
    * project has never been known (the provider still reading, or its read
-   * failed), the project stored at mount, which the mount read was answered
-   * in. The guard refuses every write once another project is stored, so a
-   * write pinned to it cannot land anywhere else.
+   * failed), the project stored at mount, which the list's mount read is
+   * pinned to and so was answered in (`usePromptDocuments`). The guard
+   * refuses every write once another project is stored, so a write pinned to
+   * it cannot land anywhere else.
    *
    * Only a NAMED project is pinned. `undefined` while the page's project is
    * `null` (none selected), and while it has never been known and none was

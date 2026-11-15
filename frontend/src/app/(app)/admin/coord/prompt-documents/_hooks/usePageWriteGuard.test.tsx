@@ -6,8 +6,8 @@
  *
  * 1. **`pin` is the project the page shows.** While the page's project has
  *    never been known (the layout's provider still reading), that is the
- *    project stored at mount, which the mount read was answered in; once the
- *    provider answers, the page's project. With nothing stored at mount, or
+ *    project stored at mount, which the list's mount read is pinned to and
+ *    so was answered in; once the provider answers, the page's project. With nothing stored at mount, or
  *    none selected, nothing is pinned, and every write is refused with the
  *    reason; dialogs still open.
  * 2. **`resolvePin` and `writeAllowed` keep one identity for the page's
@@ -147,9 +147,9 @@ describe("PageWriteGuardProvider", () => {
     // pinned while the page's project was UNKNOWN, though a project was
     // stored at mount. Every write sent then went unpinned, and a 429 retry
     // or a token-refresh replay of it after another tab's switch landed in
-    // that tab's project. The mount read was answered in the mount project,
-    // so writes are pinned there, and the guard refuses them once another
-    // project is stored.
+    // that tab's project. The list's mount read is pinned to the mount
+    // project, so it was answered there; writes are pinned there too, and the
+    // guard refuses them once another project is stored.
     const { answer } = mountWhileTheProviderReads();
 
     const unknown = latest();

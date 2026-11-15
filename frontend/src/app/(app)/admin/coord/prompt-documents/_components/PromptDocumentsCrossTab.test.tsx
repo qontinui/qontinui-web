@@ -1655,6 +1655,50 @@ describe("the dialogs' doors' and readers' identity", () => {
 });
 
 describe("a read in flight across the switch", () => {
+  it("the mount read, answered 503 with the switch inside the answer, retries in the page's project, and the page's rows and writes stay its own", async () => {
+    // Ported from the review-round-2 probe. The page mounts in Bravo, and its
+    // project resolves to Bravo, so nothing re-reads the rows after the mount
+    // read: that read's own retry must stay in Bravo.
+    listTenantsMock.mockResolvedValue(membership(B));
+    localStorage.setItem(KEY, B);
+    inAnswerTo("GET", LIST, () => anotherTabStoresSilently(SYS), 503);
+    render(
+      <TenantProvider>
+        <PromptDocumentList />
+      </TenantProvider>
+    );
+    await waitFor(() => expect(sentSince(0, "GET", LIST)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    await settle();
+
+    // Both attempts went in Bravo, though the system tenant was stored before
+    // the retry, and the rows on screen are Bravo's.
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    expect(sentSince(0, "GET", LIST).map((s) => s.tenant)).toEqual([B, B]);
+    expect(
+      await screen.findByTestId("doc-row-policy-bravo-only")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-row-policy-sys1")).not.toBeInTheDocument();
+
+    // The other tab switches back; the notice lifts over the page's own rows,
+    // and a write on the row it shows goes in its project.
+    await act(async () => anotherTabStores(B));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("doc-row-policy-bravo-only")).toBeInTheDocument();
+    const before = sent.length;
+    await setBravoTier();
+    await waitFor(() =>
+      expect(sentSince(before, "PATCH", BODY)).toHaveLength(1)
+    );
+    expect(sentSince(before, "PATCH", BODY)[0]?.tenant).toBe(B);
+    expect(sentSince(before, "PATCH", /policy\/sys1$/)).toEqual([]);
+  }, 20_000);
+
   it("a body read answered 503 with the switch inside the answer retries in the page's project", async () => {
     await mountIn();
     inAnswerTo("GET", BODY, () => anotherTabStoresSilently(SYS), 503);
