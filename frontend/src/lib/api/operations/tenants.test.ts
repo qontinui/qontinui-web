@@ -16,13 +16,13 @@ vi.mock("@/services/service-factory", () => ({
 
 const {
   createTenant,
-  isTenantsListUnauthorized,
   listRegisteredRepos,
   listTenants,
   renameTenant,
   TenantRenameError,
   tenantsListRefusal,
 } = await import("./tenants");
+const { isTenantsListUnauthorized } = await import("./tenantsListFailure");
 const { REQUEST_TIMEOUT_MESSAGE } = await import("@/services/http-client");
 const { NON_IDEMPOTENT_POST_NO_RETRY_STATUSES } = await import("./sessions");
 
@@ -55,8 +55,8 @@ describe("tenants client", () => {
           {
             error: "FORBIDDEN",
             message: "tenant_not_resolved",
-            timestamp: "2026-11-15T12:00:00Z",
-            path: "/api/v1/operations/tenants",
+            timestamp: 1763208000.123456,
+            path: "https://api.qontinui.io/api/v1/operations/tenants",
           },
           403
         )
@@ -125,8 +125,8 @@ describe("tenants client", () => {
         {
           error: "FORBIDDEN",
           message: "tenant_not_resolved",
-          timestamp: "2026-11-15T12:00:00Z",
-          path: "/api/v1/operations/tenants",
+          timestamp: 1763208000.123456,
+          path: "https://api.qontinui.io/api/v1/operations/tenants",
         },
         403
       )

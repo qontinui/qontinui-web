@@ -33,8 +33,6 @@ import type {
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE } from "./base";
 import { tenantsListFailureMessage } from "./tenantsListFailure";
-
-export { isTenantsListUnauthorized } from "./tenantsListFailure";
 import {
   NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   SessionsApiError,
@@ -45,8 +43,8 @@ import {
  * message names the status and, when the body names one, the backend's own
  * reason (`GET … failed: 403 (tenant_not_resolved)`): the layout's tenant
  * provider keeps only the message, and a page showing it can then tell
- * coord's refusal to list the caller's projects
- * ({@link isTenantsListUnauthorized}) from a failure a reload may clear.
+ * coord's refusal to list the caller's projects (`isTenantsListUnauthorized`
+ * in `./tenantsListFailure`) from a failure a reload may clear.
  */
 export async function listTenants(
   signal?: AbortSignal
