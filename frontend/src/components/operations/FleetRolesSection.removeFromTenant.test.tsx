@@ -370,6 +370,17 @@ describe("removal rules", () => {
     );
     expect(isLastCiHost([only, other], only, complete)).toBe("no");
     expect(isLastCiHost([only, unlisted], only, complete)).toBe("maybe");
+    // An assigned-but-unregistered host holds no binding: it does not count.
+    const unregistered = readMachine(
+      ciHost({
+        machine_key: "host:planned-ci",
+        ci_host_name: "planned-ci",
+        name: "planned-ci",
+        registration: "assigned_not_registered",
+        device_ids: [],
+      })
+    );
+    expect(isLastCiHost([only, unregistered], only, complete)).toBe("yes");
     const ws = readMachine(workstation());
     expect(isLastCiHost([ws], ws, complete)).toBe("no");
   });
@@ -1527,5 +1538,94 @@ describe("the answer", () => {
     expect(whole.sentence).toBe(
       "1 of 1 binding removed; 1 removed by the earlier attempt (confirmed absent now)."
     );
+  });
+
+  it("a lost answer, then a 403 abort on retry, keeps 'may have been removed'", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: { error: "coord_answer_lost", detail: "timed out" },
+          still_member_via_pointer: null,
+        },
+      ]),
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_status: 403,
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI_2,
+          results: [refusedRow(DEV_CI_2)],
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    const result = screen.getByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain(
+      "1 of 2 bindings confirmed removed; 1 may have been removed (coord's answer was lost; reload to check)."
+    );
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["removed", "answer_lost"]);
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "The batch stopped there; 1 binding was already removed, and more may have been."
+    );
+  });
+
+  it("a refused retry after earlier removals never says 'Nothing was removed'", async () => {
+    machines = [
+      ciHost({
+        device_ids: [DEV_CI, DEV_CI_2, DEV_CI_OTHER],
+        device_listings: [],
+      }),
+    ];
+    postAnswers = [
+      answer([unbound(DEV_CI), unbound(DEV_CI_2), failed(DEV_CI_OTHER)]),
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_status: 403,
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI_OTHER,
+          results: [refusedRow(DEV_CI_OTHER)],
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    const result = screen.getByTestId("fleet-roles-remove-result");
+    const refusal = within(result).getByTestId(
+      "fleet-roles-remove-refusal"
+    ).textContent;
+    expect(refusal).not.toContain("Nothing was removed.");
+    expect(refusal).toContain(
+      "The batch stopped there; 2 bindings were already removed."
+    );
+    expect(result.textContent).toContain(
+      "2 of 3 bindings removed; 1 refused (auth)."
+    );
+    expect(
+      screen.getByTestId("fleet-roles-remove-ack").textContent
+    ).not.toContain("Nothing was removed.");
   });
 });
