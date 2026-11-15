@@ -41,8 +41,11 @@ DEVICE_D = "44444444-4444-4444-8444-444444444444"
 
 def _build_test_app() -> FastAPI:
     from app.api.deps import get_current_active_user_async
+
+    # The production router, not the module's own: mounted exactly as main.py
+    # mounts it, so the test enters where an operator's request does.
+    from app.api.v1.api import api_router
     from app.api.v1.endpoints import operations as operations_module
-    from app.api.v1.endpoints.fleet_device_bindings import router
     from app.api.v1.endpoints.operations import require_coord_tenant_admin
 
     test_app = FastAPI()
@@ -58,7 +61,7 @@ def _build_test_app() -> FastAPI:
         return TEST_TENANT_ID
 
     test_app.dependency_overrides[require_coord_tenant_admin] = _tenant_override
-    test_app.include_router(router, prefix="/api/v1/operations")
+    test_app.include_router(api_router, prefix="/api/v1")
     return test_app
 
 
