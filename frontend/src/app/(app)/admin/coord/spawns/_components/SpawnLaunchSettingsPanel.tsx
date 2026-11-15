@@ -95,6 +95,21 @@ function SettingRow({
     effort: draft.effort !== undefined ? draft.effort : row.effort,
   };
   const dirty = shown.model !== row.model || shown.effort !== row.effort;
+  /** Set one field; a value equal to coord's row drops it from the draft, so
+   *  it follows coord again rather than pinning a value coord may move. */
+  const setField = <K extends keyof Draft>(field: K, value: Draft[K]) =>
+    setDraft((d) => {
+      const next = { ...d };
+      if (value === row[field]) delete next[field];
+      else next[field] = value;
+      return next;
+    });
+  /** Coord's value beside a field the operator has changed, so a draft that a
+   *  refresh moved coord away from is visible before Save. */
+  const coordHint = (field: keyof Draft): string | null =>
+    draft[field] !== undefined && draft[field] !== row[field]
+      ? `coord holds: ${row[field] ?? "inherit"}`
+      : null;
   const saving = write?.phase === "saving";
   const unknown = write?.phase === "unknown" ? write.reason : null;
   const id = row.spawn_type;
@@ -141,15 +156,15 @@ function SettingRow({
             value={shown.model ?? INHERIT}
             disabled={!canEdit || saving}
             onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                model:
-                  e.target.value === INHERIT
-                    ? null
-                    : (e.target.value as ModelFamily),
-              }))
+              setField(
+                "model",
+                e.target.value === INHERIT
+                  ? null
+                  : (e.target.value as ModelFamily)
+              )
             }
             data-testid="spawn-launch-model"
+            title={coordHint("model") ?? undefined}
           >
             <option value={INHERIT}>Inherit from originating session</option>
             {families.map((f) => (
@@ -176,15 +191,15 @@ function SettingRow({
             value={shown.effort ?? INHERIT}
             disabled={!canEdit || saving}
             onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                effort:
-                  e.target.value === INHERIT
-                    ? null
-                    : (e.target.value as EffortLevel),
-              }))
+              setField(
+                "effort",
+                e.target.value === INHERIT
+                  ? null
+                  : (e.target.value as EffortLevel)
+              )
             }
             data-testid="spawn-launch-effort"
+            title={coordHint("effort") ?? undefined}
           >
             <option value={INHERIT}>Inherit</option>
             {levels.map((l) => (
