@@ -129,6 +129,11 @@ interface RemovalTarget {
 export interface RemoveMachineController {
   target: RemovalTarget | null;
   open: boolean;
+  /**
+   * The current attempt's answer as the dialog shows it: over a retry, merged
+   * with the whole-machine rows before it (`combineSummaries`), so it is the
+   * same machine-level summary the acknowledgement carries.
+   */
   status: UnbindState;
   busy: boolean;
   /** Ids a retry will send (only those not confirmed removed); `null` = all. */
@@ -168,6 +173,10 @@ export function useRemoveMachineFromTenant(
   // The machine-level rows so far: a retry's answer is merged over them, so
   // the acknowledgement counts the whole machine, not the retried subset.
   const [soFar, setSoFar] = useState<UnbindSummary | null>(null);
+  // The whole-machine summary the CURRENT attempt is merged over (`null` for
+  // a first attempt). What the dialog shows is that merge, never the retried
+  // subset alone.
+  const [base, setBase] = useState<UnbindSummary | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
@@ -188,6 +197,7 @@ export function useRemoveMachineFromTenant(
       reset();
       setRetryIds(null);
       setSoFar(null);
+      setBase(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
       setOpenState(true);
@@ -208,9 +218,11 @@ export function useRemoveMachineFromTenant(
     const m = target.machine;
     const ids = retryIds ?? m.deviceIds;
     if (ids.length === 0) return;
-    if (status.state === "answered") setPrevious(status.summary.sentence);
-    else if (status.state === "refused")
-      setPrevious(refusalSentence(status.refusal));
+    // A retry is merged over the whole-machine rows so far; its "previous
+    // attempt" line is the whole-machine acknowledgement, not a subset.
+    const baseNow = retryIds !== null ? soFar : null;
+    setBase(baseNow);
+    setPrevious(retryIds !== null ? (acks[m.key]?.sentence ?? null) : null);
     const outcome: UnbindOutcome = await unbind(ids);
     if (outcome.state === "in_flight") return;
     const settle = (s: UnbindSummary, sentence: string) => {
@@ -232,9 +244,7 @@ export function useRemoveMachineFromTenant(
     };
     // Over a retry, each id's latest outcome across the attempts.
     const whole = (s: UnbindSummary) =>
-      retryIds !== null && soFar !== null
-        ? combineSummaries(m.deviceIds, soFar, s)
-        : s;
+      baseNow !== null ? combineSummaries(m.deviceIds, baseNow, s) : s;
     if (outcome.state === "answered") {
       const s = whole(outcome.summary);
       setSoFar(s);
@@ -283,12 +293,30 @@ export function useRemoveMachineFromTenant(
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
     setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [retryIds, soFar, status, target, unbind]);
+  }, [acks, retryIds, soFar, target, unbind]);
+
+  // Over a retry, show the merge — never the retried subset alone.
+  const merge = (sum: UnbindSummary) =>
+    base !== null && target !== null
+      ? combineSummaries(target.machine.deviceIds, base, sum)
+      : sum;
+  const shown: UnbindState =
+    status.state === "answered"
+      ? { state: "answered", summary: merge(status.summary) }
+      : status.state === "refused" && status.refusal.partial !== null
+        ? {
+            state: "refused",
+            refusal: {
+              ...status.refusal,
+              partial: merge(status.refusal.partial),
+            },
+          }
+        : status;
 
   return {
     target,
     open,
-    status,
+    status: shown,
     busy,
     retryIds,
     openKey: open && target !== null ? target.machine.key : null,

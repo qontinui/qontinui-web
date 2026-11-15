@@ -1419,4 +1419,113 @@ describe("the answer", () => {
       "1 of 2 bindings confirmed removed; 1 unreported (the answer could not be read; the list re-reads to show what coord now holds)."
     );
   });
+
+  it("an unsettled retry shows the whole machine, not the retried subset", async () => {
+    postAnswers = [
+      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
+      answer([failed(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    const result = screen.getByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain("1 of 2 bindings removed; 1 failed.");
+    expect(result.textContent).not.toContain("0 of 1 binding removed");
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["removed", "failed"]);
+    expect(screen.getByTestId("fleet-roles-remove-previous").textContent).toBe(
+      "Previous attempt: 1 of 2 bindings removed; 1 failed."
+    );
+  });
+
+  it("a never-sent retry keeps the earlier lost answer, so a later absence still credits it", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: { error: "coord_answer_lost", detail: "timed out" },
+          still_member_via_pointer: null,
+        },
+      ]),
+      answer([
+        {
+          device_id: DEV_CI_2,
+          outcome: "not_attempted",
+          status: null,
+          error: {
+            error: "not_attempted",
+            detail: "the batch's time budget ran out",
+          },
+          still_member_via_pointer: null,
+        },
+      ]),
+      answer([absent(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      fireEvent.click(confirmButton());
+      await waitFor(() => expect(posts).toHaveLength(attempt));
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    }
+    // After the never-sent retry the lost answer still stands.
+    expect(
+      screen.getByTestId("fleet-roles-remove-result").textContent
+    ).toContain("may have been removed (coord's answer was lost");
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2], [DEV_CI_2]]);
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "2 of 2 bindings removed; 1 removed by the earlier attempt (confirmed absent now)."
+    );
+  });
+
+  it("combineSummaries: answer lost, then not sent, then absent credits the earlier attempt", () => {
+    const ids = [DEV_CI];
+    const lost = summarizeUnbind(ids, {
+      results: [
+        {
+          device_id: DEV_CI,
+          outcome: "unknown",
+          status: 504,
+          error: null,
+          still_member_via_pointer: null,
+        },
+      ],
+    });
+    const notSent = summarizeUnbind(ids, {
+      results: [
+        {
+          device_id: DEV_CI,
+          outcome: "not_sent_after_failure",
+          status: null,
+          error: null,
+          still_member_via_pointer: null,
+        },
+      ],
+    });
+    const gone = summarizeUnbind(ids, { results: [absent(DEV_CI)] });
+    const whole = combineSummaries(
+      ids,
+      combineSummaries(ids, lost, notSent),
+      gone
+    );
+    expect(whole.rows.map((r) => r.outcome)).toEqual(["removed_earlier"]);
+    expect(whole.sentence).toBe(
+      "1 of 1 binding removed; 1 removed by the earlier attempt (confirmed absent now)."
+    );
+  });
 });
