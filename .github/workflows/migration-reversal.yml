@@ -1405,13 +1405,15 @@ jobs:
         # fix it, and the log's "does not have a Release file" line names
         # it. This step is a SETUP row of the declarer, so on a PR whose diff
         # misses the declarer's harness that red IS titled `Migration
-        # Reversal Tested SETUP FAILED (not a verdict on this PR)`. coord
-        # bounds that to ONE re-run per head: a second declared red on the
-        # same head reads `not_a_verdict_rerun_spent`, never another re-run
-        # (qontinui-coord repair_cause.rs `flake_arm_declared`), and the
-        # title's message asks for one re-run and calls a repeat a broken
-        # setup. Best-effort: an install that fails for any other reason also
-        # fails this step.
+        # Reversal Tested SETUP FAILED (not a verdict on this PR)` -- by the
+        # BASE tip's copy of the declarer, since this step runs after the
+        # switch to the base tree (declare-setup-death.sh, WHICH COPY RUNS),
+        # so not while the base carries none. coord bounds that to ONE re-run
+        # per head: a second declared red on the same head reads
+        # `not_a_verdict_rerun_spent`, never another re-run (qontinui-coord
+        # repair_cause.rs `flake_arm_declared`), and the title's message asks
+        # for one re-run and calls a repeat a broken setup. Best-effort: an
+        # install that fails for any other reason also fails this step.
         timeout-minutes: 10
         run: |
           set -euo pipefail
