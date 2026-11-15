@@ -13,6 +13,7 @@ import { AlertTriangle, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackendErrorMessage } from "@/components/console/BackendErrorMessage";
 import type { useOptionalTenant } from "@/contexts/tenant-context";
+import { isTenantsListUnauthorized } from "@/lib/api/operations/tenantsListFailure";
 import { usePageProject } from "../_hooks/usePageProject";
 import {
   crossTabHeadline,
@@ -59,16 +60,6 @@ function listReadFailed(tenantContext: LayoutTenants): boolean {
 }
 
 /**
- * The provider's failure is an operator in no project: the tenants list
- * (`listTenants`) carries the backend's `tenant_not_resolved` in the message
- * the provider keeps as `error`. A reload repeats that answer; creating or
- * joining a project is what changes it.
- */
-function noProjectYet(error: string | null): boolean {
-  return error !== null && /\btenant_not_resolved\b/.test(error);
-}
-
-/**
  * A project as the notice names it: `projectLabel`'s name for it. While the
  * layout's membership list has not been read (no provider, still reading, or
  * failed), a project the list does not hold is not "not in this page's
@@ -93,17 +84,22 @@ function noticeProjectLabel(
 }
 
 /**
- * The page's OWN project as the notice names it. Never known, because the
- * provider's list could not be read, it is UNKNOWN: "your home project (none
- * selected)" would name a project the list never confirmed, beside a page
- * whose settings say its project is unknown.
+ * The page's OWN project as the notice names it. A project the page has
+ * never known (`pageTenant` UNKNOWN, and the guard naming none) is named as
+ * such, never "your home project (none selected)", which would name a project
+ * no read confirmed beside sections waiting for the page's project: unknown
+ * once the provider's list could not be read, not yet learned while its read
+ * is still in flight.
  */
 function pageProjectLabel(
   tenantContext: LayoutTenants,
+  pageTenant: string | null | undefined,
   id: string | null
 ): string {
-  if (id === null && listReadFailed(tenantContext)) {
-    return "an unknown project (the list of your projects could not be read)";
+  if (id === null && pageTenant === undefined) {
+    return listReadFailed(tenantContext)
+      ? "an unknown project (the list of your projects could not be read)"
+      : "a project this page has not yet learned";
   }
   return noticeProjectLabel(tenantContext, id);
 }
@@ -194,10 +190,14 @@ function ReloadButton({
  * project to pin a request to (nothing stored at mount). Nothing on this page
  * reads that list again, so no setting is read and no change is sent unless
  * the operator acts (R3's red row: nothing on the page will resolve it). It
- * shows the provider's error text, so a failure a reload may clear (a 5xx, a
- * timeout) reads differently from one it repeats: an operator in no project
- * (`tenant_not_resolved`) is told to create or join one, and gets no Reload.
- * It sits outside the fieldset, so its Reload is never disabled, and shows
+ * shows the provider's error text as "Details" (the server's answer, or the
+ * client's own when no answer came: a timeout, an offline browser), so a
+ * failure a reload may clear reads differently from one it repeats. Coord's
+ * refusal to list the account's projects (`tenant_not_resolved`, which
+ * coord answers at its operator-role layer, so a reload and a project create
+ * are refused alike: `isTenantsListUnauthorized`) is named as that, with the
+ * project admin's operator role as the way out, and no Reload. It sits
+ * outside the fieldset, so its Reload is never disabled, and shows
  * only while the page is not locked: the cross-tab notice then says the
  * same thing (the page's project unknown, Reload the way on), and two alerts
  * would ask twice. The settings sections waiting for the page's project point
@@ -245,7 +245,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   );
 
   const isLocked = locked !== null;
-  const noProject = noProjectYet(tenantContext?.error ?? null);
+  const listRefused = isTenantsListUnauthorized(tenantContext?.error ?? null);
   const noticeId = useId();
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
   const reloadRef = useRef<HTMLButtonElement>(null);
@@ -283,8 +283,9 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
             <p>
               {crossTabHeadline(locked)} Until you reload, no change made on
               this page is sent: everything below belongs to{" "}
-              {pageProjectLabel(tenantContext, guardTenant)}, and the active
-              project is now {noticeProjectLabel(tenantContext, stored)}.
+              {pageProjectLabel(tenantContext, pageTenant, guardTenant)}, and
+              the active project is now{" "}
+              {noticeProjectLabel(tenantContext, stored)}.
             </p>
           </MustActNotice>
         ) : null}
@@ -292,17 +293,17 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
           <MustActNotice
             testId="prompt-documents-project-list-failed"
             action={
-              noProject ? null : (
+              listRefused ? null : (
                 <ReloadButton testId="prompt-documents-project-list-failed-reload" />
               )
             }
           >
-            {noProject ? (
+            {listRefused ? (
               <p>
-                Your account is not in any project yet, so this page has no
-                project to read settings in or send a change to. Create one with
-                &ldquo;+ New&rdquo; in the sidebar&apos;s project selector and
-                open it, or ask a project&apos;s admin to add you.
+                Coord would not list your projects (tenant_not_resolved): your
+                account has no role that can read them, so no setting on this
+                page is read and no change made on it is sent. Ask your
+                project&apos;s admin for the operator role.
               </p>
             ) : (
               <p>
@@ -312,7 +313,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
               </p>
             )}
             <p className="text-xs">
-              What the server answered:{" "}
+              Details:{" "}
               <BackendErrorMessage
                 error={tenantContext?.error}
                 data-testid="prompt-documents-project-list-failed-error"

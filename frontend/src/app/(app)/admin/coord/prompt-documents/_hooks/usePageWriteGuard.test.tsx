@@ -33,14 +33,18 @@
  * 7. **Focus moves to Reload when the page locks** (H07), from a control the
  *    fieldset disabled or from `<body>`, and never out of an open dialog.
  *    While locked, the fieldset is described by the notice.
- * 8. **A membership read that failed is a red notice too** (rounds 7-8),
+ * 8. **A membership read that failed is a red notice too** (rounds 7-9),
  *    shown only while nothing pins the page (no project stored at mount),
  *    the provider is not re-reading the list, and the page is not locked.
  *    Nothing on this page reads the list again, so it is R3's red row,
- *    outside the fieldset. It shows the provider's error text, and names
- *    creating or joining a project, with no Reload, for an operator in no
- *    project (`tenant_not_resolved`). Locked as well, the page shows ONE
- *    alert, the cross-tab notice, naming the page's project unknown.
+ *    outside the fieldset. It shows the provider's error text as "Details"
+ *    (the server's answer, or the client's own), and for coord's refusal to
+ *    list the account's projects (`tenant_not_resolved`) names the missing
+ *    operator role, with no Reload. Locked as well, the page shows ONE
+ *    alert, the cross-tab notice, naming the page's project unknown; and a
+ *    page locked while its project is still being learned says so, never
+ *    "your home project". `PageWriteGuardListRefusal` drives the same notice
+ *    over the real tenants client.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -80,6 +84,7 @@ import {
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { REQUEST_TIMEOUT_MESSAGE } from "@/services/http-client";
 import { WaitingForProject } from "../_components/WaitingForProject";
 
 const KEY = "qontinui.active_tenant_id";
@@ -415,8 +420,8 @@ describe("the notice", () => {
 });
 
 describe("the project-list notice", () => {
-  /** The tenants list's message for a refusal the backend names (`listTenants`). */
-  const NO_PROJECT =
+  /** The tenants list's message for coord's refusal to list (`listTenants`). */
+  const REFUSED =
     "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)";
   const UNREACHABLE =
     "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)";
@@ -474,34 +479,64 @@ describe("the project-list notice", () => {
     // Nothing is locked: the page's controls stay enabled, and refuse each
     // write at call time for want of a pin.
     expect(screen.getByTestId("edit")).toBeEnabled();
-    // What the server answered, so a failure a reload may clear reads as one.
+    // Its details, so a failure a reload may clear reads as one.
     expect(
       screen.getByTestId("prompt-documents-project-list-failed-error")
     ).toHaveTextContent(UNREACHABLE);
+    expect(notice).toHaveTextContent(`Details: ${UNREACHABLE}`);
     expect(notice).toHaveTextContent(/Until you reload/);
     expect(screen.getByTestId("section-waiting")).toHaveTextContent(
       "Not read until this page has a project: see the notice at the top of the page."
     );
   });
 
-  it("names creating or joining a project, and offers no Reload, for an operator in no project", async () => {
-    // `tenant_not_resolved` answers every reload alike: Reload would loop.
-    mountAfterTheListFailed(null, NO_PROJECT);
+  it("names coord's refusal and the operator role, and offers no Reload, when coord will not list the account's projects", async () => {
+    // `tenant_not_resolved` is coord's operator-role layer refusing to list:
+    // every reload, and a project create, is refused alike.
+    mountAfterTheListFailed(null, REFUSED);
 
     const notice = await screen.findByTestId(
       "prompt-documents-project-list-failed"
     );
     expect(notice).toHaveAttribute("role", "alert");
     expect(notice).toHaveTextContent(
-      "Your account is not in any project yet, so this page has no project to read settings in or send a change to. Create one with “+ New” in the sidebar's project selector and open it, or ask a project's admin to add you."
+      "Coord would not list your projects (tenant_not_resolved): your account has no role that can read them, so no setting on this page is read and no change made on it is sent. Ask your project's admin for the operator role."
     );
     expect(
       screen.getByTestId("prompt-documents-project-list-failed-error")
-    ).toHaveTextContent(NO_PROJECT);
+    ).toHaveTextContent(REFUSED);
     expect(
       screen.queryByTestId("prompt-documents-project-list-failed-reload")
     ).not.toBeInTheDocument();
-    expect(notice).not.toHaveTextContent(/reload/i);
+    expect(notice).not.toHaveTextContent(/reload|\+ New/i);
+  });
+
+  it("labels a client timeout as details, never as a server's answer, and offers Reload", async () => {
+    // The client's own message: no server answered.
+    mountAfterTheListFailed(null, REQUEST_TIMEOUT_MESSAGE);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveTextContent(`Details: ${REQUEST_TIMEOUT_MESSAGE}`);
+    expect(notice).not.toHaveTextContent(/server answered/i);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
+  });
+
+  it("locked while its project is still being learned, names it as not yet learned, never as the home project", async () => {
+    // Two tabs in a fresh browser: the other tab's provider stores the home
+    // project while this one's is still reading, so this page locks.
+    mountWhileTheProviderReads(null);
+    await act(async () => anotherTabStores("t-other"));
+
+    const crossTab = screen.getByTestId("prompt-documents-cross-tab");
+    expect(crossTab).toHaveTextContent(
+      "everything below belongs to a project this page has not yet learned, and the active project is now project t-other."
+    );
+    expect(crossTab).not.toHaveTextContent(/home project/);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("is absent while a refresh re-reads the list after it failed", async () => {
