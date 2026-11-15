@@ -929,7 +929,8 @@ describe("the answer", () => {
       "answer_lost",
     ]);
     expect(rows[1]!.textContent).toBe(
-      `${DEV_CI_2}: may have been removed — coord's answer was lost; reload to check`
+      // The route's own words for why its answer was lost.
+      `${DEV_CI_2}: may have been removed — timed out`
     );
     expect(toastMock.success).not.toHaveBeenCalled();
     fireEvent.click(confirmButton());
@@ -1266,13 +1267,13 @@ describe("the answer", () => {
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(posts).toHaveLength(1);
     expect(result.textContent).toContain(
-      "0 of 65 bindings confirmed removed; 1 not sent (an earlier batch failed or its answer was lost); 64 not reported by the route."
+      "0 of 65 bindings confirmed removed; 64 may have been removed (the route's answer to that request was lost); 1 not sent (an earlier batch failed or its answer was lost)."
     );
     const outcomes = within(result)
       .getAllByTestId("fleet-roles-remove-outcome-row")
       .map((r) => r.getAttribute("data-outcome"));
     expect(outcomes[64]).toBe("not_sent_after_failure");
-    expect(outcomes.slice(0, 64).every((o) => o === "unreported")).toBe(true);
+    expect(outcomes.slice(0, 64).every((o) => o === "request_lost")).toBe(true);
   });
 
   it("a web-gate 403 on the second batch marks it not attempted and says no more were removed", async () => {
@@ -1734,6 +1735,105 @@ describe("the answer", () => {
     ).toBe(MAY_HAVE_APPLIED_TEXT);
     expect(result.textContent).toContain(
       "1 of 2 bindings confirmed removed; 1 may have been removed (coord's answer was lost; reload to check)."
+    );
+  });
+
+  it("a re-read row that holds none of the sent ids is not 'still listed'", async () => {
+    postAnswers = [answer([absent(DEV_CI), absent(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    // The re-read keeps the machine's key, as an assigned-but-unregistered
+    // row with no device rows.
+    machines = [
+      ciHost({ registration: "assigned_not_registered", device_ids: [] }),
+    ];
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(toastMock.info).toHaveBeenCalledWith(
+        `${CI_HOST_LABEL}: Nothing to remove; 2 already absent.`
+      )
+    );
+    expect(toastMock.warning).not.toHaveBeenCalled();
+  });
+
+  it("Cancel and reopen resumes the retry scope and keeps the earlier counts", async () => {
+    postAnswers = [
+      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
+      answer([unbound(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-cancel"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    expect(confirmButton().textContent).toBe(
+      "Retry the 1 device row not confirmed removed"
+    );
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "2 of 2 bindings removed."
+    );
+  });
+
+  it("an unknown row with coord's own words shows them", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 500,
+          error: {
+            error: "coord_answer_lost",
+            detail: "coord reported an internal error after it may have acted",
+          },
+          still_member_via_pointer: null,
+        },
+      ]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getAllByTestId("fleet-roles-remove-outcome-row")[1]!
+        .textContent
+    ).toBe(
+      `${DEV_CI_2}: may have been removed — coord reported an internal error after it may have acted`
+    );
+  });
+
+  it("an unknown row without words gets the generic text", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: null,
+          error: null,
+          still_member_via_pointer: null,
+        },
+      ]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getAllByTestId("fleet-roles-remove-outcome-row")[1]!
+        .textContent
+    ).toBe(
+      `${DEV_CI_2}: may have been removed — coord's answer was lost; reload to check`
     );
   });
 });
