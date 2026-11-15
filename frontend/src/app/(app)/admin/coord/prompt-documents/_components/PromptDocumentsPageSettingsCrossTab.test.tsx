@@ -998,6 +998,36 @@ describe("the page's project known only after the page mounted", () => {
     20_000
   );
 
+  it.each(SHOWN_READS.map((read) => [read.label, read] as const))(
+    "%s: the read sent before the page had a project, failing after its re-take answered, does not show its failure",
+    async (_label, read) => {
+      const answerMembership = firstVisit();
+      const releaseMountRead = holdNext("GET", read.route);
+      renderUnderTenantProvider();
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(1),
+        { timeout: 5000 }
+      );
+      await act(async () => answerMembership());
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(2),
+        { timeout: 5000 }
+      );
+      await settle();
+      await read.open?.();
+
+      // A 400 is not retried: the replaced read fails, after its re-take
+      // answered.
+      await act(async () => releaseMountRead(400));
+      await settle();
+
+      expect(sentSince(0, "GET", read.route)).toHaveLength(2);
+      expect(screen.queryByText(/answered 400/)).not.toBeInTheDocument();
+      read.showsOwn();
+    },
+    20_000
+  );
+
   it("a settings read sent pinned at mount is not re-taken when the provider answers", async () => {
     // Bravo is stored, so the page pins its mount reads to it while the
     // provider is still reading; the provider then answers Bravo.
