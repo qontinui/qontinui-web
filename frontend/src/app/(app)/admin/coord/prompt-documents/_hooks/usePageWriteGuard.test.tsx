@@ -72,7 +72,6 @@ import {
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
-import { NO_PIN_REFUSAL } from "./usePageWriteGuard";
 
 const KEY = "qontinui.active_tenant_id";
 const B = "t-bravo";
@@ -195,7 +194,12 @@ describe("PageWriteGuardProvider", () => {
       });
 
       expect(wrote).toBe(false);
-      expect(vi.mocked(toast.error).mock.calls).toEqual([[NO_PIN_REFUSAL]]);
+      // The refusal, as the operator reads it.
+      expect(vi.mocked(toast.error).mock.calls).toEqual([
+        [
+          "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.",
+        ],
+      ]);
       expect(opened).toBe(true);
       // Nothing changed under the page: it is not locked.
       expect(latest().locked).toBeNull();

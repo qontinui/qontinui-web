@@ -48,7 +48,6 @@ vi.mock("sonner", () => ({
 
 import { toast } from "sonner";
 import { usePublishAll } from "./usePublishAll";
-import { NO_PIN_REFUSAL } from "./usePageWriteGuard";
 import type { ResolvePin } from "../../_shared/useSendTimePin";
 
 /**
@@ -444,10 +443,13 @@ describe("a write refused beside its own send", () => {
     expect(previewMock).not.toHaveBeenCalled();
     expect(publishAllMock).not.toHaveBeenCalled();
     expect(updateMock).not.toHaveBeenCalled();
+    // Each refusal, as the operator reads it.
+    const refusal =
+      "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
     expect(vi.mocked(toast.error).mock.calls).toEqual([
-      [NO_PIN_REFUSAL],
-      [NO_PIN_REFUSAL],
-      [NO_PIN_REFUSAL],
+      [refusal],
+      [refusal],
+      [refusal],
     ]);
   });
 });

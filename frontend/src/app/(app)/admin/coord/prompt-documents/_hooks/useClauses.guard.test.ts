@@ -8,7 +8,7 @@
  * - What is sent goes in the page's pin.
  * - Outside the provider the hook throws: there is no unguarded mode.
  *
- * Each test mounts it under a test page guard (`pageWriteGuardForTests`),
+ * Each test mounts it under a test page guard (`__fixtures__/pageWriteGuard`),
  * standing in for the page's provider.
  */
 
@@ -29,7 +29,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { useClauses, type UseClausesOptions } from "./useClauses";
-import { testPageGuard, withPageGuard } from "./pageWriteGuardForTests";
+import { testPageGuard, withPageGuard } from "../__fixtures__/pageWriteGuard";
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();

@@ -13,9 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
-// A section mounted on its own, under a test page guard: the hooks it uses
-// require one (`pageWriteGuardForTests`).
-import { renderSection } from "../_hooks/pageWriteGuardForTests";
+import { sectionRenderer, testPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const patchMock = vi.fn();
@@ -37,6 +35,10 @@ vi.mock("sonner", () => ({
 
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import type { PromptDocument } from "../types";
+
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one. It answers as the page's provider does (`__fixtures__`).
+const renderSection = sectionRenderer(testPageGuard());
 
 function doc(attrs: PromptDocument["attrs"]): PromptDocument {
   return {

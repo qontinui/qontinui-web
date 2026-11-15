@@ -23,9 +23,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within } from "@testing-library/react";
-// A section mounted on its own, under a test page guard: the hooks it uses
-// require one (`pageWriteGuardForTests`).
-import { renderSection } from "../_hooks/pageWriteGuardForTests";
+import { sectionRenderer, testPageGuard } from "../__fixtures__/pageWriteGuard";
 
 import userEvent from "@testing-library/user-event";
 
@@ -55,6 +53,10 @@ import {
   NUDGE_FLOOR_CAVEAT,
   VERDICT_META,
 } from "../compliance-types";
+
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one. It answers as the page's provider does (`__fixtures__`).
+const renderSection = sectionRenderer(testPageGuard());
 
 const CONFIG = {
   enabled: true,

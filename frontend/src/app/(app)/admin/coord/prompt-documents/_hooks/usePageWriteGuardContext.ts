@@ -110,8 +110,8 @@ export interface PageSendGuard {
  * to allow every write and pin none, which reads as "allowed" exactly where
  * nothing guards. Rendered outside the provider, this throws, as
  * `useRequiredPageWriteGuard` does. A section's unit test provides a guard of
- * its own (`pageWriteGuardForTests`). Both functions keep one identity, so no
- * callback built on them is rebuilt.
+ * its own (`__fixtures__/pageWriteGuard.tsx`). Both functions keep one
+ * identity, so no callback built on them is rebuilt.
  */
 export function usePageSendGuard(): PageSendGuard {
   return useRequiredPageWriteGuard();

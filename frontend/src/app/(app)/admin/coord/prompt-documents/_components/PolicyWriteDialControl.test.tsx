@@ -17,9 +17,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-// A section mounted on its own, under a test page guard: the hooks it uses
-// require one (`pageWriteGuardForTests`).
-import { renderSection } from "../_hooks/pageWriteGuardForTests";
+import {
+  sectionRenderer,
+  UNPINNED_WRITES_ALLOWED,
+} from "../__fixtures__/pageWriteGuard";
 
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
@@ -51,6 +52,12 @@ vi.mock("sonner", () => ({
 }));
 
 import { PolicyWriteDialControl } from "./PolicyWriteDialControl";
+
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one. This suite asserts the section's own writes as it builds them,
+// sent with no pin, so it opts in by name to a guard that allows them; the
+// page's provider never does (`__fixtures__`).
+const renderSection = sectionRenderer(UNPINNED_WRITES_ALLOWED);
 
 function view(over: Partial<FleetPolicyView> = {}): FleetPolicyView {
   return {

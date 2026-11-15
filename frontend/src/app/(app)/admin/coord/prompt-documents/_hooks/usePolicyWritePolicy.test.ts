@@ -20,9 +20,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-// The hook on its own, under a test page guard: it requires one
-// (`pageWriteGuardForTests`).
-import { AllowAllPageGuard } from "./pageWriteGuardForTests";
+import {
+  UNPINNED_WRITES_ALLOWED,
+  withPageGuard,
+} from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -61,6 +62,12 @@ vi.mock("sonner", () => ({
 
 import { usePolicyWritePolicy } from "./usePolicyWritePolicy";
 
+// The hook on its own, under a test page guard: it requires one. This suite
+// asserts the hook's own writes as it builds them, sent with no pin, so it
+// opts in by name to a guard that allows them; the page's provider never does
+// (`__fixtures__`).
+const SectionGuard = withPageGuard(UNPINNED_WRITES_ALLOWED);
+
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_write",
@@ -97,7 +104,7 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
     getMock.mockResolvedValue(NO_ROW);
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -115,7 +122,7 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
     getMock.mockResolvedValue(OFF_TENANT);
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -138,7 +145,7 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -158,7 +165,7 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     getMock.mockResolvedValue(PROPOSE_ONLY_TENANT);
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -173,7 +180,7 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     getMock.mockResolvedValue(NO_ROW);
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -197,7 +204,7 @@ describe("usePolicyWritePolicy — writes", () => {
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -238,7 +245,7 @@ describe("usePolicyWritePolicy — writes", () => {
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -272,7 +279,7 @@ describe("usePolicyWritePolicy — writes", () => {
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -304,7 +311,7 @@ describe("usePolicyWritePolicy — writes", () => {
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -337,7 +344,7 @@ describe("usePolicyWritePolicy — writes", () => {
     });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
@@ -359,7 +366,7 @@ describe("usePolicyWritePolicy — writes", () => {
   it("keeps the last known value on a failed read rather than showing off", async () => {
     getMock.mockResolvedValueOnce(PROPOSE_ONLY_TENANT);
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -382,7 +389,7 @@ describe("usePolicyWritePolicy — writes", () => {
     );
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 

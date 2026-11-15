@@ -20,9 +20,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-// The hook on its own, under a test page guard: it requires one
-// (`pageWriteGuardForTests`).
-import { AllowAllPageGuard } from "./pageWriteGuardForTests";
+import {
+  UNPINNED_WRITES_ALLOWED,
+  withPageGuard,
+} from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -52,6 +53,12 @@ vi.mock("sonner", () => ({
 
 import { usePolicyUpstreamPolicy } from "./usePolicyUpstreamPolicy";
 
+// The hook on its own, under a test page guard: it requires one. This suite
+// asserts the hook's own writes as it builds them, sent with no pin, so it
+// opts in by name to a guard that allows them; the page's provider never does
+// (`__fixtures__`).
+const SectionGuard = withPageGuard(UNPINNED_WRITES_ALLOWED);
+
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_upstream",
@@ -75,7 +82,7 @@ const NOTIFY_TENANT = { ...OFF_TENANT, effective_level: "notify" };
 async function render(view: object) {
   getMock.mockResolvedValue(view);
   const hook = renderHook(() => usePolicyUpstreamPolicy(), {
-    wrapper: AllowAllPageGuard,
+    wrapper: SectionGuard,
   });
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return hook.result;
@@ -133,7 +140,7 @@ describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
       async () => new Response("coord is not reachable", { status: 502 })
     );
     const { result } = renderHook(() => usePolicyUpstreamPolicy(), {
-      wrapper: AllowAllPageGuard,
+      wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
