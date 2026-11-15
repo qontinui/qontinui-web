@@ -70,23 +70,24 @@ export function useUnbindFleetDevices(
       setStatus({ state: "busy" });
       // The route takes at most UNBIND_BATCH_LIMIT ids: send sequential
       // batches and merge their rows. Any rejection stops the run; the ids of
-      // later batches were never sent and read "not sent", never "not
-      // reported" (nothing can have happened to them).
+      // later batches were never sent and read "not sent" (refused, or failed
+      // / answer lost), never "not reported": nothing can have happened to
+      // them.
       const batches: string[][] = [];
       for (let i = 0; i < deviceIds.length; i += UNBIND_BATCH_LIMIT) {
         batches.push(deviceIds.slice(i, i + UNBIND_BATCH_LIMIT));
       }
       const prior: DeviceUnbindResultWire[] = [];
-      // A 2xx whose body could not be read: its ids stay unreported, and the
-      // sentence says the answer could not be read.
-      let unreadable = false;
+      // A 2xx whose body could not be read: its ids stay unreported, and
+      // their rows say the answer could not be read.
+      const unreadableIds: string[] = [];
       let outcome: UnbindOutcome | null = null;
       for (let b = 0; b < batches.length; b += 1) {
         try {
           const body = await unbindFleetDevices(batches[b]!);
           if (body !== null && Array.isArray(body.results))
             prior.push(...body.results);
-          else unreadable = true;
+          else unreadableIds.push(...batches[b]!);
         } catch (err) {
           outcome = {
             state: "refused",
@@ -94,7 +95,7 @@ export function useUnbindFleetDevices(
               prior,
               current: batches[b]!,
               neverSent: batches.slice(b + 1).flat(),
-              unreadable,
+              unreadableIds,
             }),
           };
           break;
@@ -107,7 +108,7 @@ export function useUnbindFleetDevices(
             deviceIds,
             { results: prior },
             null,
-            unreadable
+            unreadableIds
           ),
         };
       }
