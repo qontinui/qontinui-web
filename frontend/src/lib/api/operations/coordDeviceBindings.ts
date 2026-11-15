@@ -3,7 +3,7 @@
  * more coord devices.
  *
  * Plan `2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console`
- * Phase 3 (D1, D3). The web route (`endpoints/fleet_device_bindings.py`) calls
+ * Phase 3 (D1, D3). The web route (`POST /api/v1/operations/fleet/devices/unbind`) calls
  * coord's per-tenant unbind (`DELETE /coord/devices/:id/tenant-binding`) once
  * per id and answers a per-id outcome; it never deletes a device row, and it
  * never touches another tenant's binding. Full deregistration stays with the
