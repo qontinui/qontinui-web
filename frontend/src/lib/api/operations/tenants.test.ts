@@ -16,12 +16,14 @@ vi.mock("@/services/service-factory", () => ({
 
 const {
   createTenant,
+  isTenantsListUnauthorized,
   listRegisteredRepos,
   listTenants,
   renameTenant,
   TenantRenameError,
   tenantsListRefusal,
 } = await import("./tenants");
+const { REQUEST_TIMEOUT_MESSAGE } = await import("@/services/http-client");
 const { NON_IDEMPOTENT_POST_NO_RETRY_STATUSES } = await import("./sessions");
 
 function json(body: unknown, status = 200): Response {
@@ -96,6 +98,43 @@ describe("tenants client", () => {
     ).toBeNull();
     expect(tenantsListRefusal("")).toBeNull();
     expect(tenantsListRefusal("not json")).toBeNull();
+  });
+
+  it("isTenantsListUnauthorized is coord's refusal to list, a 403 carrying tenant_not_resolved, and nothing else", () => {
+    const failed = (rest: string) =>
+      `GET /api/v1/operations/tenants failed: ${rest}`;
+
+    expect(isTenantsListUnauthorized(failed("403 (tenant_not_resolved)"))).toBe(
+      true
+    );
+    // The status gates it: the token under another status is not the refusal.
+    expect(isTenantsListUnauthorized(failed("502 (tenant_not_resolved)"))).toBe(
+      false
+    );
+    expect(isTenantsListUnauthorized(failed("403 (insufficient role)"))).toBe(
+      false
+    );
+    expect(isTenantsListUnauthorized(failed("403"))).toBe(false);
+    expect(isTenantsListUnauthorized(REQUEST_TIMEOUT_MESSAGE)).toBe(false);
+    expect(isTenantsListUnauthorized(null)).toBe(false);
+  });
+
+  it("isTenantsListUnauthorized reads the message listTenants writes for coord's refusal", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(
+        {
+          error: "FORBIDDEN",
+          message: "tenant_not_resolved",
+          timestamp: "2026-11-15T12:00:00Z",
+          path: "/api/v1/operations/tenants",
+        },
+        403
+      )
+    );
+    const refusal = await listTenants().catch((err: Error) => err);
+
+    expect(refusal).toBeInstanceOf(Error);
+    expect(isTenantsListUnauthorized((refusal as Error).message)).toBe(true);
   });
 
   it("createTenant POSTs /tenants, never re-sent", async () => {
