@@ -1,10 +1,11 @@
 /**
  * `rereadAfterFailedReadBack` and `resolvedOtherwise` on their own (plan
- * `2026-11-09-prompt-documents-cross-tab-write-guard`, review round 7): the
- * re-read a dial sends after a failed read-back says what the read-back would
- * have said, and a re-read that throws is reported through the dial, never
- * left as an unhandled rejection. The dials' own suites hold the same
- * sentences through each hook.
+ * `2026-11-09-prompt-documents-cross-tab-write-guard`, review rounds 7-8):
+ * the re-read a dial sends after a failed read-back says what the read-back
+ * would have said, and a re-read that throws is reported through the dial,
+ * never left as an unhandled rejection. Only the read is guarded: a throw
+ * from what is said after it is never reported as a failed read. The dials'
+ * own suites hold the same sentences through each hook.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -115,5 +116,25 @@ describe("rereadAfterFailedReadBack", () => {
     expect(onError).toHaveBeenCalledWith(failure);
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("never reports a throw from what it says after the read as a failed read", async () => {
+    // The read confirmed the level; a toast that throws is not the read's
+    // failure, so the dial's read error stays clear of it.
+    const onError = vi.fn();
+    const toastFailure = new Error("the toast threw");
+    vi.mocked(toast.success).mockImplementationOnce(() => {
+      throw toastFailure;
+    });
+
+    await expect(
+      rereadAfterFailedReadBack({
+        ...AFTER_WRITING_ON,
+        read: async () => view("on"),
+        onError,
+      })
+    ).rejects.toBe(toastFailure);
+
+    expect(onError).not.toHaveBeenCalled();
   });
 });

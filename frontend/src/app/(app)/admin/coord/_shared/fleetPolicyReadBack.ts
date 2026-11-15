@@ -34,7 +34,7 @@ export interface RereadAfterWrite {
   confirmed: string;
   /** Who resolves the level, with its verb, for `resolvedOtherwise`. */
   resolvers: string;
-  /** Say that the re-read itself went wrong, as the dial's read error. */
+  /** Say that the re-read itself threw, as the dial's read error. */
   onError: (err: unknown) => void;
 }
 
@@ -43,7 +43,10 @@ export interface RereadAfterWrite {
  * dial shows becomes coord's, and say what a read-back would have said —
  * `confirmed` when coord resolves the level written, `resolvedOtherwise` when
  * it does not. A read that failed or was discarded says nothing here: its own
- * error, or the newer write's read-back, speaks for it.
+ * error, or the newer write's read-back, speaks for it. Only the read is
+ * guarded: a read that throws is reported through the dial and settles,
+ * while what is said after it is not mistaken for a failed read beside a
+ * level that read has just confirmed.
  */
 export async function rereadAfterFailedReadBack({
   read,
@@ -52,15 +55,17 @@ export async function rereadAfterFailedReadBack({
   resolvers,
   onError,
 }: RereadAfterWrite): Promise<void> {
+  let view: FleetPolicyView | null;
   try {
-    const view = await read();
-    if (view === null) return;
-    if (view.effective_level === level) {
-      toast.success(confirmed);
-    } else {
-      toast.warning(resolvedOtherwise(level, resolvers, view));
-    }
+    view = await read();
   } catch (err) {
     onError(err);
+    return;
+  }
+  if (view === null) return;
+  if (view.effective_level === level) {
+    toast.success(confirmed);
+  } else {
+    toast.warning(resolvedOtherwise(level, resolvers, view));
   }
 }
