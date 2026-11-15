@@ -144,6 +144,8 @@ let rosterExtras: Record<string, unknown>;
 let failReads: boolean;
 /** Answer the next POST only when this is resolved. */
 let holdPost: Promise<void> | null;
+/** Answer roster reads only when this is resolved. */
+let holdReads: Promise<void> | null;
 
 function serve() {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -157,6 +159,7 @@ function serve() {
       return next ?? json(500, { detail: "unexpected" });
     }
     gets += 1;
+    if (holdReads) await holdReads;
     if (failReads) return json(500, { detail: "roster read failed" });
     return json(200, {
       state: "known",
@@ -193,6 +196,25 @@ const failed = (id: string) => ({
   },
   still_member_via_pointer: null,
 });
+/** The refused id, as the route's abort body carries it. */
+const refusedRow = (id: string) => ({
+  device_id: id,
+  outcome: "failed",
+  status: 403,
+  error: { error: "operator_principal_required" },
+  still_member_via_pointer: null,
+});
+/** A later id an auth abort never sent. */
+const abortedRow = (id: string) => ({
+  device_id: id,
+  outcome: "not_attempted",
+  status: null,
+  error: {
+    error: "not_attempted",
+    detail: "the batch was aborted by a caller refusal",
+  },
+  still_member_via_pointer: null,
+});
 const answer = (results: Record<string, unknown>[]) =>
   json(200, {
     results,
@@ -210,6 +232,7 @@ beforeEach(() => {
   rosterExtras = {};
   failReads = false;
   holdPost = null;
+  holdReads = null;
   fetchMock.mockReset();
   toastMock.success.mockReset();
   serve();
@@ -307,7 +330,8 @@ describe("removal rules", () => {
 
   it("the last CI host is the one whose rows cover every CI-host row", () => {
     const only = readMachine(ciHost());
-    expect(isLastCiHost([only], only)).toBe("yes");
+    const complete = { rosterTruncated: false, omitted: 0 };
+    expect(isLastCiHost([only], only, complete)).toBe("yes");
     // Over a cut, gappy or unreported roster read it is only "maybe".
     for (const roster of [
       { rosterTruncated: true, omitted: 0 },
@@ -324,9 +348,9 @@ describe("removal rules", () => {
         device_ids: [DEV_CI_OTHER],
       })
     );
-    expect(isLastCiHost([only, other], only)).toBe("no");
+    expect(isLastCiHost([only, other], only, complete)).toBe("no");
     const ws = readMachine(workstation());
-    expect(isLastCiHost([ws], ws)).toBe("no");
+    expect(isLastCiHost([ws], ws, complete)).toBe("no");
   });
 
   it("an answer that omits a sent id reports it unreported, not removed", () => {
@@ -588,11 +612,12 @@ describe("the answer", () => {
           error: "coord_refused_caller",
           coord_error: { error: "operator_principal_required" },
           refused_device_id: DEV_CI_2,
-          not_attempted: [],
-          results: [unbound(DEV_CI)],
+          results: [unbound(DEV_CI), refusedRow(DEV_CI_2)],
           unbound: 1,
           already_absent: 0,
-          failed: 0,
+          unknown: 0,
+          failed: 1,
+          not_attempted: 0,
         },
       }),
     ];
@@ -602,7 +627,7 @@ describe("the answer", () => {
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(result.getAttribute("data-refused")).toBe("auth");
     expect(result.textContent).toContain(
-      "The batch stopped there; 1 binding was already removed (see the rows below)."
+      "The batch stopped there; 1 binding was already removed."
     );
     expect(result.textContent).toContain(
       "1 of 2 bindings removed; 1 refused (auth)."
@@ -626,11 +651,12 @@ describe("the answer", () => {
           error: "coord_refused_caller",
           coord_error: { error: "operator_principal_required" },
           refused_device_id: DEV_CI,
-          not_attempted: [DEV_CI_2],
-          results: [],
+          results: [refusedRow(DEV_CI), abortedRow(DEV_CI_2)],
           unbound: 0,
           already_absent: 0,
-          failed: 0,
+          unknown: 0,
+          failed: 1,
+          not_attempted: 1,
         },
       }),
     ];
@@ -642,7 +668,7 @@ describe("the answer", () => {
       within(result).getByTestId("fleet-roles-remove-refusal").textContent
     ).toContain("Nothing was removed.");
     expect(result.textContent).toContain(
-      "0 of 2 bindings removed; 1 refused (auth); 1 not attempted."
+      "0 of 2 bindings removed; 1 refused (auth); 1 not attempted (aborted by an auth refusal)."
     );
     expect(
       within(result)
@@ -736,7 +762,7 @@ describe("the answer", () => {
     );
   });
 
-  it("a retry after a partial answer sends only the ids not yet removed", async () => {
+  it("a retry after a partial answer sends only the ids not confirmed removed", async () => {
     postAnswers = [
       answer([unbound(DEV_CI), failed(DEV_CI_2)]),
       answer([unbound(DEV_CI_2)]),
@@ -745,10 +771,12 @@ describe("the answer", () => {
     await openRemoval(CI_HOST_LABEL);
     fireEvent.click(confirmButton());
     await screen.findByTestId("fleet-roles-remove-result");
-    expect(confirmButton().textContent).toBe("Retry the 1 not yet removed");
+    expect(confirmButton().textContent).toBe(
+      "Retry the 1 not confirmed removed"
+    );
     expect(
       screen.getByTestId("fleet-roles-remove-retry-scope").textContent
-    ).toBe("A retry sends only the 1 device row not yet removed.");
+    ).toBe("A retry sends only the 1 device row not confirmed removed.");
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
@@ -790,7 +818,9 @@ describe("the answer", () => {
     ).toBe(MAY_HAVE_APPLIED_TEXT);
     expect(toastMock.success).not.toHaveBeenCalled();
     // Nothing is known per id, so a retry sends both again.
-    expect(confirmButton().textContent).toBe("Retry the 2 not yet removed");
+    expect(confirmButton().textContent).toBe(
+      "Retry the 2 not confirmed removed"
+    );
   });
 
   it("a dropped connection says some bindings may have been removed", async () => {
@@ -883,11 +913,120 @@ describe("the answer", () => {
       `${DEV_CI_2}: not attempted (time limit) — retry`
     );
     expect(toastMock.success).not.toHaveBeenCalled();
-    expect(confirmButton().textContent).toBe("Retry the 1 not yet removed");
+    expect(confirmButton().textContent).toBe(
+      "Retry the 1 not confirmed removed"
+    );
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
+  });
+
+  it("the confirm stays disabled until the post-removal re-read settles", async () => {
+    postAnswers = [
+      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
+      answer([unbound(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    let release: () => void = () => {};
+    holdReads = new Promise<void>((r) => {
+      release = r;
+    });
+    fireEvent.click(confirmButton());
+    // The answer is on screen while the re-read is still out ...
+    await screen.findByTestId("fleet-roles-remove-result");
+    expect(confirmButton().disabled).toBe(true);
+    fireEvent.click(confirmButton());
+    expect(posts).toHaveLength(1);
+    // ... and the retry is offered only once it lands.
+    holdReads = null;
+    release();
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    expect(confirmButton().textContent).toBe(
+      "Retry the 1 not confirmed removed"
+    );
+    expect(posts).toHaveLength(1);
+  });
+
+  it("a collapsed row's outcome is shown at the section", async () => {
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+        "2 of 2 bindings removed."
+      )
+    );
+    // Shown in the row, so not repeated at the section.
+    expect(screen.queryByTestId("fleet-roles-remove-ack-detached")).toBeNull();
+    fireEvent.click(screen.getByText(CI_HOST_LABEL));
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-ack")).toBeNull()
+    );
+    expect(
+      screen.getByTestId("fleet-roles-remove-ack-detached").textContent
+    ).toBe(
+      `Remove from this tenant — ${CI_HOST_LABEL}: 2 of 2 bindings removed.`
+    );
+  });
+
+  it("an auth abort with a lost answer says some may have been removed", async () => {
+    postAnswers = [
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI_2,
+          results: [
+            {
+              device_id: DEV_CI,
+              outcome: "unknown",
+              status: 504,
+              error: { error: "coord_answer_lost", detail: "timed out" },
+              still_member_via_pointer: null,
+            },
+            refusedRow(DEV_CI_2),
+          ],
+          unbound: 0,
+          already_absent: 0,
+          unknown: 1,
+          failed: 1,
+          not_attempted: 0,
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "The batch stopped there; some bindings may have been removed."
+    );
+    expect(
+      within(result).getByTestId("fleet-roles-remove-may-have-applied")
+        .textContent
+    ).toBe(MAY_HAVE_APPLIED_TEXT);
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["answer_lost", "refused_auth"]);
+  });
+
+  it("a route-level 503 says some bindings may have been removed", async () => {
+    postAnswers = [json(503, { detail: "service unavailable" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-may-have-applied")
+        .textContent
+    ).toBe(MAY_HAVE_APPLIED_TEXT);
   });
 });

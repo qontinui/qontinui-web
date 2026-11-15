@@ -43,13 +43,17 @@ export interface DeviceUnbindResultWire {
   still_member_via_pointer: boolean | null;
 }
 
+/**
+ * One row per requested id, in order. The tallies are ints, but the console
+ * never relies on them: the per-id rows decide, so a tally that is absent or
+ * of another type changes nothing.
+ */
 export interface DeviceUnbindResponseWire {
   results: DeviceUnbindResultWire[];
-  unbound: number;
-  already_absent: number;
-  failed: number;
-  /** Absent on a route predating the outcome; the per-id rows decide. */
+  unbound?: number;
+  already_absent?: number;
   unknown?: number;
+  failed?: number;
   not_attempted?: number;
 }
 

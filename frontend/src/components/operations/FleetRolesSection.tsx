@@ -869,14 +869,7 @@ export function FleetRolesSection() {
                 whose role must be set there.
               </p>
             </div>
-            <DetachedRemovalAcks
-              controller={removal}
-              listedKeys={
-                read.state === "known"
-                  ? new Set(read.machines.map((m) => m.key))
-                  : null
-              }
-            />
+            <DetachedRemovalAcks controller={removal} />
             <RemoveMachineFromTenantDialog controller={removal} />
           </CoordAdminOnly>
 
