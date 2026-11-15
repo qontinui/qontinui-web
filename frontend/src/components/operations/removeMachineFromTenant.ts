@@ -118,6 +118,8 @@ export interface RosterCompleteness {
   rosterTruncated: boolean | null;
   /** Coord's `older_machines_omitted`; `null` = not reported. */
   omitted: number | null;
+  /** CI runner registrations coord could not name; `null` = not reported. */
+  unidentifiable: number | null;
 }
 
 /**
@@ -138,8 +140,12 @@ export function isLastCiHost(
     .filter((h) => h.hostOnly && h.deviceIds.length > 0)
     .every((h) => h.deviceIds.every((id) => removing.has(id.toLowerCase())));
   if (!covers) return "no";
+  // Every count must be REPORTED as zero: an unreported one is unknown, and
+  // an unnamed CI registration may be another CI host.
   const complete =
-    roster.rosterTruncated === false && (roster.omitted ?? 0) === 0;
+    roster.rosterTruncated === false &&
+    roster.omitted === 0 &&
+    roster.unidentifiable === 0;
   return complete ? "yes" : "maybe";
 }
 
@@ -515,7 +521,9 @@ export function describeUnbindRejection(
       reading: {
         ...reading,
         sentence:
-          `Coord refused the removal (HTTP ${status}): only an operator of this tenant may remove a machine from it. ` +
+          // Without `refused_device_id` the refusal is this console's own
+          // gate, before any id reached coord.
+          `${abort !== null ? "Coord" : "This console"} refused the removal (HTTP ${status}): only an operator of this tenant may remove a machine from it. ` +
           what +
           (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
             ? ` (${reading.sentence})`
