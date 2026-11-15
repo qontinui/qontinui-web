@@ -715,6 +715,55 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  /**
+   * Every render of a dial whose resolver names `t-b` from mount, or only
+   * after it: whether it said waiting, loading, or showed a level. A section
+   * renders its waiting line, its loading line or the level, so a render with
+   * none of the three would show it empty.
+   */
+  async function rendersOfAFirstRead(atMount: boolean) {
+    let pin: { tenant: string } | undefined = atMount
+      ? { tenant: "t-b" }
+      : undefined;
+    const answer = deferred<unknown>();
+    getMock.mockReturnValueOnce(answer.promise);
+    const states: { waiting: boolean; loading: boolean; read: boolean }[] = [];
+    const { result, rerender } = renderHook(() => {
+      const dial = useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => pin }
+      );
+      states.push({
+        waiting: dial.waitingForProject,
+        loading: dial.loading,
+        read: dial.policy !== null,
+      });
+      return dial;
+    });
+    pin = { tenant: "t-b" };
+    rerender();
+    await act(async () => answer.resolve(view("on")));
+    await waitFor(() => expect(result.current.policy).not.toBeNull());
+    expect(getMock).toHaveBeenCalledTimes(1);
+    return states;
+  }
+
+  it("shows its waiting line, its loading line or a level at every render, when the resolver names a project after mount", async () => {
+    for (const state of await rendersOfAFirstRead(false)) {
+      expect(state.waiting || state.loading || state.read).toBe(true);
+    }
+  });
+
+  it("shows its loading line or a level at every render, when the resolver names a project at mount", async () => {
+    const states = await rendersOfAFirstRead(true);
+    expect(states.some((state) => state.waiting)).toBe(false);
+    for (const state of states) {
+      expect(state.loading || state.read).toBe(true);
+    }
+  });
+
   it("reads once, pinned, at mount when the resolver names a project then", async () => {
     let pin: { tenant: string } | undefined = { tenant: "t-b" };
     getMock.mockResolvedValue(view("on"));

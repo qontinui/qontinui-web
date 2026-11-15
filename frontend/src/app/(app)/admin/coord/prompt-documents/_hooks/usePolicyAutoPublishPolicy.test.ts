@@ -232,6 +232,32 @@ describe("usePolicyAutoPublishPolicy", () => {
     }
   });
 
+  it("shows its loading line or a level at every render, with the project there at mount", async () => {
+    const answer = deferred<unknown>();
+    fetchFleetPolicy.mockReturnValueOnce(answer.promise);
+    const states: { waiting: boolean; loading: boolean; read: boolean }[] = [];
+    const { result } = renderHook(
+      () => {
+        const dial = usePolicyAutoPublishPolicy();
+        states.push({
+          waiting: dial.waitingForProject,
+          loading: dial.loading,
+          read: dial.policy !== null,
+        });
+        return dial;
+      },
+      { wrapper: withPageGuard(PINNED_PAGE) }
+    );
+    await act(async () => answer.resolve(view("off")));
+    await waitFor(() => expect(result.current.policy).not.toBeNull());
+
+    expect(fetchFleetPolicy).toHaveBeenCalledTimes(1);
+    expect(states.some((state) => state.waiting)).toBe(false);
+    for (const state of states) {
+      expect(state.loading || state.read).toBe(true);
+    }
+  });
+
   it("does not paint a read sent before a level write landed over the write's result", async () => {
     fetchFleetPolicy.mockResolvedValueOnce(view("off"));
     const { result } = renderHook(() => usePolicyAutoPublishPolicy(), {

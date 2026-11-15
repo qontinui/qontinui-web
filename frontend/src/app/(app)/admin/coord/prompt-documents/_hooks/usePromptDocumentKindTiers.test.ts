@@ -145,6 +145,54 @@ describe("usePromptDocumentKindTiers", () => {
     expect(result.current.data?.kinds[0]?.tier).toBe("allow");
   });
 
+  /**
+   * Every render of the hook whose page names `t-page` from mount, or only
+   * after it: whether it said waiting, loading, or showed tiers. A section
+   * renders its waiting line, its loading line or the tiers, so a render with
+   * none of the three would show it empty.
+   */
+  async function rendersOfAFirstRead(atMount: boolean) {
+    let pin: { tenant: string } | undefined = atMount
+      ? { tenant: "t-page" }
+      : undefined;
+    const answer = deferred<unknown>();
+    fetchKindTiers.mockReturnValueOnce(answer.promise);
+    const states: { waiting: boolean; loading: boolean; read: boolean }[] = [];
+    const guard = testPageGuard({ resolvePin: () => pin });
+    const { result, rerender } = renderHook(
+      () => {
+        const tiersNow = usePromptDocumentKindTiers();
+        states.push({
+          waiting: tiersNow.waitingForProject,
+          loading: tiersNow.loading,
+          read: tiersNow.data !== null,
+        });
+        return tiersNow;
+      },
+      { wrapper: withPageGuard(guard) }
+    );
+    pin = { tenant: "t-page" };
+    rerender();
+    await act(async () => answer.resolve(tiers("allow")));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(fetchKindTiers).toHaveBeenCalledTimes(1);
+    return states;
+  }
+
+  it("shows its waiting line, its loading line or its tiers at every render, when the project arrives after mount", async () => {
+    for (const state of await rendersOfAFirstRead(false)) {
+      expect(state.waiting || state.loading || state.read).toBe(true);
+    }
+  });
+
+  it("shows its loading line or its tiers at every render, with the project there at mount", async () => {
+    const states = await rendersOfAFirstRead(true);
+    expect(states.some((state) => state.waiting)).toBe(false);
+    for (const state of states) {
+      expect(state.loading || state.read).toBe(true);
+    }
+  });
+
   it("refuses a tier write and a clear beside their sends when the page names no project, whatever its guard allowed", async () => {
     // A guard the page's provider never builds — a write allowed with no
     // pin — so only the hook's own refusal can stop each send.
