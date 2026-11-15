@@ -291,7 +291,9 @@ async def _unbind_one(
 ) -> FleetDeviceUnbindResult:
     """Call coord for one id and classify every way the call can end."""
     base = _COORD_TIMEOUT.read if _COORD_TIMEOUT.read is not None else budget
-    timeout = httpx.Timeout(min(base, budget))
+    # Leave wait_for a margin so a connect that never completes is reported by
+    # httpx (nothing sent → failed), not by the wall-clock budget (unknown).
+    timeout = httpx.Timeout(max(min(base, budget - _WAIT_FOR_MARGIN_SECONDS), 0.05))
     url = f"{settings.COORD_URL}/coord/devices/{device_id}/tenant-binding"
     try:
         # wait_for makes the batch budget a real total: httpx's timeout bounds
@@ -329,6 +331,16 @@ async def _unbind_one(
 
 
 _LOG_UPSTREAM_MAX_CHARS = 500
+# A call started with less budget than this would almost surely come back
+# unknown; reporting it not_attempted is the honest answer.
+_MIN_CALL_BUDGET_SECONDS = 0.5
+_WAIT_FOR_MARGIN_SECONDS = 0.1
+
+
+def _truncate_for_log(text: str) -> str:
+    if len(text) <= _LOG_UPSTREAM_MAX_CHARS:
+        return text
+    return text[:_LOG_UPSTREAM_MAX_CHARS] + "…"
 
 
 def _log_unsettled_rows(
@@ -338,16 +350,17 @@ def _log_unsettled_rows(
 
     An unknown row may be a binding coord already removed, so it is recorded
     here even when the batch later aborts. A gateway's raw body is truncated
-    so an HTML error page cannot flood the log line.
+    (whether coord's raw non-JSON text or a gateway's `upstream` body) so an
+    HTML error page cannot flood the log line.
     """
     for result in results:
         if result.outcome not in ("unknown", "failed"):
             continue
         error = result.error
-        if isinstance(error, dict) and isinstance(error.get("upstream"), str):
-            upstream = error["upstream"]
-            if len(upstream) > _LOG_UPSTREAM_MAX_CHARS:
-                error = {**error, "upstream": upstream[:_LOG_UPSTREAM_MAX_CHARS] + "…"}
+        if isinstance(error, str):
+            error = _truncate_for_log(error)
+        elif isinstance(error, dict) and isinstance(error.get("upstream"), str):
+            error = {**error, "upstream": _truncate_for_log(error["upstream"])}
         logger.warning(
             "fleet_devices_unbind_row",
             tenant_id=str(tenant_id),
@@ -376,7 +389,7 @@ async def post_fleet_devices_unbind(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         for index, device_id in enumerate(ids):
             remaining = deadline - _monotonic()
-            if remaining <= 0:
+            if remaining < _MIN_CALL_BUDGET_SECONDS:
                 results.extend(
                     _not_attempted(d, "the batch's wall-clock budget ran out first")
                     for d in ids[index:]

@@ -869,7 +869,8 @@ class TestDeadline:
     ):
         from app.api.v1.endpoints import fleet_device_bindings
 
-        # A is sent with 45 s left (the 5 s coord timeout binds), B with 2 s.
+        # A is sent with 45 s left (the 5 s coord timeout binds), B with 2 s,
+        # whose httpx timeout keeps a 0.1 s margin under the wait_for budget.
         monkeypatch.setattr(
             fleet_device_bindings, "_monotonic", _Clock([0.0, 0.0, 43.0])
         )
@@ -878,7 +879,7 @@ class TestDeadline:
         assert resp.json()["unbound"] == 2
         assert [t.read if t is not None else None for t in stub.timeouts] == [
             5.0,
-            2.0,
+            1.9,
         ]
 
     def test_a_call_still_waiting_when_the_budget_ends_is_unknown(
@@ -886,9 +887,9 @@ class TestDeadline:
     ):
         from app.api.v1.endpoints import fleet_device_bindings
 
-        # 0.05 s of budget left when A is sent; coord would take 5 s.
+        # 0.6 s of budget left when A is sent; coord would take 5 s.
         monkeypatch.setattr(
-            fleet_device_bindings, "_monotonic", _Clock([0.0, 44.95, 46.0])
+            fleet_device_bindings, "_monotonic", _Clock([0.0, 44.4, 46.0])
         )
         stub = _CoordStub({DEVICE_A: [_Hang(5.0)]})
         resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
@@ -914,6 +915,39 @@ class TestDeadline:
             "failed": 0,
             "not_attempted": 1,
         }
+
+    def test_a_sliver_of_budget_is_not_attempted_rather_than_sent(
+        self, auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        from app.api.v1.endpoints import fleet_device_bindings
+
+        # 0.3 s left when A would be sent: under the 0.5 s floor.
+        monkeypatch.setattr(
+            fleet_device_bindings, "_monotonic", _Clock([0.0, 44.7, 44.8])
+        )
+        stub = _CoordStub({})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 200
+        assert [r["outcome"] for r in resp.json()["results"]] == [
+            "not_attempted",
+            "not_attempted",
+        ]
+        assert stub.calls == []
+
+    def test_a_long_raw_error_body_is_truncated_in_the_log(
+        self, auth_client: TestClient
+    ):
+        import structlog
+
+        stub = _CoordStub(
+            {DEVICE_A: [_mock_response(404, None, "<html>" + "y" * 3000 + "</html>")]}
+        )
+        with structlog.testing.capture_logs() as logs:
+            resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.json()["results"][0]["outcome"] == "failed"
+        rows = [e for e in logs if e["event"] == "fleet_devices_unbind_row"]
+        assert len(rows) == 1
+        assert len(rows[0]["error"]) == 501
 
     def test_the_budget_is_45_seconds(self):
         from app.api.v1.endpoints import fleet_device_bindings
