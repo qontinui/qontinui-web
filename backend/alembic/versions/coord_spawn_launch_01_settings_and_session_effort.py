@@ -67,10 +67,21 @@ Head choice
 another alembic revision lands first, coord re-points ``down_revision`` at land
 time; the companion test's ``_PARENT_REVISION_ID`` literal moves with it.
 
+``tenant_id`` carries NO foreign key to ``coord.tenants``, matching the
+sibling operator-settings table ``coord.agent_registry``
+(``agent_registry_01``), edited through the same tenant-admin door. It also
+keeps this revision from taking a lock on ``coord.tenants``.
+
+Phase 2 note: the ``effort`` CHECK on ``coord.agent_sessions`` means one
+out-of-vocabulary value would fail coord's WHOLE session-context ``UPDATE``
+(``context_tokens`` included). Coord must therefore validate ``effort`` against
+the level list before binding it, and bind NULL when it is not a level.
+
 Safety
 ======
 
-The new table is created empty, so it holds no lock anyone waits on.
+The new table is created empty and references no other table, so creating
+it takes no lock anyone waits on.
 
 On ``coord.agent_sessions`` both columns are nullable with no default, so each
 ADD is catalogue-only and rewrites no row. The effort ``CHECK`` is added as a
@@ -83,9 +94,8 @@ it scans the table once under the ACCESS EXCLUSIVE the ADD COLUMN already
 holds; every row's ``effort`` is NULL at that moment, so the scan reads and
 refuses nothing. ``coord.agent_sessions`` is written by coord on every session
 heartbeat, so the lock WAIT is bounded with ``SET LOCAL lock_timeout = '3s'``
-and restored afterwards -- env.py runs the whole upgrade batch in one
-transaction, so an unrestored ``SET LOCAL`` would impose the ceiling on every
-later revision. Every SQL string is a static literal, so the revision renders
+and restored afterwards (belt and braces: env.py also RESETs
+``lock_timeout`` after every revision). Every SQL string is a static literal, so the revision renders
 unchanged in offline ``--sql`` mode.
 
 Downgrade drops the session columns (with their constraint) and the table
@@ -124,8 +134,7 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.spawn_launch_settings (
-            tenant_id    UUID NOT NULL
-                REFERENCES coord.tenants(tenant_id) ON DELETE CASCADE,
+            tenant_id    UUID NOT NULL,
             spawn_type   TEXT NOT NULL,
             model_family TEXT NULL,
             effort       TEXT NULL,
@@ -203,8 +212,7 @@ def upgrade() -> None:
         """
     )
 
-    # env.py runs the whole batch in one transaction, so leaving this set would
-    # silently impose a 3 s ceiling on the next revision's DDL too.
+    # Belt and braces: env.py also RESETs lock_timeout after each revision.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 

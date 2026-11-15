@@ -13,8 +13,10 @@ Plan ``2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type`` Phase 1
    env.py runs the batch in one transaction;
 4. every SQL string is one static literal (offline ``--sql`` mode renders it),
    and neither direction reaches past ``op.execute``;
-5. live: the table and columns have the contract's shape, the CHECKs refuse an
-   out-of-vocabulary value and accept NULL, the session columns carry no
+5. live: the table and columns have the contract's shape, every CHECK (the
+   two on the settings table and the one on ``agent_sessions.effort``) refuses
+   an out-of-vocabulary write and accepts NULL, the settings table carries no
+   foreign key, ``agent_sessions.model`` takes any raw id, the session columns carry no
    default and the comments the source authors, and up/down/up leaves no
    residue.
 
@@ -31,7 +33,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from tests._alembic_harness import (
@@ -228,41 +229,6 @@ def test_comments_name_the_writer_the_reader_and_the_unknown_arm() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _insert_tenant(engine: Engine, tenant_id: uuid.UUID) -> None:
-    """Insert a coord.tenants row, filling only NOT NULL no-default columns."""
-    with engine.begin() as conn:
-        cols = conn.execute(
-            text(
-                """
-                SELECT column_name, data_type
-                  FROM information_schema.columns
-                 WHERE table_schema = 'coord' AND table_name = 'tenants'
-                   AND is_nullable = 'NO' AND column_default IS NULL
-                """
-            )
-        ).fetchall()
-        values: dict[str, object] = {}
-        for name, data_type in cols:
-            if name == "tenant_id":
-                values[name] = tenant_id
-            elif data_type == "uuid":
-                values[name] = uuid.uuid4()
-            elif data_type in ("text", "character varying"):
-                values[name] = f"t-{tenant_id.hex[:8]}"
-            elif data_type == "boolean":
-                values[name] = False
-            else:
-                raise AssertionError(
-                    f"unhandled coord.tenants column {name} {data_type}"
-                )
-        values.setdefault("tenant_id", tenant_id)
-        names = ", ".join(values)
-        params = ", ".join(f":{k}" for k in values)
-        conn.execute(
-            text(f"INSERT INTO coord.tenants ({names}) VALUES ({params})"), values
-        )
-
-
 @_needs_pg
 def test_shape_after_upgrade() -> None:
     with ephemeral_database(admin_database_url(), "spawnl01_shape") as (engine, db_url):
@@ -299,8 +265,8 @@ def test_shape_after_upgrade() -> None:
 def test_checks_refuse_out_of_vocabulary_values_and_accept_null() -> None:
     with ephemeral_database(admin_database_url(), "spawnl01_chk") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        # No FK to coord.tenants (agent_registry precedent), so any uuid serves.
         tenant = uuid.uuid4()
-        _insert_tenant(engine, tenant)
         insert = text(
             "INSERT INTO coord.spawn_launch_settings "
             "(tenant_id, spawn_type, model_family, effort) "
@@ -328,34 +294,46 @@ def test_checks_refuse_out_of_vocabulary_values_and_accept_null() -> None:
         # Primary key: one row per (tenant, spawn_type).
         with pytest.raises(IntegrityError), engine.begin() as conn:
             conn.execute(insert, {"t": tenant, "s": "cleared", "m": "opus", "e": None})
-        # The FK cascades: deleting the tenant deletes its settings.
-        with engine.begin() as conn:
-            conn.execute(
-                text("DELETE FROM coord.tenants WHERE tenant_id = :t"), {"t": tenant}
-            )
-            left = conn.execute(
-                text(
-                    "SELECT count(*) FROM coord.spawn_launch_settings "
-                    "WHERE tenant_id = :t"
-                ),
-                {"t": tenant},
-            ).scalar_one()
-        assert left == 0
-        # agent_sessions.effort carries the same CHECK.
+        # No FK: the settings table references nothing.
         with engine.connect() as conn:
-            chk = conn.execute(
+            fks = conn.execute(
                 text(
-                    """
-                    SELECT pg_get_constraintdef(oid)
-                      FROM pg_constraint
-                     WHERE conrelid = 'coord.agent_sessions'::regclass
-                       AND conname = 'agent_sessions_effort_chk'
-                    """
+                    "SELECT count(*) FROM pg_constraint "
+                    "WHERE conrelid = 'coord.spawn_launch_settings'::regclass "
+                    "AND contype = 'f'"
                 )
             ).scalar_one()
-        for lvl in _EFFORT_LEVELS:
-            assert f"'{lvl}'" in chk, chk
-        assert "model" not in chk
+        assert fks == 0
+
+
+@_needs_pg
+def test_session_effort_check_is_enforced_on_write_and_model_is_free() -> None:
+    """agent_sessions.effort refuses a non-level and accepts every level and
+    NULL; agent_sessions.model takes any raw model id (no CHECK)."""
+    with ephemeral_database(admin_database_url(), "spawnl01_sess") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        sid = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO coord.agent_sessions (id) VALUES (:id)"), {"id": sid}
+            )
+        set_effort = text("UPDATE coord.agent_sessions SET effort = :e WHERE id = :id")
+        for bad in ("ultra", "HIGH", ""):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(set_effort, {"e": bad, "id": sid})
+        for ok in (*_EFFORT_LEVELS, None):
+            with engine.begin() as conn:
+                conn.execute(set_effort, {"e": ok, "id": sid})
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE coord.agent_sessions SET model = :m WHERE id = :id"),
+                {"m": "claude-opus-4-5-20251101", "id": sid},
+            )
+            row = conn.execute(
+                text("SELECT model, effort FROM coord.agent_sessions WHERE id = :id"),
+                {"id": sid},
+            ).one()
+        assert tuple(row) == ("claude-opus-4-5-20251101", None)
 
 
 @_needs_pg
