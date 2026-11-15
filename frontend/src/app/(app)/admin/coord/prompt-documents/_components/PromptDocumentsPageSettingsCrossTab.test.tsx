@@ -233,10 +233,11 @@ function answer(url: string): unknown {
   }
   if (url.includes("/prompt-document-kind-tiers")) {
     return {
-      kinds: [
-        kindRow("audience_profile", null),
-        ...Object.entries(kindTiers).map(([kind, tier]) => kindRow(kind, tier)),
-      ],
+      // `audience_profile` is always listed; a tier stored for it, or for any
+      // other kind, is the one its row carries.
+      kinds: Object.entries({ audience_profile: null, ...kindTiers }).map(
+        ([kind, tier]) => kindRow(kind, tier)
+      ),
       vocabulary: ["deny", "allow", "allow_with_notification"],
       notification_enforced: false,
       warning: "x",
@@ -1367,6 +1368,43 @@ describe("a re-take read sent before a write and answered after it", () => {
     await act(async () => releaseRetake(200));
     await settle(80);
     expect(clearButton()).toBeDisabled();
+  }, 20_000);
+
+  it("HAND-ROLLED kind tiers: a kind's tier, once set, stays set", async () => {
+    // As the cleared kind above, but through `setTier`: `deny` on a kind
+    // with no stored tier applies on one click, and once stored it offers
+    // Clear.
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(1),
+      { timeout: 5000 }
+    );
+    await screen.findByTestId(
+      "kind-tier-row-audience_profile",
+      {},
+      { timeout: 5000 }
+    );
+    await settle(80);
+    const releaseRetake = holdNextSnapshot("GET", KIND_TIERS);
+    await act(async () => answerMembership());
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(2),
+      { timeout: 5000 }
+    );
+    const row = () => screen.getByTestId("kind-tier-row-audience_profile");
+    await user().click(within(row()).getByRole("button", { name: "deny" }));
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(3),
+      { timeout: 5000 }
+    );
+    await settle(80);
+    const clearButton = () =>
+      within(row()).getByRole("button", { name: "clear" });
+    expect(clearButton()).toBeEnabled();
+    await act(async () => releaseRetake(200));
+    await settle(80);
+    expect(clearButton()).toBeEnabled();
   }, 20_000);
 
   // Session compliance's settings and history reads race a save as well. A
