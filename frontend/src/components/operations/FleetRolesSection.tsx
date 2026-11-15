@@ -345,10 +345,11 @@ const ROLES_NOTE_WITHHELD =
   "Coord added a note about this list, withheld in presentation mode.";
 
 export function FleetRolesSection() {
-  const { read, asOfMs, refresh } = useFleetDispatchRoles();
+  const { read, asOfMs, refresh, latestRead } = useFleetDispatchRoles();
   // "Remove from this tenant…" (plan 2026-11-15-stale-ci-hosts-…): its state
   // lives here, not in the row, so its answer survives the row leaving.
-  const removal = useRemoveMachineFromTenant(refresh);
+  const readNow = useCallback(() => latestRead?.() ?? null, [latestRead]);
+  const removal = useRemoveMachineFromTenant(refresh, readNow);
   const { presenting } = usePresentationMode();
   const machineName = useMachineAliaser();
   const rowKey = useRowKey();
