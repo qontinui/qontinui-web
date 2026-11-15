@@ -223,7 +223,7 @@ test.describe("Project Testing - Integration Page", () => {
     await expect(
       page
         .getByText(
-          "Run workflows in mock mode using historical data. No live GUI required."
+          "Run workflows in mock mode using simulated data. No live GUI required."
         )
         .first()
     ).toBeVisible();

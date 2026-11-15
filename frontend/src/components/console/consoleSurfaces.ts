@@ -139,7 +139,12 @@ import {
 } from "@/app/(app)/admin/coord/decision-policies/decisionPolicyStatus";
 // Wave 4 surfaces — Family C, the tables.
 import {
+  BEHIND_FRESHEN_ATTENTION_BY_KIND,
   PR_ATTENTION_BY_MERGE_STATUS,
+} from "@/components/operations/prMergeStatus";
+import {
+  BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
+  BEHIND_FRESHEN_CLASS,
   PR_AUTHOR_GLYPH_STATUSES,
   PR_MERGE_STATUS_CLASS,
 } from "@/app/(app)/admin/coord/prs/prStatus";
@@ -540,11 +545,23 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
   {
     surface: "open PRs (/admin/coord/prs)",
-    module: "app/(app)/admin/coord/prs/prStatus.ts",
+    module: "components/operations/prMergeStatus.ts",
     attentionByKind: PR_ATTENTION_BY_MERGE_STATUS,
     palette: {
       badgeClass: PR_MERGE_STATUS_CLASS,
       authorGlyphKinds: PR_AUTHOR_GLYPH_STATUSES as ReadonlySet<string>,
+    },
+  },
+  {
+    // The served freshen readings, which that page's palette adds to the
+    // tokens; `prPipeline` carries the same two kinds in its own table.
+    surface: "open PRs, served freshen readings (/admin/coord/prs)",
+    module: "components/operations/prMergeStatus.ts",
+    attentionByKind: BEHIND_FRESHEN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: BEHIND_FRESHEN_CLASS,
+      authorGlyphKinds:
+        BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

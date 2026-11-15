@@ -104,7 +104,8 @@ jobs:
     # (see `Create a job venv`). Plans
     # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools
     # and 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Job cap. This workflow carried NO `timeout-minutes` at any level, so a
     # hung step fell through to GitHub's DEFAULT 360-minute ceiling — that is
     # how run 32207280679 burned 2h28m and 32216356137 burned 5h59m in
@@ -195,7 +196,12 @@ jobs:
           PIP_CACHE_FLOOR_MB: '61440'
           PIP_CACHE_FLOOR_MIN_SIZE_MB: '1024'
         run: |
-          python -m venv "$RUNNER_TEMP/venv"
+          # --clear: a self-hosted runner does not always empty $RUNNER_TEMP, and a
+          # venv left there by an earlier job keeps ITS interpreter (measured: a
+          # Python 3.10 venv survived under setup-python 3.12, so every install read
+          # "already satisfied" and qontinui-schemas refused 3.10; web#2124 run
+          # 42324059633). Rebuild it from the interpreter this job set up.
+          python -m venv --clear "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
           # Hosted keeps ~/.cache/pip, which the actions/cache step below restores.
           if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
@@ -445,7 +451,8 @@ jobs:
   changed-specs:
     name: Changed E2E spec files
     if: github.event_name == 'pull_request'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Detection only: a checkout, one extra fetch and a stdlib script.
     timeout-minutes: 5
     outputs:
@@ -532,7 +539,8 @@ jobs:
 
   test-summary:
     name: Test Summary
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Job cap — see `backend-tests` above. This job only downloads artifacts
     # and tallies results: 3-9s across the same 7 green runs. 10 min is ~65x
     # the observed max and exists purely so a wedged download cannot inherit
@@ -543,11 +551,15 @@ jobs:
 
     steps:
       # This job has no checkout, so on a persistent self-hosted runner nothing
-      # else ever cleans its workspace. Clear what an earlier run left there,
-      # and download into runner.temp, which the runner empties after every job.
+      # else ever cleans its workspace. Clear what an earlier run left there.
+      # runner.temp is NOT reliably emptied between jobs on a self-hosted runner
+      # (a stale venv survived there on web#2124, run 42324059633), so clear the
+      # artifacts download directory too before downloading into it.
       - name: Clean the workspace
         shell: bash
-        run: find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+          rm -rf "$RUNNER_TEMP/artifacts"
 
       - name: Download all artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

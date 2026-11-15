@@ -299,6 +299,10 @@ function buildMachineGroups(
       runner_reports: device.runner_reports,
       runner_reports_scrape_up: runnerReportsScrapeUp,
       ciRunner: isCiRunnerDevice(device),
+      // Carried so the row can name `not_listed` and age `ci_unrefreshed`
+      // (`deviceRowStateLabel`); absent stays absent, never invented.
+      ci_runner_status: device.ci_runner_status,
+      last_seen_at: device.last_seen_at,
     };
     if (group) {
       group.coordHealth = join;
