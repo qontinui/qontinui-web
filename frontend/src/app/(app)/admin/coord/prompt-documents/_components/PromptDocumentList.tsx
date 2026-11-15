@@ -1131,9 +1131,9 @@ function PromptDocumentListBody({
         publishing={publishingAll}
         onPublishAll={async (selected, releaseNote) => {
           // The confirm, not the preview: a confirm raced past the notice is
-          // refused here. The run itself is pinned to the page's project
-          // (`usePublishAll` asks the provider), or, while that is null or has
-          // never been known, to the project stored now.
+          // refused here. `usePublishAll` asks the page's guard again beside
+          // its own send, and sends the run only in the page's pinned project:
+          // a run with no pin is refused there and nothing is sent.
           if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an

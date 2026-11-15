@@ -90,8 +90,10 @@ function noticeProjectLabel(
  * what amber would promise. It names only the cause it observed (D4). When the
  * page locks, focus moves to Reload from a control the fieldset just disabled
  * (or from `<body>`, where a browser drops it), unless a modal dialog holds it
- * (#9). While locked, the fieldset is described by the notice, so a disabled
- * control's reason is announced with it.
+ * (#9). The fieldset is a named group (a visually hidden `<legend>`), and while
+ * locked it is described by the notice (`aria-describedby`): that is the
+ * markup assistive technology reads to tie the disabled controls' group to
+ * its reason. How a given screen reader voices it was not measured.
  */
 export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const { mountTenant, tenantContext, pageTenant, guardTenant, pin } =
@@ -187,6 +189,10 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
           className="m-0 min-w-0 border-0 p-0"
           data-testid="prompt-documents-controls"
         >
+          {/* The group's accessible name; the first legend, so it names it. */}
+          <legend className="sr-only">
+            Prompt documents and their settings
+          </legend>
           {children}
         </fieldset>
       </div>

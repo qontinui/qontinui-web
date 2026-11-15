@@ -402,6 +402,24 @@ describe("the notice", () => {
 });
 
 describe("the disabled fieldset's description", () => {
+  it("names the fieldset as a group, locked or not", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    const group = screen.getByRole("group", {
+      name: "Prompt documents and their settings",
+    });
+    expect(group).toBe(screen.getByTestId("prompt-documents-controls"));
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(group).toBeDisabled();
+    expect(group).toHaveAccessibleName("Prompt documents and their settings");
+  });
+
   it("is the notice while the page is locked, and nothing once it clears", async () => {
     localStorage.setItem(KEY, B);
     render(
