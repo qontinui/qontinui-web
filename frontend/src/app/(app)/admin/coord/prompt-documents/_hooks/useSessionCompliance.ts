@@ -150,15 +150,24 @@ export function useSessionCompliance() {
   // before it is superseded: its answer is dropped, so it can neither show
   // another project's state nor end the re-take's loading.
   const retakes = useRef(0);
+  // Bumped when a save LANDS. A settings or history read that began before it
+  // may answer after the save's own result; applying it would show the
+  // settings, or their history, as they were before the save. Its answer is
+  // dropped, as the shared dial does (`useTenantFleetPolicyDial`). The
+  // verdicts and the ledger are not changed by a save, so they keep theirs.
+  const writeGeneration = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
   const loadConfig = useCallback(async () => {
+    const generation = writeGeneration.current;
     const retake = retakes.current;
+    const superseded = () =>
+      generation !== writeGeneration.current || retake !== retakes.current;
     setConfig((s) => ({ ...s, loading: true }));
     try {
       const data = await fetchSessionComplianceConfig(sendPin());
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       setConfig({
         data,
         loading: false,
@@ -167,7 +176,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       setConfig({
         data: null,
         loading: false,
@@ -181,11 +190,14 @@ export function useSessionCompliance() {
   }, [sendPin]);
 
   const loadVersions = useCallback(async () => {
+    const generation = writeGeneration.current;
     const retake = retakes.current;
+    const superseded = () =>
+      generation !== writeGeneration.current || retake !== retakes.current;
     setVersions((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceConfigVersions(sendPin());
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -194,7 +206,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       setVersions({
         data: null,
         loading: false,
@@ -218,6 +230,7 @@ export function useSessionCompliance() {
       setSaving(true);
       try {
         const updated = await saveSessionComplianceConfig(patch, sendPin());
+        writeGeneration.current += 1;
         setConfig({
           data: updated,
           loading: false,

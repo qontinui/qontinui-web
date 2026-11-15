@@ -95,13 +95,21 @@ export function usePolicyAutoPublishPolicy() {
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
     null
   );
+  // Bumped when a write LANDS. A read that began before it may answer after
+  // the write's own result; applying it would paint the value as it was
+  // before the write. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`).
+  const writeGeneration = useRef(0);
   // Bumped by the one re-take of an unpinned mount read (below). A read sent
   // before it is superseded: its answer is dropped, and `loading` is left to
   // the re-take.
   const retakes = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = writeGeneration.current;
     const retake = retakes.current;
+    const superseded = () =>
+      generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
       const view = await fetchFleetPolicy(
@@ -109,7 +117,7 @@ export function usePolicyAutoPublishPolicy() {
         undefined,
         sendPin()
       );
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
@@ -117,7 +125,7 @@ export function usePolicyAutoPublishPolicy() {
       // value we just confirmed would be the opposite of honest.
       setLastWrite(null);
     } catch (err) {
-      if (retake !== retakes.current) return;
+      if (superseded()) return;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, "Failed to read the automatic-publishing dial"));
@@ -164,6 +172,7 @@ export function usePolicyAutoPublishPolicy() {
           },
           sendPin()
         );
+        writeGeneration.current += 1;
         setLastWrite(result);
 
         if (result.effective) {

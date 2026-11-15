@@ -116,17 +116,41 @@ function inAnswerTo(
 /**
  * Hold the next request matching in flight, after its header was recorded,
  * until the returned `release(status)` runs; it is then answered with that
- * status (a 503, say), or with the route's own answer for a 200.
+ * status (a 503, say), or with the route's own answer for a 200, as coord's
+ * state stands at release.
  */
-type Held = { method: string; match: RegExp; status: Promise<number> };
+type Held = {
+  method: string;
+  match: RegExp;
+  status: Promise<number>;
+  snapshot: boolean;
+};
 let helds: Held[] = [];
-function holdNext(method: string, match: RegExp): (status: number) => void {
+function hold(
+  method: string,
+  match: RegExp,
+  snapshot: boolean
+): (status: number) => void {
   let release: (status: number) => void = () => {};
   const status = new Promise<number>((resolve) => {
     release = resolve;
   });
-  helds.push({ method, match, status });
+  helds.push({ method, match, status, snapshot });
   return (s) => release(s);
+}
+function holdNext(method: string, match: RegExp): (status: number) => void {
+  return hold(method, match, false);
+}
+/**
+ * As {@link holdNext}, but a 200 is answered with coord's state as it stood
+ * when the request ARRIVED: a read coord served before a write landed,
+ * delivered only after it.
+ */
+function holdNextSnapshot(
+  method: string,
+  match: RegExp
+): (status: number) => void {
+  return hold(method, match, true);
 }
 
 /**
@@ -160,8 +184,36 @@ const COMPLIANCE_CONFIG = {
   current_version: 3,
 };
 
-/** Kind-tier rows served beside `audience_profile`; a test adds one. */
-let extraKindRows: unknown[] = [];
+/**
+ * Coord's state, as the requests below read and change it, reset for every
+ * test: each dial's level, each kind's stored tier beside `audience_profile`
+ * (which has none; `null` once cleared), and the session-compliance settings
+ * and their history. A read answers from it; a write changes it.
+ */
+const DIAL_LEVELS: Record<string, string> = {
+  policy_write: "tightening_only",
+  policy_upstream: "notify",
+};
+let levels: Record<string, string> = { ...DIAL_LEVELS };
+let kindTiers: Record<string, string | null> = {};
+let complianceConfig: Record<string, unknown> = { ...COMPLIANCE_CONFIG };
+let complianceVersions: Record<string, unknown>[] = [];
+
+const BUILTIN_TIER: Record<string, string> = {
+  audience_profile: "deny",
+  initiative: "allow_with_notification",
+};
+function kindRow(kind: string, tier: string | null) {
+  const builtin = BUILTIN_TIER[kind] ?? "deny";
+  return {
+    kind,
+    tier,
+    unreadable: false,
+    builtin_default_tier: builtin,
+    effective_tier: tier ?? builtin,
+    effective_source: tier ? "tenant" : "default",
+  };
+}
 
 function answer(url: string): unknown {
   if (url.includes("/auto-publish/status")) {
@@ -169,26 +221,13 @@ function answer(url: string): unknown {
   }
   if (url.includes("/fleet-policy")) {
     const domain = new URL(url, "http://x").searchParams.get("domain") ?? "";
-    const level =
-      domain === "policy_write"
-        ? "tightening_only"
-        : domain === "policy_upstream"
-          ? "notify"
-          : "off";
-    return view(domain, level);
+    return view(domain, levels[domain] ?? "off");
   }
   if (url.includes("/prompt-document-kind-tiers")) {
     return {
       kinds: [
-        {
-          kind: "audience_profile",
-          tier: null,
-          unreadable: false,
-          builtin_default_tier: "deny",
-          effective_tier: "deny",
-          effective_source: "default",
-        },
-        ...extraKindRows,
+        kindRow("audience_profile", null),
+        ...Object.entries(kindTiers).map(([kind, tier]) => kindRow(kind, tier)),
       ],
       vocabulary: ["deny", "allow", "allow_with_notification"],
       notification_enforced: false,
@@ -196,9 +235,9 @@ function answer(url: string): unknown {
     };
   }
   if (url.includes("/session-compliance/config/versions")) {
-    return { versions: [] };
+    return { versions: complianceVersions };
   }
-  if (url.includes("/session-compliance/config")) return COMPLIANCE_CONFIG;
+  if (url.includes("/session-compliance/config")) return complianceConfig;
   if (url.includes("/session-compliance/sessions")) return { sessions: [] };
   if (url.includes("/session-compliance/outstanding")) return { items: [] };
   if (/\/coord\/prompt-documents(\?|$)/.test(url)) {
@@ -208,14 +247,16 @@ function answer(url: string): unknown {
 }
 
 /**
- * Every write answers as accepted, in the shape its hook reads: the refusal
- * tests assert it was not SENT, the in-flight tests where it was sent.
+ * Every write is accepted, changes coord's state, and answers in the shape
+ * its hook reads: the refusal tests assert it was not SENT, the in-flight
+ * tests where it was sent.
  */
-function written(url: string, body: string | null): unknown {
+function written(method: string, url: string, body: string | null): unknown {
   const sentBody = JSON.parse(body ?? "{}") as Record<string, unknown>;
   if (url.endsWith("/fleet-policy")) {
     const domain = String(sentBody.domain);
     const level = String(sentBody.level);
+    levels[domain] = level;
     return {
       ok: true,
       domain,
@@ -228,10 +269,47 @@ function written(url: string, body: string | null): unknown {
       readback_error: null,
     };
   }
+  const kind = /\/prompt-document-kind-tiers\/([^/?]+)$/.exec(url)?.[1];
+  if (kind !== undefined) {
+    kindTiers[kind] = method === "DELETE" ? null : String(sentBody.tier);
+    return { ok: true };
+  }
   if (url.endsWith("/session-compliance/config")) {
-    return { ...COMPLIANCE_CONFIG, ...sentBody, current_version: 4 };
+    complianceConfig = {
+      ...complianceConfig,
+      ...sentBody,
+      current_version: Number(complianceConfig.current_version) + 1,
+    };
+    complianceVersions = [
+      {
+        version_number: complianceConfig.current_version,
+        enabled: complianceConfig.enabled,
+        mode: complianceConfig.mode,
+        enforced_clause_ref: complianceConfig.enforced_clause_ref,
+        max_attempts: complianceConfig.max_attempts,
+        edited_by: "operator@example.com",
+        created_at: "2026-11-15T12:00:00Z",
+      },
+      ...complianceVersions,
+    ];
+    return complianceConfig;
   }
   return { ok: true };
+}
+
+/** What coord answers a request with: the OTHER project's answer where set. */
+function respond(
+  method: string,
+  url: string,
+  tenant: string | null,
+  body: string | null
+): unknown {
+  const other =
+    method === "GET" && tenant === SYS
+      ? otherProjectAnswers.find((a) => a.match.test(url))
+      : undefined;
+  if (other) return other.body;
+  return method === "GET" ? answer(url) : written(method, url, body);
 }
 
 const json = (status: number, body: unknown) =>
@@ -245,7 +323,10 @@ beforeEach(() => {
   insides = [];
   helds = [];
   otherProjectAnswers = [];
-  extraKindRows = [];
+  levels = { ...DIAL_LEVELS };
+  kindTiers = {};
+  complianceConfig = { ...COMPLIANCE_CONFIG };
+  complianceVersions = [];
   listTenantsMock.mockReset();
   token.expiry = Date.now() + 3_600_000;
   token.onRefresh = null;
@@ -260,11 +341,16 @@ beforeEach(() => {
           "X-Qontinui-Active-Tenant"
         ] ?? null;
       sent.push({ method, url, tenant });
+      const body = typeof init?.body === "string" ? init.body : null;
       const held = helds.findIndex(
         (h) => h.method === method && h.match.test(url)
       );
       if (held >= 0) {
         const [entry] = helds.splice(held, 1);
+        // A snapshot is coord's answer as it stood when the request arrived.
+        const snapshot = entry?.snapshot
+          ? respond(method, url, tenant, body)
+          : undefined;
         const status = entry ? await entry.status : 200;
         if (status !== 200) {
           return json(status, {
@@ -272,6 +358,7 @@ beforeEach(() => {
             message: `answered ${status}`,
           });
         }
+        if (snapshot !== undefined) return json(200, snapshot);
       }
       const inside = insides.findIndex(
         (i) => i.method === method && i.match.test(url)
@@ -286,18 +373,7 @@ beforeEach(() => {
           });
         }
       }
-      const other =
-        method === "GET" && tenant === SYS
-          ? otherProjectAnswers.find((a) => a.match.test(url))
-          : undefined;
-      return json(
-        200,
-        other
-          ? other.body
-          : method === "GET"
-            ? answer(url)
-            : written(url, typeof init?.body === "string" ? init.body : null)
-      );
+      return json(200, respond(method, url, tenant, body));
     })
   );
 });
@@ -401,16 +477,7 @@ describe("a settings write raced past the page's fieldset is refused", () => {
   it("the kind-tier Clear sends nothing", async () => {
     // A kind with a stored tier, so Clear is offered. It closes or reopens
     // nothing it asks about first: it applies on one click.
-    extraKindRows = [
-      {
-        kind: "initiative",
-        tier: "allow",
-        unreadable: false,
-        builtin_default_tier: "allow_with_notification",
-        effective_tier: "allow",
-        effective_source: "tenant",
-      },
-    ];
+    kindTiers = { initiative: "allow" };
     render(<PromptDocumentsPage />);
     const row = await screen.findByTestId(
       "kind-tier-row-initiative",
@@ -510,16 +577,7 @@ const SECTION_WRITES: SectionWrite[] = [
     reread: KIND_TIERS,
     // A kind with a stored tier, so Clear is offered.
     setup: () => {
-      extraKindRows = [
-        {
-          kind: "initiative",
-          tier: "allow",
-          unreadable: false,
-          builtin_default_tier: "allow_with_notification",
-          effective_tier: "allow",
-          effective_source: "tenant",
-        },
-      ];
+      kindTiers = { initiative: "allow" };
     },
     arrange: async () => {
       await screen.findByTestId(
@@ -1139,5 +1197,186 @@ describe("the page's project known only after the page mounted", () => {
       B,
       B,
     ]);
+  }, 20_000);
+});
+
+/**
+ * A read in flight when a settings write lands, answered after the write's
+ * own result with coord's state as it stood when the read ARRIVED (before
+ * the write). Ported from the round-4 review's demonstration
+ * (`retakeWriteRace.test.tsx`), whose three cases are kept as written. On a
+ * first visit a write unlocks in the same provider render that defines the
+ * pin, so the first write always races the re-take: each hook drops a read
+ * that began before a write landed, as the shared dial does.
+ */
+describe("a re-take read sent before a write and answered after it", () => {
+  /** Every PUT sent so far. */
+  const puts = () => sent.filter((s) => s.method === "PUT");
+
+  it("SHARED dial (policy-write, writeGeneration): the write's level stays shown", async () => {
+    const PW = /\/fleet-policy\?domain=policy_write$/;
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await waitFor(() => expect(sentSince(0, "GET", PW)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    await settle(80);
+    // The confirmation is opened before the page knows its project.
+    await user().click(radio("policy-write-full"));
+    await screen.findByTestId("policy-write-confirm");
+    const releaseRetake = holdNextSnapshot("GET", PW);
+    await act(async () => answerMembership());
+    await waitFor(() => expect(sentSince(0, "GET", PW)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    expect(sentSince(0, "GET", PW).map((s) => s.tenant)).toEqual([null, B]);
+    await user().click(screen.getByRole("button", { name: /set to full/i }));
+    await waitFor(() => expect(puts()).toHaveLength(1), { timeout: 5000 });
+    await settle(80);
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      /In force:\s*full/
+    );
+    await act(async () => releaseRetake(200));
+    await settle(80);
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      /In force:\s*full/
+    );
+  }, 20_000);
+
+  it("HAND-ROLLED dial (auto-publish): the write's level stays shown", async () => {
+    const AP = /\/fleet-policy\?domain=policy_auto_publish$/;
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await waitFor(() => expect(sentSince(0, "GET", AP)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    await settle(80);
+    await user().click(screen.getByTestId("policy-auto-publish-level-on"));
+    await screen.findByTestId("policy-auto-publish-confirm");
+    const releaseRetake = holdNextSnapshot("GET", AP);
+    await act(async () => answerMembership());
+    await waitFor(() => expect(sentSince(0, "GET", AP)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    expect(sentSince(0, "GET", AP).map((s) => s.tenant)).toEqual([null, B]);
+    await user().click(
+      screen.getByTestId("policy-auto-publish-confirm-accept")
+    );
+    await waitFor(() => expect(puts()).toHaveLength(1), { timeout: 5000 });
+    await settle(80);
+    expect(
+      screen.getByTestId("policy-auto-publish-in-force")
+    ).toHaveTextContent(/In force:\s*on/);
+    await act(async () => releaseRetake(200));
+    await settle(80);
+    expect(
+      screen.getByTestId("policy-auto-publish-in-force")
+    ).toHaveTextContent(/In force:\s*on/);
+  }, 20_000);
+
+  it("HAND-ROLLED kind tiers: a cleared kind stays cleared", async () => {
+    kindTiers = { initiative: "allow" };
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(1),
+      { timeout: 5000 }
+    );
+    await screen.findByTestId(
+      "kind-tier-row-initiative",
+      {},
+      { timeout: 5000 }
+    );
+    await settle(80);
+    const releaseRetake = holdNextSnapshot("GET", KIND_TIERS);
+    await act(async () => answerMembership());
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(2),
+      { timeout: 5000 }
+    );
+    expect(sentSince(0, "GET", KIND_TIERS).map((s) => s.tenant)).toEqual([
+      null,
+      B,
+    ]);
+    // `clear` is not disabled while the re-take is in flight.
+    await user().click(
+      within(screen.getByTestId("kind-tier-row-initiative")).getByRole(
+        "button",
+        { name: "clear" }
+      )
+    );
+    await waitFor(
+      () => expect(sentSince(0, "GET", KIND_TIERS)).toHaveLength(3),
+      { timeout: 5000 }
+    );
+    await settle(80);
+    const clearButton = () =>
+      within(screen.getByTestId("kind-tier-row-initiative")).getByRole(
+        "button",
+        { name: "clear" }
+      );
+    expect(clearButton()).toBeDisabled();
+    await act(async () => releaseRetake(200));
+    await settle(80);
+    expect(clearButton()).toBeDisabled();
+  }, 20_000);
+
+  // Session compliance's settings and history reads race a save as well:
+  // these two rows send the read through Refresh.
+  const CONFIG = /\/session-compliance\/config$/;
+  const HISTORY = /\/session-compliance\/config\/versions$/;
+
+  async function saveAttempts(value: string) {
+    const attempts = screen.getByTestId("compliance-max-attempts");
+    await user().clear(attempts);
+    await user().type(attempts, value);
+    await user().click(screen.getByTestId("compliance-save"));
+    await waitFor(() => expect(puts()).toHaveLength(1), { timeout: 5000 });
+    await settle(80);
+  }
+
+  it("HAND-ROLLED session compliance: a saved setting stays shown", async () => {
+    render(<PromptDocumentsPage />);
+    await screen.findByTestId("compliance-max-attempts", {}, { timeout: 5000 });
+    await settle(80);
+    const releaseRefresh = holdNextSnapshot("GET", CONFIG);
+    await user().click(screen.getByTestId("compliance-refresh"));
+    await waitFor(() => expect(sentSince(0, "GET", CONFIG)).toHaveLength(2), {
+      timeout: 5000,
+    });
+
+    await saveAttempts("2");
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(2);
+
+    await act(async () => releaseRefresh(200));
+    await settle(80);
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(2);
+  }, 20_000);
+
+  it("HAND-ROLLED session compliance: a saved version stays in the history", async () => {
+    render(<PromptDocumentsPage />);
+    await screen.findByTestId("compliance-max-attempts", {}, { timeout: 5000 });
+    await user().click(screen.getByTestId("compliance-config-history-toggle"));
+    await settle(80);
+    const releaseRefresh = holdNextSnapshot("GET", HISTORY);
+    await user().click(screen.getByTestId("compliance-refresh"));
+    await waitFor(() => expect(sentSince(0, "GET", HISTORY)).toHaveLength(2), {
+      timeout: 5000,
+    });
+
+    await saveAttempts("2");
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("compliance-config-history")
+        ).toHaveTextContent("v4"),
+      { timeout: 5000 }
+    );
+
+    await act(async () => releaseRefresh(200));
+    await settle(80);
+    expect(screen.getByTestId("compliance-config-history")).toHaveTextContent(
+      "v4"
+    );
   }, 20_000);
 });

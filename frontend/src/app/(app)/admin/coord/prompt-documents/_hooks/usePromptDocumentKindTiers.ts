@@ -78,6 +78,11 @@ export function usePromptDocumentKindTiers() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped when a write LANDS. A read that began before it may answer after
+  // the write's own result; applying it would paint the value as it was
+  // before the write. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`).
+  const writeGeneration = useRef(0);
   // Bumped by the one re-take of an unpinned mount read (below). A read sent
   // before it is superseded: its answer is dropped, and `loading` is left to
   // the re-take.
@@ -89,17 +94,21 @@ export function usePromptDocumentKindTiers() {
   // displayed state is current — and a success toast raised through a failed
   // read-back is the write's echo wearing a read's clothes.
   const load = useCallback(async (): Promise<boolean> => {
+    const generation = writeGeneration.current;
     const retake = retakes.current;
+    const superseded = () =>
+      generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
       const view = await fetchKindTiers(sendPin());
-      // Superseded by the re-take: not what is shown, so not a success.
-      if (retake !== retakes.current) return false;
+      // Superseded by a landed write or the re-take: not what is shown, so
+      // not a success.
+      if (superseded()) return false;
       setData(view);
       setError(null);
       return true;
     } catch (err) {
-      if (retake !== retakes.current) return false;
+      if (superseded()) return false;
       // Keep the last known-good rows on screen. Blanking them would read as
       // "no kind has a setting", which is a claim about the operator's
       // configuration that a failed read is no evidence for.
@@ -135,6 +144,7 @@ export function usePromptDocumentKindTiers() {
       try {
         setSaving(true);
         await setKindTier(kind, tier, sendPin());
+        writeGeneration.current += 1;
         const confirmed = await load();
         // `deny` goes through this same function, so one message for all three
         // tiers said "Agents may now write ... : deny" — the display asserting
@@ -171,6 +181,7 @@ export function usePromptDocumentKindTiers() {
       try {
         setSaving(true);
         await clearKindTier(kind, sendPin());
+        writeGeneration.current += 1;
         const confirmed = await load();
         const what =
           `Cleared the tenant setting for \`${kind}\` — coord's built-in ` +
