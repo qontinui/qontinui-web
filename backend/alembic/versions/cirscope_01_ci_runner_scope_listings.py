@@ -1,7 +1,7 @@
 """coord.ci_runner_scope_listings — the last COMPLETE GitHub runner listing per scope
 
 Revision ID: cirscope_01_ci_runner_scope_listings
-Revises: overview_06_cost_category_parent
+Revises: coord_reap_ledger_01_gate_evidence_branch_reap
 Create Date: 2026-11-15
 
 Phase 2 of plan
@@ -134,7 +134,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cirscope_01_ci_runner_scope_listings"
-down_revision: str | Sequence[str] | None = "overview_06_cost_category_parent"
+down_revision: str | Sequence[str] | None = "coord_reap_ledger_01_gate_evidence_branch_reap"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
