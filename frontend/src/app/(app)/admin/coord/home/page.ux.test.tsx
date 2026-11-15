@@ -856,6 +856,32 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       );
     });
 
+    it("names a ci_unrefreshed registration in the reconcile line and never calls the roster all healthy", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json(roster("healthy", "ci_unrefreshed")),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "No machine is degrading; 1 of 2 machines reports healthy."
+        )
+      );
+      expect(machines).not.toHaveTextContent("All 2 machines report healthy");
+      expect(
+        screen.getByTestId("coord-home.degrading.machines-reconcile")
+      ).toHaveTextContent(
+        "1 machine not reporting healthy is not a degradation: 1 CI registration the registrar has not refreshed recently — see Dev Ops."
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveTextContent(
+        "1 machine not reporting healthy is not a degradation: 1 CI registration the registrar has not refreshed recently — see Dev Ops."
+      );
+      expect(strip).not.toHaveTextContent(/no health verdict/);
+    });
+
     it("keeps the last good machine counts through a failed refresh, and says so", async () => {
       let fail = false;
       answer({

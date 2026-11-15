@@ -8,6 +8,7 @@ import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocument
 import {
   ACTIVE_TENANT_STORAGE_KEY,
   readActiveTenantId,
+  type ProjectPin,
 } from "@/services/http-client";
 import {
   AlertTriangle,
@@ -146,9 +147,10 @@ export function PromptDocumentList({
    */
   onCrossTabChange?: (changed: boolean) => void;
   /**
-   * Given the list's call-time write guard (`true`: send; `false`: another
-   * tab's switch is in effect — nothing is sent, and the notice is raised),
-   * so the page's own settings can check it at the moment they write.
+   * Given the list's call-time write guard and the project its rows are pinned
+   * to ({@link WriteGuard}), so the page's own settings can check the guard at
+   * the moment they write and send every request in the same project as the
+   * rows.
    */
   writeGuardRef?: WriteGuardRef;
 } = {}) {
@@ -168,10 +170,33 @@ export function PromptDocumentList({
   );
 }
 
-/** Where the list hands the page its call-time write guard. */
-export type WriteGuardRef = { current: (() => boolean) | null };
+/** What the list hands the page through {@link WriteGuardRef}. */
+export interface WriteGuard {
+  /**
+   * The call-time write guard: `true`, send; `false`, another tab's switch is
+   * in effect — nothing is sent, and the notice is raised.
+   */
+  writeAllowed: () => boolean;
+  /**
+   * The project every row read and write is pinned to — the page's, kept
+   * through a provider refresh. `undefined` while the page's project has never
+   * been known, or is `null` (none selected), which no pin can hold a request
+   * to. The page sends its settings and its status read in it.
+   */
+  pin: ProjectPin | undefined;
+}
 
-/** The list reading the publish-all surface itself — no page owns the read. */
+/** Where the list hands the page its write guard and its pin. */
+export type WriteGuardRef = { current: WriteGuard | null };
+
+/**
+ * The list reading the publish-all surface itself — no page owns the read.
+ *
+ * Nothing hands this `usePublishAll` a resolver, so its dry run, armed run and
+ * publish-mode PATCH are pinned to the project stored when each is sent, and
+ * its status re-takes after a write go in whatever project is stored then. The
+ * page mount (`page.tsx`) passes the list's own pin instead.
+ */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
   onCrossTabChange,
@@ -298,6 +323,27 @@ function PromptDocumentListBody({
     pageTenant !== undefined ? pageTenant : lastKnownPageTenant.current;
 
   /**
+   * The project every row read and write is SENT in, on every attempt — the
+   * HTTP client otherwise reads the stored project per attempt, so a request
+   * retried or replayed after another tab's switch would land in, or answer
+   * from, that project. Taken from `guardTenant`, not bare `pageTenant`, so a
+   * provider `refresh()` neither drops the pin for its round trip nor flips
+   * the pinned readers' identity, which would re-fire an open dialog's reads.
+   *
+   * Only a NAMED project is pinned. `undefined` while the page's project has
+   * never been known, and while it is `null` (none selected): a `null` pin
+   * sends no header, so the client would fill in whatever project is stored on
+   * every attempt — another tab's, after a switch — and it would also give up
+   * the request's retries. Without a pin, the dialogs' readers below are
+   * refused at call time instead, like the write doors.
+   */
+  const pin = useMemo<ProjectPin | undefined>(
+    () =>
+      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
+    [guardTenant]
+  );
+
+  /**
    * True while the stored project differs from the page's because ANOTHER
    * tab changed it. The HTTP client reads the stored project per request, so
    * from then on every unpinned write would land in that project while this
@@ -329,11 +375,11 @@ function PromptDocumentListBody({
     onCrossTabChange?.(crossTabChange);
   }, [crossTabChange, onCrossTabChange]);
 
-  // Read through a ref so `writeAllowed` — and every guarded function built
-  // on it below — keeps ONE identity for the page's lifetime. Several of them
-  // sit in a dialog's effect dependencies (the history dialog's version list,
-  // the upstream dialog's publication reads), where a new identity per render
-  // re-fetches and resets the operator's selection.
+  // Read through a ref so `writeAllowed` — and every guarded door built on it
+  // below — keeps ONE identity for the page's lifetime. The dialogs' READERS
+  // are guarded only while there is no pin (`pinnedOrGuarded`), and change
+  // identity only with it: a reader with a new identity per render would
+  // re-fetch from a dialog's effect and reset the operator's selection.
   const guardTenantRef = useRef(guardTenant);
   guardTenantRef.current = guardTenant;
 
@@ -351,13 +397,15 @@ function PromptDocumentListBody({
     toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
     return false;
   }, []);
+  // Handed up with the pin, which the page's settings and its status read are
+  // sent in: the same project as the rows, asked for as each request goes out.
   useEffect(() => {
     if (!writeGuardRef) return;
-    writeGuardRef.current = writeAllowed;
+    writeGuardRef.current = { writeAllowed, pin };
     return () => {
       writeGuardRef.current = null;
     };
-  }, [writeGuardRef, writeAllowed]);
+  }, [writeGuardRef, writeAllowed, pin]);
   /** `fn`, answering `refused` without calling it while the guard says no. */
   const guard = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
@@ -382,7 +430,7 @@ function PromptDocumentListBody({
     updateDocument,
     restoreDefault,
     restoreVersion,
-  } = usePromptDocuments();
+  } = usePromptDocuments({ pin });
 
   // Re-read the rows, pinned to the page's project, whenever that project
   // changes — first resolved, or followed to — and the NEWEST read sent (not
@@ -410,9 +458,40 @@ function PromptDocumentListBody({
     keepMine,
     fetchMergePreview,
     applyMerge,
-  } = usePromptDocumentPublications();
+  } = usePromptDocumentPublications({ pin });
 
-  // The dialogs' doors, behind the guard. Memoized on the underlying
+  /**
+   * The dialogs' READERS go to them pinned while the page's project is a named
+   * one: a read in flight across another tab's switch cannot leave it, and a
+   * refused read would render as an empty one ("No versions recorded yet.").
+   * Without a pin — the page's project `null`, or never known — nothing holds
+   * a read to the page's project, so each is refused at call time like a
+   * write door. One identity until the pin changes, so an open dialog's load
+   * effect does not re-fire on a re-render.
+   */
+  const pinnedOrGuarded = useCallback(
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
+      pin ? fn : guard(fn, refused),
+    [pin, guard]
+  );
+  const dialogFetchVersions = useMemo(
+    () => pinnedOrGuarded(fetchVersions, null),
+    [pinnedOrGuarded, fetchVersions]
+  );
+  const dialogFetchVersion = useMemo(
+    () => pinnedOrGuarded(fetchVersion, null),
+    [pinnedOrGuarded, fetchVersion]
+  );
+  const dialogFetchPublication = useMemo(
+    () => pinnedOrGuarded(fetchPublication, null),
+    [pinnedOrGuarded, fetchPublication]
+  );
+  const dialogFetchMergePreview = useMemo(
+    () => pinnedOrGuarded(fetchMergePreview, null),
+    [pinnedOrGuarded, fetchMergePreview]
+  );
+
+  // The dialogs' write doors, behind the guard. Memoized on the underlying
   // function, so a stable door stays stable (see `guardTenantRef`).
   const guardedCreate = useMemo(
     () => guard(createDocument, null),
@@ -425,22 +504,6 @@ function PromptDocumentListBody({
   const guardedRestoreDefault = useMemo(
     () => guard(restoreDefault, false),
     [guard, restoreDefault]
-  );
-  const guardedFetchVersions = useMemo(
-    () => guard(fetchVersions, null),
-    [guard, fetchVersions]
-  );
-  const guardedFetchVersion = useMemo(
-    () => guard(fetchVersion, null),
-    [guard, fetchVersion]
-  );
-  const guardedFetchPublication = useMemo(
-    () => guard(fetchPublication, null),
-    [guard, fetchPublication]
-  );
-  const guardedFetchMergePreview = useMemo(
-    () => guard(fetchMergePreview, null),
-    [guard, fetchMergePreview]
   );
 
   /**
@@ -879,8 +942,8 @@ function PromptDocumentListBody({
             {CROSS_TAB_MESSAGE} Until then this page sends no changes: its
             controls are disabled, and a change confirmed in a dialog or
             settings confirmation that was already open is refused. The
-            documents shown are still this page&apos;s project, and a change
-            made here would land in the other one.
+            documents shown are still this page&apos;s project, and the active
+            project is now a different one.
           </p>
           <Button
             size="sm"
@@ -1217,8 +1280,8 @@ function PromptDocumentListBody({
         target={historyTarget}
         currentBody={editing?.body ?? ""}
         currentVersion={editing?.current_version ?? 0}
-        fetchVersions={guardedFetchVersions}
-        fetchVersion={guardedFetchVersion}
+        fetchVersions={dialogFetchVersions}
+        fetchVersion={dialogFetchVersion}
         saving={saving}
         onRestoreVersion={handleRestoreVersion}
       />
@@ -1258,8 +1321,10 @@ function PromptDocumentListBody({
         previewing={previewingPublishAll}
         publishing={publishingAll}
         onPublishAll={async (selected, releaseNote) => {
-          // The confirm, not the preview: `publishAll` pins the project
-          // stored NOW, which is another tab's once it has switched.
+          // The confirm, not the preview: a confirm raced past the notice is
+          // refused here. The run itself is pinned — to the page's project
+          // when the page hands `usePublishAll` the list's pin, else to the
+          // project stored now.
           if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
@@ -1314,10 +1379,10 @@ function PromptDocumentListBody({
         onOpenChange={setUpstreamOpen}
         doc={editing}
         loadingBody={loadingBody}
-        fetchPublication={guardedFetchPublication}
+        fetchPublication={dialogFetchPublication}
         onAdoptUpstream={handleAdoptUpstream}
         onKeepMine={handleKeepMine}
-        fetchMergePreview={guardedFetchMergePreview}
+        fetchMergePreview={dialogFetchMergePreview}
         onMergeClauses={handleMergeClauses}
         saving={deciding}
       />
@@ -1329,6 +1394,7 @@ function PromptDocumentListBody({
         loadingBody={loadingBody}
         onDocsReload={reload}
         canWrite={writeAllowed}
+        pin={pin}
       />
     </div>
   );

@@ -101,6 +101,9 @@ def _patch_endpoint_externals(manager: MagicMock) -> list[Any]:
     device_crud = MagicMock()
     device_crud.register_device = AsyncMock(return_value=device_row)
     device_crud.get_device = AsyncMock(return_value=device_row)
+    # The handshake's early read for coord's CI-registrar marker: an ordinary
+    # runner's row does not carry it.
+    device_crud.carries_ci_runner_marker = AsyncMock(return_value=False)
     # The WS-presence pointer helpers are awaited by _cleanup / _handle_heartbeat.
     # Without these the bare MagicMock return is un-awaitable and the failure is
     # swallowed into a `devices_ws_clear_session_id_failed` log line rather than

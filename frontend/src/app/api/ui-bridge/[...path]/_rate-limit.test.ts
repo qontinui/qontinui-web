@@ -2,24 +2,33 @@
  * Tests for the UI Bridge relay rate limiter (§4.8 of the production-safe plan).
  *
  * The unit under test is `checkRateLimit(userId, kind)`. We mock the
- * Redis client via `__setRedisClientForTest` and exercise:
+ * Redis client via `__setRedisClientForTest` (with the shared stand-in,
+ * `@/test/rate-limit-redis-mock`) and exercise:
  *
  *   - Counter ticks up with each call within a window.
  *   - 21st write in a minute → `allowed: false`.
  *   - 61st read in a minute → `allowed: false`.
  *   - Per-user (NOT per-tab) isolation: two users use independent counters.
  *   - Fail-open when Redis is offline (`__setRedisClientForTest(null)`).
- *   - Fail-open when a Redis op throws.
+ *   - Fail-open when a Redis op throws, or its connection is not ready.
  *   - The lanes (plan 2026-11-08-an-agents-relay-tab-spends-the-operators-
  *     ui-bridge-budget, Phase 4): `laneFor` sends the SDK's three transport
  *     routes to their own sub-lanes and everything else to read/write; each
  *     transport sub-lane has its own counter and its derived ceiling; the
  *     refusal and the `X-RateLimit-*` headers name the lane.
+ *   - The EXPIRE that only a key's first INCR sends (plan
+ *     2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-
+ *     deployed-relay-bus-never-starts, Phase 4): its failure neither refuses
+ *     nor uncounts a request, and is logged at most once a window. What a
+ *     request costs in commands is counted through the route, in
+ *     `route.rate-limit-lanes.test.ts`.
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.8.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { makeMockRedis, notReadyRedis } from "@/test/rate-limit-redis-mock";
 
 import {
   __setRedisClientForTest,
@@ -38,82 +47,6 @@ import {
   withRateLimitHeaders,
   WRITE_LIMIT_PER_MIN,
 } from "./_rate-limit";
-
-/**
- * A minimal in-memory stand-in for an ioredis client implementing only
- * the surface `checkRateLimit` uses (`pipeline().incr().expire().exec()`).
- * Counts INCR ops per key so tests can step through the window without
- * mocking time.
- */
-function makeMockRedis(failOn?: string): {
-  client: Parameters<typeof __setRedisClientForTest>[0];
-  store: Map<string, number>;
-} {
-  const store = new Map<string, number>();
-  const pipelineApi = {
-    _ops: [] as Array<["incr" | "expire", string]>,
-    incr(key: string) {
-      this._ops.push(["incr", key]);
-      return this;
-    },
-    expire(key: string) {
-      this._ops.push(["expire", key]);
-      return this;
-    },
-    async exec(): Promise<unknown> {
-      const results: Array<[Error | null, unknown]> = [];
-      for (const [op, key] of this._ops) {
-        if (failOn && key.includes(failOn)) {
-          return Promise.reject(new Error("simulated redis op failure"));
-        }
-        if (op === "incr") {
-          const next = (store.get(key) ?? 0) + 1;
-          store.set(key, next);
-          results.push([null, next]);
-        } else {
-          results.push([null, 1]);
-        }
-      }
-      this._ops = [];
-      return results;
-    },
-  };
-  const client = {
-    pipeline: () => ({ ...pipelineApi, _ops: [] }),
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-  return { client, store };
-}
-
-/**
- * An ioredis client whose connection is not ready yet. With the limiter's
- * `enableOfflineQueue: false`, ioredis 5 does not reject such a pipeline: it
- * RESOLVES it with an error per command (measured against the installed
- * ioredis, statuses `connecting` and `reconnecting`).
- */
-function notReadyRedis(
-  results: Array<[Error | null, unknown]> = [
-    [new Error("Stream isn't writeable and enableOfflineQueue options is false"), null],
-    [new Error("Stream isn't writeable and enableOfflineQueue options is false"), null],
-  ]
-): Parameters<typeof __setRedisClientForTest>[0] {
-  const pipeline = {
-    incr() {
-      return pipeline;
-    },
-    expire() {
-      return pipeline;
-    },
-    async exec() {
-      return results;
-    },
-  };
-  return {
-    pipeline: () => pipeline,
-    on: () => undefined,
-    status: "connecting",
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-}
 
 describe("kindForMethod", () => {
   it("classifies GET/HEAD as read; everything else as write", () => {
@@ -210,34 +143,16 @@ describe("checkRateLimit", () => {
   });
 
   it("fails open when a Redis op throws", async () => {
-    const { client } = makeMockRedis("u1");
+    const { client } = makeMockRedis({ failOn: "u1" });
     __setRedisClientForTest(client);
     const r = await checkRateLimit("u1", "write");
     expect(r.allowed).toBe(true);
     expect(r.redisOffline).toBe(true);
   });
 
-  it("fails open, saying the count is unknown, when the pipeline resolves an error per command", async () => {
-    __setRedisClientForTest(notReadyRedis());
-    const r = await checkRateLimit("u1", "transport:heartbeat");
-    expect(r).toMatchObject({
-      allowed: true,
-      count: 0,
-      limit: 160,
-      redisOffline: true,
-      kind: "transport:heartbeat",
-    });
-    expect(rateLimitHeaders(r)["X-RateLimit-Remaining"]).toBe("unknown");
-  });
-
   it("fails open when the INCR answers something that is not a count", async () => {
     for (const value of [null, "OK", 0, Number.NaN]) {
-      __setRedisClientForTest(
-        notReadyRedis([
-          [null, value],
-          [null, 1],
-        ])
-      );
+      __setRedisClientForTest(makeMockRedis({ incrReply: () => value }).client);
       const r = await checkRateLimit("u1", "write");
       expect(r, String(value)).toMatchObject({
         allowed: true,
@@ -250,7 +165,7 @@ describe("checkRateLimit", () => {
   it("warns about failing open at most once per minute window", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      __setRedisClientForTest(notReadyRedis());
+      __setRedisClientForTest(notReadyRedis().client);
       // A window no other test touches, so the throttle starts fresh.
       const now = Date.UTC(2031, 0, 1, 0, 0, 30);
       await checkRateLimit("u1", "write", now);
@@ -273,6 +188,128 @@ describe("checkRateLimit", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+/**
+ * Plan 2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-
+ * deployed-relay-bus-never-starts, Phase 4, tests (4) and (5). A counted
+ * request sends one INCR, and the INCR that answers 1 also sends the key's
+ * EXPIRE, unawaited. Tests (1)-(3) and (6) count the commands through the
+ * route, in `route.rate-limit-lanes.test.ts`.
+ */
+describe("checkRateLimit: one INCR per request, EXPIRE on the first", () => {
+  /** 30 s into a minute window no other test in this file uses (window 32608800). */
+  const NOW = Date.UTC(2032, 0, 1, 0, 0, 30);
+
+  /** Lets the handlers of the commands a request did not await run. */
+  const nextMacrotask = () =>
+    new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  afterEach(() => {
+    __setRedisClientForTest(undefined);
+  });
+
+  it("(4) a connection that is not ready (its INCR rejects, as measured) fails open, saying the count is unknown", async () => {
+    for (const status of ["connecting", "reconnecting"] as const) {
+      __setRedisClientForTest(notReadyRedis(status).client);
+      const r = await checkRateLimit("u1", "transport:heartbeat", NOW);
+      expect(r, status).toEqual({
+        allowed: true,
+        count: 0,
+        limit: 160,
+        retryAfterSec: 30,
+        redisOffline: true,
+        kind: "transport:heartbeat",
+      });
+      expect(rateLimitHeaders(r)["X-RateLimit-Remaining"], status).toBe(
+        "unknown"
+      );
+    }
+  });
+
+  it("(5) an EXPIRE that fails after its INCR answered 1 admits and counts the request, and is logged once a window", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const redis = makeMockRedis({
+        expireError: new Error("ERR simulated EXPIRE failure"),
+      });
+      __setRedisClientForTest(redis.client);
+      const expireFailures = () =>
+        warn.mock.calls
+          .filter((call) =>
+            String(call[0]).includes("rate_limit_expire_failed")
+          )
+          .map((call) => call[1]);
+
+      // Two keys' first INCRs in one window, so two EXPIREs fail in it.
+      for (const user of ["u1", "u2"]) {
+        expect(await checkRateLimit(user, "write", NOW), user).toEqual({
+          allowed: true,
+          count: 1,
+          limit: 20,
+          retryAfterSec: 30,
+          redisOffline: false,
+          kind: "write",
+        });
+      }
+      await nextMacrotask();
+      expect(expireFailures()).toEqual([
+        {
+          error: "ERR simulated EXPIRE failure",
+          kind: "write",
+          status: "ready",
+        },
+      ]);
+      expect(
+        redis.commands.filter((command) => command.name === "expire")
+      ).toEqual([
+        {
+          name: "expire",
+          key: "bridge:rl:w:u1:32608800",
+          seconds: 70,
+          via: "direct",
+          error: "ERR simulated EXPIRE failure",
+        },
+        {
+          name: "expire",
+          key: "bridge:rl:w:u2:32608800",
+          seconds: 70,
+          via: "direct",
+          error: "ERR simulated EXPIRE failure",
+        },
+      ]);
+
+      // The next window's failure is logged again: the throttle is per window.
+      const next = await checkRateLimit("u1", "write", NOW + 60_000);
+      expect(next).toMatchObject({
+        allowed: true,
+        count: 1,
+        redisOffline: false,
+      });
+      await nextMacrotask();
+      expect(expireFailures()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not wait for the EXPIRE: a request whose EXPIRE never settles is still answered", async () => {
+    const redis = makeMockRedis();
+    // An EXPIRE the server never answers: a request that awaited it would hang.
+    (redis.client as unknown as { expire: () => Promise<number> }).expire =
+      () => new Promise<number>(() => undefined);
+    __setRedisClientForTest(redis.client);
+    const pending = Symbol("pending");
+    const answered = await Promise.race([
+      checkRateLimit("u1", "write", NOW),
+      nextMacrotask().then(() => pending),
+    ]);
+    expect(answered).toMatchObject({
+      allowed: true,
+      count: 1,
+      redisOffline: false,
+    });
   });
 });
 

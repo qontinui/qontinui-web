@@ -88,7 +88,8 @@ on:
 jobs:
   playwright:
     name: Playwright (chromium)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_E2E_PLAYWRIGHT_STACK || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-24.04]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_E2E_PLAYWRIGHT_STACK || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-24.04"') }}
     # Job cap — see e2e-tests.yml's `backend-tests` for why this workflow
     # needed one. Sized from 28 green shard runs on `main` (2026-08-18/19):
     # p50 ~12m, p90 ~18m, max 41m39s (run 32264216432 shard 2/4, which went
