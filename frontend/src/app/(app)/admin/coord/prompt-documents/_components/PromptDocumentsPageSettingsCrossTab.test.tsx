@@ -32,6 +32,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { StrictMode } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -1556,5 +1557,50 @@ describe("a compliance draft seeded from the superseded answer", () => {
     expect(screen.getByTestId("compliance-draft-retaken")).toHaveTextContent(
       NOTE
     );
+  }, 20_000);
+});
+
+/**
+ * StrictMode, the app router's development default, mounts every effect
+ * twice. Ported from the round-4 review's demonstration
+ * (`retakeWriteRace.test.tsx`), as written but for its two diagnostic logs.
+ */
+describe("StrictMode (the app router's dev default): the re-take still runs once", () => {
+  it("mount reads double-fire unpinned; each read is re-taken exactly once, pinned", async () => {
+    const answerMembership = firstVisit();
+    render(
+      <StrictMode>
+        <TenantProvider>
+          <PromptDocumentsPage />
+        </TenantProvider>
+      </StrictMode>
+    );
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route).length).toBeGreaterThanOrEqual(1);
+        }
+      },
+      { timeout: 5000 }
+    );
+    await settle(150);
+    const beforePin = SETTINGS_READS.map(([, route]) =>
+      sentSince(0, "GET", route).map((s) => s.tenant)
+    );
+    await act(async () => answerMembership());
+    await settle(300);
+    const after = SETTINGS_READS.map(([, route]) =>
+      sentSince(0, "GET", route).map((s) => s.tenant)
+    );
+    // Every pre-pin send is unpinned, and exactly ONE pinned re-take follows
+    // per route.
+    for (let i = 0; i < SETTINGS_READS.length; i++) {
+      const sends = after[i]!;
+      const pinned = sends.filter((t) => t === B).length;
+      expect(
+        sends.slice(0, beforePin[i]!.length).every((t) => t === null)
+      ).toBe(true);
+      expect(pinned).toBe(1);
+    }
   }, 20_000);
 });

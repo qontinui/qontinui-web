@@ -545,3 +545,72 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
     ]);
   });
 });
+
+describe("useTenantFleetPolicyDial — the re-take of a read sent before the resolver named a project", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("re-takes the mount read once, pinned, when the resolver first names a project, and drops the earlier answer", async () => {
+    let pin: { tenant: string } | undefined = undefined;
+    const mountRead = deferred<unknown>();
+    getMock
+      .mockReturnValueOnce(mountRead.promise)
+      .mockResolvedValueOnce(view("on"));
+    const { result, rerender } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => pin }
+      )
+    );
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+
+    pin = { tenant: "t-b" };
+    rerender();
+    await waitFor(() =>
+      expect(result.current.policy?.effective_level).toBe("on")
+    );
+    // The mount read answers last: it was sent before the re-take, so it is
+    // dropped rather than painted over the page's own answer.
+    await act(async () => {
+      mountRead.resolve(view("off"));
+    });
+    rerender();
+
+    expect(result.current.policy?.effective_level).toBe("on");
+    expect(sentInit.mock.calls).toEqual([
+      [
+        `${DIAL_URL}?domain=some_dial`,
+        { method: "GET", idempotent: true, maxRetries: 0 },
+      ],
+      [
+        `${DIAL_URL}?domain=some_dial`,
+        {
+          method: "GET",
+          idempotent: true,
+          headers: { "X-Qontinui-Active-Tenant": "t-b" },
+        },
+      ],
+    ]);
+  });
+
+  it("re-takes nothing when the resolver named a project at mount", async () => {
+    let pin: { tenant: string } | undefined = { tenant: "t-b" };
+    getMock.mockResolvedValueOnce(view("on"));
+    const { result, rerender } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => pin }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    pin = { tenant: "t-c" };
+    rerender();
+    rerender();
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+});
