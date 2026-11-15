@@ -10,14 +10,24 @@ The properties pinned here:
 
 1. **The body is CLOSED**: 1 to 64 ids, unique UUIDs, no other key — anything
    else is a 422 before any coord call.
-2. **Each id gets its own outcome**: coord 2xx → ``unbound``; 404
+2. **Each id gets exactly one outcome**: coord 2xx → ``unbound``; 404
    ``binding_not_found`` → ``already_absent``; any other refusal → ``failed``
    with coord's structured body. A batch reports partial success as partial.
-3. **A 401/403 aborts the batch** with coord's status, carrying every result
-   recorded before it and the ids not attempted.
+3. **A 401/403 aborts the batch** with coord's status, carrying a result for
+   every id: those recorded before it, the refused id as ``failed``, and the
+   rest as ``not_attempted``.
 4. **``still_member_via_pointer`` is never defaulted**: coord's boolean passes
    through, and its absence (an older coord) is ``null``, never ``false``.
-5. **The operator bearer is forwarded** on every per-id coord call.
+5. **The operator bearer and the active-tenant selection are forwarded** on
+   every per-id coord call, and the REAL ``require_coord_tenant_admin`` refuses
+   a non-admin of the effective tenant before any coord call.
+6. **A lost answer is ``unknown``, never ``failed``**: a read timeout, a
+   transport error after sending, a gateway 504 or an undocumented 2xx body may
+   hide an applied unbind; only a request never sent (connect error or connect
+   timeout) is ``failed``.
+7. **The batch has a 45 s wall budget**: ids it does not reach are
+   ``not_attempted`` and the answer is still a 200, and each call's timeout is
+   bounded by what is left of the budget.
 """
 
 from typing import Any
@@ -108,17 +118,28 @@ def _not_found(device_id: str) -> MagicMock:
 
 
 class _CoordStub:
-    """A mocked ``httpx.AsyncClient`` answering ``delete`` by URL, in order."""
+    """A mocked ``httpx.AsyncClient`` answering ``delete`` by URL, in order.
 
-    def __init__(self, answers: dict[str, list[MagicMock]]) -> None:
+    A queued ``BaseException`` instance is raised instead of returned, which is
+    how a transport failure is simulated.
+    """
+
+    def __init__(self, answers: dict[str, list[Any]]) -> None:
         self.answers = answers
         self.calls: list[tuple[str, dict[str, str] | None]] = []
+        self.timeouts: list[httpx.Timeout | None] = []
 
-    async def delete(self, url: str, params=None, headers=None) -> MagicMock:
+    async def delete(
+        self, url: str, params=None, headers=None, timeout=None
+    ) -> MagicMock:
         self.calls.append((url, headers))
+        self.timeouts.append(timeout)
         for device_id, queue in self.answers.items():
             if url.endswith(f"/coord/devices/{device_id}/tenant-binding"):
-                return queue.pop(0)
+                answer = queue.pop(0)
+                if isinstance(answer, BaseException):
+                    raise answer
+                return answer
         raise AssertionError(f"unexpected coord call: {url}")
 
 
@@ -214,7 +235,9 @@ class TestOutcomes:
             ],
             "unbound": 1,
             "already_absent": 0,
+            "unknown": 0,
             "failed": 0,
+            "not_attempted": 0,
         }
         assert len(stub.calls) == 1
         url, headers = stub.calls[0]
@@ -241,7 +264,9 @@ class TestOutcomes:
             ],
             "unbound": 0,
             "already_absent": 1,
+            "unknown": 0,
             "failed": 0,
+            "not_attempted": 0,
         }
 
     def test_bare_404_without_binding_not_found_is_failed(
@@ -286,7 +311,9 @@ class TestOutcomes:
             ],
             "unbound": 0,
             "already_absent": 0,
+            "unknown": 0,
             "failed": 1,
+            "not_attempted": 0,
         }
 
     def test_500_is_failed_with_coords_body(self, auth_client: TestClient):
@@ -356,7 +383,9 @@ class TestOutcomes:
             ],
             "unbound": 2,
             "already_absent": 1,
+            "unknown": 0,
             "failed": 1,
+            "not_attempted": 0,
         }
         # Called in request order, once per id.
         assert [url.rsplit("/", 2)[-2] for url, _ in stub.calls] == [
@@ -410,10 +439,22 @@ class TestStillMemberViaPointer:
 # ---------------------------------------------------------------------------
 
 
+def _not_attempted(device_id: str, reason: str) -> dict[str, Any]:
+    return {
+        "device_id": device_id,
+        "outcome": "not_attempted",
+        "status": None,
+        "error": {"error": "not_attempted", "detail": reason},
+        "still_member_via_pointer": None,
+    }
+
+
+_ABORTED = "the batch was aborted by a caller refusal"
+_OUT_OF_BUDGET = "the batch's wall-clock budget ran out first"
+
+
 class TestCallerRefusalAborts:
-    def test_401_on_first_id_aborts_with_nothing_recorded(
-        self, auth_client: TestClient
-    ):
+    def test_401_on_first_id_aborts_and_reports_every_id(self, auth_client: TestClient):
         coord_body = {"error": "unauthorized"}
         stub = _CoordStub(
             {
@@ -428,11 +469,21 @@ class TestCallerRefusalAborts:
                 "error": "coord_refused_caller",
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_A,
-                "not_attempted": [DEVICE_B],
-                "results": [],
+                "results": [
+                    {
+                        "device_id": DEVICE_A,
+                        "outcome": "failed",
+                        "status": 401,
+                        "error": coord_body,
+                        "still_member_via_pointer": None,
+                    },
+                    _not_attempted(DEVICE_B, _ABORTED),
+                ],
                 "unbound": 0,
                 "already_absent": 0,
-                "failed": 0,
+                "unknown": 0,
+                "failed": 1,
+                "not_attempted": 1,
             }
         }
         # DEVICE_B was never sent to coord.
@@ -461,7 +512,6 @@ class TestCallerRefusalAborts:
                 "error": "coord_refused_caller",
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_C,
-                "not_attempted": [DEVICE_D],
                 "results": [
                     {
                         "device_id": DEVICE_A,
@@ -481,31 +531,343 @@ class TestCallerRefusalAborts:
                         },
                         "still_member_via_pointer": None,
                     },
+                    {
+                        "device_id": DEVICE_C,
+                        "outcome": "failed",
+                        "status": 403,
+                        "error": coord_body,
+                        "still_member_via_pointer": None,
+                    },
+                    _not_attempted(DEVICE_D, _ABORTED),
                 ],
                 "unbound": 1,
                 "already_absent": 1,
-                "failed": 0,
+                "unknown": 0,
+                "failed": 1,
+                "not_attempted": 1,
             }
         }
         assert len(stub.calls) == 3
 
 
+# ---------------------------------------------------------------------------
+# Transport failures: never sent -> failed; sent, answer lost -> unknown
+# ---------------------------------------------------------------------------
+
+
+def _request_for(device_id: str) -> httpx.Request:
+    return httpx.Request(
+        "DELETE", f"http://coord.test/coord/devices/{device_id}/tenant-binding"
+    )
+
+
+class TestTransportFailures:
+    def test_connect_error_is_failed_502_nothing_sent(self, auth_client: TestClient):
+        stub = _CoordStub(
+            {DEVICE_A: [httpx.ConnectError("refused", request=_request_for(DEVICE_A))]}
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "results": [
+                {
+                    "device_id": DEVICE_A,
+                    "outcome": "failed",
+                    "status": 502,
+                    "error": {
+                        "error": "coord_unreachable",
+                        "detail": "coord was not reached (ConnectError)",
+                    },
+                    "still_member_via_pointer": None,
+                }
+            ],
+            "unbound": 0,
+            "already_absent": 0,
+            "unknown": 0,
+            "failed": 1,
+            "not_attempted": 0,
+        }
+
+    def test_connect_timeout_is_failed_504_nothing_sent(self, auth_client: TestClient):
+        stub = _CoordStub(
+            {DEVICE_A: [httpx.ConnectTimeout("slow", request=_request_for(DEVICE_A))]}
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.json()["results"][0] == {
+            "device_id": DEVICE_A,
+            "outcome": "failed",
+            "status": 504,
+            "error": {
+                "error": "coord_unreachable",
+                "detail": "coord was not reached (ConnectTimeout)",
+            },
+            "still_member_via_pointer": None,
+        }
+
+    def test_read_timeout_is_unknown_never_failed(self, auth_client: TestClient):
+        stub = _CoordStub(
+            {
+                DEVICE_A: [httpx.ReadTimeout("slow", request=_request_for(DEVICE_A))],
+                DEVICE_B: [_bound(DEVICE_B)],
+            }
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "results": [
+                {
+                    "device_id": DEVICE_A,
+                    "outcome": "unknown",
+                    "status": 504,
+                    "error": {
+                        "error": "coord_answer_lost",
+                        "detail": "coord did not answer in time (ReadTimeout); "
+                        "it may have acted",
+                    },
+                    "still_member_via_pointer": None,
+                },
+                {
+                    "device_id": DEVICE_B,
+                    "outcome": "unbound",
+                    "status": 200,
+                    "error": None,
+                    "still_member_via_pointer": None,
+                },
+            ],
+            "unbound": 1,
+            "already_absent": 0,
+            "unknown": 1,
+            "failed": 0,
+            "not_attempted": 0,
+        }
+
+    @pytest.mark.parametrize(
+        "exc_type", [httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError]
+    )
+    def test_answer_lost_in_transit_is_unknown(
+        self, auth_client: TestClient, exc_type: type[httpx.TransportError]
+    ):
+        stub = _CoordStub(
+            {DEVICE_A: [exc_type("gone", request=_request_for(DEVICE_A))]}
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        assert resp.json()["results"] == [
+            {
+                "device_id": DEVICE_A,
+                "outcome": "unknown",
+                "status": 502,
+                "error": {
+                    "error": "coord_answer_lost",
+                    "detail": "coord's answer was lost in transit "
+                    f"({exc_type.__name__}); it may have acted",
+                },
+                "still_member_via_pointer": None,
+            }
+        ]
+        assert resp.json()["unknown"] == 1
+
+    def test_non_json_2xx_is_unknown(self, auth_client: TestClient):
+        stub = _CoordStub({DEVICE_A: [_mock_response(200, None, "<html>ok</html>")]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        assert resp.json()["results"] == [
+            {
+                "device_id": DEVICE_A,
+                "outcome": "unknown",
+                "status": 200,
+                "error": {
+                    "error": "coord_answer_lost",
+                    "detail": "coord answered 200 with a non-JSON body",
+                },
+                "still_member_via_pointer": None,
+            }
+        ]
+        assert resp.json()["unknown"] == 1
+
+    def test_2xx_without_binding_deleted_is_unknown(self, auth_client: TestClient):
+        stub = _CoordStub({DEVICE_A: [_mock_response(200, {"status": "ok"})]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.json()["results"][0]["outcome"] == "unknown"
+        assert resp.json()["results"][0]["error"] == {
+            "error": "coord_answer_lost",
+            "detail": "coord answered 200 without its documented binding_deleted: true",
+        }
+
+    def test_gateway_504_response_is_unknown(self, auth_client: TestClient):
+        stub = _CoordStub({DEVICE_A: [_mock_response(504, None, "Gateway Timeout")]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.json()["results"] == [
+            {
+                "device_id": DEVICE_A,
+                "outcome": "unknown",
+                "status": 504,
+                "error": {
+                    "error": "coord_answer_lost",
+                    "detail": "a gateway in front of coord timed out; "
+                    "coord may have acted",
+                    "upstream": "Gateway Timeout",
+                },
+                "still_member_via_pointer": None,
+            }
+        ]
+
+
+# ---------------------------------------------------------------------------
+# The batch's wall-clock budget
+# ---------------------------------------------------------------------------
+
+
+class _Clock:
+    """A monotonic clock that returns the queued readings, in order."""
+
+    def __init__(self, readings: list[float]) -> None:
+        self.readings = readings
+
+    def __call__(self) -> float:
+        return self.readings.pop(0)
+
+
+class TestDeadline:
+    def test_ids_past_the_budget_are_not_attempted_and_the_answer_is_200(
+        self, auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        from app.api.v1.endpoints import fleet_device_bindings
+
+        # Start at 0 (deadline 45); A is sent at 0, B is checked at 46.
+        monkeypatch.setattr(
+            fleet_device_bindings, "_monotonic", _Clock([0.0, 0.0, 46.0])
+        )
+        stub = _CoordStub({DEVICE_A: [_bound(DEVICE_A)]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B, DEVICE_C]})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "results": [
+                {
+                    "device_id": DEVICE_A,
+                    "outcome": "unbound",
+                    "status": 200,
+                    "error": None,
+                    "still_member_via_pointer": None,
+                },
+                _not_attempted(DEVICE_B, _OUT_OF_BUDGET),
+                _not_attempted(DEVICE_C, _OUT_OF_BUDGET),
+            ],
+            "unbound": 1,
+            "already_absent": 0,
+            "unknown": 0,
+            "failed": 0,
+            "not_attempted": 2,
+        }
+        assert len(stub.calls) == 1
+
+    def test_each_call_is_bounded_by_the_remaining_budget(
+        self, auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        from app.api.v1.endpoints import fleet_device_bindings
+
+        # A is sent with 45 s left (the 5 s coord timeout binds), B with 2 s.
+        monkeypatch.setattr(
+            fleet_device_bindings, "_monotonic", _Clock([0.0, 0.0, 43.0])
+        )
+        stub = _CoordStub({DEVICE_A: [_bound(DEVICE_A)], DEVICE_B: [_bound(DEVICE_B)]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.json()["unbound"] == 2
+        assert [t.read if t is not None else None for t in stub.timeouts] == [
+            5.0,
+            2.0,
+        ]
+
+    def test_the_budget_is_45_seconds(self):
+        from app.api.v1.endpoints import fleet_device_bindings
+
+        assert fleet_device_bindings.BATCH_DEADLINE_SECONDS == 45.0
+
+
+# ---------------------------------------------------------------------------
+# The real operator gate, and what it forwards to coord
+# ---------------------------------------------------------------------------
+
+_HOME_TENANT = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+_OTHER_TENANT = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+
+
+def _identity(home_roles: tuple[str, ...], other_roles: tuple[str, ...]) -> Any:
+    from app.services.coord_identity import CoordIdentity, CoordTenant
+
+    return CoordIdentity(
+        operator_id=uuid4(),
+        home_tenant_id=_HOME_TENANT,
+        email="operator@example.com",
+        roles=("admin",),
+        tenants=(
+            CoordTenant(tenant_id=_HOME_TENANT, slug="home", roles=home_roles),
+            CoordTenant(tenant_id=_OTHER_TENANT, slug="other", roles=other_roles),
+        ),
+        # A union across tenants — the gate must not trust it.
+        is_admin=True,
+    )
+
+
+def _real_gate_client() -> TestClient:
+    """The production router with ONLY the gate's inputs faked: the signed-in
+    user (not a superuser) and coord's ``/me`` identity. The real
+    ``require_coord_tenant_admin`` runs."""
+    from app.api.deps import get_current_active_user_async
+    from app.api.v1.api import api_router
+
+    app = FastAPI()
+    user = MagicMock()
+    user.id = uuid4()
+    user.is_active = True
+    user.is_superuser = False
+    app.dependency_overrides[get_current_active_user_async] = lambda: user
+    app.include_router(api_router, prefix="/api/v1")
+    return TestClient(app)
+
+
+def _post_as_operator(
+    stub: _CoordStub, identity: Any, active_tenant: UUID
+) -> httpx.Response:
+    from tests._ops_patch import patch_ops
+
+    patcher = _patched(stub)
+    try:
+        with patch_ops("get_coord_identity", new=AsyncMock(return_value=identity)):
+            return _real_gate_client().post(
+                "/api/v1/operations/fleet/devices/unbind",
+                json={"device_ids": [DEVICE_A]},
+                headers={
+                    "Authorization": f"Bearer {TEST_BEARER}",
+                    "X-Qontinui-Active-Tenant": str(active_tenant),
+                },
+            )
+    finally:
+        patcher.stop()
+
+
 class TestOperatorGate:
-    def test_non_admin_is_refused_before_any_coord_call(self):
-        from fastapi import HTTPException
-
-        from app.api.v1.endpoints.fleet_device_bindings import router
-        from app.api.v1.endpoints.operations import require_coord_tenant_admin
-
-        app = FastAPI()
-
-        async def _deny() -> UUID:
-            raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
-
-        app.dependency_overrides[require_coord_tenant_admin] = _deny
-        app.include_router(router, prefix="/api/v1/operations")
+    def test_non_admin_in_the_effective_tenant_is_refused_before_any_coord_call(
+        self,
+    ):
+        # Admin at home, only developer in the selected tenant: refused there.
+        identity = _identity(home_roles=("admin",), other_roles=("developer",))
         stub = _CoordStub({})
-        resp = _post(TestClient(app), stub, {"device_ids": [DEVICE_A]})
+        resp = _post_as_operator(stub, identity, _OTHER_TENANT)
         assert resp.status_code == 403
         assert resp.json() == {"detail": "not_coord_tenant_admin"}
         assert stub.calls == []
+
+    def test_admin_selection_and_bearer_are_forwarded_to_coord(self):
+        identity = _identity(home_roles=("developer",), other_roles=("admin",))
+        stub = _CoordStub({DEVICE_A: [_bound(DEVICE_A)]})
+        resp = _post_as_operator(stub, identity, _OTHER_TENANT)
+        assert resp.status_code == 200
+        assert resp.json()["unbound"] == 1
+        assert len(stub.calls) == 1
+        url, headers = stub.calls[0]
+        assert url.endswith(f"/coord/devices/{DEVICE_A}/tenant-binding")
+        assert headers == {
+            "Authorization": f"Bearer {TEST_BEARER}",
+            "X-Qontinui-Active-Tenant": str(_OTHER_TENANT),
+        }

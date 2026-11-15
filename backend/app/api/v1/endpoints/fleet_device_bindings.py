@@ -4,7 +4,7 @@ Plan ``2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console`
 Phase 1. One route under ``/api/v1/operations``:
 
 * ``POST /fleet/devices/unbind`` — body ``{"device_ids": [uuid, …]}`` (1 to 64,
-  unique). For each id it proxies coord's per-tenant unbind,
+  unique). For each id it calls coord's per-tenant unbind,
   ``DELETE /coord/devices/{id}/tenant-binding``, which deletes only the
   ``(acting tenant, device)`` edge. Every other tenant's binding, and the device
   row itself, are untouched (plan D1: full deregistration stays on the device
@@ -19,52 +19,92 @@ success for a partial removal (served policy ``ux-priorities``
 ``an-action-must-acknowledge-itself``). Each edge is independent and a repeat
 call reads ``already_absent``, so a retry of a partial batch is safe.
 
-Per-id outcome mapping:
+Per-id outcomes — every requested id gets exactly one:
 
-* coord 2xx → ``unbound``. Coord's ``still_member_via_pointer`` (plan D4: the
-  device still lists in this tenant through its legacy home-tenant pointer,
-  which only its owner can change) passes through when coord sends a boolean,
-  and is ``null`` — UNKNOWN — when it does not. An older coord omits the field,
-  and that must never read as ``false`` (served policy
-  ``verification-and-evidence`` ``unknown-must-not-render-as-a-default``).
-* coord 404 whose structured body is ``{"error": "binding_not_found"}`` →
-  ``already_absent``. A 404 WITHOUT that body (a coord that predates the route,
-  a proxy's error page) is ``failed``: it says nothing about the binding.
-* coord 401 / 403 → the whole batch ABORTS with coord's status. An auth refusal
-  is a property of the caller, not of the row, so continuing would only repeat
-  it; the error body still carries every result recorded before the refusal and
-  the ids not attempted, so nothing already removed goes unreported.
-* anything else (``503 tenant_devices_absent``, a 500, a 502/504 transport
-  failure) → ``failed`` with coord's structured body as ``error``.
+* ``unbound`` — coord answered 2xx with its documented body
+  (``binding_deleted: true``). Coord answers this route ``200`` and nothing else
+  on success; ``status`` is the status coord actually sent. Coord's
+  ``still_member_via_pointer`` (plan D4: the device still lists in this tenant
+  through its legacy home-tenant pointer, which only its owner can change)
+  passes through when coord sends a boolean, and is ``null`` — UNKNOWN — when it
+  does not. An older coord omits the field, and that must never read as
+  ``false`` (served policy ``verification-and-evidence``
+  ``unknown-must-not-render-as-a-default``).
+* ``already_absent`` — coord 404 whose structured body is
+  ``{"error": "binding_not_found"}``. A 404 WITHOUT that body (a coord that
+  predates the route, a proxy's error page) is ``failed``: it says nothing
+  about the binding.
+* ``unknown`` — the request may have reached coord and coord may have acted,
+  but its answer did not arrive intact: a read/write timeout, a transport error
+  after the request was sent (``ReadError``, ``RemoteProtocolError``, …), a
+  gateway 504, or a 2xx whose body is not coord's documented one. ``error`` is
+  ``{"error": "coord_answer_lost", "detail": …}``. Never ``failed``, which would
+  invite the operator to treat a possibly-removed binding as still present.
+* ``failed`` — coord refused (``503 tenant_devices_absent``, a 500, …) with its
+  structured body as ``error``, or coord was never reached (a connect error or
+  connect/pool timeout: nothing was sent, status 502/504,
+  ``{"error": "coord_unreachable"}``).
+* ``not_attempted`` — the id was never sent, because the batch's
+  :data:`BATCH_DEADLINE_SECONDS` wall budget ran out first, or because an
+  earlier id's caller refusal aborted the batch. Still a 200 in the deadline
+  case, so the outcomes already reached are reported, not lost.
+
+**A 401 / 403 aborts the batch** with coord's status. An auth refusal is a
+property of the caller, not of the row, so continuing would only repeat it. The
+error body still carries a complete ``results`` list (the refused id as
+``failed``, every later id as ``not_attempted``) with the tallies, so nothing
+already removed goes unreported.
 
 It is a sibling module rather than a module INSIDE the ``operations`` package
 because the package's D4 guard (``tests/test_operations_route_table.py``
 ``test_operations_package_has_no_init_imports``) forbids a submodule importing
-the package ``__init__``, where the proxy helpers still live; the helpers come
-through :mod:`app.api.coord_proxy`. Mounted under ``/operations`` so the
-frontend's active-tenant prefix rule covers it, and coord scopes the unbind to
-the operator's EFFECTIVE tenant from the forwarded bearer and selection.
+the package ``__init__``, where the proxy plumbing still lives; it comes through
+:mod:`app.api.coord_proxy`. The coord call is made here rather than through
+``_proxy_coord_delete`` because that helper returns only the body and turns
+every transport failure into an ``HTTPException``, which hides the two facts
+this route has to report per id: coord's status, and whether a failure happened
+before or after the request was sent. Mounted under ``/operations`` so the
+frontend's active-tenant prefix rule covers it; the operator's bearer and the
+``X-Qontinui-Active-Tenant`` selection are forwarded by ``_tenant_headers``, so
+coord scopes the unbind to the operator's EFFECTIVE tenant.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Literal
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.api.coord_proxy import _proxy_coord_delete, require_coord_tenant_admin
+from app.api.coord_proxy import (
+    _COORD_TIMEOUT,
+    _coord_error_detail,
+    _tenant_headers,
+    require_coord_tenant_admin,
+)
+from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 #: Upper bound on one batch. A roster machine groups one device row per
-#: registered repo; 64 covers any real host while keeping one request's
-#: sequential coord round-trips bounded.
+#: registered repo; 64 covers any real host.
 MAX_DEVICE_IDS = 64
+
+#: Wall-clock budget for one batch. Each coord call is bounded by the shared
+#: coord timeout AND by what is left of this budget, so 64 slow answers cannot
+#: hold the browser's request open for minutes; ids the budget does not reach
+#: are reported ``not_attempted``.
+BATCH_DEADLINE_SECONDS = 45.0
+
+#: The clock the deadline is measured on (a module attribute so a test can
+#: drive it).
+_monotonic = time.monotonic
 
 #: Coord's typed 404 body for "this device is not bound to your tenant".
 _BINDING_NOT_FOUND = "binding_not_found"
@@ -72,7 +112,9 @@ _BINDING_NOT_FOUND = "binding_not_found"
 #: Coord statuses that describe the CALLER, not the row — they abort the batch.
 _CALLER_REFUSAL_STATUSES = frozenset({401, 403})
 
-UnbindOutcome = Literal["unbound", "already_absent", "failed"]
+UnbindOutcome = Literal[
+    "unbound", "already_absent", "unknown", "failed", "not_attempted"
+]
 
 
 class FleetDeviceUnbindRequest(BaseModel):
@@ -91,14 +133,17 @@ class FleetDeviceUnbindRequest(BaseModel):
 
 
 class FleetDeviceUnbindResult(BaseModel):
-    """What coord answered for one device id."""
+    """What happened to one device id."""
 
     device_id: UUID
     outcome: UnbindOutcome
-    #: Coord's HTTP status for this id (502/504 when coord was not reached).
-    status: int
-    #: Coord's structured refusal for a ``failed`` or ``already_absent`` id;
-    #: ``None`` for ``unbound``.
+    #: The HTTP status coord sent for this id (coord answers ``200`` on
+    #: success, never another 2xx); 502/504 when coord was not reached or its
+    #: answer was lost in transit; ``None`` for ``not_attempted``.
+    status: int | None
+    #: Coord's structured body for ``already_absent`` / ``failed``, or this
+    #: route's ``{"error": "coord_answer_lost" | "coord_unreachable" |
+    #: "not_attempted", …}``; ``None`` for ``unbound``.
     error: Any = None
     #: ``True``/``False`` as coord reported it for an ``unbound`` id; ``None``
     #: when coord did not report it (an older build) or the id was not unbound.
@@ -106,48 +151,140 @@ class FleetDeviceUnbindResult(BaseModel):
 
 
 class FleetDeviceUnbindResponse(BaseModel):
-    """Per-id results plus the tally of each outcome."""
+    """Per-id results (one per requested id, in request order) plus tallies."""
 
     results: list[FleetDeviceUnbindResult]
     unbound: int
     already_absent: int
+    unknown: int
     failed: int
+    not_attempted: int
 
 
 def _tally(results: list[FleetDeviceUnbindResult]) -> FleetDeviceUnbindResponse:
+    def count(outcome: UnbindOutcome) -> int:
+        return sum(1 for r in results if r.outcome == outcome)
+
     return FleetDeviceUnbindResponse(
         results=results,
-        unbound=sum(1 for r in results if r.outcome == "unbound"),
-        already_absent=sum(1 for r in results if r.outcome == "already_absent"),
-        failed=sum(1 for r in results if r.outcome == "failed"),
+        unbound=count("unbound"),
+        already_absent=count("already_absent"),
+        unknown=count("unknown"),
+        failed=count("failed"),
+        not_attempted=count("not_attempted"),
     )
 
 
-def _unbound_result(device_id: UUID, body: Any) -> FleetDeviceUnbindResult:
-    pointer = body.get("still_member_via_pointer") if isinstance(body, dict) else None
+def _lost(device_id: UUID, status: int, detail: str) -> FleetDeviceUnbindResult:
     return FleetDeviceUnbindResult(
         device_id=device_id,
-        outcome="unbound",
-        status=200,
-        error=None,
-        still_member_via_pointer=pointer if isinstance(pointer, bool) else None,
+        outcome="unknown",
+        status=status,
+        error={"error": "coord_answer_lost", "detail": detail},
     )
 
 
-def _refused_result(device_id: UUID, exc: HTTPException) -> FleetDeviceUnbindResult:
-    detail = exc.detail
+def _unreachable(device_id: UUID, status: int, detail: str) -> FleetDeviceUnbindResult:
+    return FleetDeviceUnbindResult(
+        device_id=device_id,
+        outcome="failed",
+        status=status,
+        error={"error": "coord_unreachable", "detail": detail},
+    )
+
+
+def _not_attempted(device_id: UUID, reason: str) -> FleetDeviceUnbindResult:
+    return FleetDeviceUnbindResult(
+        device_id=device_id,
+        outcome="not_attempted",
+        status=None,
+        error={"error": "not_attempted", "detail": reason},
+    )
+
+
+def _classify_response(
+    device_id: UUID, resp: httpx.Response
+) -> FleetDeviceUnbindResult:
+    """Map coord's answer for one id to its outcome."""
+    status = resp.status_code
+    if 200 <= status < 300:
+        try:
+            body = resp.json()
+        except ValueError:
+            return _lost(
+                device_id, status, f"coord answered {status} with a non-JSON body"
+            )
+        if not isinstance(body, dict) or body.get("binding_deleted") is not True:
+            return _lost(
+                device_id,
+                status,
+                f"coord answered {status} without its documented binding_deleted: true",
+            )
+        pointer = body.get("still_member_via_pointer")
+        return FleetDeviceUnbindResult(
+            device_id=device_id,
+            outcome="unbound",
+            status=status,
+            error=None,
+            still_member_via_pointer=pointer if isinstance(pointer, bool) else None,
+        )
+    detail = _coord_error_detail(resp)
+    if status == 504:
+        # A gateway timeout in front of coord: the request was forwarded and
+        # coord may have applied it.
+        return FleetDeviceUnbindResult(
+            device_id=device_id,
+            outcome="unknown",
+            status=status,
+            error={
+                "error": "coord_answer_lost",
+                "detail": "a gateway in front of coord timed out; coord may have acted",
+                "upstream": detail,
+            },
+        )
     is_binding_not_found = (
-        exc.status_code == 404
+        status == 404
         and isinstance(detail, dict)
         and detail.get("error") == _BINDING_NOT_FOUND
     )
     return FleetDeviceUnbindResult(
         device_id=device_id,
         outcome="already_absent" if is_binding_not_found else "failed",
-        status=exc.status_code,
+        status=status,
         error=detail,
-        still_member_via_pointer=None,
     )
+
+
+async def _unbind_one(
+    client: httpx.AsyncClient, device_id: UUID, tenant_id: UUID, budget: float
+) -> FleetDeviceUnbindResult:
+    """Call coord for one id and classify every way the call can end."""
+    base = _COORD_TIMEOUT.read if _COORD_TIMEOUT.read is not None else budget
+    timeout = httpx.Timeout(min(base, budget))
+    url = f"{settings.COORD_URL}/coord/devices/{device_id}/tenant-binding"
+    try:
+        resp = await client.delete(
+            url, headers=_tenant_headers(tenant_id), timeout=timeout
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+        # Nothing was sent: coord cannot have acted.
+        status = 502 if isinstance(exc, httpx.ConnectError) else 504
+        return _unreachable(
+            device_id, status, f"coord was not reached ({type(exc).__name__})"
+        )
+    except httpx.TimeoutException as exc:
+        return _lost(
+            device_id,
+            504,
+            f"coord did not answer in time ({type(exc).__name__}); it may have acted",
+        )
+    except httpx.HTTPError as exc:
+        return _lost(
+            device_id,
+            502,
+            f"coord's answer was lost in transit ({type(exc).__name__}); it may have acted",
+        )
+    return _classify_response(device_id, resp)
 
 
 @router.post("/fleet/devices/unbind", response_model=FleetDeviceUnbindResponse)
@@ -157,50 +294,62 @@ async def post_fleet_devices_unbind(
 ) -> FleetDeviceUnbindResponse:
     """Remove each named device's binding to the caller's tenant (operator-only).
 
-    Calls coord sequentially, one id at a time, so an auth refusal stops the
-    batch before it is repeated for every remaining id. See the module
-    docstring for the per-id outcome mapping.
+    Calls coord sequentially, one id at a time, within
+    :data:`BATCH_DEADLINE_SECONDS`, so an auth refusal stops the batch before it
+    is repeated for every remaining id. See the module docstring for the
+    outcomes.
     """
+    ids = body.device_ids
     results: list[FleetDeviceUnbindResult] = []
-    for index, device_id in enumerate(body.device_ids):
-        try:
-            coord_body = await _proxy_coord_delete(
-                f"/coord/devices/{device_id}/tenant-binding",
-                tenant_id=tenant_id,
-                structured_errors=True,
-            )
-        except HTTPException as exc:
-            if exc.status_code in _CALLER_REFUSAL_STATUSES:
+    deadline = _monotonic() + BATCH_DEADLINE_SECONDS
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        for index, device_id in enumerate(ids):
+            remaining = deadline - _monotonic()
+            if remaining <= 0:
+                results.extend(
+                    _not_attempted(d, "the batch's wall-clock budget ran out first")
+                    for d in ids[index:]
+                )
+                break
+            result = await _unbind_one(client, device_id, tenant_id, remaining)
+            results.append(result)
+            refused_status = result.status
+            if (
+                refused_status is not None
+                and refused_status in _CALLER_REFUSAL_STATUSES
+            ):
+                results.extend(
+                    _not_attempted(d, "the batch was aborted by a caller refusal")
+                    for d in ids[index + 1 :]
+                )
                 partial = _tally(results)
                 logger.warning(
                     "fleet_devices_unbind_aborted",
                     tenant_id=str(tenant_id),
                     device_id=str(device_id),
-                    coord_status=exc.status_code,
-                    recorded=len(results),
-                    requested=len(body.device_ids),
+                    coord_status=refused_status,
+                    reached=index + 1,
+                    requested=len(ids),
                 )
                 raise HTTPException(
-                    status_code=exc.status_code,
+                    status_code=refused_status,
                     detail={
                         "error": "coord_refused_caller",
-                        "coord_error": exc.detail,
+                        "coord_error": result.error,
                         "refused_device_id": str(device_id),
-                        "not_attempted": [str(d) for d in body.device_ids[index + 1 :]],
                         **partial.model_dump(mode="json"),
                     },
-                ) from exc
-            results.append(_refused_result(device_id, exc))
-            continue
-        results.append(_unbound_result(device_id, coord_body))
+                )
 
     response = _tally(results)
     logger.info(
         "fleet_devices_unbind",
         tenant_id=str(tenant_id),
-        requested=len(body.device_ids),
+        requested=len(ids),
         unbound=response.unbound,
         already_absent=response.already_absent,
+        unknown=response.unknown,
         failed=response.failed,
+        not_attempted=response.not_attempted,
     )
     return response
