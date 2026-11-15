@@ -29,6 +29,7 @@ const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
+  info: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), toastMock) }));
 
@@ -237,6 +238,8 @@ beforeEach(() => {
   fetchMock.mockReset();
   toastMock.success.mockReset();
   toastMock.warning.mockReset();
+  toastMock.error.mockReset();
+  toastMock.info.mockReset();
   serve();
 });
 
@@ -333,6 +336,15 @@ describe("removal rules", () => {
   it("the last CI host is the one whose rows cover every CI-host row", () => {
     const only = readMachine(ciHost());
     const complete = { rosterTruncated: false, omitted: 0, unidentifiable: 0 };
+    // Another CI-host row whose device rows coord did not list: never "yes".
+    const unlisted = readMachine(
+      ciHost({
+        machine_key: "host:unlisted-ci",
+        ci_host_name: "unlisted-ci",
+        name: "unlisted-ci",
+        device_ids: [],
+      })
+    );
     expect(isLastCiHost([only], only, complete)).toBe("yes");
     // Over a cut, gappy or unreported roster read it is only "maybe".
     for (const roster of [
@@ -356,6 +368,7 @@ describe("removal rules", () => {
       })
     );
     expect(isLastCiHost([only, other], only, complete)).toBe("no");
+    expect(isLastCiHost([only, unlisted], only, complete)).toBe("maybe");
     const ws = readMachine(workstation());
     expect(isLastCiHost([ws], ws, complete)).toBe("no");
   });
@@ -368,7 +381,7 @@ describe("removal rules", () => {
       failed: 0,
     } as never);
     expect(s.sentence).toBe(
-      "1 of 2 bindings removed; 1 not reported by the route."
+      "1 of 2 bindings confirmed removed; 1 not reported by the route."
     );
     expect(s.allSettled).toBe(false);
   });
@@ -606,7 +619,7 @@ describe("the answer", () => {
     expect(
       within(result).getByTestId("fleet-roles-remove-refusal").textContent
     ).toContain(
-      "This console refused the removal (HTTP 401): only an operator of this tenant may remove a machine from it. Nothing was removed."
+      "This console refused the removal (HTTP 401): not authenticated — sign in again. Nothing was removed."
     );
     expect(toastMock.success).not.toHaveBeenCalled();
   });
@@ -737,10 +750,15 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "0 of 1 binding removed; 1 already absent."
+        "Nothing to remove; 1 already absent."
       )
     );
     expect(posts).toEqual([[DEV_A], [DEV_A]]);
+    // Nothing happened, so an info toast, not a success.
+    expect(toastMock.info).toHaveBeenCalledWith(
+      `${HOST_A}: Nothing to remove; 1 already absent.`
+    );
+    expect(toastMock.success).toHaveBeenCalledTimes(1);
   });
 
   it("the acknowledgement survives a re-read that fails after the removal", async () => {
@@ -884,7 +902,7 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(result.textContent).toContain(
-      "1 of 2 bindings removed; 1 may have been removed (coord's answer was lost; reload to check)."
+      "1 of 2 bindings confirmed removed; 1 may have been removed (coord's answer was lost; reload to check)."
     );
     const rows = within(result).getAllByTestId(
       "fleet-roles-remove-outcome-row"
@@ -1111,7 +1129,7 @@ describe("the answer", () => {
     expect(
       within(result).getByTestId("fleet-roles-remove-refusal").textContent
     ).toContain(
-      "Coord refused the removal (coord HTTP 401): only an operator of this tenant may remove a machine from it. Nothing was removed."
+      "Coord refused the removal (coord HTTP 401): not authenticated — sign in again. Nothing was removed."
     );
   });
 
@@ -1132,6 +1150,86 @@ describe("the answer", () => {
     );
     expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
       "1 of 2 bindings removed; 1 already absent."
+    );
+  });
+
+  it("says 'no tenant selected' for the web gate's tenant_not_resolved", async () => {
+    postAnswers = [json(403, { detail: "tenant_not_resolved" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "This console refused the removal (HTTP 403): no coord tenant is selected or resolved for your account — pick a tenant and retry. Nothing was removed."
+    );
+  });
+
+  it("says 'only an operator' for a 403 that is not about authentication", async () => {
+    postAnswers = [json(403, { detail: "not_coord_tenant_admin" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "This console refused the removal (HTTP 403): only an operator of this tenant may remove a machine from it. Nothing was removed."
+    );
+  });
+
+  it("sends more than 64 device rows in sequential batches and merges the answers", async () => {
+    const ids = Array.from(
+      { length: 65 },
+      (_, i) => `d0000000-0000-4000-8000-${String(i).padStart(12, "0")}`
+    );
+    machines = [ciHost({ device_ids: ids, device_listings: [] })];
+    postAnswers = [
+      answer(ids.slice(0, 64).map((id) => unbound(id))),
+      answer(ids.slice(64).map((id) => unbound(id))),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts.map((p) => p.length)).toEqual([64, 1]);
+    expect(posts.flat()).toEqual(ids);
+    expect(toastMock.success).toHaveBeenCalledWith(
+      `${CI_HOST_LABEL}: 65 of 65 bindings removed.`
+    );
+  });
+
+  it("an auth abort in the first batch never sends the next one", async () => {
+    const ids = Array.from(
+      { length: 65 },
+      (_, i) => `d0000000-0000-4000-8000-${String(i).padStart(12, "0")}`
+    );
+    machines = [ciHost({ device_ids: ids, device_listings: [] })];
+    postAnswers = [
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_status: 403,
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: ids[0],
+          results: [
+            refusedRow(ids[0]!),
+            ...ids.slice(1, 64).map((id) => abortedRow(id)),
+          ],
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(posts).toHaveLength(1);
+    // The unsent 65th reads as not attempted, like the route's own rows.
+    expect(result.textContent).toContain(
+      "0 of 65 bindings removed; 1 refused (auth); 64 not attempted (aborted by an auth refusal)."
     );
   });
 });

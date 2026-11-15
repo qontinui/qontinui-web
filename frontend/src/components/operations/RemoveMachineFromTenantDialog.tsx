@@ -202,6 +202,9 @@ export function useRemoveMachineFromTenant(
       // it gets a warning rather than a success.
       if (s.stillListed + s.pointerUnknown > 0)
         toast.warning(`${m.name}: ${sentence}`);
+      else if (s.bindingsRemoved === 0)
+        // Every id already absent: nothing happened, so nothing to celebrate.
+        toast.info(`${m.name}: ${sentence}`);
       else toast.success(`${m.name}: ${sentence}`);
       setRetryIds(null);
       setOpenState(false);
@@ -399,8 +402,8 @@ export function RemoveMachineButton({
         description:
           "Opens the confirmation that removes this tenant's binding of " +
           "every device row the roster lists for this machine; the result " +
-          "names how many. Refused while a removal is in flight or another " +
-          "machine's removal dialog is open. The " +
+          "names how many. Refused while a removal is in flight or any " +
+          "removal dialog is open. The " +
           "removal itself needs a real click on the dialog's confirm " +
           "button, which refuses synthetic clicks.",
         // Declared, not re-derived: the action this control leads to removes
@@ -410,10 +413,15 @@ export function RemoveMachineButton({
           if (busyRef.current) {
             return { opened: false, reason: "a removal is in flight" };
           }
-          if (openKeyRef.current !== null && openKeyRef.current !== m.key) {
+          // Never replace an open dialog — not even this machine's own,
+          // whose retry scope and typed phrase would be reset.
+          if (openKeyRef.current !== null) {
             return {
               opened: false,
-              reason: "another machine's removal dialog is open",
+              reason:
+                openKeyRef.current === m.key
+                  ? "this machine's removal dialog is already open"
+                  : "another machine's removal dialog is open",
             };
           }
           openRef.current();

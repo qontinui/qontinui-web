@@ -28,7 +28,10 @@ import {
   type BackendErrorReading,
 } from "@/lib/errors/backend-error-message";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import type { DeviceUnbindResponseWire } from "@/lib/api/operations/coordDeviceBindings";
+import type {
+  DeviceUnbindResponseWire,
+  DeviceUnbindResultWire,
+} from "@/lib/api/operations/coordDeviceBindings";
 import type { DeviceListing, RoleMachine } from "./fleetDispatchRoles";
 
 // ---------------------------------------------------------------------------
@@ -140,6 +143,12 @@ export function isLastCiHost(
     .filter((h) => h.hostOnly && h.deviceIds.length > 0)
     .every((h) => h.deviceIds.every((id) => removing.has(id.toLowerCase())));
   if (!covers) return "no";
+  // Another CI-host row whose device rows coord did not list may still be a
+  // CI binding of this tenant: never assert "last" past it.
+  const unlistedHost = machines.some(
+    (h) => h.hostOnly && h.key !== m.key && h.deviceIds.length === 0
+  );
+  if (unlistedHost) return "maybe";
   // Every count must be REPORTED as zero: an unreported one is unknown, and
   // an unnamed CI registration may be another CI host.
   const complete =
@@ -344,8 +353,13 @@ export function summarizeUnbind(
 
   const n = rows.length;
   const its = (k: number) => plural(k, "its", "their");
+  // While any row may have been removed without coord saying so, the count
+  // is of the CONFIRMED removals only.
+  const uncertain = answerLost + unreported > 0;
   const parts: string[] = [
-    `${bindingsRemoved} of ${n} ${plural(n, "binding", "bindings")} removed`,
+    `${bindingsRemoved} of ${n} ${plural(n, "binding", "bindings")} ${
+      uncertain ? "confirmed removed" : "removed"
+    }`,
   ];
   if (stillListed > 0)
     parts.push(
@@ -394,7 +408,10 @@ export function summarizeUnbind(
     unreported,
     // Settled = coord answered for every id and none needs another try.
     allSettled: n > 0 && rows.every((r) => !UNSETTLED.has(r.outcome)),
-    sentence: `${parts.join("; ")}.`,
+    sentence:
+      n > 0 && alreadyAbsent === n
+        ? `Nothing to remove; ${n} already absent.`
+        : `${parts.join("; ")}.`,
   };
 }
 
@@ -437,8 +454,22 @@ function uncertainRows(s: UnbindSummary): number {
 /** Turn a rejection from `unbindFleetDevices` into what the dialog renders. */
 export function describeUnbindRejection(
   requested: readonly string[],
-  err: unknown
+  err: unknown,
+  /**
+   * When the removal was sent in batches: the rows earlier batches answered,
+   * and the ids of later batches that were never sent.
+   */
+  batches: {
+    prior: readonly DeviceUnbindResultWire[];
+    neverSent: readonly string[];
+  } = { prior: [], neverSent: [] }
 ): UnbindRefusal {
+  const priorOnly = (): UnbindSummary | null =>
+    batches.prior.length > 0
+      ? summarizeUnbind(requested, {
+          results: [...batches.prior],
+        } as DeviceUnbindResponseWire)
+      : null;
   if (isBackendErrorReading(err) || err instanceof BackendError) {
     const reading = isBackendErrorReading(err) ? err : err.reading;
     return {
@@ -446,7 +477,7 @@ export function describeUnbindRejection(
       status: null,
       reading,
       mayHaveApplied: true,
-      partial: null,
+      partial: priorOnly(),
     };
   }
   const status = httpStatusOf(err);
@@ -460,7 +491,7 @@ export function describeUnbindRejection(
         sentence: `The request failed before an answer arrived (${message}).`,
       },
       mayHaveApplied: true,
-      partial: null,
+      partial: priorOnly(),
     };
   }
   const bodyText = httpBodyOf(err) ?? "";
@@ -482,13 +513,26 @@ export function describeUnbindRejection(
   const refusedDeviceId = inner ? str(inner.refused_device_id) : null;
   const abort: UnbindAbort | null =
     refusedDeviceId !== null ? { refusedDeviceId } : null;
-  const hasResults =
-    inner !== null && Array.isArray(inner.results) && inner.results.length > 0;
+  const chunkRows: unknown[] =
+    inner !== null && Array.isArray(inner.results) ? inner.results : [];
+  // After an auth abort, a later batch's ids were never sent: the same
+  // "not attempted (aborted by an auth refusal)" as the route's own rows.
+  const unsent =
+    abort !== null
+      ? batches.neverSent.map((device_id) => ({
+          device_id,
+          outcome: "not_attempted",
+          status: null,
+          error: null,
+          still_member_via_pointer: null,
+        }))
+      : [];
+  const merged = [...batches.prior, ...chunkRows, ...unsent];
   const partial =
-    inner !== null && (hasResults || abort !== null)
+    merged.length > 0 || abort !== null
       ? summarizeUnbind(
           requested,
-          inner as unknown as DeviceUnbindResponseWire,
+          { results: merged } as unknown as DeviceUnbindResponseWire,
           abort
         )
       : null;
@@ -515,21 +559,35 @@ export function describeUnbindRejection(
         : uncertain
           ? "The batch stopped there; some bindings may have been removed."
           : "Nothing was removed.";
+    // Without `refused_device_id` the refusal is this console's own gate,
+    // before any id reached coord.
+    const coordStatus =
+      abort !== null && typeof inner?.coord_status === "number"
+        ? inner.coord_status
+        : null;
+    const who =
+      abort === null
+        ? `This console refused the removal (HTTP ${status})`
+        : coordStatus !== null
+          ? `Coord refused the removal (coord HTTP ${coordStatus})`
+          : `Coord refused the removal (HTTP ${status})`;
+    const effective = coordStatus ?? status;
+    const tenantUnresolved =
+      abort === null &&
+      ((inner !== null && inner.error === "tenant_not_resolved") ||
+        /tenant_not_resolved/.test(bodyText));
+    const why = tenantUnresolved
+      ? "no coord tenant is selected or resolved for your account — pick a tenant and retry."
+      : effective === 401
+        ? "not authenticated — sign in again."
+        : "only an operator of this tenant may remove a machine from it.";
     return {
       auth,
       status,
       reading: {
         ...reading,
         sentence:
-          // Without `refused_device_id` the refusal is this console's own
-          // gate, before any id reached coord.
-          `${
-            abort === null
-              ? `This console refused the removal (HTTP ${status})`
-              : typeof inner?.coord_status === "number"
-                ? `Coord refused the removal (coord HTTP ${inner.coord_status})`
-                : `Coord refused the removal (HTTP ${status})`
-          }: only an operator of this tenant may remove a machine from it. ` +
+          `${who}: ${why} ` +
           what +
           (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
             ? ` (${reading.sentence})`

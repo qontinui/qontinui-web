@@ -57,16 +57,23 @@ export interface DeviceUnbindResponseWire {
   not_attempted?: number;
 }
 
+/** The route's per-request limit on `device_ids`. */
+export const UNBIND_BATCH_LIMIT = 64;
+
 /**
- * `POST /fleet/devices/unbind` with `{device_ids}` (1–64 unique ids).
+ * `POST /fleet/devices/unbind` with `{device_ids}` (1–64 unique ids; a caller
+ * with more sends batches — `useUnbindFleetDevices` does).
  *
- * Sent exactly once. `maxRetries: 0` suppresses both the 429 arm and any 5xx
- * re-issue (`idempotent: false` alone would still retry a 429). And the route
- * never answers 401 — coord's 401 or 403 comes back as HTTP 403, with coord's
- * own status in the body's `coord_status` — so `httpClient`'s replay after a
- * stale-token refresh (`replayAfterRefresh`, which only a 401 enters) cannot
- * fire for it. A repeat would misreport the first attempt's `unbound` rows as
+ * Never re-sent by the retry chain: `maxRetries: 0` suppresses both the 429
+ * arm and any 5xx re-issue (`idempotent: false` alone would still retry a
+ * 429). A repeat would misreport the first attempt's `unbound` rows as
  * `already_absent`.
+ *
+ * The one replay left is `httpClient`'s after a stale-token 401 refresh
+ * (`replayAfterRefresh`, which only a 401 enters). The route answers 401 only
+ * from its own auth gate, BEFORE any id reaches coord — coord's 401 or 403
+ * comes back as HTTP 403 with coord's status in `coord_status` — so that
+ * replay re-sends a request nothing acted on, and is harmless.
  *
  * A 403 abort (`coord_refused_caller`) rejects with that status (an auth
  * failure is a property of the caller, not of any row); every other per-id

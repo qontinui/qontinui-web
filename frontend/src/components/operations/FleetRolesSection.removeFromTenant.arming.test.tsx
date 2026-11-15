@@ -33,6 +33,7 @@ const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
+  info: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), toastMock) }));
 
@@ -129,7 +130,7 @@ let postAnswers: Array<ReturnType<typeof json>>;
 beforeEach(() => {
   machines = [ciHost(), workstation()];
   postAnswers = [];
-  toastMock.success.mockReset();
+  for (const fn of Object.values(toastMock)) fn.mockReset();
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (init?.method === "POST" && url.endsWith("/fleet/devices/unbind")) {
@@ -254,7 +255,11 @@ describe("FleetRolesSection — remove from this tenant (arming)", () => {
         "1 of 2 bindings removed; 1 failed."
       )
     );
+    // No toast of any kind: the outcome is in the dialog and the row.
     expect(toastMock.success).not.toHaveBeenCalled();
+    expect(toastMock.warning).not.toHaveBeenCalled();
+    expect(toastMock.error).not.toHaveBeenCalled();
+    expect(toastMock.info).not.toHaveBeenCalled();
     expect(screen.getByTestId("fleet-roles-remove-dialog")).toBeTruthy();
   });
 });
