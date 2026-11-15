@@ -38,12 +38,14 @@ Per-id outcomes — every requested id gets exactly one:
   but its answer did not arrive intact: a read/write timeout, a transport error
   after the request was sent (``ReadError``, ``RemoteProtocolError``, …), the
   batch's wall budget expiring mid-call, a gateway 504, a 502/503 whose body is
-  not a coord JSON object (a gateway's answer, not coord's), or a 2xx whose body
-  is not coord's documented one. ``error`` is
+  not a coord JSON object (a gateway's answer, not coord's), any coord 500 (coord
+  also answers ``500 db_error`` when the delete's COMMIT failed, so the
+  binding's state is not knowable from the answer), or a 2xx whose body is not
+  coord's documented one. ``error`` is
   ``{"error": "coord_answer_lost", "detail": …}``. Never ``failed``, which would
   invite the operator to treat a possibly-removed binding as still present.
 * ``failed`` — coord refused with its own structured JSON body as ``error``
-  (``503 tenant_devices_absent``, a 500, …), or coord was never reached (a connect error or
+  (``503 tenant_devices_absent``, a 400, …), or coord was never reached (a connect error or
   connect/pool timeout: nothing was sent, status 502/504,
   ``{"error": "coord_unreachable"}``).
 * ``not_attempted`` — the id was never sent, because the batch's
@@ -260,6 +262,20 @@ def _classify_response(
                 "upstream": detail,
             },
         )
+    if status == 500:
+        # Coord's own internal error. Its `db_error` body is also what it sends
+        # when the delete's COMMIT failed, and an unexpected error may follow a
+        # write, so the binding may or may not be gone.
+        return FleetDeviceUnbindResult(
+            device_id=device_id,
+            outcome="unknown",
+            status=status,
+            error={
+                "error": "coord_answer_lost",
+                "detail": "coord reported an internal error after it may have acted",
+                "upstream": detail,
+            },
+        )
     if status == 504:
         # A gateway timeout in front of coord: the request was forwarded and
         # coord may have applied it.
@@ -351,19 +367,26 @@ def _truncate_for_log(text: str) -> str:
     return text[:_LOG_UPSTREAM_MAX_CHARS] + "…"
 
 
-def _log_unsettled_rows(
-    results: list[FleetDeviceUnbindResult], tenant_id: UUID
-) -> None:
-    """Log every id whose outcome is unknown or failed, server-side.
+def _log_row(result: FleetDeviceUnbindResult, tenant_id: UUID) -> None:
+    """Log one finished id server-side: ``unbound`` at info, and ``unknown`` or
+    ``failed`` at warning (``already_absent`` and ``not_attempted`` changed
+    nothing and are not logged per row).
 
-    An unknown row may be a binding coord already removed, so it is recorded
-    here even when the batch later aborts. A gateway's raw body is truncated
-    (whether coord's raw non-JSON text or a gateway's `upstream` body) so an
-    HTML error page cannot flood the log line.
+    So the web log names which ids were removed and which may have been. A
+    gateway's raw body is truncated (whether coord's raw non-JSON text or a
+    gateway's `upstream` body) so an HTML error page cannot flood the log line.
     """
-    for result in results:
-        if result.outcome not in ("unknown", "failed"):
-            continue
+    if result.outcome == "unbound":
+        logger.info(
+            "fleet_devices_unbind_row",
+            tenant_id=str(tenant_id),
+            device_id=str(result.device_id),
+            outcome=result.outcome,
+            status=result.status,
+            still_member_via_pointer=result.still_member_via_pointer,
+        )
+        return
+    if result.outcome in ("unknown", "failed"):
         error = result.error
         if isinstance(error, str):
             error = _truncate_for_log(error)
@@ -405,9 +428,12 @@ async def post_fleet_devices_unbind(
                 break
             result = await _unbind_one(client, device_id, tenant_id, remaining)
             results.append(result)
-            # Logged as soon as it is known, so a cancelled or crashed batch
-            # still leaves a server-side record of a possibly-applied unbind.
-            _log_unsettled_rows([result], tenant_id)
+            # Each row is logged as soon as its call FINISHES, so rows that
+            # finished before a later crash or cancellation are on record. A
+            # row whose call was in flight when the request was cancelled is
+            # not logged here; coord's own audit row is the authority on what
+            # was removed.
+            _log_row(result, tenant_id)
             refused_status = result.status
             if (
                 refused_status is not None
