@@ -543,7 +543,7 @@ describe("the project-list notice", () => {
   /** Whether an element with `testId` is ever added to the page. */
   function watchFor(testId: string): () => boolean {
     let added = false;
-    const observer = new MutationObserver((records) => {
+    const count = (records: MutationRecord[]) => {
       for (const record of records) {
         for (const node of record.addedNodes) {
           if (
@@ -555,10 +555,12 @@ describe("the project-list notice", () => {
           }
         }
       }
-    });
+    };
+    const observer = new MutationObserver(count);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => {
-      observer.takeRecords();
+      // Records not yet delivered are counted too, never dropped.
+      count(observer.takeRecords());
       observer.disconnect();
       return added;
     };
@@ -584,7 +586,9 @@ describe("the project-list notice", () => {
       allowed = latest().writeAllowed();
     });
     expect(allowed).toBe(false);
-    expect(toast.error).toHaveBeenCalledWith(LEARNING_REFUSAL);
+    // The one refusal, and it asks for no reload.
+    expect(vi.mocked(toast.error).mock.calls).toEqual([[LEARNING_REFUSAL]]);
+    expect(LEARNING_REFUSAL).not.toMatch(/reload/i);
 
     // The read lands on the project the other tab stored: the lock lifts,
     // with no reload and no red notice ever shown.
