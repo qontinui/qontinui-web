@@ -419,6 +419,11 @@ export function combineSummaries(
   const rows = requested.map((deviceId): UnbindRowResult => {
     const e = before.get(deviceId.toLowerCase());
     const l = after.get(deviceId.toLowerCase());
+    // The retry never reached coord for this id: it says nothing new, so
+    // the earlier row (which may say "may have been removed") stands.
+    if (l !== undefined && e !== undefined && NEVER_SENT.has(l.outcome)) {
+      return e;
+    }
     // Absent now, after an attempt that may have removed it: that attempt
     // did. (A `not_sent` id was never sent, so it is not one of these.)
     if (
@@ -559,6 +564,16 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
         : `${parts.join("; ")}.`,
   };
 }
+
+/** Outcomes that say the attempt never reached coord for that id. */
+const NEVER_SENT: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
+  "not_sent",
+  "not_sent_after_failure",
+  "deadline_not_attempted",
+  "request_rejected",
+  "console_refused",
+  "not_attempted",
+]);
 
 /** The ids of a summary that a retry sends again. */
 export function unsettledIds(summary: UnbindSummary): string[] {
