@@ -67,8 +67,9 @@ because the package's D4 guard (``tests/test_operations_route_table.py``
 ``test_operations_package_has_no_init_imports``) forbids a submodule importing
 the package ``__init__``, where the proxy plumbing still lives; it comes through
 :mod:`app.api.coord_proxy`. The coord call is made here rather than through
-``_proxy_coord_delete`` because that helper returns only the body and turns
-every transport failure into an ``HTTPException``, which hides the two facts
+``_proxy_coord_delete`` because that helper returns only the body, turns
+connect errors and timeouts into an ``HTTPException`` and lets every other
+transport error escape, which hides the two facts
 this route has to report per id: coord's status, and whether a failure happened
 before or after the request was sent. Mounted under ``/operations`` so the
 frontend's active-tenant prefix rule covers it; the operator's bearer and the
