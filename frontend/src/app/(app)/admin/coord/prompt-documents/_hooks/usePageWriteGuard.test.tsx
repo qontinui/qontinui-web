@@ -51,7 +51,8 @@
  *    red** (round 10). The provider's read may name the project now stored,
  *    and the lock then lifts by itself, so "until you reload" would be
  *    false. Every write is still refused, in words that ask for no reload,
- *    and one muted line says so; when the read lands, the lock either lifts
+ *    and one amber line says so, a status with no Reload, which takes the
+ *    focus a disabled control drops; when the read lands, the lock either lifts
  *    with no red notice ever shown, or turns red, naming the page's project,
  *    with focus on its Reload. When the read fails, the lock turns red,
  *    naming the page's project unknown, with focus on its Reload.
@@ -62,6 +63,7 @@
  * requests; this file pins what the provider hands its children and shows.
  */
 
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   act,
@@ -133,9 +135,13 @@ afterEach(() => {
  * nothing stored) under the layout's tenant provider, whose membership read
  * answers only when the returned `answer` is called, or fails with `message`
  * when `fail` is: until then the page's project is UNKNOWN. It answers Bravo
- * as the only membership and the home project.
+ * as the only membership and the home project. `children` render under the
+ * guard, inside its fieldset.
  */
-function mountWhileTheProviderReads(stored: string | null = B): {
+function mountWhileTheProviderReads(
+  stored: string | null = B,
+  children: ReactNode = null
+): {
   answer: () => Promise<void>;
   fail: (message: string) => Promise<void>;
 } {
@@ -156,6 +162,7 @@ function mountWhileTheProviderReads(stored: string | null = B): {
   render(
     <TenantProvider>
       <PageWriteGuardProvider>
+        {children}
         <Probe />
       </PageWriteGuardProvider>
     </TenantProvider>
@@ -353,7 +360,7 @@ describe("the guard is never off", () => {
 
     // Still UNKNOWN, and locked against the project stored at mount: the
     // controls are disabled and every write refused, at once. The provider is
-    // still reading, so the lock is said in the muted line, not in red.
+    // still reading, so the lock is said in the amber line, not in red.
     expect(latest().pageTenant).toBeUndefined();
     expect(latest().locked).toBe("another_tab");
     expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
@@ -469,6 +476,27 @@ describe("the notice", () => {
     expect(
       screen.getByTestId("prompt-documents-cross-tab-reload")
     ).toBeEnabled();
+  });
+
+  it("is an amber status with no Reload while the page still learns its project", async () => {
+    // The lock may clear itself when the provider's read lands, and which
+    // way that read goes is not known: R3's amber on both grounds.
+    mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+
+    const line = screen.getByTestId("prompt-documents-cross-tab-learning");
+    expect(line).toHaveAttribute("role", "status");
+    expect(line).toHaveClass(
+      "border-amber-500/40",
+      "bg-amber-500/10",
+      "text-amber-800",
+      "dark:text-amber-200"
+    );
+    expect(line).not.toHaveClass("text-muted-foreground");
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /reload/i })).toHaveLength(
+      0
+    );
   });
 });
 
@@ -617,7 +645,7 @@ describe("the project-list notice", () => {
     expect(
       screen.getByTestId("prompt-documents-cross-tab-learning")
     ).toHaveTextContent(
-      "The active project changed while this page was still learning its own: nothing on this page is sent until it knows its project. If this does not change, reload the page."
+      "The active project changed while this page was still learning its own: no change made on this page is sent until it knows its project. If this does not change, reload the page."
     );
     expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
     let allowed = true;
@@ -977,6 +1005,43 @@ describe("focus when the page locks", () => {
       screen.getByTestId("prompt-documents-cross-tab-reload")
     ).toHaveFocus();
   });
+
+  it.each([
+    ["a control the learning lock disables", false],
+    [
+      "<body>, where a browser drops it as the fieldset disables the control",
+      true,
+    ],
+  ] as const)(
+    "moves focus from %s to the amber line while the page learns its project, and on to Reload once the read lands and the change remains",
+    async (_label, dropped) => {
+      // The learning lock has no Reload to move focus to, and the line says
+      // why the operator's control went dead: it takes the focus.
+      const { answer } = mountWhileTheProviderReads(
+        B,
+        <button data-testid="edit">Edit</button>
+      );
+      act(() => screen.getByTestId("edit").focus());
+      if (dropped) act(() => screen.getByTestId("edit").blur());
+
+      await act(async () => anotherTabStores(SYS));
+
+      const line = screen.getByTestId("prompt-documents-cross-tab-learning");
+      expect(screen.getByTestId("edit")).toBeDisabled();
+      expect(line).toHaveAttribute("tabindex", "-1");
+      expect(line).toHaveFocus();
+
+      // Bravo is a member and System stays stored: the line gives way to the
+      // red notice, and focus moves on to its Reload.
+      await answer();
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab-learning")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      ).toHaveFocus();
+    }
+  );
 
   it.each([
     ["an app modal, which says so with aria-modal", "aria-modal"],

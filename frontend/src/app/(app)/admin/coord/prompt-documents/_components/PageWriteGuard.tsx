@@ -201,13 +201,19 @@ function ReloadButton({
  * differs then may be the very one that read names (two fresh tabs), and the
  * lock lifts by itself when it lands — so "until you reload" would be false,
  * and red promises that nothing else resolves it. The page still refuses
- * every write and keeps its fieldset disabled, and says so in one muted line
- * (the sections say they are waiting too). When the read lands, either the
- * lock lifts with no notice ever shown, or a real cross-tab change remains
- * and the red notice shows, naming the project the page now knows, with
- * focus moved to its Reload. When the read fails instead, the lock remains,
- * and the red notice shows, naming the page's project unknown (the list of
- * its projects could not be read), with focus moved to its Reload.
+ * every write and keeps its fieldset disabled, and says so in one line in
+ * the route's amber (R3: the lock may clear itself, and which way the read
+ * goes is not known), a status with no Reload. With nothing stored at mount
+ * the sections say they are waiting too; with a project stored, their mount
+ * reads went out pinned to it, so they show its settings, disabled. Focus
+ * moves to the line, under the same conditions as to Reload, so a control
+ * the fieldset disabled does not leave it on `<body>`. When the read lands,
+ * either the lock lifts with no red notice ever shown, or a real cross-tab
+ * change remains and the red notice shows, naming the project the page now
+ * knows, with focus moved to its Reload. When the read fails instead, the
+ * lock remains, and the red notice shows, naming the page's project unknown
+ * (the list of its projects could not be read), with focus moved to its
+ * Reload.
  *
  * It renders one more notice, in the same red and for the same reason: the
  * layout's provider has said its membership read failed, and the page has no
@@ -289,40 +295,46 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const crossTabNotice = isLocked && !learning;
   const listRefused = isTenantsListUnauthorized(tenantContext?.error ?? null);
   const noticeId = useId();
+  // The lock while the page learns its project: the amber line, no Reload.
+  const learningLock = isLocked && learning;
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
   const reloadRef = useRef<HTMLButtonElement>(null);
+  const learningLineRef = useRef<HTMLParagraphElement>(null);
   // #9: the fieldset has just disabled the control the operator was on, and a
-  // browser drops focus from a disabled control to `<body>`. `role="alert"`
-  // announces the notice, but focus is left nowhere. Move it to Reload, the
-  // one way on. Focus anywhere else is the operator's, and is left alone,
-  // most of all inside an open modal dialog, which portals outside the
-  // fieldset.
-  // Keyed on the red notice, not the lock: a lock raised while the page was
-  // learning its project shows its Reload only once the read has landed.
+  // browser drops focus from a disabled control to `<body>`. The notice says
+  // why, but focus is left nowhere. Move it to Reload, the one way on;
+  // while the page learns its project, to the line that says why, which has
+  // no Reload. Focus anywhere else is the operator's, and is left alone, most
+  // of all inside an open modal dialog, which portals outside the fieldset.
+  // Keyed on which of the two is up, not on the lock: when the learning read
+  // lands and the change remains, the line gives way to the red notice, focus
+  // on the line drops to `<body>` with it, and moves on to Reload.
   useEffect(() => {
-    if (!crossTabNotice) return;
+    if (!crossTabNotice && !learningLock) return;
     const focused = document.activeElement;
     const dropped = focused === null || focused === document.body;
     const disabledUnderIt =
       focused !== null && (fieldsetRef.current?.contains(focused) ?? false);
     if (!dropped && !disabledUnderIt) return;
     if (document.querySelector(OPEN_MODAL_DIALOG) !== null) return;
-    reloadRef.current?.focus();
-  }, [crossTabNotice]);
+    (crossTabNotice ? reloadRef.current : learningLineRef.current)?.focus();
+  }, [crossTabNotice, learningLock]);
 
   return (
     <PageWriteGuardContext.Provider value={value}>
       <div className="space-y-6">
-        {locked !== null && learning ? (
+        {learningLock ? (
           <p
-            className="text-sm text-muted-foreground"
+            ref={learningLineRef}
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200"
             id={noticeId}
             role="status"
+            tabIndex={-1}
             data-testid="prompt-documents-cross-tab-learning"
           >
             The active project changed while this page was still learning its
-            own: nothing on this page is sent until it knows its project. If
-            this does not change, reload the page.
+            own: no change made on this page is sent until it knows its project.
+            If this does not change, reload the page.
           </p>
         ) : null}
         {crossTabNotice && locked !== null ? (

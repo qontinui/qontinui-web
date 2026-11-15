@@ -643,7 +643,7 @@ describe("another tab switches project", () => {
     // switch away from it locks the list at once, instead of leaving the
     // guard off until a project the page may never learn. While the
     // provider is still reading, that read may name the project now stored
-    // and lift the lock by itself, so the page says so in a muted line
+    // and lift the lock by itself, so the page says so in an amber line
     // rather than a red notice promising only a reload clears it.
     listTenantsMock.mockImplementation(() => new Promise(() => {}));
     localStorage.setItem(KEY, B);
@@ -666,7 +666,7 @@ describe("another tab switches project", () => {
     expect(
       await screen.findByTestId("prompt-documents-cross-tab-learning")
     ).toHaveTextContent(
-      "The active project changed while this page was still learning its own: nothing on this page is sent until it knows its project. If this does not change, reload the page."
+      "The active project changed while this page was still learning its own: no change made on this page is sent until it knows its project. If this does not change, reload the page."
     );
     expect(
       screen.queryByTestId("prompt-documents-cross-tab")
