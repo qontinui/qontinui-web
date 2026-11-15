@@ -24,12 +24,14 @@ import { makeMockRedis } from "@/test/rate-limit-redis-mock";
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest, laneFor } from "./_rate-limit";
 import {
+  HEALTHY_STREAM_MIN_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEATS_PER_TAB_PER_MIN,
   RELAY_COMMAND_STREAM_HEARTBEAT_MS,
   RELAY_RESULTS_PER_TAB_PER_MIN,
   RELAY_SNAPSHOTS_PER_STREAM_OPEN,
   SSE_RECONNECT_DELAY_MS,
+  STREAM_LEASE_MS,
   STREAM_OPENS_PER_TAB_PER_MIN,
 } from "./_transport";
 
@@ -486,9 +488,11 @@ describe("the installed SDK's Next handler reads request bodies only through its
  *      (`@qontinui/ui-bridge/injected`) is driven under fake timers for three
  *      minutes against a stub relay that answers the way the SDK server does:
  *      a `ping` every RELAY_COMMAND_STREAM_HEARTBEAT_MS, the proactive
- *      snapshot and its one retry after every connect, and `tabRegistered`
- *      from whether it holds an open stream for the tab (the relay answers
- *      from the instance's open listeners, `connectedTabs`). Every request
+ *      snapshot and its one retry after every connect, the lease's `rotate`
+ *      frame at STREAM_LEASE_MS with the old stream ended (`replaced`) once
+ *      the tab's next stream registers, and `tabRegistered` from whether it
+ *      holds an open stream for the tab (the relay answers from the
+ *      instance's open listeners, `connectedTabs`). Every request
  *      the client sends must be one of the three transport routes, billed to
  *      its own sub-lane, and within that route's per-tab cadence in EVERY
  *      60-s window — for a visible tab on a healthy stream, a hidden tab
@@ -522,7 +526,7 @@ function bundledNumber(section: string, name: string): number | null {
 }
 
 describe("the installed SDK's transport cadences are the ones _transport.ts restates", () => {
-  it("relay client: HEARTBEAT_INTERVAL_MS and SSE_RECONNECT_DELAY_MS", () => {
+  it("relay client: HEARTBEAT_INTERVAL_MS", () => {
     const client = bundleSection(
       "@qontinui/ui-bridge/injected",
       "src/relay/relay-client.ts"
@@ -530,9 +534,29 @@ describe("the installed SDK's transport cadences are the ones _transport.ts rest
     expect(bundledNumber(client, "HEARTBEAT_INTERVAL_MS")).toBe(
       HEARTBEAT_INTERVAL_MS
     );
-    expect(bundledNumber(client, "SSE_RECONNECT_DELAY_MS")).toBe(
+  });
+
+  it("relay client stream lifecycle: SSE_RECONNECT_DELAY_MS and HEALTHY_STREAM_MIN_MS", () => {
+    const lifecycle = bundleSection(
+      "@qontinui/ui-bridge/injected",
+      "src/relay/stream-lifecycle.ts"
+    );
+    expect(bundledNumber(lifecycle, "SSE_RECONNECT_DELAY_MS")).toBe(
       SSE_RECONNECT_DELAY_MS
     );
+    expect(bundledNumber(lifecycle, "HEALTHY_STREAM_MIN_MS")).toBe(
+      HEALTHY_STREAM_MIN_MS
+    );
+  });
+
+  it("stream lease: STREAM_LEASE_MS", () => {
+    const lease = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/stream-lease.ts"
+    );
+    expect(bundledNumber(lease, "STREAM_LEASE_MS")).toBe(STREAM_LEASE_MS);
+    // The stub relay below restates the rotate grace its `rotate` frame names.
+    expect(bundledNumber(lease, "ROTATE_GRACE_MS")).toBe(10_000);
   });
 
   it("Next adapter: RELAY_COMMAND_STREAM_HEARTBEAT_MS", () => {
@@ -576,6 +600,17 @@ describe("the installed SDK's relay client sends only transport, within its cade
     at: number;
   }
 
+  /** One command stream the stub relay served: when it opened, and how and when it ended. */
+  interface StreamLife {
+    id: string;
+    openedAt: number;
+    endedAt?: number;
+    reason?: "replaced" | "abort";
+  }
+
+  /** The SDK relay's default rotate grace (`stream-lease.ts` `ROTATE_GRACE_MS`). */
+  const ROTATE_GRACE_MS = 10_000;
+
   afterEach(() => {
     Reflect.deleteProperty(document, "visibilityState");
     vi.useRealTimers();
@@ -594,11 +629,16 @@ describe("the installed SDK's relay client sends only transport, within its cade
     tabRegistered?: TabRegisteredAnswer;
   }) {
     const sent: Sent[] = [];
+    const streams: StreamLife[] = [];
     const encoder = new TextEncoder();
     let beats = 0;
     let opens = 0;
     /** Streams the relay currently holds open (its `connectedTabs`). */
     let openStreams = 0;
+    /** The most streams the relay held open at once. */
+    let peakOpenStreams = 0;
+    /** The tab's registered stream: the one its next stream replaces. */
+    let current: { end: (reason: "replaced" | "abort") => void } | null = null;
 
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -614,10 +654,14 @@ describe("the installed SDK's relay client sends only transport, within its cade
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           openStreams += 1;
-          const push = (frame: unknown) => {
+          peakOpenStreams = Math.max(peakOpenStreams, openStreams);
+          const life: StreamLife = { id: streamId, openedAt: Date.now() };
+          streams.push(life);
+          const push = (frame: unknown, event?: string) => {
             if (!closed) {
+              const head = event === undefined ? "" : `event: ${event}\n`;
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(frame)}\n\n`)
+                encoder.encode(`${head}data: ${JSON.stringify(frame)}\n\n`)
               );
             }
           };
@@ -633,24 +677,55 @@ describe("the installed SDK's relay client sends only transport, within its cade
             setTimeout(() => snapshot("snapshot"), 500),
             setTimeout(() => snapshot("snapshot-retry"), 2000),
           ];
+          // The lease (`stream-lease.ts`): a rotate-capable stream is sent a
+          // `rotate` frame at STREAM_LEASE_MS and stays open until the tab's
+          // next stream registers (make-before-break).
+          timers.push(
+            setTimeout(
+              () =>
+                push(
+                  { type: "rotate", streamId, graceMs: ROTATE_GRACE_MS },
+                  "rotate"
+                ),
+              STREAM_LEASE_MS
+            )
+          );
           const ping = setInterval(
             () => push({ type: "ping" }),
             RELAY_COMMAND_STREAM_HEARTBEAT_MS
           );
-          signal?.addEventListener("abort", () => {
+          const end = (reason: "replaced" | "abort") => {
             if (closed) {
               return;
             }
+            // A server-made end tells the client why, as the relay's `end` frame does.
+            if (reason === "replaced") {
+              push({ type: "end", reason }, "end");
+            }
             closed = true;
             openStreams -= 1;
+            life.endedAt = Date.now();
+            life.reason = reason;
             timers.forEach((timer) => clearTimeout(timer));
             clearInterval(ping);
+            if (current?.end === end) {
+              current = null;
+            }
             try {
               controller.close();
             } catch {
               // already closed by the reader
             }
-          });
+          };
+          signal?.addEventListener("abort", () => end("abort"));
+          // The new stream's listener registers, and the relay ends the
+          // stream it replaces (`stream-lease.ts`, reason `replaced`) before
+          // the new one writes `connected`, as `addCommandListener` does. The
+          // real relay replaces only a rotated stream or one with the same
+          // `cid`; one client with one stable `cid` is always that case.
+          const previous = current;
+          current = { end };
+          previous?.end("replaced");
           push({ type: "connected", streamId });
         },
       });
@@ -662,7 +737,9 @@ describe("the installed SDK's relay client sends only transport, within its cade
 
     const fetchStub = vi.fn(
       async (input: string | URL | Request, init?: RequestInit) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
+        const url = new URL(
+          input instanceof Request ? input.url : String(input)
+        );
         const route = `${(init?.method ?? "GET").toUpperCase()} ${url.pathname.slice(BASE_PATH.length)}`;
         sent.push({ route, at: Date.now() });
         if (route === "GET /commands/stream") {
@@ -684,7 +761,19 @@ describe("the installed SDK's relay client sends only transport, within its cade
         return json({ success: true });
       }
     );
-    return { fetchStub, sent };
+    return {
+      fetchStub,
+      sent,
+      streams,
+      peakOpenStreams: () => peakOpenStreams,
+    };
+  }
+
+  /** What one tab's run sent, and the streams the stub relay served it. */
+  interface TabRun {
+    sent: Sent[];
+    streams: StreamLife[];
+    peakOpenStreams: number;
   }
 
   /** Run one tab's relay client for RUN_MS of fake time; return what it sent. */
@@ -692,14 +781,14 @@ describe("the installed SDK's relay client sends only transport, within its cade
     visibility: "visible" | "hidden";
     streamOk: boolean;
     tabRegistered?: TabRegisteredAnswer;
-  }): Promise<Sent[]> {
+  }): Promise<TabRun> {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => opts.visibility,
     });
-    const { fetchStub, sent } = stubRelay(opts);
+    const { fetchStub, sent, streams, peakOpenStreams } = stubRelay(opts);
     vi.stubGlobal("fetch", fetchStub);
 
     const client = startRelayClient({
@@ -717,7 +806,7 @@ describe("the installed SDK's relay client sends only transport, within its cade
     await vi.advanceTimersByTimeAsync(RUN_MS);
     client.stop();
     await vi.advanceTimersByTimeAsync(0);
-    return sent;
+    return { sent, streams, peakOpenStreams: peakOpenStreams() };
   }
 
   const count = (sent: readonly Sent[], route: string) =>
@@ -770,11 +859,37 @@ describe("the installed SDK's relay client sends only transport, within its cade
     );
   }
 
-  it("a visible tab on a healthy stream: one open, its two snapshot results, heartbeats within cadence", async () => {
-    const sent = await runTab({ visibility: "visible", streamOk: true });
+  /**
+   * The relay ends each stream at its lease, make-before-break: every stream
+   * but the last got its `rotate` frame at STREAM_LEASE_MS, its replacement
+   * opened then, and the relay ended it `replaced` as that replacement
+   * registered, so two streams were open at once and none was ever missing.
+   */
+  function expectLeaseRotation(run: TabRun, rotated: readonly StreamLife[]) {
+    expect(rotated.length).toBeGreaterThan(1);
+    for (let i = 1; i < rotated.length; i += 1) {
+      const previous = rotated[i - 1]!;
+      const next = rotated[i]!;
+      expect(next.openedAt - previous.openedAt, next.id).toBe(STREAM_LEASE_MS);
+      expect(previous.reason, previous.id).toBe("replaced");
+      expect(previous.endedAt, previous.id).toBe(next.openedAt);
+    }
+    expect(run.peakOpenStreams).toBe(2);
+  }
+
+  it("a visible tab on a healthy stream: one open per lease, each with its two snapshot results, heartbeats within cadence", async () => {
+    const run = await runTab({ visibility: "visible", streamOk: true });
+    const { sent, streams } = run;
     expectTransportWithinCadence(sent);
-    expect(count(sent, "GET /commands/stream")).toBe(1);
-    expect(count(sent, "POST /commands")).toBe(2);
+    // Read exactly: the boot open, then one rotation per STREAM_LEASE_MS
+    // (50 s) in the 180-s run — at 50, 100 and 150 s. That is at most 2 in
+    // any 60-s window, inside STREAM_OPENS_PER_TAB_PER_MIN (6).
+    expect(count(sent, "GET /commands/stream")).toBe(4);
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(2);
+    expect(count(sent, "POST /commands")).toBe(8);
+    expectLeaseRotation(run, streams);
+    // The run's end, not the relay, closed the last stream.
+    expect(streams.at(-1)?.reason).toBe("abort");
     // Not vacuous: the timer beat all through the run.
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
@@ -784,27 +899,40 @@ describe("the installed SDK's relay client sends only transport, within its cade
     // `tabRegistered: false`, and the boot heartbeat's answer reopens the
     // stream at once beside the boot open. The reopen clears the pending
     // reconnect, so from then on the client opens once per heartbeat.
-    const sent = await runTab({ visibility: "hidden", streamOk: false });
+    const { sent, streams } = await runTab({
+      visibility: "hidden",
+      streamOk: false,
+    });
     expectTransportWithinCadence(sent, { forcedReopens: 1 });
     // Read exactly, so both bounds are met rather than merely respected:
     // 6 + the one forced reopen in the first minute, 6 in every later window.
     expect(peakPerMinute(sent, "GET /commands/stream")).toBe(7);
     expect(peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)).toBe(6);
+    expect(count(sent, "GET /commands/stream")).toBe(20);
+    expect(streams).toEqual([]);
     expect(count(sent, "POST /commands")).toBe(0);
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
 
-  it("a tab once answered tabRegistered:false: one forced reopen and its snapshots, all within cadence", async () => {
-    const sent = await runTab({
+  it("a tab once answered tabRegistered:false: one forced reopen, then lease rotation, all within cadence", async () => {
+    const run = await runTab({
       visibility: "visible",
       streamOk: true,
       // The per-instance recovery path: one heartbeat lands on an instance
       // that holds no stream for the tab.
       tabRegistered: (beat, holdsStream) => (beat === 2 ? false : holdsStream),
     });
+    const { sent, streams } = run;
     expectTransportWithinCadence(sent);
-    expect(count(sent, "GET /commands/stream")).toBe(2);
-    expect(count(sent, "POST /commands")).toBe(4);
+    // Read exactly: the boot open; the forced reopen at the second heartbeat
+    // (10 s), which aborts the boot stream first (`forceReconnect`); then one
+    // rotation per lease from it — at 60, 110 and 160 s.
+    expect(count(sent, "GET /commands/stream")).toBe(5);
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(2);
+    expect(count(sent, "POST /commands")).toBe(10);
+    expect(streams[0]).toMatchObject({ reason: "abort", endedAt: T0 + 10_000 });
+    expectLeaseRotation(run, streams.slice(1));
+    expect(streams.at(-1)?.reason).toBe("abort");
   });
 
   it("bills every UI_BRIDGE_ROUTES entry to a command lane except POST /heartbeat", () => {
