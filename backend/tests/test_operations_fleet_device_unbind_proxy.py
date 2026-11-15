@@ -527,6 +527,35 @@ class TestCallerRefusalAborts:
         assert aborted[0]["unknown"] == 1
         assert aborted[0]["failed"] == 1
 
+    def test_the_production_error_envelope_carries_the_abort_at_top_level(self):
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        app = _build_test_app()
+        app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+        stub = _CoordStub(
+            {
+                DEVICE_A: [_bound(DEVICE_A)],
+                DEVICE_B: [_mock_response(401, {"error": "sso_required"})],
+            }
+        )
+        resp = _post(
+            TestClient(app), stub, {"device_ids": [DEVICE_A, DEVICE_B, DEVICE_C]}
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert "detail" not in body
+        assert body["error"] == "coord_refused_caller"
+        assert body["coord_status"] == 401
+        assert body["refused_device_id"] == DEVICE_B
+        assert [r["outcome"] for r in body["results"]] == [
+            "unbound",
+            "failed",
+            "not_attempted",
+        ]
+        assert (body["unbound"], body["failed"], body["not_attempted"]) == (1, 1, 1)
+
     def test_403_on_later_id_aborts_keeping_recorded_results(
         self, auth_client: TestClient
     ):
@@ -601,6 +630,18 @@ def _request_for(device_id: str) -> httpx.Request:
 
 
 class TestTransportFailures:
+    @pytest.mark.parametrize("exc_type", ["UnsupportedProtocol", "ProxyError"])
+    def test_a_misconfigured_transport_is_failed_nothing_sent(
+        self, auth_client: TestClient, exc_type: str
+    ):
+        exc = getattr(httpx, exc_type)("bad url", request=_request_for(DEVICE_A))
+        stub = _CoordStub({DEVICE_A: [exc]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        row = resp.json()["results"][0]
+        assert row["outcome"] == "failed"
+        assert row["status"] == 502
+        assert row["error"]["error"] == "coord_unreachable"
+
     def test_connect_error_is_failed_502_nothing_sent(self, auth_client: TestClient):
         stub = _CoordStub(
             {DEVICE_A: [httpx.ConnectError("refused", request=_request_for(DEVICE_A))]}
