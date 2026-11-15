@@ -83,7 +83,7 @@ export function usePolicyWritePolicy() {
   const dial = useTenantFleetPolicyDial<PolicyWriteLevel>(
     POLICY_WRITE_DOMAIN,
     "agent policy-write autonomy",
-    "devices",
+    "devices resolve",
     { resolvePin }
   );
   const { policy, setLevel: sendLevel } = dial;

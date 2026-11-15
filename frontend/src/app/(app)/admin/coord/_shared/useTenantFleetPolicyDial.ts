@@ -102,14 +102,18 @@ function capitalise(s: string): string {
  * @param domain  the fleet-policy domain coord stores the row under.
  * @param label   lower-case human name for toasts and the change note
  *                ("plan capture").
- * @param subject who resolves the level, for the disagreement toast —
- *                "devices" for a briefing clause, "agents" for an agent door.
+ * @param resolvers who resolves the level, WITH its verb, for the read-back's
+ *                sentences — "devices resolve" for a briefing clause, "agents
+ *                resolve" for an agent door, "coord resolves" for a level
+ *                coord applies itself. Each caller states its own verb, so a
+ *                singular subject reads "coord resolves", never "coord
+ *                resolve".
  * @param options `resolvePin`, asked at send time (see above).
  */
 export function useTenantFleetPolicyDial<L extends string>(
   domain: string,
   label: string,
-  subject: string = "devices",
+  resolvers: string = "devices resolve",
   { resolvePin }: SendTimePinOptions = {}
 ) {
   // One identity whatever the caller passes, so the first read runs once: the
@@ -234,7 +238,6 @@ export function useTenantFleetPolicyDial<L extends string>(
         writeGeneration.current += 1;
         setLastWrite(result);
         const confirmed = `${capitalise(label)}: now "${level}" for this tenant.`;
-        const resolvers = `${subject} resolve`;
 
         if (result.effective) {
           setPolicy(result.effective);
@@ -252,8 +255,8 @@ export function useTenantFleetPolicyDial<L extends string>(
           // Written, but unconfirmed. Leave `policy` alone — do NOT paint the
           // written level as though it were resolved.
           toast.warning(
-            `The write went through, but the read-back failed — what ${subject} ` +
-              "resolve is unknown until this refreshes."
+            `The write went through, but the read-back failed — what ${resolvers} ` +
+              "is unknown until this refreshes."
           );
           // A caller that pins its requests reads it again, pinned, so what
           // is shown is coord's level and not the one from before the write,
@@ -278,7 +281,7 @@ export function useTenantFleetPolicyDial<L extends string>(
         setSaving(false);
       }
     },
-    [domain, label, subject, sendPin, read]
+    [domain, label, resolvers, sendPin, read]
   );
 
   return {

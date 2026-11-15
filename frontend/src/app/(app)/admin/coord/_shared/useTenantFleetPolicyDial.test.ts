@@ -351,13 +351,17 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     ]);
   });
 
-  it("called with a subject and no options, sends today's bytes and names that subject when the fleet disagrees", async () => {
+  it("called with its resolvers and no options, sends today's bytes and names who resolves when the fleet disagrees", async () => {
     // Exactly three arguments, as ten of the console's dials call it: the
     // options default to `{}`, so nothing is pinned.
     getMock.mockResolvedValueOnce(view("off"));
     putMock.mockResolvedValueOnce({ ...written("on"), effective: view("off") });
     const { result } = renderHook(() =>
-      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial", "agents")
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "agents resolve"
+      )
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
@@ -385,6 +389,38 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     expect(toast.warning).toHaveBeenCalledWith(
       'Wrote "on", but agents resolve "off" (from the tenant scope).'
     );
+  });
+
+  it("says who resolves in the caller's own verb, a singular one included", async () => {
+    // The CI panels pass "coord resolves": every sentence that names who
+    // resolves takes the caller's verb, never "coord resolve".
+    getMock.mockResolvedValueOnce(view("off"));
+    putMock
+      .mockResolvedValueOnce({ ...written("on"), effective: view("off") })
+      .mockResolvedValueOnce({
+        ...written("on"),
+        effective: null,
+        readback_error: "read-back timed out",
+      });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "coord resolves"
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    expect(vi.mocked(toast.warning).mock.calls.map(([text]) => text)).toEqual([
+      'Wrote "on", but coord resolves "off" (from the tenant scope).',
+      "The write went through, but the read-back failed — what coord resolves is unknown until this refreshes.",
+    ]);
   });
 
   it("reads nothing more after a write whose read-back failed: today's behaviour", async () => {
@@ -458,7 +494,7 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => ({ tenant: "t-page" }) }
       )
     );
@@ -490,7 +526,7 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
         useTenantFleetPolicyDial<"off" | "on">(
           "some_dial",
           "some dial",
-          "devices",
+          "devices resolve",
           { resolvePin: resolve }
         ),
       { initialProps: { resolve: () => ({ tenant: page }) } }
@@ -532,7 +568,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => undefined }
       )
     );
@@ -584,7 +620,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => pin }
       )
     );
@@ -617,7 +653,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => ({ tenant: "t-b" }) }
       )
     );
@@ -660,7 +696,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => ({ tenant: "t-b" }) }
       )
     );
@@ -695,7 +731,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => ({ tenant: "t-b" }) }
       )
     );
@@ -732,7 +768,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       const dial = useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => pin }
       );
       states.push({
@@ -771,7 +807,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => pin }
       )
     );

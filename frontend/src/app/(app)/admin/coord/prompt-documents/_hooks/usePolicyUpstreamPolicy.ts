@@ -68,7 +68,7 @@ export function usePolicyUpstreamPolicy() {
   const dial = useTenantFleetPolicyDial<PolicyUpstreamLevel>(
     POLICY_UPSTREAM_DOMAIN,
     "upstream policy updates",
-    "devices",
+    "devices resolve",
     { resolvePin }
   );
   const { policy, setLevel: sendLevel } = dial;
