@@ -42,10 +42,13 @@ shard's red not a verdict. So:
   with a quote or a bracket;
 * that reasoning covers the ``::`` form only. The runner also reads a legacy
   form at ANY column (``setup_death_git.LEGACY_PREFIX``), so no source line
-  here holds that prefix (``assert_prints_nothing`` refuses one), and the only
-  tests that build it, the legacy-form tests, build it around ``probe``, a
-  command name the runner has not registered: a printed local holding one is
-  plain text;
+  here holds that prefix (``assert_prints_nothing`` refuses one). The
+  legacy-form tests build it around ``probe``, a command name the runner has
+  not registered, so a printed local holding one is plain text. The tests that
+  need it before ``error``, a registered command (a step name the declarer's
+  plain line must break), build it only inside ``_run_legacy_named``, in a
+  ``Sealed`` string whose repr is defanged, and get back only counts and
+  defanged output;
 * ``test_a_failing_helper_writes_no_workflow_command`` and
   ``test_a_failing_run_of_this_module_writes_no_workflow_command`` prove the
   helpers hold that when they fail, the second by running pytest itself with
@@ -62,6 +65,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 import yaml
@@ -70,6 +74,7 @@ from tests.setup_death_git import (
     GIT,
     LEGACY_PREFIX,
     PrRepo,
+    Sealed,
     assert_prints_nothing,
     base_env,
     command_lines,
@@ -444,6 +449,63 @@ def test_a_failed_verdict_step_beside_a_failed_setup_row_never_declares(clean_pr
         "declare-setup-death: no declaration: scan/test step(s) 'Run ruff "
         "(linting)' concluded failure, so this red is a verdict on the change."
     ) in _defang(out), _defang(out)
+
+
+class _LegacyRun(NamedTuple):
+    """What a run over a legacy-prefixed step name may hand a test frame."""
+
+    code: int
+    #: Lines of the output the runner could parse as a workflow command.
+    commands: int
+    #: Legacy prefixes left anywhere in the output.
+    prefixes: int
+    #: The output, defanged: the only form an assertion message may carry.
+    shown: str
+
+
+#: VERDICT step names holding the legacy prefix with the REGISTERED command
+#: `error` after it. `{legacy}` stands for the prefix, which no source line
+#: here may hold; `_run_legacy_named` builds each real name in a `Sealed`
+#: string and hands back only a `_LegacyRun`, so no frame of a failing test
+#: holds the prefix raw (the module docstring says why that matters).
+LEGACY_STEP_NAMES = {
+    "mid-name": "Run ruff {legacy}error]m",
+    "leading": "{legacy}error title=t]m",
+    "three-hashes": "Run ruff #{legacy}error]m",
+    "twice": "Run {legacy}error]{legacy}error]m",
+}
+
+
+def _run_legacy_named(repo: PrRepo, template: str) -> _LegacyRun:
+    """Rule 2 for ONE failed VERDICT step named ``template``, prefix filled in."""
+    rows = Sealed(template.replace("{legacy}", LEGACY_PREFIX) + "|failure|failure\n")
+    code, out, _ = _run(_pr_env(repo, verdict=rows))
+    out = Sealed(out)
+    return _LegacyRun(
+        code, len(command_lines(out)), out.count(LEGACY_PREFIX), _defang(out)
+    )
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(
+    "template", list(LEGACY_STEP_NAMES.values()), ids=list(LEGACY_STEP_NAMES)
+)
+def test_a_legacy_command_in_a_step_name_comes_out_broken(clean_pr, template):
+    """Rule 2's plain line quotes the failed step's name, so it breaks the form.
+
+    The runner reads the legacy prefix at ANY column, and the line's fixed
+    lead stops only the `::` form: a step named with the prefix and `error`
+    would otherwise reach the shard log as an error annotation of its own.
+    """
+    run = _run_legacy_named(clean_pr, template)
+    assert run.code == 0
+    assert run.prefixes == 0, run.shown
+    assert run.commands == 0, run.shown
+    name = template.replace("{legacy}", "# #[")
+    assert run.shown == (
+        f"declare-setup-death: no declaration: scan/test step(s) '{name}' "
+        "concluded failure, so this red is a verdict on the change.\n"
+    ), run.shown
 
 
 @requires_bash_and_git

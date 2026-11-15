@@ -87,7 +87,16 @@ Outputs: one line. A declaration is an ``::error`` whose title is above. A read
 error, a malformed input, an exhausted time budget and a guard that does not
 read ``false`` withhold: a ``::notice title=Setup-death declaration
 withheld::`` with no phrase. A decision not to declare (rules 1, 3 and 4) is
-one plain log line.
+one plain log line, and it quotes member and need names, which are data. The
+Actions runner reads a workflow command in two forms (actions/runner
+``ActionCommand``): a line that starts with ``::`` once its leading whitespace
+is trimmed (``TryParseV2``), and the legacy form, two ``#`` and a ``[``,
+found at ANY column (``TryParse``, an ``IndexOf``). The plain line's fixed
+prefix rules out the first; ``render`` breaks every legacy prefix into
+``# #[`` (``LEGACY_BROKEN``), as backend/tests/setup_death_git.py ``defang``
+does, which rules out the second. An ``::error`` or ``::notice`` line needs
+no such break: the runner tries ``TryParseV2`` first, and once that has read
+the line as a command the legacy form is never tried.
 
 The harness-diff guard (rule 5)
 -------------------------------
@@ -194,6 +203,12 @@ RESERVED_PHRASES = (
 )
 WITHHELD_TITLE = "Setup-death declaration withheld"
 LOG_PREFIX = "aggregate-setup-death:"
+#: The legacy workflow-command prefix, which the runner's ``TryParse`` finds
+#: at any column of a line. Spelled in two parts, so no source line here holds
+#: it: a test failing inside this module prints its source lines.
+LEGACY_PREFIX = "#" * 2 + "["
+#: What a plain line carries in its place: no column of it opens the form.
+LEGACY_BROKEN = "# #["
 USER_AGENT = "qontinui-web-aggregate-setup-death"
 
 REREADS = 3
@@ -240,8 +255,11 @@ def render(outcome: Outcome) -> str:
         return f"::error title={_escape_property(outcome.title)}::{_escape_data(outcome.text)}"
     if outcome.kind == "withhold":
         return f"::notice title={WITHHELD_TITLE}::{_escape_data(outcome.text)}"
-    # A plain line can never be read as a workflow command: fixed prefix, one line.
-    return f"{LOG_PREFIX} {' '.join(outcome.text.split())}"
+    # One line behind a fixed prefix, so it never starts with `::`, and every
+    # legacy prefix broken, so no member or need name it quotes opens the
+    # legacy form at any column (the module docstring's "Outputs").
+    line = f"{LOG_PREFIX} {' '.join(outcome.text.split())}"
+    return line.replace(LEGACY_PREFIX, LEGACY_BROKEN)
 
 
 def _positive_int(env: Mapping[str, str], key: str) -> int:
