@@ -28464,6 +28464,122 @@
         "title": "FleetDeferredQuestionResponse",
         "type": "object"
       },
+      "FleetDeviceUnbindRequest": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/devices/unbind``.",
+        "properties": {
+          "device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Device Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_ids"
+        ],
+        "title": "FleetDeviceUnbindRequest",
+        "type": "object"
+      },
+      "FleetDeviceUnbindResponse": {
+        "description": "Per-id results (one per requested id, in request order) plus tallies.",
+        "properties": {
+          "already_absent": {
+            "title": "Already Absent",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "not_attempted": {
+            "title": "Not Attempted",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/FleetDeviceUnbindResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "unbound": {
+            "title": "Unbound",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "results",
+          "unbound",
+          "already_absent",
+          "unknown",
+          "failed",
+          "not_attempted"
+        ],
+        "title": "FleetDeviceUnbindResponse",
+        "type": "object"
+      },
+      "FleetDeviceUnbindResult": {
+        "description": "What happened to one device id.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error"
+          },
+          "outcome": {
+            "enum": [
+              "unbound",
+              "already_absent",
+              "unknown",
+              "failed",
+              "not_attempted"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "still_member_via_pointer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Still Member Via Pointer"
+          }
+        },
+        "required": [
+          "device_id",
+          "outcome",
+          "status"
+        ],
+        "title": "FleetDeviceUnbindResult",
+        "type": "object"
+      },
       "FleetPolicyPut": {
         "additionalProperties": false,
         "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
@@ -110813,6 +110929,53 @@
           }
         ],
         "summary": "Get Fleet Ci Runners",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/devices/unbind": {
+      "post": {
+        "description": "Remove each named device's binding to the caller's tenant (operator-only).\n\nCalls coord sequentially, one id at a time, within\n:data:`BATCH_DEADLINE_SECONDS`, so an auth refusal stops the batch before it\nis repeated for every remaining id. See the module docstring for the\noutcomes.",
+        "operationId": "api_v1_operations_fleet_devices_unbind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetDeviceUnbindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDeviceUnbindResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Devices Unbind",
         "tags": [
           "operations"
         ]
