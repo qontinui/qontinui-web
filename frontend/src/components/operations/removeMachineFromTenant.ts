@@ -202,6 +202,11 @@ export type UnbindRowOutcome =
    * 2xx). The binding MAY have been removed — never "removed", never "failed".
    */
   | "answer_lost"
+  /**
+   * Batched removals: this id's batch drew a 5xx or no answer at all, so the
+   * route's answer to that request was lost. It MAY have been removed.
+   */
+  | "request_lost"
   /** Wire `not_attempted`: the batch hit its deadline before this id. */
   | "deadline_not_attempted"
   /**
@@ -235,6 +240,8 @@ export interface UnbindRowResult {
   outcome: UnbindRowOutcome;
   /** For `unreported`: its batch answered a body that could not be read. */
   unreadable?: boolean;
+  /** For `answer_lost`: the route's own words (`error.detail`), if any. */
+  detail?: string | null;
   status: number | null;
   /** Coord's refusal for a failed id, as `BackendErrorMessage` renders it. */
   error: BackendErrorReading | null;
@@ -252,6 +259,7 @@ export interface UnbindSummary {
   refusedAuth: number;
   notAttempted: number;
   answerLost: number;
+  requestLost: number;
   deadlineNotAttempted: number;
   notSent: number;
   notSentAfterFailure: number;
@@ -288,6 +296,7 @@ const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
   "refused_auth",
   "not_attempted",
   "answer_lost",
+  "request_lost",
   "deadline_not_attempted",
   "not_sent",
   "not_sent_after_failure",
@@ -364,7 +373,15 @@ export function summarizeUnbind(
       case "already_absent":
         return { deviceId, outcome: "already_absent", status, error: null };
       case "unknown":
-        return { deviceId, outcome: "answer_lost", status, error: null };
+        return {
+          deviceId,
+          outcome: "answer_lost",
+          status,
+          error: null,
+          detail: isRecord(r.error) ? str(r.error.detail) : null,
+        };
+      case "request_lost":
+        return { deviceId, outcome: "request_lost", status, error: null };
       case "not_attempted": {
         // The row's own words say why; the abort flag only decides when they
         // say nothing this build recognises.
@@ -433,7 +450,7 @@ export function combineSummaries(
     if (
       l !== undefined &&
       e !== undefined &&
-      (e.outcome === "answer_lost" || e.outcome === "unreported") &&
+      POSSIBLY_APPLIED.has(e.outcome) &&
       (l.outcome === "refused_auth" || l.outcome === "failed")
     ) {
       return e;
@@ -442,7 +459,8 @@ export function combineSummaries(
     // did. (A `not_sent` id was never sent, so it is not one of these.)
     if (
       l?.outcome === "already_absent" &&
-      (e?.outcome === "answer_lost" || e?.outcome === "unreported")
+      e !== undefined &&
+      POSSIBLY_APPLIED.has(e.outcome)
     ) {
       return { ...l, outcome: "removed_earlier" };
     }
@@ -471,6 +489,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const refusedAuth = count("refused_auth");
   const notAttemptedCount = count("not_attempted");
   const answerLost = count("answer_lost");
+  const requestLost = count("request_lost");
   const deadlineNotAttempted = count("deadline_not_attempted");
   const notSent = count("not_sent");
   const notSentAfterFailure = count("not_sent_after_failure");
@@ -487,7 +506,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const its = (k: number) => plural(k, "its", "their");
   // While any row may have been removed without coord saying so, the count
   // is of the CONFIRMED removals only.
-  const uncertain = answerLost + unreported > 0;
+  const uncertain = answerLost + requestLost + unreported > 0;
   const parts: string[] = [
     `${bindingsRemoved} of ${n} ${plural(n, "binding", "bindings")} ${
       uncertain ? "confirmed removed" : "removed"
@@ -519,6 +538,10 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   if (answerLost > 0)
     parts.push(
       `${answerLost} may have been removed (coord's answer was lost; reload to check)`
+    );
+  if (requestLost > 0)
+    parts.push(
+      `${requestLost} may have been removed (the route's answer to that request was lost)`
     );
   if (deadlineNotAttempted > 0)
     parts.push(`${deadlineNotAttempted} not attempted (time limit) — retry`);
@@ -562,6 +585,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
     refusedAuth,
     notAttempted: notAttemptedCount,
     answerLost,
+    requestLost,
     deadlineNotAttempted,
     notSent,
     notSentAfterFailure,
@@ -577,6 +601,10 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
         : `${parts.join("; ")}.`,
   };
 }
+
+/** Outcomes after which the binding MAY have been removed. */
+const POSSIBLY_APPLIED: ReadonlySet<UnbindRowOutcome> =
+  new Set<UnbindRowOutcome>(["answer_lost", "request_lost", "unreported"]);
 
 /** Outcomes that say the attempt never reached coord for that id. */
 const NEVER_SENT: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
@@ -630,7 +658,7 @@ function str(v: unknown): string | null {
 
 /** Rows that leave a removal possible but unconfirmed. */
 function uncertainRows(s: UnbindSummary): number {
-  return s.answerLost + s.unreported;
+  return s.answerLost + s.requestLost + s.unreported;
 }
 
 /** An auth refusal's "what was removed" clause, over the rows it has. */
@@ -740,14 +768,22 @@ export function describeUnbindRejection(
     batches.neverSent,
     refusedNotFailed ? "not_sent" : "not_sent_after_failure"
   );
+  // In a multi-batch run, a batch that drew a 5xx or no answer at all: its
+  // ids may have been acted on — the route's answer to that request was
+  // lost (rows, if its body carried any, win below).
+  const multiBatch = batches.prior.length > 0 || batches.neverSent.length > 0;
+  const lostRows =
+    multiBatch && !refusedNotFailed
+      ? synth(batches.current, "request_lost")
+      : [];
   // A lost answer (no status): this batch's ids stay unreported — it may have
   // acted — and only the rows earlier batches answered are known.
   const priorOnly = (): UnbindSummary | null =>
-    batches.prior.length > 0 || notSentRows.length > 0
+    batches.prior.length > 0 || notSentRows.length > 0 || lostRows.length > 0
       ? summarizeUnbind(
           requested,
           {
-            results: [...batches.prior, ...notSentRows],
+            results: [...batches.prior, ...lostRows, ...notSentRows],
           } as unknown as DeviceUnbindResponseWire,
           null,
           batches.unreadableIds
@@ -817,7 +853,7 @@ export function describeUnbindRejection(
               error: null,
               still_member_via_pointer: null,
             }))
-          : [];
+          : lostRows;
   const merged = [...batches.prior, ...chunkRows, ...gateRows, ...notSentRows];
   const partial =
     merged.length > 0 || abort !== null
