@@ -1,7 +1,7 @@
 """coord.gates — continuation_deferred_device_id, the device that posted the refusal
 
 Revision ID: cfo_01_continuation_deferred_device
-Revises: overview_06_cost_category_parent
+Revises: coord_reap_ledger_01_gate_evidence_branch_reap
 Create Date: 2026-11-15
 
 Phase 1a of plan
@@ -55,7 +55,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cfo_01_continuation_deferred_device"
-down_revision: str | Sequence[str] | None = "overview_06_cost_category_parent"
+down_revision: str | Sequence[str] | None = (
+    "coord_reap_ledger_01_gate_evidence_branch_reap"
+)
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
