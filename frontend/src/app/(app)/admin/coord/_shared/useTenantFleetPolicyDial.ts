@@ -160,16 +160,12 @@ export function useTenantFleetPolicyDial<L extends string>(
     load();
   }, [load]);
 
-  // Opt-in: a caller that passes no `resolvePin` pins nothing, so it has
-  // nothing to re-take, and sends exactly what it always did.
-  useRetakeOnceWhenPinned(
-    sendPin,
-    () => {
-      retakes.current += 1;
-      void load();
-    },
-    resolvePin !== undefined
-  );
+  // A caller that passes no `resolvePin` never names a pin, so nothing is
+  // re-taken for it, and it sends exactly what it always did.
+  useRetakeOnceWhenPinned(sendPin, () => {
+    retakes.current += 1;
+    void load();
+  });
 
   /**
    * A write to this domain LANDED outside this hook — a repo-band write whose

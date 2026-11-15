@@ -58,13 +58,14 @@ export function useSendTimePin(resolvePin: ResolvePin | undefined): ResolvePin {
  * and no callback changes identity, because the pin is asked after each
  * commit rather than depended on.
  *
- * `sendPin` is the hook's {@link useSendTimePin} resolver. With `optIn` false
- * this does nothing at all, for a shared hook whose caller pins nothing.
+ * `sendPin` is the hook's {@link useSendTimePin} resolver. A caller that
+ * passes no resolver never names a pin, so nothing is re-taken for it; one
+ * whose resolver arrives only after the first commit had its mount reads sent
+ * unpinned, and they are re-taken once it names a project.
  */
 export function useRetakeOnceWhenPinned(
   sendPin: ResolvePin,
-  retake: () => void,
-  optIn = true
+  retake: () => void
 ): void {
   // Unset until the first commit. Then: whether the reads sent at mount went
   // out with no pin and are still waiting for one.
@@ -72,7 +73,6 @@ export function useRetakeOnceWhenPinned(
   const latestRetake = useRef(retake);
   latestRetake.current = retake;
   useEffect(() => {
-    if (!optIn) return;
     if (waiting.current === undefined) {
       // The first commit, beside the mount reads: the pin they went out in.
       waiting.current = sendPin() === undefined;
