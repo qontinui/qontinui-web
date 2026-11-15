@@ -309,9 +309,17 @@ async def _unbind_one(
             "the batch's wall-clock budget ran out while waiting for coord; "
             "it may have acted",
         )
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+    except (
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.PoolTimeout,
+        httpx.UnsupportedProtocol,
+        httpx.ProxyError,
+    ) as exc:
         # Nothing was sent: coord cannot have acted.
-        status = 502 if isinstance(exc, httpx.ConnectError) else 504
+        status = (
+            504 if isinstance(exc, (httpx.ConnectTimeout, httpx.PoolTimeout)) else 502
+        )
         return _unreachable(
             device_id, status, f"coord was not reached ({type(exc).__name__})"
         )
@@ -397,6 +405,9 @@ async def post_fleet_devices_unbind(
                 break
             result = await _unbind_one(client, device_id, tenant_id, remaining)
             results.append(result)
+            # Logged as soon as it is known, so a cancelled or crashed batch
+            # still leaves a server-side record of a possibly-applied unbind.
+            _log_unsettled_rows([result], tenant_id)
             refused_status = result.status
             if (
                 refused_status is not None
@@ -407,7 +418,6 @@ async def post_fleet_devices_unbind(
                     for d in ids[index + 1 :]
                 )
                 partial = _tally(results)
-                _log_unsettled_rows(results, tenant_id)
                 logger.warning(
                     "fleet_devices_unbind_aborted",
                     tenant_id=str(tenant_id),
@@ -432,7 +442,6 @@ async def post_fleet_devices_unbind(
                     },
                 )
 
-    _log_unsettled_rows(results, tenant_id)
     response = _tally(results)
     logger.info(
         "fleet_devices_unbind",
