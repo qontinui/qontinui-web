@@ -42,12 +42,13 @@ import {
   absoluteTime,
   relativeTime,
 } from "@/components/console";
-import type { RoleMachine } from "./fleetDispatchRoles";
+import type { DispatchRolesRead, RoleMachine } from "./fleetDispatchRoles";
 import {
   LAST_CI_HOST_TEXT,
   MAYBE_LAST_CI_HOST_TEXT,
   MAY_HAVE_APPLIED_TEXT,
   POINTER_UNREPORTED_TEXT,
+  STILL_LISTED_HOME_TENANT_TEXT,
   STILL_LISTED_TEXT,
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
@@ -87,7 +88,7 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
   not_sent_after_failure:
     "not sent (an earlier batch failed or its answer was lost)",
   request_rejected: "not attempted (the request was rejected)",
-  removed_earlier: "removed (by the earlier attempt, confirmed absent now)",
+  removed_earlier: "absent now (the earlier attempt's answer was lost)",
   console_refused: "not attempted (this console refused the request)",
   unreported: "not reported",
 };
@@ -163,7 +164,9 @@ export interface RemoveMachineController {
 /** The section-level state of every removal (see the module doc). */
 export function useRemoveMachineFromTenant(
   /** The roster's re-read, called once each removal settles. */
-  refresh: () => Promise<void>
+  refresh: () => Promise<void>,
+  /** The roster as the latest read left it (after `refresh` resolves). */
+  readNow: () => DispatchRolesRead | null = () => null
 ): RemoveMachineController {
   const { status, busy, unbind, reset } = useUnbindFleetDevices(refresh);
   const [target, setTarget] = useState<RemovalTarget | null>(null);
@@ -178,6 +181,8 @@ export function useRemoveMachineFromTenant(
   // a first attempt). What the dialog shows is that merge, never the retried
   // subset alone.
   const [base, setBase] = useState<UnbindSummary | null>(null);
+  // The ids the current attempt sent — a rowless answer's unknowns.
+  const [attemptIds, setAttemptIds] = useState<string[]>([]);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
@@ -223,20 +228,34 @@ export function useRemoveMachineFromTenant(
     // attempt" line is the whole-machine acknowledgement, not a subset.
     const baseNow = retryIds !== null ? soFar : null;
     setBase(baseNow);
+    setAttemptIds([...ids]);
     setPrevious(retryIds !== null ? (acks[m.key]?.sentence ?? null) : null);
     const outcome: UnbindOutcome = await unbind(ids);
     if (outcome.state === "in_flight") return;
-    const settle = (s: UnbindSummary, sentence: string) => {
+    const settle = (s: UnbindSummary, summarySentence: string) => {
+      // Nothing removed, nothing uncertain — yet the re-read still lists the
+      // machine: it is listed through its home tenant, which this removal
+      // cannot change.
+      const read = readNow();
+      const stillListedAfter =
+        read !== null &&
+        read.state === "known" &&
+        read.machines.some((x) => x.key === m.key);
+      const nothingRemoved = s.bindingsRemoved === 0 && s.removedEarlier === 0;
+      const homeTenant = nothingRemoved && stillListedAfter;
+      const sentence = homeTenant
+        ? `${summarySentence} ${STILL_LISTED_HOME_TENANT_TEXT}`
+        : summarySentence;
       setAcks((prev) => ({
         ...prev,
         [m.key]: { name: m.name, sentence, settled: true },
       }));
       // Every id unbound or already absent. A binding the home-tenant
-      // pointer keeps listed (or may keep listed) is not a clean removal, so
-      // it gets a warning rather than a success.
-      if (s.stillListed + s.pointerUnknown > 0)
+      // pointer keeps listed (or may keep listed), a machine still listed,
+      // or an absence nothing confirmed is not a clean removal: a warning.
+      if (s.stillListed + s.pointerUnknown + s.removedEarlier > 0 || homeTenant)
         toast.warning(`${m.name}: ${sentence}`);
-      else if (s.bindingsRemoved === 0)
+      else if (nothingRemoved)
         // Every id already absent: nothing happened, so nothing to celebrate.
         toast.info(`${m.name}: ${sentence}`);
       else toast.success(`${m.name}: ${sentence}`);
@@ -261,9 +280,11 @@ export function useRemoveMachineFromTenant(
       return;
     }
     const refusal = outcome.refusal;
+    // Over a retry, every refusal — with rows or without — is merged over
+    // the whole-machine rows, so the dialog and the ack keep the totals.
     const r: UnbindRefusal =
-      baseNow !== null && (refusal.partial !== null || refusal.auth)
-        ? mergeRefusalOver(m.deviceIds, baseNow, refusal)
+      baseNow !== null
+        ? mergeRefusalOver(m.deviceIds, baseNow, refusal, ids)
         : refusal;
     if (r.partial !== null) setSoFar(r.partial);
     else if (r.mayHaveApplied)
@@ -294,7 +315,7 @@ export function useRemoveMachineFromTenant(
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
     setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [acks, retryIds, soFar, target, unbind]);
+  }, [acks, readNow, retryIds, soFar, target, unbind]);
 
   // Over a retry, show the merge — never the retried subset alone.
   const merge = (sum: UnbindSummary) =>
@@ -304,16 +325,14 @@ export function useRemoveMachineFromTenant(
   const shown: UnbindState =
     status.state === "answered"
       ? { state: "answered", summary: merge(status.summary) }
-      : status.state === "refused" &&
-          base !== null &&
-          target !== null &&
-          (status.refusal.partial !== null || status.refusal.auth)
+      : status.state === "refused" && base !== null && target !== null
         ? {
             state: "refused",
             refusal: mergeRefusalOver(
               target.machine.deviceIds,
               base,
-              status.refusal
+              status.refusal,
+              attemptIds
             ),
           }
         : status;
