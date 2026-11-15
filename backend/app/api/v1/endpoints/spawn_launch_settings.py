@@ -51,6 +51,12 @@ from app.api.v1.endpoints.operations import (
     get_tenant_id,
     require_coord_tenant_admin,
 )
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    refusal_error,
+)
 from app.models.user import User as UserModel
 from app.services.coord_identity import get_coord_identity
 
@@ -121,9 +127,13 @@ def _behind(coord_route: str) -> HTTPException:
     logger.error("spawn_launch_settings.route_absent_on_coord", route=coord_route)
     # The detail's prefix is the one `writeOutcome.ts` recognises as a 502
     # that wrote nothing (`PROXY_ROUTE_ABSENT_PREFIX`).
-    return HTTPException(
-        status_code=502,
-        detail=f"coord does not serve {coord_route} yet — deploy qontinui-coord first",
+    return refusal_error(
+        502,
+        RefusalCode.upstream_unavailable,
+        NextActionKind.retry_later,
+        f"coord does not serve {coord_route} yet — deploy qontinui-coord first",
+        discriminator="spawn_launch_settings_route_absent_on_coord",
+        glossary_terms=[GlossaryTerm.coord],
     )
 
 
@@ -133,7 +143,18 @@ def _unreadable(what: str, *, write: bool) -> HTTPException:
         if write
         else "; the spawn launch settings are unknown"
     )
-    return HTTPException(status_code=502, detail=f"coord answered with {what}{tail}")
+    return refusal_error(
+        502,
+        RefusalCode.upstream_unavailable,
+        NextActionKind.retry_later,
+        f"coord answered with {what}{tail}",
+        discriminator=(
+            "spawn_launch_settings_unreadable_write_answer"
+            if write
+            else "spawn_launch_settings_unreadable_read"
+        ),
+        glossary_terms=[GlossaryTerm.coord],
+    )
 
 
 async def _can_edit(request: Request, current_user: UserModel) -> bool:
