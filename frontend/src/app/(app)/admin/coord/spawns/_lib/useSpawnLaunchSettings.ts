@@ -49,8 +49,9 @@ export function useSpawnLaunchSettings() {
   const [writes, setWrites] = useState<
     Readonly<Record<string, LaunchWriteState>>
   >({});
-  const [asOfMs, setAsOfMs] = useState<number | null>(null);
   const tickets = useRef(0);
+  /** The newest read issued — only it clears `loading`. */
+  const latestRead = useRef(0);
   /** Newest delivered read's ticket. */
   const deliveredRead = useRef(0);
   /** Per spawn type: the ticket at which its row was last set by a write. */
@@ -60,6 +61,7 @@ export function useSpawnLaunchSettings() {
 
   const reload = useCallback(async (): Promise<void> => {
     const ticket = (tickets.current += 1);
+    latestRead.current = ticket;
     setLoading(true);
     try {
       const answer = await fetchSpawnLaunchSettings();
@@ -78,7 +80,6 @@ export function useSpawnLaunchSettings() {
         };
       });
       setError(null);
-      setAsOfMs(Date.now());
       // A read issued after an open write answers it.
       setWrites((prev) => {
         let next: Record<string, LaunchWriteState> | null = null;
@@ -98,7 +99,7 @@ export function useSpawnLaunchSettings() {
         setError(operationsErrorMessage(err));
       }
     } finally {
-      if (ticket === tickets.current) setLoading(false);
+      if (ticket === latestRead.current) setLoading(false);
     }
   }, []);
 
@@ -163,5 +164,5 @@ export function useSpawnLaunchSettings() {
     [reload]
   );
 
-  return { data, error, loading, asOfMs, writes, reload, save };
+  return { data, error, loading, writes, reload, save };
 }

@@ -74,7 +74,7 @@ class SpawnLaunchSettingRow(BaseModel):
 
     spawn_type: str
     #: Coord's description of what spawns this type covers.
-    description: str = ""
+    description: str
     #: ``None`` — inherit from the originating session.
     model: ModelFamily | None
     #: ``None`` — inherit from the originating session.
@@ -107,9 +107,14 @@ class SpawnLaunchSettingPut(BaseModel):
 
 
 def _route_absent(exc: HTTPException) -> bool:
-    """A coord that has not shipped the route answers an EMPTY 404 (coord
-    registers no axum fallback). An application 404 carries a body."""
-    return exc.status_code == 404 and not exc.detail
+    """A coord that has not shipped the route answers 404 with its fallback's
+    ``{"error": "no_such_route", ...}`` body; an older coord with no fallback
+    answers an EMPTY 404. Any other 404 is an application answer."""
+    if exc.status_code != 404:
+        return False
+    if not exc.detail:
+        return True
+    return isinstance(exc.detail, dict) and exc.detail.get("error") == "no_such_route"
 
 
 def _behind(coord_route: str) -> HTTPException:
