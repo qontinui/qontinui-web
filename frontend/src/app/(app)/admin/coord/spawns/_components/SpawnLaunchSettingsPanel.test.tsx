@@ -267,6 +267,46 @@ describe("SpawnLaunchSettingsPanel", () => {
     expect(selectOf("post_merge", "model").value).toBe("sonnet");
   });
 
+  it("keeps an unsaved edit across a refresh, and follows coord on the untouched field", async () => {
+    await renderPanel();
+    fireEvent.change(selectOf("post_merge", "model"), {
+      target: { value: "opus" },
+    });
+    // Another writer changes effort meanwhile.
+    routes.launchSettings = () => {
+      const body = launchSettingsBody() as {
+        settings: Record<string, unknown>[];
+      };
+      body.settings[0] = { ...body.settings[0], effort: "low" };
+      return { body };
+    };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("spawn-launch-refresh"));
+    });
+    await settle();
+    expect(selectOf("post_merge", "model").value).toBe("opus");
+    expect(selectOf("post_merge", "effort").value).toBe("low");
+    await saveRow("post_merge");
+    expect(puts()[0]?.body).toEqual({ model: "opus", effort: "low" });
+  });
+
+  it("a settled save clears the draft: a refused one shows coord's value again", async () => {
+    routes.putLaunchSetting = () => ({ status: 422, body: { detail: "no" } });
+    await renderPanel();
+    fireEvent.change(selectOf("vet_plan", "effort"), {
+      target: { value: "max" },
+    });
+    await saveRow("vet_plan");
+    expect(selectOf("vet_plan", "effort").value).toBe("");
+    expect(
+      (
+        within(row("vet_plan")).getByTestId(
+          "spawn-launch-save"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
+  });
+
   it("is read-only for a member who cannot edit", async () => {
     routes.launchSettings = () => ({
       body: { ...(launchSettingsBody() as object), can_edit: false },
