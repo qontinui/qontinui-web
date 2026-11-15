@@ -13,6 +13,7 @@ import {
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import type { AgentWriteTier } from "../types";
 
 function message(err: unknown, fallback: string): string {
@@ -65,7 +66,8 @@ function message(err: unknown, fallback: string): string {
  * (`useFirstPinnedRead`), and `waitingForProject` says the hook is waiting.
  * And a write is refused — nothing sent, the page says why — while another
  * tab's switch is in effect, or while the page has no project to pin it to:
- * the check sits beside the send, so no caller can leave it out. It is never
+ * the check sits beside the send, which reads the pin it is sent in
+ * (`pinForWrite`), so no caller can leave it out. It is never
  * mounted outside the page's provider, and throws if it is: there is no
  * unguarded mode.
  */
@@ -128,10 +130,11 @@ export function usePromptDocumentKindTiers() {
    */
   const setTier = useCallback(
     async (kind: string, tier: AgentWriteTier): Promise<boolean> => {
-      if (!writeAllowed()) return false;
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
-        await setKindTier(kind, tier, sendPin());
+        await setKindTier(kind, tier, pin);
         writeGeneration.current += 1;
         const confirmed = await load();
         // `deny` goes through this same function, so one message for all three
@@ -165,10 +168,11 @@ export function usePromptDocumentKindTiers() {
   /** Clear one kind's tier, returning it to coord's compile-time default. */
   const clearTier = useCallback(
     async (kind: string): Promise<boolean> => {
-      if (!writeAllowed()) return false;
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
-        await clearKindTier(kind, sendPin());
+        await clearKindTier(kind, pin);
         writeGeneration.current += 1;
         const confirmed = await load();
         const what =

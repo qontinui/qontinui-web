@@ -15,6 +15,7 @@ import {
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import type {
   ComplianceVerdict,
   OutstandingItem,
@@ -126,8 +127,9 @@ const IDLE: Loaded<never> = { ...EMPTY, loading: false };
  * And the save is refused — nothing sent, the page says why — while that
  * switch is in effect, or while the page has no project to pin it to.
  * Both come from the page's provider (`usePageSendGuard`), and the refusal
- * sits beside the send, so no caller can leave it out. It is never mounted
- * outside that provider, and throws if it is: there is no unguarded mode.
+ * sits beside the send, which reads the pin it is sent in (`pinForWrite`), so
+ * no caller can leave it out. It is never mounted outside that provider, and
+ * throws if it is: there is no unguarded mode.
  */
 export function useSessionCompliance() {
   const { writeAllowed, resolvePin } = usePageSendGuard();
@@ -156,6 +158,11 @@ export function useSessionCompliance() {
   // (`useTenantFleetPolicyDial`). A save does not change the verdicts or the
   // ledger, so their reads keep their answers.
   const writeGeneration = useRef(0);
+  // Each verdict read is numbered as it is sent, and only the newest one's
+  // answer is shown: a slower read for an earlier filter or page that answers
+  // after a newer one would otherwise show its rows and its cursor under the
+  // newer filter.
+  const sessionsRequest = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
@@ -225,10 +232,11 @@ export function useSessionCompliance() {
    */
   const saveConfig = useCallback(
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
-      if (!writeAllowed()) return false;
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       setSaving(true);
       try {
-        const updated = await saveSessionComplianceConfig(patch, sendPin());
+        const updated = await saveSessionComplianceConfig(patch, pin);
         writeGeneration.current += 1;
         setConfig({
           data: updated,
@@ -257,6 +265,7 @@ export function useSessionCompliance() {
   const loadSessions = useCallback(async () => {
     const pin = sendPin();
     if (pin === undefined) return;
+    const request = ++sessionsRequest.current;
     setSessions((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceSessions(
@@ -267,6 +276,8 @@ export function useSessionCompliance() {
         },
         pin
       );
+      // A newer verdict read was sent since: its answer is the one shown.
+      if (request !== sessionsRequest.current) return;
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -276,6 +287,7 @@ export function useSessionCompliance() {
       });
       setNextCursor(data.next_cursor ?? null);
     } catch (err) {
+      if (request !== sessionsRequest.current) return;
       setSessions({
         data: null,
         loading: false,

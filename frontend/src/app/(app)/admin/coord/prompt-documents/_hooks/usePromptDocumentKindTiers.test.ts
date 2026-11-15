@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 
 const fetchKindTiers = vi.fn();
 const setKindTier = vi.fn();
@@ -142,5 +143,28 @@ describe("usePromptDocumentKindTiers", () => {
     });
 
     expect(result.current.data?.kinds[0]?.tier).toBe("allow");
+  });
+
+  it("refuses a tier write and a clear beside their sends when the page names no project, whatever its guard allowed", async () => {
+    // A guard the page's provider never builds — a write allowed with no
+    // pin — so only the hook's own refusal can stop each send.
+    const { result } = renderHook(() => usePromptDocumentKindTiers(), {
+      wrapper: withPageGuard(testPageGuard({ writeAllowed: () => true })),
+    });
+    let setSent: boolean | undefined;
+    let clearSent: boolean | undefined;
+    await act(async () => {
+      setSent = await result.current.setTier("initiative", "allow");
+      clearSent = await result.current.clearTier("initiative");
+    });
+
+    expect([setSent, clearSent]).toEqual([false, false]);
+    expect(setKindTier).not.toHaveBeenCalled();
+    expect(clearKindTier).not.toHaveBeenCalled();
+    expect(fetchKindTiers).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(2);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page."
+    );
   });
 });
