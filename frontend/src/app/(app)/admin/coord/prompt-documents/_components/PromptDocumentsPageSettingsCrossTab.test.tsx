@@ -790,7 +790,10 @@ function renderUnderTenantProvider() {
   );
 }
 
-/** A session verdict, a ledger item and a history row only the OTHER project has. */
+/**
+ * A session verdict, a ledger item and a history row that only the OTHER
+ * project has.
+ */
 const OTHER_SESSION = {
   id: "sc-other",
   claude_session_id: "sess-other-project",
