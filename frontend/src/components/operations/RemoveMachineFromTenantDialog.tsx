@@ -55,6 +55,7 @@ import {
   combineSummaries,
   creditEarlierAttempt,
   mergeRefusalOver,
+  notActedOnIds,
   possiblyAppliedIds,
   summarizeRows,
   confirmPhraseFor,
@@ -283,16 +284,37 @@ export function useRemoveMachineFromTenant(
         earlier !== null
           ? `Earlier attempt: ${strip(earlier.sentence)}. This attempt: ${attemptSentence}`
           : attemptSentence;
-      const possiblyApplied =
+      const own =
         summary !== null
           ? possiblyAppliedIds(summary)
           : mayHaveApplied
             ? [...ids]
             : [];
+      // What this session did not act on keeps the earlier session's word:
+      // an id it may have removed stays "may have been removed".
+      const notActed =
+        summary !== null
+          ? new Set(notActedOnIds(summary).map((id) => id.toLowerCase()))
+          : mayHaveApplied
+            ? new Set<string>()
+            : new Set(ids.map((id) => id.toLowerCase()));
+      const carried = (earlier?.possiblyApplied ?? []).filter(
+        (id) =>
+          notActed.has(id.toLowerCase()) &&
+          !own.some((o) => o.toLowerCase() === id.toLowerCase())
+      );
+      const possiblyApplied = [...own, ...carried];
+      // Reached coord for nothing: the earlier session's effect still stands.
+      const reachedNothing =
+        summary !== null
+          ? summary.rows.length > 0 &&
+            summary.rows.every((r) => notActed.has(r.deviceId.toLowerCase()))
+          : !mayHaveApplied;
       const hadEffect =
         possiblyApplied.length > 0 ||
         (summary !== null &&
-          summary.bindingsRemoved + summary.removedEarlier > 0);
+          summary.bindingsRemoved + summary.removedEarlier > 0) ||
+        (reachedNothing && (earlier?.hadEffect ?? false));
       setAcks((prev) => ({
         ...prev,
         [m.key]: {
@@ -313,7 +335,18 @@ export function useRemoveMachineFromTenant(
       const read = readNow();
       // Still listed = the re-read's row for this machine still holds one of
       // the ids this removal sent (a row with no device rows holds none).
-      const sent = new Set(m.deviceIds.map((id) => id.toLowerCase()));
+      // Ids coord explained (its home-tenant pointer keeps them listed) are
+      // not an unexplained listing.
+      const explained = new Set(
+        s.rows
+          .filter((r) => r.outcome === "still_listed_via_pointer")
+          .map((r) => r.deviceId.toLowerCase())
+      );
+      const sent = new Set(
+        m.deviceIds
+          .map((id) => id.toLowerCase())
+          .filter((id) => !explained.has(id))
+      );
       const stillListedAfter =
         read !== null &&
         read.state === "known" &&
@@ -418,16 +451,25 @@ export function useRemoveMachineFromTenant(
   const shown: UnbindState =
     status.state === "answered"
       ? { state: "answered", summary: merge(status.summary) }
-      : status.state === "refused" && base !== null && target !== null
-        ? {
-            state: "refused",
-            refusal: mergeRefusalOver(
-              target.machine.deviceIds,
-              base,
-              status.refusal,
-              attemptIds
-            ),
-          }
+      : status.state === "refused"
+        ? (() => {
+            const merged =
+              base !== null && target !== null
+                ? mergeRefusalOver(
+                    target.machine.deviceIds,
+                    base,
+                    status.refusal,
+                    attemptIds
+                  )
+                : status.refusal;
+            return {
+              state: "refused" as const,
+              refusal:
+                merged.partial !== null
+                  ? { ...merged, partial: creditShown(merged.partial) }
+                  : merged,
+            };
+          })()
         : status;
 
   return {
