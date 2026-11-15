@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "cireserve_01_devices_ci_reserved_gib"
+_PARENT_REVISION_ID = "overview_06_cost_category_parent"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
