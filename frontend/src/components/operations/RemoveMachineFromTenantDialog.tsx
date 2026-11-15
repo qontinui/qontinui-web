@@ -31,7 +31,7 @@
  * the controls nor their UI Bridge registration exist in presentation mode.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useUIElement } from "@qontinui/ui-bridge/react";
@@ -76,7 +76,7 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
   already_absent: "already absent",
   failed: "failed",
   refused_auth: "refused (auth)",
-  not_attempted: "not attempted",
+  not_attempted: "not attempted (aborted by an auth refusal)",
   answer_lost:
     "may have been removed — coord's answer was lost; reload to check",
   deadline_not_attempted: "not attempted (time limit) — retry",
@@ -113,11 +113,18 @@ export interface RemoveMachineController {
   open: boolean;
   status: UnbindState;
   busy: boolean;
-  /** Ids a retry will send (only those not yet settled); `null` = all. */
+  /** Ids a retry will send (only those not confirmed removed); `null` = all. */
   retryIds: string[] | null;
   /** The previous attempt's sentence, while retrying. */
   previous: string | null;
   acks: Readonly<Record<string, RemovalAck>>;
+  /**
+   * How many mounted row buttons are showing each machine's acknowledgement.
+   * An ack no row shows — collapsed, gone, or the roster unknown — is listed
+   * by `DetachedRemovalAcks` instead.
+   */
+  shownAcks: Readonly<Record<string, number>>;
+  showAck: (key: string) => () => void;
   openFor: (
     m: RoleMachine,
     machines: readonly RoleMachine[],
@@ -132,13 +139,20 @@ export function useRemoveMachineFromTenant(
   /** The roster's re-read, called once each removal settles. */
   refresh: () => Promise<void>
 ): RemoveMachineController {
-  const { status, unbind, reset } = useUnbindFleetDevices(refresh);
+  const { status, busy, unbind, reset } = useUnbindFleetDevices(refresh);
   const [target, setTarget] = useState<RemovalTarget | null>(null);
   const [open, setOpenState] = useState(false);
   const [retryIds, setRetryIds] = useState<string[] | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
-  const busy = status.state === "busy";
+  const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
+
+  const showAck = useCallback((key: string) => {
+    const bump = (d: number) =>
+      setShownAcks((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + d }));
+    bump(1);
+    return () => bump(-1);
+  }, []);
 
   const openFor = useCallback(
     (
@@ -206,6 +220,8 @@ export function useRemoveMachineFromTenant(
     retryIds,
     previous,
     acks,
+    shownAcks,
+    showAck,
     openFor,
     setOpen,
     confirm,
@@ -321,11 +337,23 @@ export function RemoveMachineButton({
   roster: RosterCompleteness;
   controller: RemoveMachineController;
 }) {
-  const { openFor, busy, acks } = controller;
+  const { openFor, busy, acks, showAck } = controller;
   const effect = removalEffect(m.deviceIds.length);
+  const hasRows = m.deviceIds.length > 0;
   const open = useCallback(
     () => openFor(m, machines, roster),
     [m, machines, openFor, roster]
+  );
+  // The UI Bridge may hold the handler from an earlier registration: it calls
+  // through this ref, so it always opens the machine as the roster now reads.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+  // While mounted with rows, this row shows the machine's acknowledgement.
+  useEffect(
+    () => (hasRows ? showAck(m.key) : undefined),
+    [hasRows, m.key, showAck]
   );
   const { ref } = useUIElement({
     id: `fleet-roles-remove:${m.key}`,
@@ -343,14 +371,14 @@ export function RemoveMachineButton({
         // bindings, so an autonomous walk must exclude it.
         effect: "destructive",
         handler: async () => {
-          open();
+          openRef.current();
           return { opened: true, effect };
         },
       },
     },
   });
 
-  if (m.deviceIds.length === 0) return null;
+  if (!hasRows) return null;
   return (
     <div className="space-y-1" data-testid="fleet-roles-remove">
       <Button
@@ -380,19 +408,17 @@ export function RemoveMachineButton({
 }
 
 /**
- * Removal outcomes whose machine is not on screen — the removal dropped its
- * row, or the roster read is not known. `listedKeys` = the keys of the rows
- * shown, or `null` when no row is shown.
+ * Removal outcomes no row is showing — the row is collapsed, the removal
+ * dropped it, or the roster read is not known — so an answer is never lost
+ * with the row that asked for it.
  */
 export function DetachedRemovalAcks({
   controller,
-  listedKeys,
 }: {
   controller: RemoveMachineController;
-  listedKeys: ReadonlySet<string> | null;
 }) {
   const detached = Object.entries(controller.acks).filter(
-    ([key]) => listedKeys === null || !listedKeys.has(key)
+    ([key]) => (controller.shownAcks[key] ?? 0) === 0
   );
   return (
     <div role="status" data-testid="fleet-roles-remove-acks-detached">
@@ -439,7 +465,7 @@ export function RemoveMachineFromTenantDialog({
       }
       confirmLabel={
         retrying
-          ? `Retry the ${retryIds.length} not yet removed`
+          ? `Retry the ${retryIds.length} not confirmed removed`
           : "Remove from this tenant"
       }
       confirmPhrase={confirmPhraseFor(m)}
@@ -518,7 +544,7 @@ export function RemoveMachineFromTenantDialog({
           data-testid="fleet-roles-remove-retry-scope"
         >
           A retry sends only the {retryIds.length} device row
-          {retryIds.length === 1 ? "" : "s"} not yet removed.
+          {retryIds.length === 1 ? "" : "s"} not confirmed removed.
         </p>
       )}
       <ResultBlock status={status} previous={previous} />

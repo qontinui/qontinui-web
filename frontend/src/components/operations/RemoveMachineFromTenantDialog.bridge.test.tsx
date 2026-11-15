@@ -8,16 +8,31 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { RegisteredElement } from "@qontinui/ui-bridge";
 
 const registered = new Map<string, RegisteredElement>();
+/** The FIRST config each id registered with — what a bridge may still hold. */
+const firstRegistered = new Map<string, RegisteredElement>();
 vi.mock("@qontinui/ui-bridge/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@qontinui/ui-bridge/react")>()),
   useUIElement: (config: RegisteredElement & { id: string }) => {
     registered.set(config.id, config);
+    if (!firstRegistered.has(config.id)) firstRegistered.set(config.id, config);
     return { ref: () => {} };
   },
+}));
+vi.mock("@/components/ui/destructive-button", () => ({
+  isSyntheticClick: () => false,
+  DestructiveButton: (props: Record<string, unknown>) => (
+    <button type="button" {...props} />
+  ),
 }));
 
 const fetchMock = vi.fn();
@@ -51,11 +66,32 @@ function json(status: number, body: unknown) {
   };
 }
 
+let deviceIds: string[];
+
 beforeEach(() => {
   registered.clear();
+  firstRegistered.clear();
+  deviceIds = [DEV_1, DEV_2];
   fetchMock.mockReset();
-  fetchMock.mockImplementation(async () =>
-    json(200, {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      return json(200, {
+        results: [DEV_1, DEV_2].map((device_id) => ({
+          device_id,
+          outcome: "unbound",
+          status: 200,
+          error: null,
+          still_member_via_pointer: false,
+        })),
+        unbound: 2,
+        already_absent: 0,
+        unknown: 0,
+        failed: 0,
+        not_attempted: 0,
+      });
+    }
+    void url;
+    return json(200, {
       state: "known",
       roles_table: "present",
       roster_truncated: false,
@@ -70,14 +106,14 @@ beforeEach(() => {
           role: null,
           suggestion: null,
           heartbeat_fresh: false,
-          device_ids: [DEV_1, DEV_2],
+          device_ids: deviceIds,
           last_seen_at: "2026-11-12T09:30:00Z",
           lanes: { agent: lane, ci: lane },
           pre_change_sessions: { state: "not_applicable" },
         },
       ],
-    })
-  );
+    });
+  });
 });
 
 describe("the remove-from-tenant control's UI Bridge registration", () => {
@@ -111,5 +147,35 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
         ([, init]) => (init as RequestInit | undefined)?.method === "POST"
       );
     expect(posts).toEqual([]);
+  });
+
+  it("a handler the bridge registered earlier opens the machine as the roster now reads it", async () => {
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText(CI));
+    const id = `fleet-roles-remove:host:${CI}`;
+    const stale =
+      firstRegistered.get(id)?.customActions?.["remove-from-tenant"];
+    expect(stale).toBeTruthy();
+
+    // A removal re-reads the roster, which now lists one row for the host
+    // (e.g. the registrar re-bound one of them).
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    deviceIds = [DEV_1];
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-confirm"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("fleet-roles-remove-open").title).toBe(
+        "Opens a confirmation; removes this tenant's binding of 1 device."
+      )
+    );
+
+    await act(async () => {
+      await stale!.handler(undefined);
+    });
+    const rows = screen.getAllByTestId("fleet-roles-remove-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain(DEV_1);
   });
 });

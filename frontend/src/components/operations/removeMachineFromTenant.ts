@@ -130,7 +130,7 @@ export interface RosterCompleteness {
 export function isLastCiHost(
   machines: readonly RoleMachine[],
   m: RoleMachine,
-  roster: RosterCompleteness = { rosterTruncated: false, omitted: 0 }
+  roster: RosterCompleteness
 ): "yes" | "maybe" | "no" {
   if (!m.hostOnly || m.deviceIds.length === 0) return "no";
   const removing = new Set(m.deviceIds.map((id) => id.toLowerCase()));
@@ -177,7 +177,7 @@ export type UnbindRowOutcome =
   | "failed"
   /** The id at which coord refused the CALLER (401/403); the batch stopped. */
   | "refused_auth"
-  /** After an auth refusal: never sent to coord. */
+  /** After an auth refusal (`coord_refused_caller`): never sent to coord. */
   | "not_attempted"
   /**
    * Wire `unknown`: coord's answer was lost (timeout, transport, a non-JSON
@@ -222,10 +222,14 @@ export const STILL_LISTED_VIA_POINTER_TEXT =
 export const POINTER_UNREPORTED_TEXT =
   "binding removed; coord did not report whether it is still listed through its home tenant";
 
-/** How an auth abort described the ids it did not answer (`coord_refused_caller`). */
+/**
+ * An auth abort (`coord_refused_caller`): the id coord refused. The route's
+ * rows cover every id — the refused one as `failed`, later ones as
+ * `not_attempted` — and this is what tells those apart from an ordinary
+ * failure and from the deadline's `not_attempted`.
+ */
 export interface UnbindAbort {
   refusedDeviceId: string | null;
-  notAttempted: readonly string[];
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -266,9 +270,6 @@ export function summarizeUnbind(
   abort: UnbindAbort | null = null
 ): UnbindSummary {
   const refused = abort?.refusedDeviceId?.toLowerCase() ?? null;
-  const notAttempted = new Set(
-    (abort?.notAttempted ?? []).map((id) => id.toLowerCase())
-  );
   const served = new Map<string, Record<string, unknown>>();
   if (body !== null && Array.isArray(body.results)) {
     for (const r of body.results as unknown[]) {
@@ -280,16 +281,10 @@ export function summarizeUnbind(
   const rows: UnbindRowResult[] = requested.map((deviceId) => {
     const r = served.get(deviceId.toLowerCase());
     const status = r && typeof r.status === "number" ? r.status : null;
-    if (!r) {
-      const key = deviceId.toLowerCase();
-      const outcome: UnbindRowOutcome =
-        key === refused
-          ? "refused_auth"
-          : notAttempted.has(key)
-            ? "not_attempted"
-            : "unreported";
-      return { deviceId, outcome, status, error: null };
+    if (refused !== null && deviceId.toLowerCase() === refused) {
+      return { deviceId, outcome: "refused_auth", status, error: null };
     }
+    if (!r) return { deviceId, outcome: "unreported", status, error: null };
     switch (r.outcome) {
       case "unbound":
         return {
@@ -310,7 +305,9 @@ export function summarizeUnbind(
       case "not_attempted":
         return {
           deviceId,
-          outcome: "deadline_not_attempted",
+          // After an auth abort the batch stopped at the refusal; otherwise
+          // its deadline came first.
+          outcome: abort !== null ? "not_attempted" : "deadline_not_attempted",
           status,
           error: null,
         };
@@ -359,7 +356,10 @@ export function summarizeUnbind(
   if (alreadyAbsent > 0) parts.push(`${alreadyAbsent} already absent`);
   if (failed > 0) parts.push(`${failed} failed`);
   if (refusedAuth > 0) parts.push(`${refusedAuth} refused (auth)`);
-  if (notAttemptedCount > 0) parts.push(`${notAttemptedCount} not attempted`);
+  if (notAttemptedCount > 0)
+    parts.push(
+      `${notAttemptedCount} not attempted (aborted by an auth refusal)`
+    );
   if (answerLost > 0)
     parts.push(
       `${answerLost} may have been removed (coord's answer was lost; reload to check)`
@@ -406,10 +406,10 @@ export interface UnbindRefusal {
   status: number | null;
   reading: BackendErrorReading;
   /**
-   * The outcome is not fully known and bindings MAY have been removed — a lost
-   * answer (a 5xx other than 503, or a dropped connection). Rendered as its
-   * own line. Always `false` for an auth abort: its rows say exactly what was
-   * removed, and nothing was when it carries none.
+   * The outcome is not fully known and bindings MAY have been removed: a lost
+   * answer (any 5xx, or a dropped connection) with no per-id rows, or rows
+   * of which some read "answer lost" or "not reported". Rendered as its own
+   * line. `false` when the rows say exactly what happened.
    */
   mayHaveApplied: boolean;
   /** Per-id rows the route recorded before an abort, when its body carried them. */
@@ -423,10 +423,9 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
-function strings(v: unknown): string[] {
-  return Array.isArray(v)
-    ? v.filter((x): x is string => typeof x === "string")
-    : [];
+/** Rows that leave a removal possible but unconfirmed. */
+function uncertainRows(s: UnbindSummary): number {
+  return s.answerLost + s.unreported;
 }
 
 /** Turn a rejection from `unbindFleetDevices` into what the dialog renders. */
@@ -472,15 +471,11 @@ export function describeUnbindRejection(
       : parsed
     : null;
   const auth = status === 401 || status === 403;
-  // `coord_refused_caller` (the route's own abort) names the id coord refused
-  // and the ids it never sent. A 401/403 without them is the web gate's own
-  // refusal: nothing was attempted.
+  // `coord_refused_caller` (the route's own abort) names the id coord refused.
+  // A 401/403 without it is the web gate's own refusal: nothing was attempted.
   const refusedDeviceId = inner ? str(inner.refused_device_id) : null;
   const abort: UnbindAbort | null =
-    inner !== null &&
-    (refusedDeviceId !== null || Array.isArray(inner.not_attempted))
-      ? { refusedDeviceId, notAttempted: strings(inner.not_attempted) }
-      : null;
+    refusedDeviceId !== null ? { refusedDeviceId } : null;
   const hasResults =
     inner !== null && Array.isArray(inner.results) && inner.results.length > 0;
   const partial =
@@ -503,6 +498,17 @@ export function describeUnbindRejection(
   );
   if (auth) {
     const removed = partial?.bindingsRemoved ?? 0;
+    const uncertain = partial !== null && uncertainRows(partial) > 0;
+    const what =
+      removed > 0
+        ? `The batch stopped there; ${removed} ${plural(
+            removed,
+            "binding was",
+            "bindings were"
+          )} already removed${uncertain ? ", and more may have been" : ""}.`
+        : uncertain
+          ? "The batch stopped there; some bindings may have been removed."
+          : "Nothing was removed.";
     return {
       auth,
       status,
@@ -510,21 +516,18 @@ export function describeUnbindRejection(
         ...reading,
         sentence:
           `Coord refused the removal (HTTP ${status}): only an operator of this tenant may remove a machine from it. ` +
-          (removed > 0
-            ? `The batch stopped there; ${removed} ${plural(
-                removed,
-                "binding was",
-                "bindings were"
-              )} already removed (see the rows below).`
-            : "Nothing was removed.") +
+          what +
           (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
             ? ` (${reading.sentence})`
             : ""),
       },
-      mayHaveApplied: false,
+      mayHaveApplied: uncertain,
       partial,
     };
   }
-  const lost = status >= 500 && status !== 503;
-  return { auth, status, reading, mayHaveApplied: lost, partial };
+  // A 5xx — 503 included — may follow a commit: only per-id rows can say
+  // otherwise.
+  const mayHaveApplied =
+    partial !== null ? uncertainRows(partial) > 0 : status >= 500;
+  return { auth, status, reading, mayHaveApplied, partial };
 }

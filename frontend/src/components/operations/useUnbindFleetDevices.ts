@@ -38,6 +38,12 @@ export type UnbindOutcome =
 
 export interface UseUnbindFleetDevicesResult {
   status: UnbindState;
+  /**
+   * A removal is in flight OR its roster re-read has not settled yet. The
+   * answer is shown as soon as it arrives, but a second removal is refused
+   * until the re-read lands, so it is never built from the list as it was.
+   */
+  busy: boolean;
   /** Unbind `deviceIds` from the active tenant. Never runs two at once. */
   unbind: (deviceIds: readonly string[]) => Promise<UnbindOutcome>;
   /** Forget the last answer (the dialog was reopened). */
@@ -49,12 +55,14 @@ export function useUnbindFleetDevices(
   refresh: () => Promise<void> | void
 ): UseUnbindFleetDevicesResult {
   const [status, setStatus] = useState<UnbindState>({ state: "idle" });
+  const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
 
   const unbind = useCallback(
     async (deviceIds: readonly string[]): Promise<UnbindOutcome> => {
       if (inFlight.current) return { state: "in_flight" };
       inFlight.current = true;
+      setBusy(true);
       setStatus({ state: "busy" });
       let outcome: UnbindOutcome;
       try {
@@ -68,8 +76,6 @@ export function useUnbindFleetDevices(
           state: "refused",
           refusal: describeUnbindRejection(deviceIds, err),
         };
-      } finally {
-        inFlight.current = false;
       }
       setStatus(outcome);
       try {
@@ -77,6 +83,9 @@ export function useUnbindFleetDevices(
       } catch {
         // The roster's own read reports its failure as UNKNOWN; the removal's
         // answer above stands either way.
+      } finally {
+        inFlight.current = false;
+        setBusy(false);
       }
       return outcome;
     },
@@ -87,5 +96,5 @@ export function useUnbindFleetDevices(
     if (!inFlight.current) setStatus({ state: "idle" });
   }, []);
 
-  return { status, unbind, reset };
+  return { status, busy, unbind, reset };
 }
