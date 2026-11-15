@@ -105,7 +105,7 @@ import {
 } from "@/components/presentation";
 import {
   deviceStateBadgeVariant,
-  deviceStateLabel,
+  deviceRowStateLabel,
 } from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
 import { presentedFailureReason } from "./presentedFailure";
@@ -133,6 +133,10 @@ import {
   headroomSetBy,
   hostIsBindingConstraint,
   cpuTempReading,
+  formatSliceLimit,
+  psiHasAnyFigure,
+  psiLineText,
+  sliceTelemetryReading,
   pressureAxisIsSwap,
   pressureAxisLabel,
   pressureFormula,
@@ -154,6 +158,7 @@ import type {
   FloorDetail,
   Headroom,
   HistorySeries,
+  PsiFigures,
   ResourceSampleRow,
   RowTone,
   StripRow,
@@ -1321,6 +1326,168 @@ function MemoryCell({ row }: { row: StripRow }) {
   );
 }
 
+/**
+ * Cgroup-slice memory + PSI, display only. Three explicit non-value states —
+ * `not_supported`, `unmeasured`, and a per-figure "—" — so a stall nobody read
+ * never prints as 0.0%. The decision lives in `sliceTelemetryReading`.
+ */
+function SlicesCell({ row }: { row: StripRow }) {
+  const s = row.sample;
+  if (!s || row.freshness === "unknown") {
+    return <span className="text-muted-foreground">unknown</span>;
+  }
+  const reading = sliceTelemetryReading(s);
+  if (reading.kind === "not_supported") {
+    return (
+      <span
+        className="text-muted-foreground"
+        data-testid="fleet-resource-slices"
+        data-state="not_supported"
+      >
+        not measured on this OS
+      </span>
+    );
+  }
+  if (reading.kind === "unmeasured") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-slices"
+            data-state="unmeasured"
+          >
+            not measured
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="text-[11px]">
+          no slice telemetry reported (older publisher, or never read) — not
+          zero
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  const p = reading.psiSystem;
+  return (
+    <Aged freshness={row.freshness}>
+      <span
+        className="inline-flex flex-col leading-tight text-[11px]"
+        data-testid="fleet-resource-slices"
+        data-state="measured"
+      >
+        {reading.slices.length === 0 ? (
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-slices-none"
+          >
+            {reading.slicesUnmeasured
+              ? "slices: not measured"
+              : "no watched slice present"}
+          </span>
+        ) : (
+          reading.slices.map((sl) => {
+            const label = sl.name.replace(/\.slice$/, "");
+            return (
+              <span key={sl.name} className="inline-flex flex-col">
+                <span data-testid="fleet-resource-slice">
+                  {label}:{" "}
+                  {sl.memoryReported ? (
+                    <>
+                      {formatBytes(sl.memoryCurrent)}
+                      {" / high "}
+                      {formatSliceLimit(sl.memoryHigh)}
+                      {" / max "}
+                      {formatSliceLimit(sl.memoryMax)}
+                      {" · oom "}
+                      {sl.oomKill == null ? "—" : sl.oomKill}
+                      {" · high/max events "}
+                      {sl.eventsHigh == null ? "—" : sl.eventsHigh}/
+                      {sl.eventsMax == null ? "—" : sl.eventsMax}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      memory not measured
+                    </span>
+                  )}
+                </span>
+                {sl.psi ? (
+                  <PsiLine
+                    figures={sl.psi}
+                    label={`${label} PSI`}
+                    testId="fleet-resource-slice-psi"
+                    className="pl-3"
+                  />
+                ) : null}
+              </span>
+            );
+          })
+        )}
+        {psiHasAnyFigure(p) ? (
+          <PsiLine
+            figures={p}
+            label="system PSI"
+            testId="fleet-resource-psi"
+            systemWide
+          />
+        ) : (
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-psi"
+            data-state="unmeasured"
+          >
+            system PSI: not measured
+          </span>
+        )}
+      </span>
+    </Aged>
+  );
+}
+
+/**
+ * One PSI block: the 10 s `some/full` figures inline, the 60 s ones in the
+ * tooltip (a 10 s spike and a sustained stall read differently). A figure the
+ * publisher did not send prints "—", never `0.0%`.
+ */
+function PsiLine({
+  figures,
+  label,
+  testId,
+  className = "",
+  systemWide = false,
+}: {
+  figures: PsiFigures;
+  label: string;
+  testId: string;
+  className?: string;
+  /** System-wide CPU has no `full` figure; print its `some` alone. */
+  systemWide?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={`text-muted-foreground ${className}`.trim()}
+          data-testid={testId}
+        >
+          {label} 10s some/full: {psiLineText(figures, "avg10", { systemWide })}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+        <div>
+          {label} 60s some/full: {psiLineText(figures, "avg60", { systemWide })}
+        </div>
+        <div className="text-muted-foreground">
+          % of wall time stalled. some: at least one task stalled; full: all
+          non-idle tasks stalled at once.
+          {systemWide
+            ? " System-wide CPU has no full figure, so only some is shown."
+            : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function AgeCell({ row }: { row: StripRow }) {
   const s = row.sample;
   if (!s) {
@@ -1806,6 +1973,7 @@ export function FleetResourceStrip({
                   </th>
                   <th className="py-1 pr-3 font-medium">Temperature</th>
                   <th className="py-1 pr-3 font-medium">Memory (per lane)</th>
+                  <th className="py-1 pr-3 font-medium">Slices / PSI</th>
                   <th className="py-1 pr-3 font-medium">Sample</th>
                 </tr>
               </thead>
@@ -1863,7 +2031,7 @@ export function FleetResourceStrip({
                                   variant={deviceStateBadgeVariant(group.state)}
                                   data-coord-state={group.state}
                                 >
-                                  {deviceStateLabel(group.state)}
+                                  {deviceRowStateLabel(group, { now: nowMs })}
                                 </Badge>
                               )}
                             </span>
@@ -2023,6 +2191,9 @@ export function FleetResourceStrip({
                         </td>
                         <td className="py-1.5 pr-3">
                           <MemoryCell row={row} />
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <SlicesCell row={row} />
                         </td>
                         <td className="py-1.5 pr-3">
                           <AgeCell row={row} />

@@ -14,6 +14,10 @@ import {
   type PublishRefusal,
 } from "./usePromptDocumentPublications";
 import type { TenantPin } from "@/lib/api/operations/coordPromptDocuments";
+import {
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "../../_shared/useSendTimePin";
 import type {
   AutoPublishStatusEntry,
   AutoPublishStatusResponse,
@@ -130,8 +134,35 @@ export function classifyPublishModeError(
  * load nobody asked for, and a toast on it would be an error message on a
  * healthy page in most of the fleet. `unavailable` is exported so a caller that
  * DOES want to say something can.
+ *
+ * ## Which project each request is sent in
+ *
+ * Every request here is PINNED (`pinActiveTenant`), so every attempt the client
+ * makes of it — the first, a retry, the replay after a token refresh — goes to
+ * one project, and the answer is about that project. Which one is decided as
+ * the request is SENT:
+ *
+ * - **`resolvePin`, when the caller gives one** — the prompt-documents page
+ *   passes the project its list shows (plan
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D10). The dry run, the
+ *   armed run, the publish-mode PATCH and every status read then go to that
+ *   project even after another tab has switched the stored one, so a write
+ *   re-issued across the switch cannot land in the other project and a re-take
+ *   cannot put the other project's publish state on this page.
+ * - **otherwise the project stored at that moment**, which is what this hook
+ *   did before a resolver existed.
+ *
+ * `reload(pin)` sends an explicit pin over both. The resolver is read when each
+ * request goes out, never from an effect's dependencies, so the mount read runs
+ * once and `reload` keeps one identity whatever the caller passes.
  */
-export function usePublishAll() {
+export function usePublishAll({ resolvePin }: SendTimePinOptions = {}) {
+  const sendPin = useSendTimePin(resolvePin);
+  /** The project a request is sent in when no explicit pin is given: see above. */
+  const pinNow = useCallback(
+    (): TenantPin => sendPin() ?? { tenant: readActiveTenantId() },
+    [sendPin]
+  );
   const [candidates, setCandidates] = useState<PublishAllCandidate[] | null>(
     null
   );
@@ -203,30 +234,34 @@ export function usePublishAll() {
    * "nothing to publish", which is the one claim a failed read cannot support.
    */
   const loadCandidates = useCallback(async (): Promise<void> => {
-    const tenant = readActiveTenantId();
+    const pin = pinNow();
     try {
       setPreviewing(true);
-      const data = await previewPublishAll({ tenant });
+      const data = await previewPublishAll(pin);
       setCandidates(data.candidates ?? []);
       setUnavailable(null);
     } catch (err) {
       const detail = message(err, "Failed to preview the changed documents");
-      if (!latch(detail, tenant)) toast.error(detail);
+      if (!latch(detail, pin.tenant)) toast.error(detail);
     } finally {
       setPreviewing(false);
     }
-  }, [latch]);
+  }, [latch, pinNow]);
 
   /**
    * What the auto-publisher would do next, per candidate. `pin` sends it in a
-   * named project; omitted, in the stored one.
+   * named project; omitted, in the resolver's project, else the stored one
+   * (see the module docs).
    */
   const loadStatus = useCallback(
-    async (pin?: TenantPin): Promise<void> => {
+    async (explicit?: TenantPin): Promise<void> => {
       // Reads now overlap (mount, a mode write, a switch write), so only the
       // newest request may land: an older answer arriving last would put back
       // the mode or switch the operator just changed.
       const request = ++statusRequest.current;
+      // `undefined` only when neither the caller nor the resolver names a
+      // project: the read then goes in whatever is stored now.
+      const pin = explicit ?? sendPin();
       const tenant = pin ? pin.tenant : readActiveTenantId();
       // A read for a DIFFERENT project than the one the held answer is about
       // drops that answer first — its candidates, count, D5 switch and worker
@@ -273,8 +308,10 @@ export function usePublishAll() {
         // latched earlier saying THIS pinned project is not the system tenant
         // no longer holds. A refusal stamped `null` (no project; its answer
         // may have come from a replay in whatever project was stored) is
-        // superseded too, but only by an EXPLICITLY pinned read — the page's
-        // own project. A refusal stamped with another project is left alone.
+        // superseded too, but only by a read pinned to a named project — an
+        // explicit pin or the resolver's, the page's own project, never the
+        // project merely stored when it was sent. A refusal stamped with
+        // another project is left alone.
         setUnavailable((prev) =>
           prev !== null &&
           prev.refusal === "not_system_tenant" &&
@@ -298,7 +335,7 @@ export function usePublishAll() {
         latch(message(err, "Failed to read the auto-publish status"), tenant);
       }
     },
-    [latch]
+    [latch, sendPin]
   );
 
   const reload = useCallback(
@@ -335,7 +372,7 @@ export function usePublishAll() {
         // Verbatim from the dry run. This is the optimistic lock.
         expected_version: candidate.current_version,
       }));
-      const tenant = readActiveTenantId();
+      const pin = pinNow();
       try {
         setPublishing(true);
         // `dry_run: false` is written by the client function, never omitted:
@@ -347,7 +384,7 @@ export function usePublishAll() {
         const result = await publishAllPromptDocuments(
           releaseNote.trim() ? releaseNote.trim() : null,
           items,
-          { tenant }
+          pin
         );
         const results = result.results ?? [];
         const published = results.filter(
@@ -370,13 +407,13 @@ export function usePublishAll() {
         return result;
       } catch (err) {
         const detail = message(err, "Failed to publish the changed documents");
-        if (!latch(detail, tenant)) toast.error(detail);
+        if (!latch(detail, pin.tenant)) toast.error(detail);
         return null;
       } finally {
         setPublishing(false);
       }
     },
-    [latch]
+    [latch, pinNow]
   );
 
   /**
@@ -407,7 +444,7 @@ export function usePublishAll() {
       name: string,
       mode: PublishMode
     ): Promise<boolean> => {
-      const tenant = readActiveTenantId();
+      const pin = pinNow();
       try {
         setSavingMode(true);
         await updatePromptDocument(
@@ -417,13 +454,15 @@ export function usePublishAll() {
             publish_mode: mode,
             change_description: `Publish mode set to \`${mode}\` by an operator`,
           },
-          { tenant }
+          pin
         );
         setModeSchemaPending(null);
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
         // The badges key on the served mode, so the status read is re-taken:
         // without it a document just set to `manual` or `never` keeps a
-        // "Publishes <time>" badge for a publication nothing will make.
+        // "Publishes <time>" badge for a publication nothing will make. With a
+        // resolver it is sent in the resolver's project, not whatever is
+        // stored once the PATCH has answered — another tab's, after a switch.
         await loadStatus();
         return true;
       } catch (err) {
@@ -436,7 +475,7 @@ export function usePublishAll() {
               "rather than degrading, because a decision the schema cannot " +
               "hold must not look like it was saved."
           );
-        } else if (!latch(detail, tenant)) {
+        } else if (!latch(detail, pin.tenant)) {
           toast.error(detail);
         }
         return false;
@@ -444,7 +483,7 @@ export function usePublishAll() {
         setSavingMode(false);
       }
     },
-    [latch, loadStatus]
+    [latch, loadStatus, pinNow]
   );
 
   return {
