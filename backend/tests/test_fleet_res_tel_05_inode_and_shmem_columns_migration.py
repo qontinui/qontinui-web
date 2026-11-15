@@ -79,6 +79,7 @@ from tests._alembic_harness import (
     comment_body_from_source,
     ephemeral_database,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -265,15 +266,7 @@ def test_the_revision_generates_its_drops_from_the_same_list(
     module = _revision_module()
     adds = module._add_columns(_QUALIFIED)
 
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    module.downgrade()
+    executed = recorded_sql(module, "downgrade", monkeypatch)
 
     drops = "\n".join(executed)
     assert executed, "downgrade() emitted no SQL at all"

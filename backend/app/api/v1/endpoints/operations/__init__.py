@@ -77,7 +77,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import devices_to_wire
+from app.api.v1.endpoints.devices import _recent_crash_from, devices_to_wire
 from app.core.config import settings
 from app.core.refusal import (
     GlossaryTerm,
@@ -545,6 +545,20 @@ _UI_THREAD_UNKNOWN: dict[str, Any] = {
 }
 
 
+def _beacon_recent_crash_wire(beacon: RegisteredRunner) -> dict[str, Any] | None:
+    """The ``recentCrash`` wire value for a beacon-only fleet row.
+
+    The beacon carries the runner's snake_case ``HeartbeatRecentCrash``; it is
+    read through the same ``_recent_crash_from`` a paired row's
+    ``coord.devices.recent_crash`` uses, so both rows render one shape.
+    ``None`` means the runner reported no fresh dump, or predates the field.
+    """
+    if beacon.recent_crash is None:
+        return None
+    crash = _recent_crash_from(beacon.recent_crash.model_dump())
+    return None if crash is None else crash.model_dump(mode="json")
+
+
 def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
     """The fleet-row keys for the UI-thread block an in-memory beacon carries.
 
@@ -696,7 +710,10 @@ async def get_fleet_status(
                 "lastHeartbeat": beacon.last_heartbeat.isoformat(),
                 "wsConnected": False,
                 "uiError": None,
-                "recentCrash": None,
+                # The beacon's own crash report: a beacon-only runner has no
+                # coord.devices row to carry one, so this is the only place
+                # its crash dump (and the crashed process's pid) is visible.
+                "recentCrash": _beacon_recent_crash_wire(beacon),
                 # Last-reported native UI-thread liveness; None = UNKNOWN.
                 **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
