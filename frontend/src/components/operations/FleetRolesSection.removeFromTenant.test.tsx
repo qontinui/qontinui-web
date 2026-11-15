@@ -149,6 +149,38 @@ let failReads: boolean;
 let holdPost: Promise<void> | null;
 /** Answer roster reads only when this is resolved. */
 let holdReads: Promise<void> | null;
+/**
+ * The roster drops what a removal took (like coord's); `false` = a roster
+ * that has not caught up, so the machine stays listed.
+ */
+let rosterFollows: boolean;
+
+/** Drop removed device rows from the roster; a machine with none left goes. */
+function dropFromRoster(gone: ReadonlySet<string>) {
+  machines = machines
+    .map((m) => {
+      const ids = (m.device_ids as string[] | undefined) ?? [];
+      const kept = ids.filter((id) => !gone.has(id.toLowerCase()));
+      return kept.length === ids.length ? m : { ...m, device_ids: kept };
+    })
+    .filter(
+      (m) => ((m.device_ids as string[] | undefined) ?? [null]).length > 0
+    );
+}
+
+/**
+ * The machine's acknowledgement, wherever it is shown: in its row, or at the
+ * section once the row has gone.
+ */
+function ackText(): string {
+  const row = screen.queryByTestId("fleet-roles-remove-ack");
+  if (row !== null && row.textContent !== "") return row.textContent ?? "";
+  const detached = screen.getByTestId("fleet-roles-remove-ack-detached");
+  return (detached.textContent ?? "").replace(
+    /^Remove from this tenant — [^:]+: /,
+    ""
+  );
+}
 
 function serve() {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -159,6 +191,22 @@ function serve() {
       if (holdPost) await holdPost;
       const next = postAnswers.shift();
       if (next instanceof Error) throw next;
+      if (rosterFollows && next && next.ok) {
+        const body = (await next.json().catch(() => null)) as {
+          results?: Record<string, unknown>[];
+        } | null;
+        const gone = new Set(
+          (body?.results ?? [])
+            .filter(
+              (r) =>
+                r.outcome === "already_absent" ||
+                (r.outcome === "unbound" &&
+                  r.still_member_via_pointer === false)
+            )
+            .map((r) => String(r.device_id).toLowerCase())
+        );
+        if (gone.size > 0) dropFromRoster(gone);
+      }
       return next ?? json(500, { detail: "unexpected" });
     }
     gets += 1;
@@ -237,6 +285,7 @@ beforeEach(() => {
   failReads = false;
   holdPost = null;
   holdReads = null;
+  rosterFollows = true;
   fetchMock.mockReset();
   toastMock.success.mockReset();
   toastMock.warning.mockReset();
@@ -585,9 +634,7 @@ describe("the answer", () => {
     expect(toastMock.success).toHaveBeenCalledWith(
       `${CI_HOST_LABEL}: 2 of 2 bindings removed.`
     );
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      "2 of 2 bindings removed."
-    );
+    expect(ackText()).toBe("2 of 2 bindings removed.");
     await waitFor(() => expect(gets).toBeGreaterThan(before));
   });
 
@@ -721,7 +768,7 @@ describe("the answer", () => {
     await openRemoval(HOST_A);
     fireEvent.click(confirmButton());
     await waitFor(() =>
-      expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      expect(ackText()).toBe(
         "1 of 1 binding removed; 1 still listed through its home tenant, which only its owner can change on /runners."
       )
     );
@@ -739,7 +786,7 @@ describe("the answer", () => {
     await openRemoval(HOST_A);
     fireEvent.click(confirmButton());
     await waitFor(() =>
-      expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      expect(ackText()).toBe(
         // The re-read still lists it: the note follows, naming no cause.
         `1 of 1 binding removed; 1 may still be listed through its home tenant (coord did not report). ${STILL_LISTED_NOTE}`
       )
@@ -749,6 +796,7 @@ describe("the answer", () => {
   });
 
   it("a second removal after a first reads already absent", async () => {
+    rosterFollows = false;
     machines = [workstation({ heartbeat_fresh: false })];
     postAnswers = [answer([unbound(DEV_A)]), answer([absent(DEV_A)])];
     render(<FleetRolesSection />);
@@ -763,18 +811,21 @@ describe("the answer", () => {
     expect(screen.queryByTestId("fleet-roles-remove-result")).toBeNull();
     fireEvent.click(confirmButton());
     await waitFor(() =>
-      expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        `Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
+      expect(ackText()).toBe(
+        `Earlier attempt: 1 of 1 binding removed. ${STILL_LISTED_NOTE.replace(/\.$/, "")}. ` +
+          `This attempt: Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
       )
     );
     expect(posts).toEqual([[DEV_A], [DEV_A]]);
     // Nothing removed, yet the re-read still lists it: a warning, naming the
     // home tenant — never a calm info.
-    expect(toastMock.warning).toHaveBeenCalledWith(
-      `${HOST_A}: Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
+    expect(toastMock.warning).toHaveBeenLastCalledWith(
+      `${HOST_A}: Earlier attempt: 1 of 1 binding removed. ${STILL_LISTED_NOTE.replace(/\.$/, "")}. ` +
+        `This attempt: Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
     );
     expect(toastMock.info).not.toHaveBeenCalled();
-    expect(toastMock.success).toHaveBeenCalledTimes(1);
+    // The first removal, still listed after its re-read, was a warning too.
+    expect(toastMock.success).not.toHaveBeenCalled();
   });
 
   it("the acknowledgement survives a re-read that fails after the removal", async () => {
@@ -831,7 +882,7 @@ describe("the answer", () => {
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+    expect(ackText()).toBe(
       // The whole machine: the first attempt's row and the retry's.
       "2 of 2 bindings removed."
     );
@@ -1011,14 +1062,13 @@ describe("the answer", () => {
   });
 
   it("a collapsed row's outcome is shown at the section", async () => {
+    rosterFollows = false;
     postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
     render(<FleetRolesSection />);
     await openRemoval(CI_HOST_LABEL);
     fireEvent.click(confirmButton());
     await waitFor(() =>
-      expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "2 of 2 bindings removed."
-      )
+      expect(ackText()).toBe(`2 of 2 bindings removed. ${STILL_LISTED_NOTE}`)
     );
     // Shown in the row, so not repeated at the section.
     expect(screen.queryByTestId("fleet-roles-remove-ack-detached")).toBeNull();
@@ -1029,7 +1079,7 @@ describe("the answer", () => {
     expect(
       screen.getByTestId("fleet-roles-remove-ack-detached").textContent
     ).toBe(
-      `Remove from this tenant — ${CI_HOST_LABEL}: 2 of 2 bindings removed.`
+      `Remove from this tenant — ${CI_HOST_LABEL}: 2 of 2 bindings removed. ${STILL_LISTED_NOTE}`
     );
   });
 
@@ -1152,6 +1202,7 @@ describe("the answer", () => {
   });
 
   it("an error whose rows leave nothing unsettled closes as settled, with no retry", async () => {
+    rosterFollows = false;
     postAnswers = [
       json(500, {
         detail: { results: [unbound(DEV_CI), absent(DEV_CI_2)] },
@@ -1169,7 +1220,7 @@ describe("the answer", () => {
       `${CI_HOST_LABEL}: 1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`
     );
     expect(toastMock.success).not.toHaveBeenCalled();
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+    expect(ackText()).toBe(
       `1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`
     );
   });
@@ -1340,7 +1391,7 @@ describe("the answer", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+    expect(ackText()).toBe(
       "0 of 2 bindings removed; 2 absent now (the earlier attempt's answer was lost)."
     );
     // Absent, but nothing confirmed the removal: a warning — never a
@@ -1374,7 +1425,7 @@ describe("the answer", () => {
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+    expect(ackText()).toBe(
       "1 of 2 bindings removed; 1 absent now (the earlier attempt's answer was lost)."
     );
   });
@@ -1509,7 +1560,7 @@ describe("the answer", () => {
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2], [DEV_CI_2]]);
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+    expect(ackText()).toBe(
       "1 of 2 bindings removed; 1 absent now (the earlier attempt's answer was lost)."
     );
   });
@@ -1634,9 +1685,7 @@ describe("the answer", () => {
     expect(result.textContent).toContain(
       "2 of 3 bindings removed; 1 refused (auth)."
     );
-    expect(
-      screen.getByTestId("fleet-roles-remove-ack").textContent
-    ).not.toContain("Nothing was removed.");
+    expect(ackText()).not.toContain("Nothing was removed.");
   });
 
   it("all already absent and gone from the re-read is an info toast with no home-tenant note", async () => {
@@ -1680,7 +1729,7 @@ describe("the answer", () => {
         .getAllByTestId("fleet-roles-remove-outcome-row")
         .map((r) => r.getAttribute("data-outcome"))
     ).toEqual(["removed", "unreported"]);
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toContain(
+    expect(ackText()).toContain(
       "1 of 2 bindings confirmed removed; 1 not reported by the route."
     );
     expect(confirmButton().textContent).toBe(
@@ -1689,6 +1738,7 @@ describe("the answer", () => {
   });
 
   it("a mixed removed and already-absent answer on a still-listed machine gets the note and a warning", async () => {
+    rosterFollows = false;
     postAnswers = [answer([unbound(DEV_CI), absent(DEV_CI_2)])];
     render(<FleetRolesSection />);
     await openRemoval(CI_HOST_LABEL);
@@ -1697,9 +1747,7 @@ describe("the answer", () => {
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
     const sentence = `1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`;
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      sentence
-    );
+    expect(ackText()).toBe(sentence);
     expect(toastMock.warning).toHaveBeenCalledWith(
       `${CI_HOST_LABEL}: ${sentence}`
     );
@@ -1756,34 +1804,6 @@ describe("the answer", () => {
     expect(toastMock.warning).not.toHaveBeenCalled();
   });
 
-  it("Cancel and reopen resumes the retry scope and keeps the earlier counts", async () => {
-    postAnswers = [
-      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
-      answer([unbound(DEV_CI_2)]),
-    ];
-    render(<FleetRolesSection />);
-    await openRemoval(CI_HOST_LABEL);
-    fireEvent.click(confirmButton());
-    await screen.findByTestId("fleet-roles-remove-result");
-    await waitFor(() => expect(confirmButton().disabled).toBe(false));
-    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-cancel"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
-    );
-    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
-    expect(confirmButton().textContent).toBe(
-      "Retry the 1 device row not confirmed removed"
-    );
-    fireEvent.click(confirmButton());
-    await waitFor(() =>
-      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
-    );
-    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
-    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      "2 of 2 bindings removed."
-    );
-  });
-
   it("an unknown row with coord's own words shows them", async () => {
     postAnswers = [
       answer([
@@ -1835,5 +1855,95 @@ describe("the answer", () => {
     ).toBe(
       `${DEV_CI_2}: may have been removed — coord's answer was lost; reload to check`
     );
+  });
+
+  it("a reopened dialog is a fresh attempt shown beside the earlier one", async () => {
+    rosterFollows = false;
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: null,
+          still_member_via_pointer: null,
+        },
+      ]),
+      answer([absent(DEV_CI), absent(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-cancel"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    // Reopened: a fresh whole-machine attempt over the current rows.
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    expect(confirmButton().textContent).toBe("Remove from this tenant");
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([
+      [DEV_CI, DEV_CI_2],
+      [DEV_CI, DEV_CI_2],
+    ]);
+    // The earlier acknowledgement is kept, the fresh count beside it; the
+    // id whose answer was lost reads "absent now", claiming no cause.
+    expect(ackText()).toBe(
+      "Earlier attempt: 1 of 2 bindings confirmed removed; 1 may have been removed (coord's answer was lost; reload to check). " +
+        `This attempt: 0 of 2 bindings removed; 1 absent now (the earlier attempt's answer was lost); 1 already absent. ${STILL_LISTED_NOTE}`
+    );
+    expect(toastMock.info).not.toHaveBeenCalled();
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel works as soon as the answer is shown, while the re-read is still out", async () => {
+    postAnswers = [answer([unbound(DEV_CI), failed(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    let release: () => void = () => {};
+    holdReads = new Promise<void>((r) => {
+      release = r;
+    });
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    // The re-read is held: a second removal is still refused ...
+    expect(confirmButton().disabled).toBe(true);
+    // ... but Cancel is live and closes the dialog.
+    const cancel = screen.getByTestId(
+      "fleet-roles-remove-dialog-cancel"
+    ) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+    fireEvent.click(cancel);
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    holdReads = null;
+    release();
+    await waitFor(() =>
+      expect(ackText()).toBe("1 of 2 bindings removed; 1 failed.")
+    );
+  });
+
+  it("every row removed but the re-read still lists one gets the note and a warning", async () => {
+    rosterFollows = false;
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    const sentence = `2 of 2 bindings removed. ${STILL_LISTED_NOTE}`;
+    expect(ackText()).toBe(sentence);
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      `${CI_HOST_LABEL}: ${sentence}`
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
   });
 });
