@@ -1,9 +1,10 @@
 /**
  * `useFirstPinnedRead` on its own: a hook's first read is sent once, at the
  * first commit where the pin names a project, and the hook says it is
- * waiting until then (plan `2026-11-09-prompt-documents-cross-tab-write-guard`,
- * review round 5). The pin is asked after each commit, never depended on, so
- * each case drives commits with `rerender` and moves the pin between them.
+ * waiting until that read has been sent (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard`, review rounds 5-6).
+ * The pin is asked after each commit, never depended on, so each case drives
+ * commits with `rerender` and moves the pin between them.
  */
 
 import { createElement, StrictMode, type ReactNode } from "react";
@@ -110,13 +111,49 @@ describe("useFirstPinnedRead", () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it("reads nothing for a hook unmounted before the pin appeared", () => {
+  it("says it is waiting until its first read is sent, when the pin appears after mount", () => {
+    // Every render as a section sees it: whether a pin was there, what the
+    // hook said, and how many reads had gone out before it rendered.
+    const renders: { pinned: boolean; waiting: boolean; reads: number }[] = [];
     const current = { pin: undefined as ProjectPin | undefined };
-    const { read, unmount } = mountSection(current);
-    unmount();
+    const read = vi.fn();
+    const { rerender } = renderHook(() => {
+      const waiting = useSection(() => current.pin, read);
+      renders.push({
+        pinned: current.pin !== undefined,
+        waiting,
+        reads: read.mock.calls.length,
+      });
+      return waiting;
+    });
 
     current.pin = { tenant: "t-b" };
+    rerender();
 
-    expect(read).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledTimes(1);
+    // The commit where the pin appeared still said waiting: its effect sent
+    // the read, and only a render after that stops waiting.
+    expect(renders).toContainEqual({ pinned: true, waiting: true, reads: 0 });
+    expect(renders.filter((r) => !r.waiting)).not.toHaveLength(0);
+    for (const r of renders.filter((r) => !r.waiting)) {
+      expect(r.reads).toBe(1);
+    }
+  });
+
+  it("says nothing is waiting from its first render when the pin is there at mount", () => {
+    // A hook with a pin at mount is loading from its first render, so a
+    // section with a project then never shows its waiting line.
+    const said: boolean[] = [];
+    const current = { pin: { tenant: "t-b" } as ProjectPin | undefined };
+    const read = vi.fn();
+    const { rerender } = renderHook(() => {
+      const waiting = useSection(() => current.pin, read);
+      said.push(waiting);
+      return waiting;
+    });
+    rerender();
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(said).not.toContain(true);
   });
 });
