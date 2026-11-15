@@ -49,6 +49,7 @@ import {
   MAY_HAVE_APPLIED_TEXT,
   POINTER_UNREPORTED_TEXT,
   STILL_LISTED_HOME_TENANT_TEXT,
+  STILL_LISTED_LAG_TEXT,
   STILL_LISTED_TEXT,
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
@@ -94,6 +95,8 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
     "not sent (an earlier batch failed or its answer was lost)",
   request_rejected: "not attempted (the request was rejected)",
   removed_earlier: "absent now (the earlier attempt's answer was lost)",
+  earlier_possibly_applied:
+    "may have been removed earlier; this attempt failed",
   console_refused: "not attempted (this console refused the request)",
   unreported: "not reported",
 };
@@ -102,6 +105,8 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
 function rowText(r: UnbindRowResult): string {
   if (r.outcome === "request_rejected" && r.status !== null)
     return `not attempted (the request was rejected: HTTP ${r.status})`;
+  if (r.outcome === "earlier_possibly_applied")
+    return `may have been removed earlier; this attempt ${r.detail ?? "failed"}`;
   if (r.outcome === "answer_lost" && r.detail)
     return `may have been removed — ${r.detail}`;
   if (r.outcome === "unreported" && r.unreadable)
@@ -347,14 +352,20 @@ export function useRemoveMachineFromTenant(
           .map((id) => id.toLowerCase())
           .filter((id) => !explained.has(id))
       );
-      const stillListedAfter =
-        read !== null &&
-        read.state === "known" &&
-        read.machines.some(
-          (x) =>
-            x.key === m.key &&
-            x.deviceIds.some((id) => sent.has(id.toLowerCase()))
-        );
+      const listedSent =
+        read !== null && read.state === "known"
+          ? read.machines
+              .filter((x) => x.key === m.key)
+              .flatMap((x) => x.deviceIds.map((id) => id.toLowerCase()))
+              .filter((id) => sent.has(id))
+          : [];
+      const stillListedAfter = listedSent.length > 0;
+      // Every still-listed id coord said it removed (pointer false): only a
+      // list that has not caught up explains it — no home-tenant clause.
+      const outcomeOf = new Map(
+        s.rows.map((r) => [r.deviceId.toLowerCase(), r.outcome])
+      );
+      const onlyLag = listedSent.every((id) => outcomeOf.get(id) === "removed");
       const nothingRemoved = s.bindingsRemoved === 0 && s.removedEarlier === 0;
       // Still listed after a removal that answered for its ids — removed,
       // already absent, or with the pointer unreported — is worth saying.
@@ -362,7 +373,9 @@ export function useRemoveMachineFromTenant(
         stillListedAfter && s.alreadyAbsent + s.pointerUnknown + s.removed > 0;
       const sentence = writeAck(
         homeTenant
-          ? `${summarySentence} ${STILL_LISTED_HOME_TENANT_TEXT}`
+          ? `${summarySentence} ${
+              onlyLag ? STILL_LISTED_LAG_TEXT : STILL_LISTED_HOME_TENANT_TEXT
+            }`
           : summarySentence,
         true,
         s,
