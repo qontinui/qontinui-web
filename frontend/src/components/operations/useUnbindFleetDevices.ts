@@ -14,7 +14,11 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { unbindFleetDevices } from "@/lib/api/operations/coordDeviceBindings";
+import {
+  UNBIND_BATCH_LIMIT,
+  unbindFleetDevices,
+  type DeviceUnbindResultWire,
+} from "@/lib/api/operations/coordDeviceBindings";
 import {
   describeUnbindRejection,
   summarizeUnbind,
@@ -64,17 +68,38 @@ export function useUnbindFleetDevices(
       inFlight.current = true;
       setBusy(true);
       setStatus({ state: "busy" });
-      let outcome: UnbindOutcome;
-      try {
-        const body = await unbindFleetDevices(deviceIds);
+      // The route takes at most UNBIND_BATCH_LIMIT ids: send sequential
+      // batches and merge their rows. Any rejection stops the run (an auth
+      // abort above all); later batches are reported as never sent.
+      const batches: string[][] = [];
+      for (let i = 0; i < deviceIds.length; i += UNBIND_BATCH_LIMIT) {
+        batches.push(deviceIds.slice(i, i + UNBIND_BATCH_LIMIT));
+      }
+      const prior: DeviceUnbindResultWire[] = [];
+      let outcome: UnbindOutcome | null = null;
+      for (let b = 0; b < batches.length; b += 1) {
+        try {
+          const body = await unbindFleetDevices(batches[b]!);
+          // An unreadable 2xx body leaves this batch's ids unreported.
+          if (body !== null && Array.isArray(body.results))
+            prior.push(...body.results);
+        } catch (err) {
+          outcome = {
+            state: "refused",
+            refusal: describeUnbindRejection(deviceIds, err, {
+              prior,
+              neverSent: batches.slice(b + 1).flat(),
+            }),
+          };
+          break;
+        }
+      }
+      if (outcome === null) {
         outcome = {
           state: "answered",
-          summary: summarizeUnbind(deviceIds, body),
-        };
-      } catch (err) {
-        outcome = {
-          state: "refused",
-          refusal: describeUnbindRejection(deviceIds, err),
+          summary: summarizeUnbind(deviceIds, {
+            results: prior,
+          }),
         };
       }
       setStatus(outcome);

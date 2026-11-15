@@ -44,6 +44,7 @@ vi.mock("sonner", () => ({
     success: vi.fn(),
     error: vi.fn(),
     warning: vi.fn(),
+    info: vi.fn(),
   }),
 }));
 vi.mock("@/contexts/auth-context", () => ({
@@ -131,7 +132,7 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
       "removes this tenant's binding of every device row the roster lists for this machine"
     );
     expect(action?.description).toContain(
-      "Refused while a removal is in flight or another machine's removal dialog is open."
+      "Refused while a removal is in flight or any removal dialog is open."
     );
 
     const before = fetchMock.mock.calls.length;
@@ -265,5 +266,53 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     expect(
       screen.getByTestId("fleet-roles-remove-dialog").textContent
     ).toContain(`Remove ${CI} from this tenant?`);
+  });
+
+  it("the handler refuses while this machine's own dialog is open, keeping its retry scope", async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") return base(url, init);
+      return json(200, {
+        results: [
+          {
+            device_id: DEV_1,
+            outcome: "unbound",
+            status: 200,
+            error: null,
+            still_member_via_pointer: false,
+          },
+          {
+            device_id: DEV_2,
+            outcome: "failed",
+            status: 500,
+            error: { error: "boom" },
+            still_member_via_pointer: null,
+          },
+        ],
+      });
+    });
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText(CI));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-confirm"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("fleet-roles-remove-dialog-confirm").textContent
+      ).toBe("Retry the 1 device row not confirmed removed")
+    );
+    const action = registered.get(`fleet-roles-remove:host:${CI}`)
+      ?.customActions?.["remove-from-tenant"];
+    let resolved: unknown;
+    await act(async () => {
+      resolved = await action!.handler(undefined);
+    });
+    expect(resolved).toEqual({
+      opened: false,
+      reason: "this machine's removal dialog is already open",
+    });
+    // Not reopened, so the retry scope survives.
+    expect(
+      screen.getByTestId("fleet-roles-remove-dialog-confirm").textContent
+    ).toBe("Retry the 1 device row not confirmed removed");
   });
 });
