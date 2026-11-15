@@ -721,7 +721,8 @@ def _declaration(inputs: _Inputs, failed: list[dict[str, Any]]) -> Outcome:
         title=title,
         text=(
             f"{names} each declared a setup death; no member reached a verdict on this PR. "
-            "Re-run the failed members."
+            "Re-run the failed members once; if the same setup step fails "
+            "again, the setup itself is broken and needs a fix."
         ),
     )
 

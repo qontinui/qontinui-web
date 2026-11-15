@@ -388,7 +388,9 @@ def test_every_failed_shard_declared_titles_the_aggregate(github):
         "error",
         RUN_TESTS_TITLE,
         "Run Tests (shard 1/6), Run Tests (shard 3/6) each declared a setup death; "
-        "no member reached a verdict on this PR. Re-run the failed members.",
+        "no member reached a verdict on this PR. Re-run the failed members once; "
+        "if the same setup step fails again, the setup itself is broken and needs "
+        "a fix.",
     )
 
 
@@ -515,7 +517,8 @@ def test_the_recorded_2144_setup_death_declares_once_its_shard_titled_it(github)
         "error",
         RUN_TESTS_TITLE,
         "Run Tests (shard 1/6) each declared a setup death; no member reached a "
-        "verdict on this PR. Re-run the failed members.",
+        "verdict on this PR. Re-run the failed members once; if the same setup "
+        "step fails again, the setup itself is broken and needs a fix.",
     )
 
 
