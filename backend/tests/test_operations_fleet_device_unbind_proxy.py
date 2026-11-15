@@ -30,7 +30,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 TEST_TENANT_ID = UUID("7d1e5b8a-3c2f-4a6e-9b0d-1f2e3a4b5c6d")
-ROUTE = "/api/v1/operations/fleet/devices/unbind"
 TEST_BEARER = "test-cognito-access-token"
 
 # Synthetic ids only — never a real fleet device.
@@ -134,7 +133,7 @@ def _patched(stub: _CoordStub):
 def _post(client: TestClient, stub: _CoordStub, body: Any) -> httpx.Response:
     patcher = _patched(stub)
     try:
-        return client.post(ROUTE, json=body)
+        return client.post("/api/v1/operations/fleet/devices/unbind", json=body)
     finally:
         patcher.stop()
 
