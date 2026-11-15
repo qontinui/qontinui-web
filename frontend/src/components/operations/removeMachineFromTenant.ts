@@ -228,6 +228,11 @@ export type UnbindRowOutcome =
    */
   | "removed_earlier"
   /**
+   * An earlier session may have removed it, and this attempt failed or was
+   * refused for it: it is still possibly removed (uncertain, retried).
+   */
+  | "earlier_possibly_applied"
+  /**
    * This console's own gate refused the request carrying this id (a 401/403
    * with no `refused_device_id`): it never reached coord.
    */
@@ -265,6 +270,7 @@ export interface UnbindSummary {
   notSentAfterFailure: number;
   requestRejected: number;
   removedEarlier: number;
+  earlierPossiblyApplied: number;
   consoleRefused: number;
   unreported: number;
   /** Every id read `unbound` or `already_absent` — the only case for a toast. */
@@ -302,6 +308,7 @@ const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
   "not_sent_after_failure",
   "request_rejected",
   "console_refused",
+  "earlier_possibly_applied",
   "unreported",
 ]);
 
@@ -489,11 +496,20 @@ export function creditEarlierAttempt(
   if (possiblyAppliedIds.length === 0) return summary;
   const earlier = new Set(possiblyAppliedIds.map((id) => id.toLowerCase()));
   return summarizeRows(
-    summary.rows.map((r) =>
-      r.outcome === "already_absent" && earlier.has(r.deviceId.toLowerCase())
-        ? { ...r, outcome: "removed_earlier" }
-        : r
-    )
+    summary.rows.map((r): UnbindRowResult => {
+      if (!earlier.has(r.deviceId.toLowerCase())) return r;
+      if (r.outcome === "already_absent")
+        return { ...r, outcome: "removed_earlier" };
+      // The same rule as combineSummaries: this attempt acted on nothing for
+      // it, so the earlier "may have been removed" still stands.
+      if (r.outcome === "failed" || r.outcome === "refused_auth")
+        return {
+          ...r,
+          outcome: "earlier_possibly_applied",
+          detail: r.outcome === "failed" ? "failed" : "was refused",
+        };
+      return r;
+    })
   );
 }
 
@@ -538,6 +554,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const notSentAfterFailure = count("not_sent_after_failure");
   const requestRejected = count("request_rejected");
   const removedEarlier = count("removed_earlier");
+  const earlierPossiblyApplied = count("earlier_possibly_applied");
   const consoleRefused = count("console_refused");
   const unreported = count("unreported");
   const unreadableCount = rows.filter(
@@ -549,7 +566,8 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const its = (k: number) => plural(k, "its", "their");
   // While any row may have been removed without coord saying so, the count
   // is of the CONFIRMED removals only.
-  const uncertain = answerLost + requestLost + unreported > 0;
+  const uncertain =
+    answerLost + requestLost + unreported + earlierPossiblyApplied > 0;
   const parts: string[] = [
     `${bindingsRemoved} of ${n} ${plural(n, "binding", "bindings")} ${
       uncertain ? "confirmed removed" : "removed"
@@ -570,6 +588,10 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   if (removedEarlier > 0)
     parts.push(
       `${removedEarlier} absent now (the earlier attempt's answer was lost)`
+    );
+  if (earlierPossiblyApplied > 0)
+    parts.push(
+      `${earlierPossiblyApplied} may have been removed earlier (this attempt failed or was refused)`
     );
   if (alreadyAbsent > 0) parts.push(`${alreadyAbsent} already absent`);
   if (failed > 0) parts.push(`${failed} failed`);
@@ -634,6 +656,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
     notSentAfterFailure,
     requestRejected,
     removedEarlier,
+    earlierPossiblyApplied,
     consoleRefused,
     unreported,
     // Settled = coord answered for every id and none needs another try.
@@ -647,7 +670,12 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
 
 /** Outcomes after which the binding MAY have been removed. */
 const POSSIBLY_APPLIED: ReadonlySet<UnbindRowOutcome> =
-  new Set<UnbindRowOutcome>(["answer_lost", "request_lost", "unreported"]);
+  new Set<UnbindRowOutcome>([
+    "answer_lost",
+    "request_lost",
+    "unreported",
+    "earlier_possibly_applied",
+  ]);
 
 /** Outcomes that say the attempt never reached coord for that id. */
 const NEVER_SENT: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
@@ -689,6 +717,10 @@ export interface UnbindRefusal {
 }
 
 // Not a cause: coord does not report why a machine is still listed.
+/** Every still-listed id read "removed" (pointer false): only lag explains it. */
+export const STILL_LISTED_LAG_TEXT =
+  "Still listed after the removal — the list may not have caught up yet.";
+
 export const STILL_LISTED_HOME_TENANT_TEXT =
   "Still listed after the removal — it may be listed through its home tenant (which only its owner can change on /runners), or the list has not caught up; coord did not report why.";
 
@@ -701,7 +733,7 @@ function str(v: unknown): string | null {
 
 /** Rows that leave a removal possible but unconfirmed. */
 function uncertainRows(s: UnbindSummary): number {
-  return s.answerLost + s.requestLost + s.unreported;
+  return s.answerLost + s.requestLost + s.unreported + s.earlierPossiblyApplied;
 }
 
 /** An auth refusal's "what was removed" clause, over the rows it has. */
