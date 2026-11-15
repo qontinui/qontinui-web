@@ -40,16 +40,19 @@ export function crossTabHeadline(cause: CrossTabLock): string {
  * selected, or the page's project has never been known and none was stored at
  * mount. Nothing can hold such a write, its 429 retries or its token-refresh
  * replay to the project the page's documents were read in: the client fills
- * in whatever project is stored when each attempt is made.
+ * in whatever project is stored when each attempt is made. While the layout's
+ * provider is still reading the page's project, the refusal is
+ * `LEARNING_REFUSAL` instead: that read may give the page a project to pin
+ * the write to.
  */
 export const NO_PIN_REFUSAL =
   "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
 
 /**
  * Why a write, or a dialog, is refused while the page is still learning its
- * project and the stored one differs (`usePageWriteGuard` `learning`): the
- * difference may resolve by itself once the page knows its project, so the
- * refusal asks for no reload.
+ * project (`usePageWriteGuard` `learning`): the stored project differs, or
+ * the page has no project to pin a write to yet. Either may resolve by itself
+ * once the page knows its project, so the refusal asks for no reload.
  */
 export const LEARNING_REFUSAL =
   "Nothing was sent: this page's project is not known yet.";
@@ -154,8 +157,9 @@ export interface PageWriteGuardState {
  * `learning` says the page's project has never been known and the layout's
  * provider is still reading it. A stored project that differs then may be
  * the very one that read names (two fresh tabs), and the lock lifts by
- * itself when it lands. The guard refuses as always, but its refusal says
- * the page's project is not known yet rather than asking for a reload.
+ * itself when it lands. The guard refuses as always, but its refusal, of a
+ * difference or of a write with no project to pin it to, says the page's
+ * project is not known yet rather than asking for a reload.
  */
 export function usePageWriteGuard(
   reference: string | null,
@@ -223,7 +227,7 @@ export function usePageWriteGuard(
   const writeAllowed = useCallback((): boolean => {
     if (!projectUnchanged()) return false;
     if (canPinRef.current) return true;
-    toast.error(NO_PIN_REFUSAL);
+    toast.error(learningRef.current ? LEARNING_REFUSAL : NO_PIN_REFUSAL);
     return false;
   }, [projectUnchanged]);
 

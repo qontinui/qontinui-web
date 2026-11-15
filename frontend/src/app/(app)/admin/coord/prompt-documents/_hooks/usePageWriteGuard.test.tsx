@@ -9,7 +9,9 @@
  *    project stored at mount, which the list's mount read is pinned to and
  *    so was answered in; once the provider answers, the page's project.
  *    With nothing stored at mount, or none selected, nothing is pinned, and
- *    every write is refused with the reason; dialogs still open.
+ *    every write is refused with the reason (while the provider still reads
+ *    the page's project, in words that ask for no reload); dialogs still
+ *    open.
  * 2. **`resolvePin` and `writeAllowed` keep one identity for the page's
  *    lifetime**, while the pin they answer changes. A hook that holds the
  *    resolver through `useSendTimePin` would absorb a new identity silently,
@@ -193,27 +195,56 @@ describe("PageWriteGuardProvider", () => {
     expect(latest().pin).toEqual({ tenant: B });
   });
 
+  /** The no-pin refusal, as the operator reads it. */
+  const NO_PIN =
+    "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
+
   it.each([
     [
       "none selected: no provider, nothing stored",
-      () => {
+      async () => {
         render(
           <PageWriteGuardProvider>
             <Probe />
           </PageWriteGuardProvider>
         );
       },
+      NO_PIN,
     ],
     [
+      "never known: the provider's read failed, nothing stored at mount",
+      async () => {
+        listTenantsMock.mockRejectedValue(
+          new Error(
+            "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)"
+          )
+        );
+        render(
+          <TenantProvider>
+            <PageWriteGuardProvider>
+              <Probe />
+            </PageWriteGuardProvider>
+          </TenantProvider>
+        );
+        await waitFor(() =>
+          expect(latest().tenantContext?.error).not.toBeNull()
+        );
+      },
+      NO_PIN,
+    ],
+    [
+      // The read may give the page a project to pin to (finding 3 of round
+      // 11): the refusal asks for no reload.
       "never known: the provider still reading, nothing stored at mount",
-      () => {
+      async () => {
         mountWhileTheProviderReads(null);
       },
+      LEARNING_REFUSAL,
     ],
   ] as const)(
     "refuses every write while the page has no project to pin it to, and says why, but its dialogs still open (%s)",
-    (_label, mount) => {
-      mount();
+    async (_label, mount, refusal) => {
+      await mount();
       expect(latest().pin).toBeUndefined();
 
       let wrote = true;
@@ -225,11 +256,10 @@ describe("PageWriteGuardProvider", () => {
 
       expect(wrote).toBe(false);
       // The refusal, as the operator reads it.
-      expect(vi.mocked(toast.error).mock.calls).toEqual([
-        [
-          "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.",
-        ],
-      ]);
+      expect(vi.mocked(toast.error).mock.calls).toEqual([[refusal]]);
+      if (refusal === LEARNING_REFUSAL) {
+        expect(refusal).not.toMatch(/reload/i);
+      }
       expect(opened).toBe(true);
       // Nothing changed under the page: it is not locked.
       expect(latest().locked).toBeNull();
