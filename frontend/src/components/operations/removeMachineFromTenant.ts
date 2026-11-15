@@ -617,8 +617,9 @@ export interface UnbindRefusal {
   authFrame?: { lead: string; tail: string };
 }
 
+// Not a cause: coord does not report why a machine is still listed.
 export const STILL_LISTED_HOME_TENANT_TEXT =
-  "No binding to remove; still listed through its home tenant, which only its owner can change on /runners.";
+  "Still listed after the removal — it may be listed through its home tenant (which only its owner can change on /runners), or the list has not caught up; coord did not report why.";
 
 export const MAY_HAVE_APPLIED_TEXT =
   "Some bindings may have been removed — the list re-reads to show what coord now holds.";
@@ -680,7 +681,13 @@ export function mergeRefusalOver(
           )
         : base;
   if (!refusal.auth || refusal.authFrame === undefined) {
-    return { ...refusal, partial };
+    // A merged row may still be uncertain (an earlier lost answer), whatever
+    // this attempt's own refusal said.
+    return {
+      ...refusal,
+      partial,
+      mayHaveApplied: refusal.mayHaveApplied || uncertainRows(partial) > 0,
+    };
   }
   return {
     ...refusal,
