@@ -21,6 +21,14 @@ export interface PageWriteGuardValue {
   /** The layout's tenant provider; `null` when mounted outside one. */
   tenantContext: ReturnType<typeof useOptionalTenant>;
   /**
+   * The layout's provider has said its membership read failed, and the page
+   * has no project to pin a request to (`pin` undefined). Nothing reads the
+   * list again, so no setting is read and no change is sent until the
+   * operator reloads: the provider shows its red notice, and a settings
+   * section that waits for the page's project points to it.
+   */
+  projectListFailed: boolean;
+  /**
    * Why the page is locked — the stored project differs from the one it
    * shows — or `null` while it is not (`usePageWriteGuard`). A cause, not a
    * flag: the notice names only the cause it observed (D4). Read "is it

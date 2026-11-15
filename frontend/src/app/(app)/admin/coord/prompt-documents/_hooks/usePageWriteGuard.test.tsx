@@ -33,6 +33,10 @@
  * 7. **Focus moves to Reload when the page locks** (H07), from a control the
  *    fieldset disabled or from `<body>`, and never out of an open dialog.
  *    While locked, the fieldset is described by the notice.
+ * 8. **A membership read that failed is a red notice too** (round 7), shown
+ *    only while nothing pins the page: no project stored at mount. Only the
+ *    operator's Reload reads the list again, so it is R3's red row, outside
+ *    the fieldset with its Reload enabled.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -402,6 +406,71 @@ describe("the notice", () => {
     expect(
       screen.getByTestId("prompt-documents-cross-tab-reload")
     ).toBeEnabled();
+  });
+});
+
+describe("the project-list notice", () => {
+  /** The layout's provider, its membership read refused, under the page. */
+  function mountAfterTheListFailed(stored: string | null) {
+    listTenantsMock.mockRejectedValue(new Error("membership read failed"));
+    if (stored !== null) localStorage.setItem(KEY, stored);
+    render(
+      <TenantProvider>
+        <PageWriteGuardProvider>
+          <button data-testid="edit">Edit</button>
+          <Probe />
+        </PageWriteGuardProvider>
+      </TenantProvider>
+    );
+  }
+
+  it("is one red alert outside the fieldset, its Reload enabled, when the list failed and nothing pins the page", async () => {
+    mountAfterTheListFailed(null);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveAttribute("role", "alert");
+    // Red (R3): only the operator's Reload reads the list again.
+    expect(notice).toHaveClass(
+      "border-red-500/40",
+      "bg-red-500/10",
+      "text-red-700",
+      "dark:text-red-400"
+    );
+    expect(
+      screen.getByTestId("prompt-documents-controls")
+    ).not.toContainElement(notice);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
+    expect(latest().projectListFailed).toBe(true);
+    expect(latest().pin).toBeUndefined();
+    // Nothing is locked: the page's controls stay enabled, and refuse each
+    // write at call time for want of a pin.
+    expect(screen.getByTestId("edit")).toBeEnabled();
+  });
+
+  it("is absent while the membership read is in flight", async () => {
+    mountWhileTheProviderReads(null);
+    await act(async () => {});
+
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+    expect(latest().projectListFailed).toBe(false);
+  });
+
+  it("is absent when the list failed but the project stored at mount pins the page", async () => {
+    mountAfterTheListFailed(B);
+    await waitFor(() => expect(latest().tenantContext?.loading).toBe(false));
+
+    expect(latest().tenantContext?.error).not.toBeNull();
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(latest().projectListFailed).toBe(false);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
   });
 });
 

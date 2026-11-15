@@ -856,9 +856,15 @@ const WAITING = [
 /** What that line says while the page's project may yet arrive. */
 const WAITING_COPY =
   "Waiting for this page's project to be known before reading these settings. If this does not change, select a project or reload the page.";
-/** What it says once the layout's provider has said its membership read failed. */
-const LIST_FAILED_COPY =
-  "This page's project is unknown because the list of your projects could not be read, so these settings are not read. Reload the page to try again.";
+/**
+ * What it says once the layout's provider has said its membership read
+ * failed: a pointer to the page's one red notice, which says the rest.
+ */
+const SEE_NOTICE_COPY =
+  "Not read: this page's project is unknown. See the notice at the top of the page.";
+/** The page's red notice for that state. */
+const LIST_FAILED_NOTICE =
+  "The list of your projects could not be read, so this page's project is unknown. Until you reload, no setting on this page is read and no change made on it is sent.";
 
 /** Every settings read sent so far, as `[label, tenants]` per section read. */
 const settingsReadTenants = () =>
@@ -920,10 +926,14 @@ describe("the page's settings are read only under the page's project", () => {
         /^Loading…$|Reading the dial…|Loading enforcement settings…|Loading session verdicts…/
       )
     ).not.toBeInTheDocument();
-    // Each section names the way out if the project never comes.
+    // Each section names the way out if the project never comes, and the
+    // provider has said nothing failed, so the page raises no notice.
     for (const id of WAITING) {
       expect(screen.getByTestId(id)).toHaveTextContent(WAITING_COPY);
     }
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
   }, 20_000);
 
   it("a verdict filter chosen while the page has no project is the one its first verdict read sends, once and pinned", async () => {
@@ -959,9 +969,23 @@ describe("the page's settings are read only under the page's project", () => {
     expect(settingsReadTenants()).toEqual(everyReadIn([]));
     expect(writesSince(0)).toEqual([]);
     // The provider said its read failed, and only a reload reads it again:
-    // each section says so, and names the reload.
+    // ONE red notice says so, outside the fieldset with its Reload enabled,
+    // and each section points to it.
+    const notices = screen.getAllByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notices).toHaveLength(1);
+    const [notice] = notices;
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(notice).toHaveTextContent(LIST_FAILED_NOTICE);
+    expect(
+      screen.getByTestId("prompt-documents-controls")
+    ).not.toContainElement(notice ?? null);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
     for (const id of WAITING) {
-      expect(screen.getByTestId(id)).toHaveTextContent(LIST_FAILED_COPY);
+      expect(screen.getByTestId(id)).toHaveTextContent(SEE_NOTICE_COPY);
     }
   }, 20_000);
 

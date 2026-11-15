@@ -45,6 +45,7 @@ export function testPageGuard(
     pageTenant: undefined,
     mountTenant: null,
     tenantContext: null,
+    projectListFailed: false,
     locked: null,
     writeAllowed: () => pin !== undefined,
     projectUnchanged: () => true,

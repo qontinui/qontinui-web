@@ -57,18 +57,22 @@
  *   narrowed to `space-y-4`, because the two `border-t` sections below are
  *   separate governance controls and their separation is what stops them
  *   reading as one.
- * - **R3** — the page's one attention surface, `PageWriteGuard`'s cross-tab
- *   notice, is RED: only the operator's Reload (or a switch back in the other
- *   tab) clears it, which is R3's "the operator's move, now" (plan
- *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). It is one
+ * - **R3** — the page's attention surfaces are `PageWriteGuard`'s two
+ *   notices, both RED and both outside its fieldset, each with a Reload:
+ *   the cross-tab notice, which only the operator's Reload (or a switch back
+ *   in the other tab) clears, and the project-list notice, shown when the
+ *   layout's provider said its membership read failed and the page has no
+ *   project to pin to, which only the operator's Reload clears. Both are R3's
+ *   "the operator's move, now" (plan
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). Each is one
  *   callout with one state, not a kind→attention table, so there is nothing
  *   to enrol in `CONSOLE_PALETTES` (`components/console/consoleSurfaces.ts`,
  *   which `console/attention.test.ts` imports and audits). That registry
  *   holds the modules that export an attention table, typed as one or named
  *   `*ATTENTION*`, and `consoleSurfaces.test.ts` scans the console for them;
- *   this route exports none. The notice takes the route's existing must-act
+ *   this route exports none. The notices take the route's existing must-act
  *   red from `PromptDocumentClaims.tsx`, which is unregistered for the same
- *   reason. Its classes are not `AUTHOR_RED` or a drift of it, which that
+ *   reason. Their classes are not `AUTHOR_RED` or a drift of it, which that
  *   scan also checks.
  *
  * ## One cross-tab write guard for the whole page
@@ -76,7 +80,7 @@
  * `PageWriteGuardProvider` takes the page's project and the guard against
  * another tab's project switch ONCE, for the list's rows and the five settings
  * sections alike (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
- * D1): one notice, one fieldset around everything, and every section hook
+ * D1): its notices, one fieldset around everything, and every section hook
  * refuses and pins beside its own send by reading the provider (D9). Nothing
  * is handed up from the list, and no section takes a guard as a prop.
  */

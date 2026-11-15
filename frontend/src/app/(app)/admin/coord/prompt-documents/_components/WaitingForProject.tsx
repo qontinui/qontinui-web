@@ -6,32 +6,28 @@ import { usePageWriteGuardContext } from "../_hooks/usePageWriteGuardContext";
 const WAITING_FOR_PROJECT =
   "Waiting for this page's project to be known before reading these settings. If this does not change, select a project or reload the page.";
 
-/** The line once the layout's provider has said its membership read failed. */
-const PROJECT_LIST_FAILED =
-  "This page's project is unknown because the list of your projects could not be read, so these settings are not read. Reload the page to try again.";
+/** The line once the page's red notice says its project list failed. */
+const SEE_PROJECT_LIST_NOTICE =
+  "Not read: this page's project is unknown. See the notice at the top of the page.";
 
 /**
  * What a settings section shows while the page has no project to read its
  * settings in (`useFirstPinnedRead`). Nothing is read until the page knows
  * its project, and the section says so rather than show empty data or a load
- * that is not happening.
+ * that is not happening. The line is muted, as the section's loading line is,
+ * and names the way out in words.
  *
- * The project may never come: on a first visit the layout's provider reads
- * the membership list once and does not retry it, and an operator may have
- * none selected. The line then stays, and nothing is read or written, for the
- * tab's whole life — so it names the way out in words, as a calm row's ask
- * must be (console style guide R3). When the provider SAYS its read failed,
- * the line says that, and that a reload is what reads the list again.
- *
- * The section's own muted loading style.
+ * When the layout's provider has said its membership read failed and the
+ * page has no project to pin to (`projectListFailed`), nothing will read the
+ * list again: the provider shows ONE red notice with a Reload, outside the
+ * fieldset (`PageWriteGuardProvider`), and the section points to it instead
+ * of repeating it.
  */
 export function WaitingForProject({ testId }: { testId: string }) {
-  const tenants = usePageWriteGuardContext()?.tenantContext ?? null;
-  const listFailed =
-    tenants !== null && !tenants.loading && tenants.error !== null;
+  const listFailed = usePageWriteGuardContext()?.projectListFailed ?? false;
   return (
     <p className="text-sm text-muted-foreground" data-testid={testId}>
-      {listFailed ? PROJECT_LIST_FAILED : WAITING_FOR_PROJECT}
+      {listFailed ? SEE_PROJECT_LIST_NOTICE : WAITING_FOR_PROJECT}
     </p>
   );
 }

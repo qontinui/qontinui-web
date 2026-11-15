@@ -94,6 +94,15 @@ function noticeProjectLabel(
  * locked it is described by the notice (`aria-describedby`): that is the
  * markup assistive technology reads to tie the disabled controls' group to
  * its reason. How a given screen reader voices it was not measured.
+ *
+ * It renders one more notice, in the same red and for the same reason: the
+ * layout's provider has said its membership read failed, and the page has no
+ * project to pin a request to (nothing stored at mount). The provider reads
+ * that list once and never again, so no setting is read and no change is
+ * sent for the tab's life unless the operator reloads (R3's red row: nothing
+ * else will resolve it). It sits beside the cross-tab notice, outside the
+ * fieldset, so its Reload is never disabled; the settings sections waiting for
+ * the page's project point to it rather than repeat it (`projectListFailed`).
  */
 export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const { mountTenant, tenantContext, pageTenant, guardTenant, pin } =
@@ -106,11 +115,19 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   const pinRef = useRef(pin);
   pinRef.current = pin;
   const resolvePin = useCallback(() => pinRef.current, []);
+  // The provider said its one membership read failed, and nothing pins the
+  // page's requests: only the operator's Reload reads the list again.
+  const projectListFailed =
+    pin === undefined &&
+    tenantContext !== null &&
+    !tenantContext.loading &&
+    tenantContext.error !== null;
   const value = useMemo<PageWriteGuardValue>(
     () => ({
       pageTenant,
       mountTenant,
       tenantContext,
+      projectListFailed,
       locked,
       writeAllowed,
       projectUnchanged,
@@ -122,6 +139,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
       pageTenant,
       mountTenant,
       tenantContext,
+      projectListFailed,
       locked,
       writeAllowed,
       projectUnchanged,
@@ -176,6 +194,30 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
               className="gap-1.5"
               onClick={() => window.location.reload()}
               data-testid="prompt-documents-cross-tab-reload"
+            >
+              <RotateCw className="size-4" />
+              Reload
+            </Button>
+          </div>
+        ) : null}
+        {projectListFailed ? (
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-700 dark:text-red-400"
+            role="alert"
+            data-testid="prompt-documents-project-list-failed"
+          >
+            <AlertTriangle className="size-4 shrink-0" />
+            <p className="min-w-0 flex-1">
+              The list of your projects could not be read, so this page&apos;s
+              project is unknown. Until you reload, no setting on this page is
+              read and no change made on it is sent.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => window.location.reload()}
+              data-testid="prompt-documents-project-list-failed-reload"
             >
               <RotateCw className="size-4" />
               Reload
