@@ -920,6 +920,26 @@ describe("the page's settings are read only under the page's project", () => {
     expect(settingsReadTenants()).toEqual(everyReadIn([B]));
   }, 20_000);
 
+  it("with a project, a verdict filter change re-reads the verdicts once, pinned", async () => {
+    const VERDICTS = /\/session-compliance\/sessions\?/;
+    render(<PromptDocumentsPage />);
+    await waitFor(() => expect(sentSince(0, "GET", VERDICTS)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    await settle(80);
+
+    await user().click(screen.getByTestId("compliance-verdict-filter"));
+    await user().click(await screen.findByRole("option", { name: "Verified" }));
+    await waitFor(() => expect(sentSince(0, "GET", VERDICTS)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    await settle(80);
+
+    const reads = sentSince(0, "GET", VERDICTS);
+    expect(reads.map((s) => s.tenant)).toEqual([B, B]);
+    expect(reads[1]?.url).toMatch(/verdict=/);
+  }, 20_000);
+
   it("a settings write sent once the provider has answered lands in the page's project", async () => {
     // A first visit on a hard load: nothing is stored, and the layout's
     // provider is still reading the membership list when the page mounts, so
