@@ -46,6 +46,15 @@ export const NO_PIN_REFUSAL =
   "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
 
 /**
+ * Why a write, or a dialog, is refused while the page is still learning its
+ * project and the stored one differs (`usePageWriteGuard` `learning`): the
+ * difference may resolve by itself once the page knows its project, so the
+ * refusal asks for no reload.
+ */
+export const LEARNING_REFUSAL =
+  "Nothing was sent: this page's project is not known yet.";
+
+/**
  * The pin a write on the page's behalf is sent in, asked right before it is
  * sent, beside the send. `undefined` sends nothing: the page's guard refused
  * the write and said why, or there is no project to pin it to, said here. So
@@ -141,10 +150,17 @@ export interface PageWriteGuardState {
  * `canPin` says whether the page has a project to pin a write to
  * (`usePageProject` `pin`). Without one, every write is refused: nothing
  * could hold it, or a retry or replay of it, to the page's project.
+ *
+ * `learning` says the page's project has never been known and the layout's
+ * provider is still reading it. A stored project that differs then may be
+ * the very one that read names (two fresh tabs), and the lock lifts by
+ * itself when it lands. The guard refuses as always, but its refusal says
+ * the page's project is not known yet rather than asking for a reload.
  */
 export function usePageWriteGuard(
   reference: string | null,
-  canPin: boolean
+  canPin: boolean,
+  learning = false
 ): PageWriteGuardState {
   // The project the newest `storage` event left stored: what another tab is
   // PROVEN to have stored (`undefined`: no event yet). A state, so an event
@@ -181,6 +197,8 @@ export function usePageWriteGuard(
   referenceRef.current = reference;
   const canPinRef = useRef(canPin);
   canPinRef.current = canPin;
+  const learningRef = useRef(learning);
+  learningRef.current = learning;
   // Re-renders the page, so the lock derived above reads the store again and
   // shows a change the call-time check found before its event arrived.
   const [, raise] = useReducer((renders: number) => renders + 1, 0);
@@ -193,6 +211,10 @@ export function usePageWriteGuard(
 
   const projectUnchanged = useCallback((): boolean => {
     if (!crossTabInEffect()) return true;
+    if (learningRef.current) {
+      toast.error(LEARNING_REFUSAL);
+      return false;
+    }
     const cause = attribute(readActiveTenantId(), eventStoredRef.current);
     toast.error(`${crossTabHeadline(cause)} Nothing was sent.`);
     return false;

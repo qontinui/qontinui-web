@@ -44,6 +44,12 @@ export interface PageProject {
    */
   guardTenant: string | null;
   /**
+   * Whether the page's project has ever been known: the page's own now, or
+   * the last one known. `false` only while it has never been, when
+   * `guardTenant` is the project stored at mount.
+   */
+  projectKnown: boolean;
+  /**
    * The project every row read and write is SENT in, on every attempt — the
    * HTTP client otherwise reads the stored project per attempt, so a request
    * retried or replayed after another tab's switch would land in, or answer
@@ -165,5 +171,12 @@ export function usePageProject(): PageProject {
     [guardTenant]
   );
 
-  return { mountTenant, tenantContext, pageTenant, guardTenant, pin };
+  return {
+    mountTenant,
+    tenantContext,
+    pageTenant,
+    guardTenant,
+    projectKnown: knownTenant !== undefined,
+    pin,
+  };
 }

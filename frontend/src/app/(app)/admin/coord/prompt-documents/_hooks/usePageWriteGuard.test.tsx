@@ -42,9 +42,16 @@
  *    list the account's projects (`tenant_not_resolved`) names the missing
  *    operator role, with no Reload. Locked as well, the page shows ONE
  *    alert, the cross-tab notice, naming the page's project unknown; and a
- *    page locked while its project is still being learned says so, never
- *    "your home project". `PageWriteGuardListRefusal` drives the same notice
- *    over the real tenants client.
+ *    page whose project was never known says so, never "your home project".
+ *    `PageWriteGuardListRefusal` drives the same notice over the real
+ *    tenants client.
+ * 9. **A lock raised while the page is still learning its project is not
+ *    red** (round 10). The provider's read may name the project now stored,
+ *    and the lock then lifts by itself, so "until you reload" would be
+ *    false. Every write is still refused, in words that ask for no reload,
+ *    and one muted line says so; when the read lands, the lock either lifts
+ *    with no red notice ever shown, or turns red, naming the page's project,
+ *    with focus on its Reload.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -84,6 +91,7 @@ import {
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { LEARNING_REFUSAL } from "./usePageWriteGuard";
 import { REQUEST_TIMEOUT_MESSAGE } from "@/services/http-client";
 import { WaitingForProject } from "../_components/WaitingForProject";
 
@@ -305,24 +313,31 @@ describe("the guard is never off", () => {
 
     await act(async () => anotherTabStores(SYS));
 
-    // Still UNKNOWN, and locked against the project stored at mount.
+    // Still UNKNOWN, and locked against the project stored at mount: the
+    // controls are disabled and every write refused, at once. The provider is
+    // still reading, so the lock is said in the muted line, not in red.
     expect(latest().pageTenant).toBeUndefined();
     expect(latest().locked).toBe("another_tab");
     expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
-    // The membership list is not read yet: neither project has a name to give.
-    expect(notice()).toHaveTextContent(
-      "everything below belongs to project t-bravo, and the active project is now project t-system."
-    );
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
     let allowed = true;
     act(() => {
       allowed = latest().writeAllowed();
     });
     expect(allowed).toBe(false);
 
-    // Known at last, as the mount project, and still locked.
+    // Known at last, as the mount project, and still locked: now red.
     await answer();
     expect(latest().pageTenant).toBe(B);
     expect(latest().locked).toBe("another_tab");
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to Bravo, and the active project is now t-system (unknown project — not in this page's project list)."
+    );
   });
 
   it("locks on a storage clear() that empties the selection", async () => {
@@ -490,9 +505,9 @@ describe("the project-list notice", () => {
     );
   });
 
-  it("names coord's refusal and the operator role, and offers no Reload, when coord will not list the account's projects", async () => {
-    // `tenant_not_resolved` is coord's operator-role layer refusing to list:
-    // every reload, and a project create, is refused alike.
+  it("names coord's refusal, offers the operator role as the likely way out, and no Reload, when coord will not list the account's projects", async () => {
+    // `tenant_not_resolved` carries no reason and has more than one cause;
+    // every reload is refused alike.
     mountAfterTheListFailed(null, REFUSED);
 
     const notice = await screen.findByTestId(
@@ -500,7 +515,7 @@ describe("the project-list notice", () => {
     );
     expect(notice).toHaveAttribute("role", "alert");
     expect(notice).toHaveTextContent(
-      "Coord would not list your projects (tenant_not_resolved): your account has no role that can read them, so no setting on this page is read and no change made on it is sent. Ask your project's admin for the operator role."
+      "Coord refused to list your projects (tenant_not_resolved), so no setting on this page is read and no change made on it is sent. This usually means your account lacks the operator role in its home project; ask your project's admin for it."
     );
     expect(
       screen.getByTestId("prompt-documents-project-list-failed-error")
@@ -525,18 +540,134 @@ describe("the project-list notice", () => {
     ).toBeEnabled();
   });
 
-  it("locked while its project is still being learned, names it as not yet learned, never as the home project", async () => {
+  /** Whether an element with `testId` is ever added to the page. */
+  function watchFor(testId: string): () => boolean {
+    let added = false;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (
+            node instanceof Element &&
+            (node.matches(`[data-testid="${testId}"]`) ||
+              node.querySelector(`[data-testid="${testId}"]`) !== null)
+          ) {
+            added = true;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      observer.takeRecords();
+      observer.disconnect();
+      return added;
+    };
+  }
+
+  it("locked while still learning its project: no red notice, every write refused without asking a reload, and the lock lifts by itself when the read names the stored project", async () => {
     // Two tabs in a fresh browser: the other tab's provider stores the home
     // project while this one's is still reading, so this page locks.
-    mountWhileTheProviderReads(null);
+    const everRed = watchFor("prompt-documents-cross-tab");
+    const { answer } = mountWhileTheProviderReads(null);
+    await act(async () => anotherTabStores(B));
+
+    expect(latest().locked).not.toBeNull();
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveTextContent(
+      "The active project changed while this page was still learning its own: nothing on this page is sent until it knows its project. If this does not change, reload the page."
+    );
+    expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
+    let allowed = true;
+    act(() => {
+      allowed = latest().writeAllowed();
+    });
+    expect(allowed).toBe(false);
+    expect(toast.error).toHaveBeenCalledWith(LEARNING_REFUSAL);
+
+    // The read lands on the project the other tab stored: the lock lifts,
+    // with no reload and no red notice ever shown.
+    await answer();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(latest().locked).toBeNull();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("prompt-documents-controls")).toBeEnabled();
+    expect(everRed()).toBe(false);
+  });
+
+  it("locked while still learning its project, turns red once the read lands and the change remains, naming the page's project, with focus on Reload", async () => {
+    // Bravo stored at mount, and the provider still reading: the page's
+    // project is not known yet. When the read lands it is Bravo, a member,
+    // while the other tab stored System: a real cross-tab change, which only
+    // a reload or a switch back clears. (With nothing stored at mount the
+    // read always lifts the lock: the provider stores the project it
+    // reconciled, as the case above shows.)
+    const { answer } = mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+
+    await answer();
+    expect(latest().locked).toBe("another_tab");
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to Bravo, and the active project is now t-system (unknown project — not in this page's project list)."
+    );
+    expect(notice()).not.toHaveTextContent(/not yet learned|home project/);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
+  });
+
+  it("names a never-known project as unknown when the provider had read the list before this page loaded with no project selected", async () => {
+    // Ported from the round-10 review's reproduction. The layout's provider
+    // read the list before this page mounted, then another tab cleared the
+    // storage, and this tab navigated to the page client-side: nothing is
+    // stored at mount, no read is in flight, and nothing will name the page's
+    // project. Another tab then stores one.
+    listTenantsMock.mockResolvedValue({
+      tenants: [{ id: B, slug: "b", name: "Bravo" }],
+      active_tenant_id: B,
+    });
+    function Page({ show }: { show: boolean }) {
+      return show ? (
+        <PageWriteGuardProvider>
+          <Probe />
+        </PageWriteGuardProvider>
+      ) : null;
+    }
+    const { rerender } = render(
+      <TenantProvider>
+        <Page show={false} />
+      </TenantProvider>
+    );
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBe(B));
+    localStorage.clear();
+    rerender(
+      <TenantProvider>
+        <Page show />
+      </TenantProvider>
+    );
     await act(async () => anotherTabStores("t-other"));
 
-    const crossTab = screen.getByTestId("prompt-documents-cross-tab");
-    expect(crossTab).toHaveTextContent(
-      "everything below belongs to a project this page has not yet learned, and the active project is now project t-other."
+    expect(latest().tenantContext?.loading).toBe(false);
+    expect(listTenantsMock).toHaveBeenCalledTimes(1);
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to an unknown project (no project was selected when this page loaded), and the active project is now"
     );
-    expect(crossTab).not.toHaveTextContent(/home project/);
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(notice()).not.toHaveTextContent(/not yet learned|home project/);
   });
 
   it("is absent while a refresh re-reads the list after it failed", async () => {

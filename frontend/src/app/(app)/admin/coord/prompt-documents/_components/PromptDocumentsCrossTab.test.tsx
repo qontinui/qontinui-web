@@ -641,7 +641,10 @@ describe("another tab switches project", () => {
     // The provider never answers, so the page's project is never known. The
     // guard compares against the project stored at mount (#7): another tab's
     // switch away from it locks the list at once, instead of leaving the
-    // guard off until a project the page may never learn.
+    // guard off until a project the page may never learn. While the
+    // provider is still reading, that read may name the project now stored
+    // and lift the lock by itself, so the page says so in a muted line
+    // rather than a red notice promising only a reload clears it.
     listTenantsMock.mockImplementation(() => new Promise(() => {}));
     localStorage.setItem(KEY, B);
     render(
@@ -660,7 +663,14 @@ describe("another tab switches project", () => {
 
     await act(async () => anotherTabStores(SYS));
 
-    await expectNotice("another_tab");
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveTextContent(
+      "The active project changed while this page was still learning its own: nothing on this page is sent until it knows its project. If this does not change, reload the page."
+    );
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
   }, 20_000);
 

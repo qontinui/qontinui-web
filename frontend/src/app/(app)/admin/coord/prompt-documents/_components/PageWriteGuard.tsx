@@ -87,21 +87,25 @@ function noticeProjectLabel(
  * The page's OWN project as the notice names it. A project the page has
  * never known (`pageTenant` UNKNOWN, and the guard naming none) is named as
  * such, never "your home project (none selected)", which would name a project
- * no read confirmed beside sections waiting for the page's project: unknown
- * once the provider's list could not be read, not yet learned while its read
- * is still in flight.
+ * no read confirmed beside sections waiting for the page's project. Each
+ * state gets its own words: not yet learned while the provider's read is in
+ * flight; unknown once that read failed; and unknown with nothing to learn it
+ * from when the provider had read the list before this page loaded with no
+ * project selected (a client-side navigation, `usePageProject`).
  */
 function pageProjectLabel(
   tenantContext: LayoutTenants,
   pageTenant: string | null | undefined,
   id: string | null
 ): string {
-  if (id === null && pageTenant === undefined) {
-    return listReadFailed(tenantContext)
-      ? "an unknown project (the list of your projects could not be read)"
-      : "a project this page has not yet learned";
+  if (id !== null || pageTenant !== undefined) {
+    return noticeProjectLabel(tenantContext, id);
   }
-  return noticeProjectLabel(tenantContext, id);
+  if (tenantContext?.loading) return "a project this page has not yet learned";
+  if (listReadFailed(tenantContext)) {
+    return "an unknown project (the list of your projects could not be read)";
+  }
+  return "an unknown project (no project was selected when this page loaded)";
 }
 
 /**
@@ -185,6 +189,17 @@ function ReloadButton({
  * markup assistive technology reads to tie the disabled controls' group to
  * its reason. How a given screen reader voices it was not measured.
  *
+ * One lock is not red: while the page's project has never been known and the
+ * layout's provider is still reading it (`learning`). A stored project that
+ * differs then may be the very one that read names (two fresh tabs), and the
+ * lock lifts by itself when it lands — so "until you reload" would be false,
+ * and red promises that nothing else resolves it. The page still refuses
+ * every write and keeps its fieldset disabled, and says so in one muted line
+ * (the sections say they are waiting too). When the read lands, either the
+ * lock lifts with no notice ever shown, or a real cross-tab change remains
+ * and the red notice shows, naming the project the page now knows, with
+ * focus moved to its Reload.
+ *
  * It renders one more notice, in the same red and for the same reason: the
  * layout's provider has said its membership read failed, and the page has no
  * project to pin a request to (nothing stored at mount). Nothing on this page
@@ -196,7 +211,8 @@ function ReloadButton({
  * refusal to list the account's projects (`tenant_not_resolved`, which
  * coord answers at its operator-role layer, so a reload and a project create
  * are refused alike: `isTenantsListUnauthorized`) is named as that, with the
- * project admin's operator role as the way out, and no Reload. It sits
+ * project admin's operator role offered as the likely way out (the token
+ * carries no reason, and has more than one cause), and no Reload. It sits
  * outside the fieldset, so its Reload is never disabled, and shows
  * only while the page is not locked: the cross-tab notice then says the
  * same thing (the page's project unknown, Reload the way on), and two alerts
@@ -204,10 +220,20 @@ function ReloadButton({
  * to whichever notice is up rather than repeat it (`projectListFailed`).
  */
 export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
-  const { mountTenant, tenantContext, pageTenant, guardTenant, pin } =
-    usePageProject();
+  const {
+    mountTenant,
+    tenantContext,
+    pageTenant,
+    guardTenant,
+    projectKnown,
+    pin,
+  } = usePageProject();
+  // The page's project has never been known and the provider is reading it:
+  // a lock now may lift by itself when that read lands (see above).
+  const learning =
+    !projectKnown && tenantContext !== null && tenantContext.loading;
   const { locked, stored, writeAllowed, projectUnchanged, crossTabInEffect } =
-    usePageWriteGuard(guardTenant, pin !== undefined);
+    usePageWriteGuard(guardTenant, pin !== undefined, learning);
   // Asked as each request is sent, through a ref: one identity for the page's
   // lifetime, so a hook mounted before the page's project resolves neither
   // re-fires its mount read nor rebuilds its callbacks when the pin changes.
@@ -245,6 +271,9 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   );
 
   const isLocked = locked !== null;
+  // The red cross-tab notice: a lock that only the operator's Reload, or a
+  // switch back in the other tab, clears.
+  const crossTabNotice = isLocked && !learning;
   const listRefused = isTenantsListUnauthorized(tenantContext?.error ?? null);
   const noticeId = useId();
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
@@ -255,8 +284,10 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   // one way on. Focus anywhere else is the operator's, and is left alone,
   // most of all inside an open modal dialog, which portals outside the
   // fieldset.
+  // Keyed on the red notice, not the lock: a lock raised while the page was
+  // learning its project shows its Reload only once the read has landed.
   useEffect(() => {
-    if (!isLocked) return;
+    if (!crossTabNotice) return;
     const focused = document.activeElement;
     const dropped = focused === null || focused === document.body;
     const disabledUnderIt =
@@ -264,12 +295,24 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
     if (!dropped && !disabledUnderIt) return;
     if (document.querySelector(OPEN_MODAL_DIALOG) !== null) return;
     reloadRef.current?.focus();
-  }, [isLocked]);
+  }, [crossTabNotice]);
 
   return (
     <PageWriteGuardContext.Provider value={value}>
       <div className="space-y-6">
-        {locked !== null ? (
+        {locked !== null && learning ? (
+          <p
+            className="text-sm text-muted-foreground"
+            id={noticeId}
+            role="status"
+            data-testid="prompt-documents-cross-tab-learning"
+          >
+            The active project changed while this page was still learning its
+            own: nothing on this page is sent until it knows its project. If
+            this does not change, reload the page.
+          </p>
+        ) : null}
+        {crossTabNotice && locked !== null ? (
           <MustActNotice
             testId="prompt-documents-cross-tab"
             id={noticeId}
@@ -300,10 +343,10 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
           >
             {listRefused ? (
               <p>
-                Coord would not list your projects (tenant_not_resolved): your
-                account has no role that can read them, so no setting on this
-                page is read and no change made on it is sent. Ask your
-                project&apos;s admin for the operator role.
+                Coord refused to list your projects (tenant_not_resolved), so no
+                setting on this page is read and no change made on it is sent.
+                This usually means your account lacks the operator role in its
+                home project; ask your project&apos;s admin for it.
               </p>
             ) : (
               <p>

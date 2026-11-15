@@ -40,14 +40,17 @@ import { WaitingForProject } from "./WaitingForProject";
 
 const TENANTS = "/api/v1/operations/tenants";
 
-/** The web backend's production envelope for an HTTPException's detail. */
+/**
+ * The web backend's production envelope for an HTTPException's detail, as
+ * `error_handler.py` builds it: `time.time()` and `str(request.url)`.
+ */
 function envelope(status: number, message: string): Response {
   return new Response(
     JSON.stringify({
       error: status === 403 ? "FORBIDDEN" : "BAD_REQUEST",
       message,
-      timestamp: "2026-11-15T12:00:00Z",
-      path: TENANTS,
+      timestamp: 1763208000.123456,
+      path: `https://api.qontinui.io${TENANTS}`,
     }),
     { status, headers: { "Content-Type": "application/json" } }
   );
@@ -85,7 +88,7 @@ afterEach(() => {
 });
 
 describe("the project-list notice over the real tenants client", () => {
-  it("coord's refusal to list, as the web backend answers it, names the operator role and offers no Reload", async () => {
+  it("coord's refusal to list, as the web backend answers it, offers the operator role as the likely way out and no Reload", async () => {
     tenantsAnswer(() => envelope(403, "tenant_not_resolved"));
     renderPage();
 
@@ -93,10 +96,10 @@ describe("the project-list notice over the real tenants client", () => {
       "prompt-documents-project-list-failed"
     );
     expect(notice).toHaveTextContent(
-      "Coord would not list your projects (tenant_not_resolved): your account has no role that can read them"
+      "Coord refused to list your projects (tenant_not_resolved)"
     );
     expect(notice).toHaveTextContent(
-      "Ask your project's admin for the operator role."
+      "This usually means your account lacks the operator role in its home project; ask your project's admin for it."
     );
     expect(
       screen.queryByTestId("prompt-documents-project-list-failed-reload")
