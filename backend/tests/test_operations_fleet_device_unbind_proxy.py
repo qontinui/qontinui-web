@@ -30,6 +30,7 @@ The properties pinned here:
    bounded by what is left of the budget.
 """
 
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -117,6 +118,13 @@ def _not_found(device_id: str) -> MagicMock:
     )
 
 
+class _Hang:
+    """A queued answer for a coord call that does not return for ``seconds``."""
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+
 class _CoordStub:
     """A mocked ``httpx.AsyncClient`` answering ``delete`` by URL, in order.
 
@@ -137,6 +145,9 @@ class _CoordStub:
         for device_id, queue in self.answers.items():
             if url.endswith(f"/coord/devices/{device_id}/tenant-binding"):
                 answer = queue.pop(0)
+                if isinstance(answer, _Hang):
+                    await asyncio.sleep(answer.seconds)
+                    raise AssertionError("the call outlived its budget")
                 if isinstance(answer, BaseException):
                     raise answer
                 return answer
@@ -463,10 +474,12 @@ class TestCallerRefusalAborts:
             }
         )
         resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
-        assert resp.status_code == 401
+        # Never 401: the web client would refresh the token and replay the POST.
+        assert resp.status_code == 403
         assert resp.json() == {
             "detail": {
                 "error": "coord_refused_caller",
+                "coord_status": 401,
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_A,
                 "results": [
@@ -510,6 +523,7 @@ class TestCallerRefusalAborts:
         assert resp.json() == {
             "detail": {
                 "error": "coord_refused_caller",
+                "coord_status": 403,
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_C,
                 "results": [
@@ -603,6 +617,56 @@ class TestTransportFailures:
             },
             "still_member_via_pointer": None,
         }
+
+    def test_pool_timeout_is_failed_504_nothing_sent(self, auth_client: TestClient):
+        stub = _CoordStub(
+            {DEVICE_A: [httpx.PoolTimeout("no slot", request=_request_for(DEVICE_A))]}
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        assert resp.json()["results"] == [
+            {
+                "device_id": DEVICE_A,
+                "outcome": "failed",
+                "status": 504,
+                "error": {
+                    "error": "coord_unreachable",
+                    "detail": "coord was not reached (PoolTimeout)",
+                },
+                "still_member_via_pointer": None,
+            }
+        ]
+        assert resp.json()["failed"] == 1
+
+    @pytest.mark.parametrize("status", [502, 503])
+    def test_gateway_502_503_without_a_coord_body_is_unknown(
+        self, auth_client: TestClient, status: int
+    ):
+        stub = _CoordStub({DEVICE_A: [_mock_response(status, None, "Bad Gateway")]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.status_code == 200
+        assert resp.json()["results"] == [
+            {
+                "device_id": DEVICE_A,
+                "outcome": "unknown",
+                "status": status,
+                "error": {
+                    "error": "coord_answer_lost",
+                    "detail": f"a gateway in front of coord answered {status} "
+                    "with no coord body; coord may have acted",
+                    "upstream": "Bad Gateway",
+                },
+                "still_member_via_pointer": None,
+            }
+        ]
+        assert resp.json()["unknown"] == 1
+
+    def test_coords_own_structured_502_stays_failed(self, auth_client: TestClient):
+        coord_body = {"error": "github_unreachable"}
+        stub = _CoordStub({DEVICE_A: [_mock_response(502, coord_body)]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
+        assert resp.json()["results"][0]["outcome"] == "failed"
+        assert resp.json()["results"][0]["error"] == coord_body
 
     def test_read_timeout_is_unknown_never_failed(self, auth_client: TestClient):
         stub = _CoordStub(
@@ -777,6 +841,40 @@ class TestDeadline:
             5.0,
             2.0,
         ]
+
+    def test_a_call_still_waiting_when_the_budget_ends_is_unknown(
+        self, auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        from app.api.v1.endpoints import fleet_device_bindings
+
+        # 0.05 s of budget left when A is sent; coord would take 5 s.
+        monkeypatch.setattr(
+            fleet_device_bindings, "_monotonic", _Clock([0.0, 44.95, 46.0])
+        )
+        stub = _CoordStub({DEVICE_A: [_Hang(5.0)]})
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "results": [
+                {
+                    "device_id": DEVICE_A,
+                    "outcome": "unknown",
+                    "status": 504,
+                    "error": {
+                        "error": "coord_answer_lost",
+                        "detail": "the batch's wall-clock budget ran out while "
+                        "waiting for coord; it may have acted",
+                    },
+                    "still_member_via_pointer": None,
+                },
+                _not_attempted(DEVICE_B, _OUT_OF_BUDGET),
+            ],
+            "unbound": 0,
+            "already_absent": 0,
+            "unknown": 1,
+            "failed": 0,
+            "not_attempted": 1,
+        }
 
     def test_the_budget_is_45_seconds(self):
         from app.api.v1.endpoints import fleet_device_bindings

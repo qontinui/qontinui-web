@@ -36,12 +36,14 @@ Per-id outcomes — every requested id gets exactly one:
   about the binding.
 * ``unknown`` — the request may have reached coord and coord may have acted,
   but its answer did not arrive intact: a read/write timeout, a transport error
-  after the request was sent (``ReadError``, ``RemoteProtocolError``, …), a
-  gateway 504, or a 2xx whose body is not coord's documented one. ``error`` is
+  after the request was sent (``ReadError``, ``RemoteProtocolError``, …), the
+  batch's wall budget expiring mid-call, a gateway 504, a 502/503 whose body is
+  not a coord JSON object (a gateway's answer, not coord's), or a 2xx whose body
+  is not coord's documented one. ``error`` is
   ``{"error": "coord_answer_lost", "detail": …}``. Never ``failed``, which would
   invite the operator to treat a possibly-removed binding as still present.
-* ``failed`` — coord refused (``503 tenant_devices_absent``, a 500, …) with its
-  structured body as ``error``, or coord was never reached (a connect error or
+* ``failed`` — coord refused with its own structured JSON body as ``error``
+  (``503 tenant_devices_absent``, a 500, …), or coord was never reached (a connect error or
   connect/pool timeout: nothing was sent, status 502/504,
   ``{"error": "coord_unreachable"}``).
 * ``not_attempted`` — the id was never sent, because the batch's
@@ -49,9 +51,12 @@ Per-id outcomes — every requested id gets exactly one:
   earlier id's caller refusal aborted the batch. Still a 200 in the deadline
   case, so the outcomes already reached are reported, not lost.
 
-**A 401 / 403 aborts the batch** with coord's status. An auth refusal is a
-property of the caller, not of the row, so continuing would only repeat it. The
-error body still carries a complete ``results`` list (the refused id as
+**A coord 401 / 403 aborts the batch, and this route answers 403 for both.**
+An auth refusal is a property of the caller, not of the row, so continuing would
+only repeat it. The route never answers HTTP 401: the web client treats a 401
+as a stale token, refreshes it and REPLAYS the POST, which would re-run a batch
+whose earlier ids already landed. Coord's own status is kept in the body as
+``coord_status``. The error body still carries a complete ``results`` list (the refused id as
 ``failed``, every later id as ``not_attempted``) with the tallies, so nothing
 already removed goes unreported.
 
@@ -71,6 +76,7 @@ coord scopes the unbind to the operator's EFFECTIVE tenant.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Literal
 from uuid import UUID
@@ -111,6 +117,14 @@ _BINDING_NOT_FOUND = "binding_not_found"
 
 #: Coord statuses that describe the CALLER, not the row — they abort the batch.
 _CALLER_REFUSAL_STATUSES = frozenset({401, 403})
+
+#: The status this route answers an aborted batch with, whichever of the two
+#: coord sent. Never 401: the web client replays a POST after a 401 refresh.
+_ABORT_STATUS = 403
+
+#: Statuses a gateway in front of coord also answers with. Without coord's JSON
+#: object body they are the gateway's, so the outcome is UNKNOWN, not a refusal.
+_GATEWAY_STATUSES = frozenset({502, 503})
 
 UnbindOutcome = Literal[
     "unbound", "already_absent", "unknown", "failed", "not_attempted"
@@ -229,6 +243,20 @@ def _classify_response(
             still_member_via_pointer=pointer if isinstance(pointer, bool) else None,
         )
     detail = _coord_error_detail(resp)
+    if status in _GATEWAY_STATUSES and not isinstance(detail, dict):
+        # A gateway in front of coord answered, not coord: coord never
+        # replied with its own body, and the request may have been applied.
+        return FleetDeviceUnbindResult(
+            device_id=device_id,
+            outcome="unknown",
+            status=status,
+            error={
+                "error": "coord_answer_lost",
+                "detail": f"a gateway in front of coord answered {status} with no "
+                "coord body; coord may have acted",
+                "upstream": detail,
+            },
+        )
     if status == 504:
         # A gateway timeout in front of coord: the request was forwarded and
         # coord may have applied it.
@@ -263,8 +291,18 @@ async def _unbind_one(
     timeout = httpx.Timeout(min(base, budget))
     url = f"{settings.COORD_URL}/coord/devices/{device_id}/tenant-binding"
     try:
-        resp = await client.delete(
-            url, headers=_tenant_headers(tenant_id), timeout=timeout
+        # wait_for makes the batch budget a real total: httpx's timeout bounds
+        # each phase (connect, read, …) separately, not the whole call.
+        resp = await asyncio.wait_for(
+            client.delete(url, headers=_tenant_headers(tenant_id), timeout=timeout),
+            timeout=budget,
+        )
+    except TimeoutError:
+        return _lost(
+            device_id,
+            504,
+            "the batch's wall-clock budget ran out while waiting for coord; "
+            "it may have acted",
         )
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
         # Nothing was sent: coord cannot have acted.
@@ -332,9 +370,10 @@ async def post_fleet_devices_unbind(
                     requested=len(ids),
                 )
                 raise HTTPException(
-                    status_code=refused_status,
+                    status_code=_ABORT_STATUS,
                     detail={
                         "error": "coord_refused_caller",
+                        "coord_status": refused_status,
                         "coord_error": result.error,
                         "refused_device_id": str(device_id),
                         **partial.model_dump(mode="json"),
