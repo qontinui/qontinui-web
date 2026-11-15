@@ -20,6 +20,7 @@ const {
   listTenants,
   renameTenant,
   TenantRenameError,
+  tenantsListRefusal,
 } = await import("./tenants");
 const { NON_IDEMPOTENT_POST_NO_RETRY_STATUSES } = await import("./sessions");
 
@@ -41,6 +42,60 @@ describe("tenants client", () => {
       "/api/v1/operations/tenants",
       { signal: undefined, idempotent: true },
     ]);
+  });
+
+  it("listTenants names the status, and the backend's reason when its body names one", async () => {
+    // The production envelope (`app/main.py`'s handler), FastAPI's bare
+    // `{detail}`, and a body naming no reason.
+    fetchMock
+      .mockResolvedValueOnce(
+        json(
+          {
+            error: "FORBIDDEN",
+            message: "tenant_not_resolved",
+            timestamp: "2026-11-15T12:00:00Z",
+            path: "/api/v1/operations/tenants",
+          },
+          403
+        )
+      )
+      .mockResolvedValueOnce(json({ detail: "coord is not reachable" }, 502))
+      .mockResolvedValueOnce(
+        new Response("<html>bad gateway</html>", { status: 502 })
+      );
+
+    await expect(listTenants()).rejects.toMatchObject({
+      message:
+        "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)",
+      status: 403,
+    });
+    await expect(listTenants()).rejects.toMatchObject({
+      message:
+        "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)",
+      status: 502,
+    });
+    await expect(listTenants()).rejects.toMatchObject({
+      message: "GET /api/v1/operations/tenants failed: 502",
+      status: 502,
+    });
+  });
+
+  it("tenantsListRefusal reads coord's own token through the proxy, and nothing from a body naming none", () => {
+    expect(
+      tenantsListRefusal(
+        JSON.stringify({
+          detail: JSON.stringify({ error: "tenant_not_resolved" }),
+        })
+      )
+    ).toBe("tenant_not_resolved");
+    expect(
+      tenantsListRefusal(JSON.stringify({ detail: "  timeout\n waiting " }))
+    ).toBe("timeout waiting");
+    expect(
+      tenantsListRefusal(JSON.stringify({ detail: [{ loc: ["x"] }] }))
+    ).toBeNull();
+    expect(tenantsListRefusal("")).toBeNull();
+    expect(tenantsListRefusal("not json")).toBeNull();
   });
 
   it("createTenant POSTs /tenants, never re-sent", async () => {

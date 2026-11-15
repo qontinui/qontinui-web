@@ -37,15 +37,50 @@ import {
   SessionsApiError,
 } from "./sessions";
 
+/**
+ * The caller's tenants. A refusal throws {@link SessionsApiError} whose
+ * message names the status and, when the body names one, the backend's own
+ * reason (`GET … failed: 403 (tenant_not_resolved)`): the layout's tenant
+ * provider keeps only the message, and a page showing it can then tell an
+ * operator in no project from a failure a reload may clear.
+ */
 export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
   const url = `${OPERATIONS_BASE}/tenants`;
   const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
+    const reason = tenantsListRefusal(await res.text().catch(() => ""));
+    throw new SessionsApiError(
+      `GET ${url} failed: ${res.status}${reason ? ` (${reason})` : ""}`,
+      res.status
+    );
   }
   return (await res.json()) as TenantListResponse;
+}
+
+/**
+ * The backend's reason for refusing the tenants list, as one short line —
+ * its token or message (`tenant_not_resolved`, `coord is not reachable`) —
+ * from either envelope the web backend answers with (FastAPI's `{detail}` or
+ * the app's `{error, message, timestamp, path}`), or from coord's own body
+ * relayed inside it. `null` for a body that is not JSON or names none.
+ */
+export function tenantsListRefusal(rawBody: string): string | null {
+  try {
+    JSON.parse(rawBody);
+  } catch {
+    return null;
+  }
+  const unwrapped = unwrapProxiedCoordError(rawBody);
+  if (unwrapped.kind === "non_string") return null;
+  const coord = unwrapped.inner;
+  const named = coord
+    ? (coord.error ?? coord.code ?? coord.message ?? coord.detail)
+    : unwrapped.text;
+  if (typeof named !== "string") return null;
+  const line = named.replace(/\s+/g, " ").trim();
+  return line === "" ? null : line.slice(0, 160);
 }
 
 /**
