@@ -145,8 +145,11 @@ export function isLastCiHost(
   if (!covers) return "no";
   // Another CI-host row whose device rows coord did not list may still be a
   // CI binding of this tenant: never assert "last" past it.
+  // Only a REGISTERED host can hold a binding; an assigned-but-unregistered
+  // row has no device row at all.
   const unlistedHost = machines.some(
-    (h) => h.hostOnly && h.key !== m.key && h.deviceIds.length === 0
+    (h) =>
+      h.hostOnly && h.registered && h.key !== m.key && h.deviceIds.length === 0
   );
   if (unlistedHost) return "maybe";
   // Every count must be REPORTED as zero: an unreported one is unknown, and
@@ -424,6 +427,17 @@ export function combineSummaries(
     if (l !== undefined && e !== undefined && NEVER_SENT.has(l.outcome)) {
       return e;
     }
+    // The earlier attempt may have removed it, and the retry acted on
+    // nothing (coord refused the caller, or failed this id): the earlier
+    // uncertainty stands — never a calm "failed".
+    if (
+      l !== undefined &&
+      e !== undefined &&
+      (e.outcome === "answer_lost" || e.outcome === "unreported") &&
+      (l.outcome === "refused_auth" || l.outcome === "failed")
+    ) {
+      return e;
+    }
     // Absent now, after an attempt that may have removed it: that attempt
     // did. (A `not_sent` id was never sent, so it is not one of these.)
     if (
@@ -597,6 +611,11 @@ export interface UnbindRefusal {
   mayHaveApplied: boolean;
   /** Per-id rows the route recorded before an abort, when its body carried them. */
   partial: UnbindSummary | null;
+  /**
+   * For an auth refusal: the sentence around its "what was removed" clause,
+   * so `mergeRefusalOver` can recompute that clause over the whole machine.
+   */
+  authFrame?: { lead: string; tail: string };
 }
 
 export const MAY_HAVE_APPLIED_TEXT =
@@ -609,6 +628,53 @@ function str(v: unknown): string | null {
 /** Rows that leave a removal possible but unconfirmed. */
 function uncertainRows(s: UnbindSummary): number {
   return s.answerLost + s.unreported;
+}
+
+/** An auth refusal's "what was removed" clause, over the rows it has. */
+export function authWhatClause(partial: UnbindSummary | null): string {
+  const removed = partial?.bindingsRemoved ?? 0;
+  const uncertain = partial !== null && uncertainRows(partial) > 0;
+  return removed > 0
+    ? `The batch stopped there; ${removed} ${plural(
+        removed,
+        "binding was",
+        "bindings were"
+      )} already removed${uncertain ? ", and more may have been" : ""}.`
+    : uncertain
+      ? "The batch stopped there; some bindings may have been removed."
+      : "Nothing was removed.";
+}
+
+/**
+ * A retry's refusal, merged over the whole-machine rows before it: its rows
+ * (`combineSummaries`) and, for an auth refusal, the "what was removed"
+ * clause and the uncertainty recomputed over the merge — so it never says
+ * "Nothing was removed" about a machine an earlier attempt removed from.
+ */
+export function mergeRefusalOver(
+  requested: readonly string[],
+  base: UnbindSummary,
+  refusal: UnbindRefusal
+): UnbindRefusal {
+  const partial =
+    refusal.partial !== null
+      ? combineSummaries(requested, base, refusal.partial)
+      : base;
+  if (!refusal.auth || refusal.authFrame === undefined) {
+    return { ...refusal, partial };
+  }
+  return {
+    ...refusal,
+    partial,
+    reading: {
+      ...refusal.reading,
+      sentence:
+        refusal.authFrame.lead +
+        authWhatClause(partial) +
+        refusal.authFrame.tail,
+    },
+    mayHaveApplied: uncertainRows(partial) > 0,
+  };
 }
 
 /** Turn a rejection from `unbindFleetDevices` into what the dialog renders. */
@@ -747,18 +813,8 @@ export function describeUnbindRejection(
     status
   );
   if (auth) {
-    const removed = partial?.bindingsRemoved ?? 0;
     const uncertain = partial !== null && uncertainRows(partial) > 0;
-    const what =
-      removed > 0
-        ? `The batch stopped there; ${removed} ${plural(
-            removed,
-            "binding was",
-            "bindings were"
-          )} already removed${uncertain ? ", and more may have been" : ""}.`
-        : uncertain
-          ? "The batch stopped there; some bindings may have been removed."
-          : "Nothing was removed.";
+    const what = authWhatClause(partial);
     // Without `refused_device_id` the refusal is this console's own gate,
     // before any id reached coord.
     const coordStatus =
@@ -781,20 +837,18 @@ export function describeUnbindRejection(
       : effective === 401
         ? "not authenticated — sign in again."
         : "only an operator of this tenant may remove a machine from it.";
+    const lead = `${who}: ${why} `;
+    const tail =
+      reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
+        ? ` (${reading.sentence})`
+        : "";
     return {
       auth,
       status,
-      reading: {
-        ...reading,
-        sentence:
-          `${who}: ${why} ` +
-          what +
-          (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
-            ? ` (${reading.sentence})`
-            : ""),
-      },
+      reading: { ...reading, sentence: lead + what + tail },
       mayHaveApplied: uncertain,
       partial,
+      authFrame: { lead, tail },
     };
   }
   // A 5xx — 503 included — may follow a commit: only per-id rows can say

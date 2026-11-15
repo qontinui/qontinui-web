@@ -52,6 +52,7 @@ import {
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
   combineSummaries,
+  mergeRefusalOver,
   summarizeRows,
   confirmPhraseFor,
   isLastCiHost,
@@ -261,8 +262,8 @@ export function useRemoveMachineFromTenant(
     }
     const refusal = outcome.refusal;
     const r: UnbindRefusal =
-      refusal.partial !== null
-        ? { ...refusal, partial: whole(refusal.partial) }
+      baseNow !== null && (refusal.partial !== null || refusal.auth)
+        ? mergeRefusalOver(m.deviceIds, baseNow, refusal)
         : refusal;
     if (r.partial !== null) setSoFar(r.partial);
     else if (r.mayHaveApplied)
@@ -303,13 +304,17 @@ export function useRemoveMachineFromTenant(
   const shown: UnbindState =
     status.state === "answered"
       ? { state: "answered", summary: merge(status.summary) }
-      : status.state === "refused" && status.refusal.partial !== null
+      : status.state === "refused" &&
+          base !== null &&
+          target !== null &&
+          (status.refusal.partial !== null || status.refusal.auth)
         ? {
             state: "refused",
-            refusal: {
-              ...status.refusal,
-              partial: merge(status.refusal.partial),
-            },
+            refusal: mergeRefusalOver(
+              target.machine.deviceIds,
+              base,
+              status.refusal
+            ),
           }
         : status;
 
