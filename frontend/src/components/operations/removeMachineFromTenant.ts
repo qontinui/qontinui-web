@@ -179,6 +179,13 @@ export type UnbindRowOutcome =
   | "refused_auth"
   /** After an auth refusal: never sent to coord. */
   | "not_attempted"
+  /**
+   * Wire `unknown`: coord's answer was lost (timeout, transport, a non-JSON
+   * 2xx). The binding MAY have been removed — never "removed", never "failed".
+   */
+  | "answer_lost"
+  /** Wire `not_attempted`: the batch hit its deadline before this id. */
+  | "deadline_not_attempted"
   /** An id the route did not answer for, or an outcome this build does not know. */
   | "unreported";
 
@@ -201,6 +208,8 @@ export interface UnbindSummary {
   failed: number;
   refusedAuth: number;
   notAttempted: number;
+  answerLost: number;
+  deadlineNotAttempted: number;
   unreported: number;
   /** Every id read `unbound` or `already_absent` — the only case for a toast. */
   allSettled: boolean;
@@ -220,6 +229,16 @@ export interface UnbindAbort {
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** Outcomes a retry sends again: anything not known to be settled. */
+const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
+  "failed",
+  "refused_auth",
+  "not_attempted",
+  "answer_lost",
+  "deadline_not_attempted",
+  "unreported",
+]);
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -286,6 +305,15 @@ export function summarizeUnbind(
         };
       case "already_absent":
         return { deviceId, outcome: "already_absent", status, error: null };
+      case "unknown":
+        return { deviceId, outcome: "answer_lost", status, error: null };
+      case "not_attempted":
+        return {
+          deviceId,
+          outcome: "deadline_not_attempted",
+          status,
+          error: null,
+        };
       case "failed":
         return {
           deviceId,
@@ -306,6 +334,8 @@ export function summarizeUnbind(
   const failed = count("failed");
   const refusedAuth = count("refused_auth");
   const notAttemptedCount = count("not_attempted");
+  const answerLost = count("answer_lost");
+  const deadlineNotAttempted = count("deadline_not_attempted");
   const unreported = count("unreported");
   const bindingsRemoved = removed + stillListed + pointerUnknown;
 
@@ -330,6 +360,12 @@ export function summarizeUnbind(
   if (failed > 0) parts.push(`${failed} failed`);
   if (refusedAuth > 0) parts.push(`${refusedAuth} refused (auth)`);
   if (notAttemptedCount > 0) parts.push(`${notAttemptedCount} not attempted`);
+  if (answerLost > 0)
+    parts.push(
+      `${answerLost} may have been removed (coord's answer was lost; reload to check)`
+    );
+  if (deadlineNotAttempted > 0)
+    parts.push(`${deadlineNotAttempted} not attempted (time limit) — retry`);
   if (unreported > 0)
     parts.push(
       body === null
@@ -347,24 +383,14 @@ export function summarizeUnbind(
     failed,
     refusedAuth,
     notAttempted: notAttemptedCount,
+    answerLost,
+    deadlineNotAttempted,
     unreported,
-    allSettled:
-      n > 0 &&
-      failed === 0 &&
-      unreported === 0 &&
-      refusedAuth === 0 &&
-      notAttemptedCount === 0,
+    // Settled = coord answered for every id and none needs another try.
+    allSettled: n > 0 && rows.every((r) => !UNSETTLED.has(r.outcome)),
     sentence: `${parts.join("; ")}.`,
   };
 }
-
-/** Outcomes a retry sends again: anything not known to be settled. */
-const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
-  "failed",
-  "refused_auth",
-  "not_attempted",
-  "unreported",
-]);
 
 /** The ids of a summary that a retry sends again. */
 export function unsettledIds(summary: UnbindSummary): string[] {

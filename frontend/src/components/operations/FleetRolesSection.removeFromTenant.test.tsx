@@ -809,4 +809,85 @@ describe("the answer", () => {
         .textContent
     ).toBe(MAY_HAVE_APPLIED_TEXT);
   });
+
+  it("a lost coord answer reads 'may have been removed', never removed or failed, and is retried", async () => {
+    // The route's `unknown` tally is left out: the per-id rows decide.
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: null,
+          error: { error: "coord_answer_lost", detail: "timed out" },
+          still_member_via_pointer: null,
+        },
+      ]),
+      answer([unbound(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain(
+      "1 of 2 bindings removed; 1 may have been removed (coord's answer was lost; reload to check)."
+    );
+    const rows = within(result).getAllByTestId(
+      "fleet-roles-remove-outcome-row"
+    );
+    expect(rows.map((r) => r.getAttribute("data-outcome"))).toEqual([
+      "removed",
+      "answer_lost",
+    ]);
+    expect(rows[1]!.textContent).toBe(
+      `${DEV_CI_2}: may have been removed — coord's answer was lost; reload to check`
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]).toEqual([DEV_CI_2]);
+  });
+
+  it("an id the batch's deadline never reached reads 'not attempted (time limit)' and is retried", async () => {
+    postAnswers = [
+      json(200, {
+        results: [
+          unbound(DEV_CI),
+          {
+            device_id: DEV_CI_2,
+            outcome: "not_attempted",
+            status: null,
+            error: null,
+            still_member_via_pointer: null,
+          },
+        ],
+        unbound: 1,
+        already_absent: 0,
+        failed: 0,
+        unknown: 0,
+        not_attempted: 1,
+      }),
+      answer([unbound(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain(
+      "1 of 2 bindings removed; 1 not attempted (time limit) — retry."
+    );
+    const rows = within(result).getAllByTestId(
+      "fleet-roles-remove-outcome-row"
+    );
+    expect(rows[1]!.textContent).toBe(
+      `${DEV_CI_2}: not attempted (time limit) — retry`
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(confirmButton().textContent).toBe("Retry the 1 not yet removed");
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
+  });
 });
