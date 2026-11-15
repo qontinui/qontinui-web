@@ -85,27 +85,34 @@ function noticeProjectLabel(
 
 /**
  * The page's OWN project as the notice names it. A project the page has
- * never known (`pageTenant` UNKNOWN, and the guard naming none) is named as
- * such, never "your home project (none selected)", which would name a project
- * no read confirmed beside sections waiting for the page's project. Each
- * state gets its own words: not yet learned while the provider's read is in
- * flight; unknown once that read failed; and unknown with nothing to learn it
- * from when the provider had read the list before this page loaded with no
- * project selected (a client-side navigation, `usePageProject`).
+ * never known (`projectKnown` false) is named as unknown, never as "your home
+ * project (none selected)", which would name a project no read confirmed
+ * beside sections waiting for the page's project. The words say why:
+ *
+ * - The provider's read failed. Then the page's project is unknown even with
+ *   a project stored at mount: the page's first reads went out pinned to it,
+ *   but coord serves a stale id the home project, and the list that would
+ *   tell the two apart was not read.
+ * - Nothing was stored at mount, and the provider had read the list before
+ *   this page loaded (a client-side navigation, `usePageProject`), so
+ *   nothing will name it.
+ *
+ * The red notice is not shown while the provider's read is in flight and the
+ * page has never known its project (`learning`), so no words are needed for
+ * that state.
  */
 function pageProjectLabel(
   tenantContext: LayoutTenants,
-  pageTenant: string | null | undefined,
+  projectKnown: boolean,
   id: string | null
 ): string {
-  if (id !== null || pageTenant !== undefined) {
-    return noticeProjectLabel(tenantContext, id);
-  }
-  if (tenantContext?.loading) return "a project this page has not yet learned";
-  if (listReadFailed(tenantContext)) {
+  if (!projectKnown && listReadFailed(tenantContext)) {
     return "an unknown project (the list of your projects could not be read)";
   }
-  return "an unknown project (no project was selected when this page loaded)";
+  if (!projectKnown && id === null) {
+    return "an unknown project (no project was selected when this page loaded)";
+  }
+  return noticeProjectLabel(tenantContext, id);
 }
 
 /**
@@ -198,7 +205,9 @@ function ReloadButton({
  * (the sections say they are waiting too). When the read lands, either the
  * lock lifts with no notice ever shown, or a real cross-tab change remains
  * and the red notice shows, naming the project the page now knows, with
- * focus moved to its Reload.
+ * focus moved to its Reload. When the read fails instead, the lock remains,
+ * and the red notice shows, naming the page's project unknown (the list of
+ * its projects could not be read), with focus moved to its Reload.
  *
  * It renders one more notice, in the same red and for the same reason: the
  * layout's provider has said its membership read failed, and the page has no
@@ -330,7 +339,7 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
             <p>
               {crossTabHeadline(locked)} Until you reload, no change made on
               this page is sent: everything below belongs to{" "}
-              {pageProjectLabel(tenantContext, pageTenant, guardTenant)}, and
+              {pageProjectLabel(tenantContext, projectKnown, guardTenant)}, and
               the active project is now{" "}
               {noticeProjectLabel(tenantContext, stored)}.
             </p>

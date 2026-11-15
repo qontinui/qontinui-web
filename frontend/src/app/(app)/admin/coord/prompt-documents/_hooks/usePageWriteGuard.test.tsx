@@ -51,7 +51,8 @@
  *    false. Every write is still refused, in words that ask for no reload,
  *    and one muted line says so; when the read lands, the lock either lifts
  *    with no red notice ever shown, or turns red, naming the page's project,
- *    with focus on its Reload.
+ *    with focus on its Reload. When the read fails, the lock turns red,
+ *    naming the page's project unknown, with focus on its Reload.
  *
  * The suites that drive the page and the list through the real HTTP client
  * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
@@ -128,22 +129,25 @@ afterEach(() => {
 /**
  * Mount with `stored` stored (Bravo by default; `null`: a fresh browser,
  * nothing stored) under the layout's tenant provider, whose membership read
- * answers only when the returned `answer` is called: until then the page's
- * project is UNKNOWN. It answers Bravo as the only membership and the home
- * project.
+ * answers only when the returned `answer` is called, or fails with `message`
+ * when `fail` is: until then the page's project is UNKNOWN. It answers Bravo
+ * as the only membership and the home project.
  */
 function mountWhileTheProviderReads(stored: string | null = B): {
   answer: () => Promise<void>;
+  fail: (message: string) => Promise<void>;
 } {
   let release: () => void = () => {};
+  let refuse: (message: string) => void = () => {};
   listTenantsMock.mockImplementation(
     () =>
-      new Promise((resolve) => {
+      new Promise((resolve, reject) => {
         release = () =>
           resolve({
             tenants: [{ id: B, slug: "b", name: "Bravo" }],
             active_tenant_id: B,
           });
+        refuse = (message) => reject(new Error(message));
       })
   );
   if (stored !== null) localStorage.setItem(KEY, stored);
@@ -158,6 +162,10 @@ function mountWhileTheProviderReads(stored: string | null = B): {
     answer: () =>
       act(async () => {
         release();
+      }),
+    fail: (message) =>
+      act(async () => {
+        refuse(message);
       }),
   };
 }
@@ -628,7 +636,39 @@ describe("the project-list notice", () => {
     expect(notice()).toHaveTextContent(
       "everything below belongs to Bravo, and the active project is now t-system (unknown project — not in this page's project list)."
     );
-    expect(notice()).not.toHaveTextContent(/not yet learned|home project/);
+    expect(notice()).not.toHaveTextContent(/home project/);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
+  });
+
+  it("locked while still learning its project, turns red when the read fails, naming the page's project unknown, with focus on Reload", async () => {
+    // Ported from the round-11 review's scenario. Bravo stored at mount, the
+    // provider still reading, and another tab stores System. The read then
+    // fails, so the page never learns its project: its first reads went out
+    // pinned to Bravo, but coord serves a stale id the home project, and the
+    // list that would tell the two apart was not read.
+    const { fail } = mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+
+    await fail(UNREACHABLE);
+    expect(latest().tenantContext?.error).toBe(UNREACHABLE);
+    expect(latest().locked).toBe("another_tab");
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    // One alert: Bravo pins the page, so the list notice stays down.
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toBe(notice());
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to an unknown project (the list of your projects could not be read), and the active project is now project t-system."
+    );
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByTestId("prompt-documents-cross-tab-reload")
@@ -672,7 +712,7 @@ describe("the project-list notice", () => {
     expect(notice()).toHaveTextContent(
       "everything below belongs to an unknown project (no project was selected when this page loaded), and the active project is now"
     );
-    expect(notice()).not.toHaveTextContent(/not yet learned|home project/);
+    expect(notice()).not.toHaveTextContent(/home project/);
   });
 
   it("is absent while a refresh re-reads the list after it failed", async () => {
