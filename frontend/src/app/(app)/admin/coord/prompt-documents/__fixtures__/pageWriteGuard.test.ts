@@ -28,6 +28,9 @@ describe("the page guard fixture", () => {
   });
 
   it("PINNED_PAGE pins every request to the page's project, and allows a write", () => {
+    // A state the provider reaches: the page's project known, and the pin
+    // naming it (`usePageProject`).
+    expect(PINNED_PAGE.pageTenant).toBe("t-page");
     expect(PINNED_PAGE.pin).toEqual({ tenant: "t-page" });
     expect(PINNED_PAGE.resolvePin()).toEqual({ tenant: "t-page" });
     expect(PINNED_PAGE.writeAllowed()).toBe(true);

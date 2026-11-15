@@ -10,13 +10,17 @@
  * own here. (`usePublishAll` reads no guard: its caller hands it one, so its
  * suite passes its own.)
  *
- * The guard answers as the real provider does. By default it is the page
- * before it knows its project: no pin, so a write is refused and a settings
- * section reads nothing (`useFirstPinnedRead`). `PINNED_PAGE` is the page
- * once its project is known: every request pinned to it, and a write allowed.
- * A suite that tests a section's reads and writes takes `PINNED_PAGE`. What
- * the real provider does is proven by the page-level suites
- * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
+ * The two guards exported here are states the real provider reaches. By
+ * default it is the page on a first visit, before it knows its project:
+ * nothing stored at mount, the page's project UNKNOWN, no pin — so a write is
+ * refused and a settings section reads nothing (`useFirstPinnedRead`).
+ * `PINNED_PAGE` is that page once the provider has named its project: the
+ * page's project and its pin are that project, so every request is pinned to
+ * it and a write is allowed. A suite that tests a section's reads and writes
+ * takes `PINNED_PAGE`. `testPageGuard(overrides)` can also build a state the
+ * provider never reaches (a write allowed with no pin, say); a test that does
+ * says what it builds and why. What the real provider does is proven by the
+ * page-level suites (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
  * `PromptDocumentsPageSettingsCrossTab`, `usePageWriteGuard.test.tsx`).
  */
 
@@ -52,10 +56,12 @@ export function testPageGuard(
 }
 
 /**
- * The page once its project is known: every request pinned to it, and a
- * write allowed.
+ * The page once its provider has named its project, on a first visit: the
+ * page's project is that project, every request is pinned to it, and a write
+ * is allowed. Nothing was stored at mount.
  */
 export const PINNED_PAGE: PageWriteGuardValue = testPageGuard({
+  pageTenant: "t-page",
   pin: { tenant: "t-page" },
 });
 
