@@ -104,12 +104,37 @@ function SettingRow({
       else next[field] = value;
       return next;
     });
-  /** Coord's value beside a field the operator has changed, so a draft that a
-   *  refresh moved coord away from is visible before Save. */
-  const coordHint = (field: keyof Draft): string | null =>
-    draft[field] !== undefined && draft[field] !== row[field]
-      ? `coord holds: ${row[field] ?? "inherit"}`
-      : null;
+  /** Coord's current value under a field the operator has changed and not
+   *  saved — visible, so a refresh that moved coord under a draft is seen
+   *  before Save, in the select's own words. */
+  const coordHint = (field: keyof Draft): string | null => {
+    if (draft[field] === undefined || draft[field] === row[field]) return null;
+    const held = row[field];
+    const words =
+      held === null
+        ? field === "model"
+          ? "Inherit from originating session"
+          : "Inherit"
+        : field === "model"
+          ? modelFamilyLabel(held as ModelFamily)
+          : held;
+    return `Unsaved — coord holds: ${words}`;
+  };
+
+  // A drafted field coord has caught up to leaves the draft, so no invisible
+  // pin resurfaces as an edit when coord later moves again.
+  useLayoutEffect(() => {
+    setDraft((d) => {
+      let next: Partial<Draft> | null = null;
+      for (const f of ["model", "effort"] as const) {
+        if (d[f] !== undefined && d[f] === row[f]) {
+          next ??= { ...d };
+          delete next[f];
+        }
+      }
+      return next ?? d;
+    });
+  }, [row]);
   const saving = write?.phase === "saving";
   const unknown = write?.phase === "unknown" ? write.reason : null;
   const id = row.spawn_type;
@@ -150,29 +175,38 @@ function SettingRow({
             UNKNOWN
           </Badge>
         ) : (
-          <select
-            className="select h-8 py-1 text-xs min-w-[11rem]"
-            aria-label={`Model for ${spawnTypeLabel(id)}`}
-            value={shown.model ?? INHERIT}
-            disabled={!canEdit || saving}
-            onChange={(e) =>
-              setField(
-                "model",
-                e.target.value === INHERIT
-                  ? null
-                  : (e.target.value as ModelFamily)
-              )
-            }
-            data-testid="spawn-launch-model"
-            title={coordHint("model") ?? undefined}
-          >
-            <option value={INHERIT}>Inherit from originating session</option>
-            {families.map((f) => (
-              <option key={f} value={f}>
-                {modelFamilyLabel(f)}
-              </option>
-            ))}
-          </select>
+          <>
+            <select
+              className="select h-8 py-1 text-xs min-w-[11rem]"
+              aria-label={`Model for ${spawnTypeLabel(id)}`}
+              value={shown.model ?? INHERIT}
+              disabled={!canEdit || saving}
+              onChange={(e) =>
+                setField(
+                  "model",
+                  e.target.value === INHERIT
+                    ? null
+                    : (e.target.value as ModelFamily)
+                )
+              }
+              data-testid="spawn-launch-model"
+            >
+              <option value={INHERIT}>Inherit from originating session</option>
+              {families.map((f) => (
+                <option key={f} value={f}>
+                  {modelFamilyLabel(f)}
+                </option>
+              ))}
+            </select>
+            {coordHint("model") && (
+              <div
+                className="mt-0.5 text-[11px] text-muted-foreground"
+                data-testid="spawn-launch-model-hint"
+              >
+                {coordHint("model")}
+              </div>
+            )}
+          </>
         )}
       </td>
       <td className="py-1.5 pr-3">
@@ -185,29 +219,38 @@ function SettingRow({
             UNKNOWN
           </Badge>
         ) : (
-          <select
-            className="select h-8 py-1 text-xs min-w-[7rem]"
-            aria-label={`Effort for ${spawnTypeLabel(id)}`}
-            value={shown.effort ?? INHERIT}
-            disabled={!canEdit || saving}
-            onChange={(e) =>
-              setField(
-                "effort",
-                e.target.value === INHERIT
-                  ? null
-                  : (e.target.value as EffortLevel)
-              )
-            }
-            data-testid="spawn-launch-effort"
-            title={coordHint("effort") ?? undefined}
-          >
-            <option value={INHERIT}>Inherit</option>
-            {levels.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
+          <>
+            <select
+              className="select h-8 py-1 text-xs min-w-[7rem]"
+              aria-label={`Effort for ${spawnTypeLabel(id)}`}
+              value={shown.effort ?? INHERIT}
+              disabled={!canEdit || saving}
+              onChange={(e) =>
+                setField(
+                  "effort",
+                  e.target.value === INHERIT
+                    ? null
+                    : (e.target.value as EffortLevel)
+                )
+              }
+              data-testid="spawn-launch-effort"
+            >
+              <option value={INHERIT}>Inherit</option>
+              {levels.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            {coordHint("effort") && (
+              <div
+                className="mt-0.5 text-[11px] text-muted-foreground"
+                data-testid="spawn-launch-effort-hint"
+              >
+                {coordHint("effort")}
+              </div>
+            )}
+          </>
         )}
       </td>
       <td className="py-1.5 pr-3">
