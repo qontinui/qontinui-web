@@ -109,19 +109,38 @@ export function livenessText(m: RoleMachine): string | null {
   return null;
 }
 
+export const MAYBE_LAST_CI_HOST_TEXT =
+  "This may be the tenant's last CI host: coord's roster read may be incomplete, so other CI hosts may not be listed. If it is the last, removing it makes coord treat the tenant as having no CI fleet, so its merge cap falls back to the static value.";
+
+/** Whether the roster read is complete enough to call a CI host the last. */
+export interface RosterCompleteness {
+  /** Coord's `roster_truncated`; `null` = not reported. */
+  rosterTruncated: boolean | null;
+  /** Coord's `older_machines_omitted`; `null` = not reported. */
+  omitted: number | null;
+}
+
 /**
  * D5: the machine holds the tenant's last CI binding(s) — it is a CI host, and
- * every CI-host roster row's devices are in this removal.
+ * every CI-host roster row's devices are in this removal. `"maybe"` when that
+ * holds over a roster read that is cut, leaves machines out, or does not say
+ * whether it was cut: other CI hosts may exist unlisted, so the console never
+ * asserts it.
  */
 export function isLastCiHost(
   machines: readonly RoleMachine[],
-  m: RoleMachine
-): boolean {
-  if (!m.hostOnly || m.deviceIds.length === 0) return false;
+  m: RoleMachine,
+  roster: RosterCompleteness = { rosterTruncated: false, omitted: 0 }
+): "yes" | "maybe" | "no" {
+  if (!m.hostOnly || m.deviceIds.length === 0) return "no";
   const removing = new Set(m.deviceIds.map((id) => id.toLowerCase()));
-  return machines
+  const covers = machines
     .filter((h) => h.hostOnly && h.deviceIds.length > 0)
     .every((h) => h.deviceIds.every((id) => removing.has(id.toLowerCase())));
+  if (!covers) return "no";
+  const complete =
+    roster.rosterTruncated === false && (roster.omitted ?? 0) === 0;
+  return complete ? "yes" : "maybe";
 }
 
 /** A registration's listing in words. */
@@ -156,6 +175,10 @@ export type UnbindRowOutcome =
   | "unbound_pointer_unknown"
   | "already_absent"
   | "failed"
+  /** The id at which coord refused the CALLER (401/403); the batch stopped. */
+  | "refused_auth"
+  /** After an auth refusal: never sent to coord. */
+  | "not_attempted"
   /** An id the route did not answer for, or an outcome this build does not know. */
   | "unreported";
 
@@ -169,11 +192,15 @@ export interface UnbindRowResult {
 
 export interface UnbindSummary {
   rows: UnbindRowResult[];
+  /** Bindings coord deleted, whatever the pointer says (removed + stillListed + pointerUnknown). */
+  bindingsRemoved: number;
   removed: number;
   stillListed: number;
   pointerUnknown: number;
   alreadyAbsent: number;
   failed: number;
+  refusedAuth: number;
+  notAttempted: number;
   unreported: number;
   /** Every id read `unbound` or `already_absent` — the only case for a toast. */
   allSettled: boolean;
@@ -185,6 +212,14 @@ export const STILL_LISTED_VIA_POINTER_TEXT =
   "binding removed; still listed through its home tenant, which only its owner can change on /runners";
 export const POINTER_UNREPORTED_TEXT =
   "binding removed; coord did not report whether it is still listed through its home tenant";
+
+/** How an auth abort described the ids it did not answer (`coord_refused_caller`). */
+export interface UnbindAbort {
+  refusedDeviceId: string | null;
+  notAttempted: readonly string[];
+}
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -208,8 +243,13 @@ function errorReading(
 /** Read the route's per-id answer against the ids that were sent. */
 export function summarizeUnbind(
   requested: readonly string[],
-  body: DeviceUnbindResponseWire | null
+  body: DeviceUnbindResponseWire | null,
+  abort: UnbindAbort | null = null
 ): UnbindSummary {
+  const refused = abort?.refusedDeviceId?.toLowerCase() ?? null;
+  const notAttempted = new Set(
+    (abort?.notAttempted ?? []).map((id) => id.toLowerCase())
+  );
   const served = new Map<string, Record<string, unknown>>();
   if (body !== null && Array.isArray(body.results)) {
     for (const r of body.results as unknown[]) {
@@ -221,7 +261,16 @@ export function summarizeUnbind(
   const rows: UnbindRowResult[] = requested.map((deviceId) => {
     const r = served.get(deviceId.toLowerCase());
     const status = r && typeof r.status === "number" ? r.status : null;
-    if (!r) return { deviceId, outcome: "unreported", status, error: null };
+    if (!r) {
+      const key = deviceId.toLowerCase();
+      const outcome: UnbindRowOutcome =
+        key === refused
+          ? "refused_auth"
+          : notAttempted.has(key)
+            ? "not_attempted"
+            : "unreported";
+      return { deviceId, outcome, status, error: null };
+    }
     switch (r.outcome) {
       case "unbound":
         return {
@@ -255,18 +304,32 @@ export function summarizeUnbind(
   const pointerUnknown = count("unbound_pointer_unknown");
   const alreadyAbsent = count("already_absent");
   const failed = count("failed");
+  const refusedAuth = count("refused_auth");
+  const notAttemptedCount = count("not_attempted");
   const unreported = count("unreported");
+  const bindingsRemoved = removed + stillListed + pointerUnknown;
 
   const n = rows.length;
+  const its = (k: number) => plural(k, "its", "their");
   const parts: string[] = [
-    `${removed} of ${n} row${n === 1 ? "" : "s"} removed`,
+    `${bindingsRemoved} of ${n} ${plural(n, "binding", "bindings")} removed`,
   ];
   if (stillListed > 0)
-    parts.push(`${stillListed} ${STILL_LISTED_VIA_POINTER_TEXT}`);
+    parts.push(
+      `${stillListed} still listed through ${its(stillListed)} home tenant, which only ${plural(
+        stillListed,
+        "its owner",
+        "their owners"
+      )} can change on /runners`
+    );
   if (pointerUnknown > 0)
-    parts.push(`${pointerUnknown} ${POINTER_UNREPORTED_TEXT}`);
+    parts.push(
+      `${pointerUnknown} may still be listed through ${its(pointerUnknown)} home tenant (coord did not report)`
+    );
   if (alreadyAbsent > 0) parts.push(`${alreadyAbsent} already absent`);
   if (failed > 0) parts.push(`${failed} failed`);
+  if (refusedAuth > 0) parts.push(`${refusedAuth} refused (auth)`);
+  if (notAttemptedCount > 0) parts.push(`${notAttemptedCount} not attempted`);
   if (unreported > 0)
     parts.push(
       body === null
@@ -276,15 +339,38 @@ export function summarizeUnbind(
 
   return {
     rows,
+    bindingsRemoved,
     removed,
     stillListed,
     pointerUnknown,
     alreadyAbsent,
     failed,
+    refusedAuth,
+    notAttempted: notAttemptedCount,
     unreported,
-    allSettled: n > 0 && failed === 0 && unreported === 0,
+    allSettled:
+      n > 0 &&
+      failed === 0 &&
+      unreported === 0 &&
+      refusedAuth === 0 &&
+      notAttemptedCount === 0,
     sentence: `${parts.join("; ")}.`,
   };
+}
+
+/** Outcomes a retry sends again: anything not known to be settled. */
+const UNSETTLED: ReadonlySet<UnbindRowOutcome> = new Set<UnbindRowOutcome>([
+  "failed",
+  "refused_auth",
+  "not_attempted",
+  "unreported",
+]);
+
+/** The ids of a summary that a retry sends again. */
+export function unsettledIds(summary: UnbindSummary): string[] {
+  return summary.rows
+    .filter((r) => UNSETTLED.has(r.outcome))
+    .map((r) => r.deviceId);
 }
 
 /** A request the route refused as a whole (it rejected rather than answered). */
@@ -294,12 +380,27 @@ export interface UnbindRefusal {
   status: number | null;
   reading: BackendErrorReading;
   /**
-   * The removal may have been applied in part — a lost answer (5xx or a
-   * dropped connection), or an auth abort after earlier ids were unbound.
+   * The outcome is not fully known and bindings MAY have been removed — a lost
+   * answer (a 5xx other than 503, or a dropped connection). Rendered as its
+   * own line. Always `false` for an auth abort: its rows say exactly what was
+   * removed, and nothing was when it carries none.
    */
   mayHaveApplied: boolean;
-  /** Results the route recorded before an abort, when its body carried them. */
+  /** Per-id rows the route recorded before an abort, when its body carried them. */
   partial: UnbindSummary | null;
+}
+
+export const MAY_HAVE_APPLIED_TEXT =
+  "Some bindings may have been removed — the list re-reads to show what coord now holds.";
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+function strings(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : [];
 }
 
 /** Turn a rejection from `unbindFleetDevices` into what the dialog renders. */
@@ -325,7 +426,7 @@ export function describeUnbindRejection(
       status: null,
       reading: {
         kind: "unstructured",
-        sentence: `The request failed before an answer arrived (${message}). Some bindings may have been removed — the list re-reads to show what coord now holds.`,
+        sentence: `The request failed before an answer arrived (${message}).`,
       },
       mayHaveApplied: true,
       partial: null,
@@ -338,18 +439,44 @@ export function describeUnbindRejection(
   } catch {
     // not JSON — the reading below still renders its text
   }
+  // The web error envelope may splice a dict `detail` to the top level.
   const inner = isRecord(parsed)
     ? isRecord(parsed.detail)
       ? parsed.detail
       : parsed
     : null;
-  const partial =
-    inner && Array.isArray(inner.results) && inner.results.length > 0
-      ? summarizeUnbind(requested, inner as unknown as DeviceUnbindResponseWire)
-      : null;
   const auth = status === 401 || status === 403;
-  const reading = readErrorBody(bodyText, status);
+  // `coord_refused_caller` (the route's own abort) names the id coord refused
+  // and the ids it never sent. A 401/403 without them is the web gate's own
+  // refusal: nothing was attempted.
+  const refusedDeviceId = inner ? str(inner.refused_device_id) : null;
+  const abort: UnbindAbort | null =
+    inner !== null &&
+    (refusedDeviceId !== null || Array.isArray(inner.not_attempted))
+      ? { refusedDeviceId, notAttempted: strings(inner.not_attempted) }
+      : null;
+  const hasResults =
+    inner !== null && Array.isArray(inner.results) && inner.results.length > 0;
+  const partial =
+    inner !== null && (hasResults || abort !== null)
+      ? summarizeUnbind(
+          requested,
+          inner as unknown as DeviceUnbindResponseWire,
+          abort
+        )
+      : null;
+  // Coord's own refusal, when the route relayed it as `coord_error`.
+  const coordError = inner?.coord_error;
+  const reading = readErrorBody(
+    coordError === undefined || coordError === null
+      ? bodyText
+      : typeof coordError === "string"
+        ? coordError
+        : JSON.stringify(coordError),
+    status
+  );
   if (auth) {
+    const removed = partial?.bindingsRemoved ?? 0;
     return {
       auth,
       status,
@@ -357,29 +484,21 @@ export function describeUnbindRejection(
         ...reading,
         sentence:
           `Coord refused the removal (HTTP ${status}): only an operator of this tenant may remove a machine from it. ` +
-          (partial !== null &&
-          partial.removed + partial.stillListed + partial.pointerUnknown > 0
-            ? "The batch stopped there; the rows below were already answered."
+          (removed > 0
+            ? `The batch stopped there; ${removed} ${plural(
+                removed,
+                "binding was",
+                "bindings were"
+              )} already removed (see the rows below).`
             : "Nothing was removed.") +
           (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
             ? ` (${reading.sentence})`
             : ""),
       },
-      mayHaveApplied: partial !== null,
+      mayHaveApplied: false,
       partial,
     };
   }
   const lost = status >= 500 && status !== 503;
-  return {
-    auth,
-    status,
-    reading: lost
-      ? {
-          ...reading,
-          sentence: `${reading.sentence} Some bindings MAY have been removed — the list re-reads to show what coord now holds.`,
-        }
-      : reading,
-    mayHaveApplied: lost,
-    partial,
-  };
+  return { auth, status, reading, mayHaveApplied: lost, partial };
 }
