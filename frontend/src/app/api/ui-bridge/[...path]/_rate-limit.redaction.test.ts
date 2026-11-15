@@ -38,7 +38,11 @@ describe.each(URLS)("limiter logging with %s", (url) => {
 
   const logged = () =>
     JSON.stringify(
-      spies.flatMap((s) => s.mock.calls.map((c) => c.map(String)))
+      spies.flatMap((s) =>
+        s.mock.calls.map((c) =>
+          c.map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+        )
+      )
     );
 
   it("redacts an error event whose message embeds the URL", async () => {
@@ -63,6 +67,37 @@ describe.each(URLS)("limiter logging with %s", (url) => {
     const mod = await import("./_rate-limit");
     await mod.checkRateLimit?.("u1", "read").catch(() => undefined);
     expect(logged()).toContain("redis_init_failed_failing_open");
+    expect(logged()).not.toContain("secret");
+  });
+
+  /** A ready client whose INCR/EXPIRE fail with the URL in the message. */
+  const failingClient = (which: "incr" | "expire") => ({
+    status: "ready",
+    incr: async () => {
+      if (which === "incr") throw new Error(`INCR failed for ${url}`);
+      return 1;
+    },
+    expire: async () => {
+      throw new Error(`EXPIRE failed for ${url}`);
+    },
+  });
+
+  it("redacts the INCR failing-open warning", async () => {
+    const mod = await import("./_rate-limit");
+    mod.__setRedisClientForTest(failingClient("incr") as never);
+    await mod.checkRateLimit("u1", "read");
+    expect(logged()).toContain("rate_limit_redis_op_failed_failing_open");
+    expect(logged()).toContain("INCR failed");
+    expect(logged()).not.toContain("secret");
+  });
+
+  it("redacts the EXPIRE-failed warning", async () => {
+    const mod = await import("./_rate-limit");
+    mod.__setRedisClientForTest(failingClient("expire") as never);
+    await mod.checkRateLimit("u1", "read");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(logged()).toContain("rate_limit_expire_failed");
+    expect(logged()).toContain("EXPIRE failed");
     expect(logged()).not.toContain("secret");
   });
 });

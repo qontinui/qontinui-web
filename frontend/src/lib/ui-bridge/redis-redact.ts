@@ -43,20 +43,27 @@ export function redisHostOnly(url: string): string {
   }
 }
 
+/** Passwords shorter than this are not substituted (they would garble text). */
+const MIN_SECRET_LENGTH = 4;
+
 /**
  * Split a possibly scheme-less redis URL into its userinfo parts by hand
- * (`new URL` rejects `default:pw@host:6379`). The userinfo ends at the LAST
- * `@` of the authority, so an unencoded `@` in a password still resolves.
+ * (`new URL` rejects `default:pw@host:6379`). Only the AUTHORITY (up to the
+ * first `/`, `?` or `#` after the scheme) is searched, so `redis://h/0?x=a@b`
+ * yields nothing. The userinfo ends at the LAST `@` of the authority, so an
+ * unencoded `@` in a password still resolves.
  */
 function parseUserinfo(
   raw: string
 ): { userinfo: string; password: string } | null {
   const noScheme = raw.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
-  const at = noScheme.lastIndexOf("@");
+  const authority = noScheme.split(/[/?#]/, 1)[0] ?? "";
+  const at = authority.lastIndexOf("@");
   if (at <= 0) return null;
-  const userinfo = noScheme.slice(0, at);
+  const userinfo = authority.slice(0, at);
   const colon = userinfo.indexOf(":");
   const password = colon === -1 ? userinfo : userinfo.slice(colon + 1);
+  if (password.length < MIN_SECRET_LENGTH) return null;
   return { userinfo, password };
 }
 
@@ -92,10 +99,15 @@ function knownSecrets(
 
 /**
  * `scheme://[user]:pass@`  |  `scheme://pass@`  |  scheme-less `user:pass@`.
- * Userinfo chars exclude whitespace, quotes, `/` and `@`.
+ * Userinfo may not contain whitespace, quotes or `/`; it MAY contain `@` (the
+ * match is greedy to the last `@` of the run), so an unencoded `@` in a
+ * password is covered. Known false positives, accepted: `ssh://git@host` and
+ * `mailto:x@y` text are masked too. A `/` inside a password is not covered by
+ * the pattern pass (it is indistinguishable from a path); the known-secret
+ * pass handles it when the URL is in our env.
  */
-const SCHEME_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"<>/@]*@/gi;
-const SCHEMELESS_USERPASS = /(^|[\s'"(<=,])[^\s:@/'"<>]*:[^\s@/'"<>]+@/g;
+const SCHEME_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"<>/]*@/gi;
+const SCHEMELESS_USERPASS = /(^|[\s'"(<=,;:\]])[^\s:@/'"<>]*:[^\s'"<>/]+@/g;
 
 /** Replace every credential in `text` with `***`. Safe on any string. */
 export function redactRedisSecrets(

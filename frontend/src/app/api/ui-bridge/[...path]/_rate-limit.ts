@@ -320,7 +320,7 @@ function logExpireFailed(
   }
   lastExpireFailLogWindow = windowIdx;
   log.warn("rate_limit_expire_failed", {
-    error: err instanceof Error ? err.message : String(err),
+    error: safeRedisErrorText(err, [resolveUrl()]),
     kind,
     status: status ?? "unknown",
   });
@@ -354,7 +354,7 @@ function logFailingOpen(
   }
   lastFailOpenLogWindow = windowIdx;
   log.warn("rate_limit_redis_op_failed_failing_open", {
-    error: err instanceof Error ? err.message : String(err),
+    error: safeRedisErrorText(err, [resolveUrl()]),
     kind,
     status: status ?? "unknown",
   });

@@ -38,9 +38,44 @@ describe("redactRedisSecrets", () => {
     }
   );
 
-  it("scrubs a password the pattern cannot delimit (unencoded slash)", () => {
-    vi.stubEnv("UI_BRIDGE_RELAY_REDIS_URL", "default:sec/ret@h:6379");
-    expect(redactRedisSecrets("oops sec/ret here")).not.toContain("sec/ret");
+  it("known-secret pass handles an '@' inside the password", () => {
+    vi.stubEnv("UI_BRIDGE_RELAY_REDIS_URL", "default:sec@ret@h:6379");
+    expect(redactRedisSecrets("oops sec@ret here")).not.toContain("sec@ret");
+  });
+
+  it("pattern pass handles an '@' inside the password", () => {
+    const out = redactRedisSecrets("x redis://default:sec@ret@h.example:6379");
+    expect(out).not.toContain("sec");
+    expect(out).not.toContain("ret@");
+    expect(out).toContain("h.example:6379");
+    const bare = redactRedisSecrets("x default:sec@ret@h.example:6379");
+    expect(bare).not.toContain("sec@");
+    expect(bare).not.toContain("ret@");
+  });
+
+  it.each([
+    ["after ]", "[err]default:secret@h.example:6379"],
+    ["after ;", "failed;default:secret@h.example:6379"],
+    ["after :", "failed:default:secret@h.example:6379"],
+  ])("scheme-less match %s", (_n, text) => {
+    expect(redactRedisSecrets(text)).not.toContain("secret");
+  });
+
+  it("does not take userinfo from a path/query '@'", () => {
+    vi.stubEnv("UI_BRIDGE_RELAY_REDIS_URL", "redis://h:6379/0?x=abcdef@b");
+    // No bogus secret: ordinary text containing 'abcdef' is untouched.
+    expect(redactRedisSecrets("abcdef and h:6379")).toBe("abcdef and h:6379");
+  });
+
+  it("skips known-secret substitution for passwords under 4 chars", () => {
+    vi.stubEnv("UI_BRIDGE_RELAY_REDIS_URL", "redis://default:ab@h:6379");
+    expect(redactRedisSecrets("a table about abc")).toBe("a table about abc");
+  });
+
+  it("false positive accepted: ssh://git@host is masked", () => {
+    expect(redactRedisSecrets("ssh://git@github.com")).toBe(
+      "ssh://***@github.com"
+    );
   });
 
   it("leaves unrelated text alone", () => {
