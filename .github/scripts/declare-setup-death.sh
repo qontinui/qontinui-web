@@ -119,8 +119,18 @@
 # (`%` `\r` `\n` `:` `,`) so a job name with a comma or colon cannot cut the
 # title before the phrase; every name in a message is escaped as data. Every
 # title and step name is data: quoted expansions, `grep -E --`, never `eval`.
-# Plain log lines carry a fixed prefix, so none can start with `::` and be
-# parsed as a workflow command.
+#
+# PLAIN LOG LINES (rules 2 and 3) quote step names, which are data, and the
+# Actions runner reads a workflow command in two forms (actions/runner
+# `ActionCommand`): a line that starts with `::` once its leading whitespace
+# is trimmed (`TryParseV2`), and the legacy form, two `#` and a `[`, found at
+# ANY column (`TryParse`, an `IndexOf`) and read up to the next `]`. The fixed
+# prefix rules out only the first. So `log_decision` also breaks every legacy
+# prefix into `# #[`, as backend/tests/setup_death_git.py `defang` does, and a
+# step name holding one reaches the log as plain text. An `::error` or
+# `::notice` line needs no such break: the runner tries `TryParseV2` first, and
+# once that has read the line as a command the legacy form is never tried, so
+# its message is data.
 #
 # RESERVED PHRASES. No title written here contains any of three phrases, each
 # kept out for its own reason (qontinui-coord: `no_verdict_marker_for_title`
@@ -144,6 +154,11 @@ set -uo pipefail
 trap 'exit 0' EXIT
 
 readonly LOG_PREFIX='declare-setup-death:'
+# The legacy workflow-command prefix, spelled in two parts so that no line of
+# this file holds it (a test that fails over this file's text prints it), and
+# what a plain log line carries in its place.
+readonly LEGACY_PREFIX='#''#['
+readonly LEGACY_BROKEN='# #['
 readonly FETCH_BOUND_MAX=60
 # Every other git call: the `cat-file` reads and the diff.
 readonly GIT_BOUND=30
@@ -168,12 +183,16 @@ escape_property() {
   printf '%s' "$s"
 }
 
-# One plain log line. CR/LF become spaces and the fixed prefix leads, so the
-# line can never be read as a workflow command.
+# One plain log line. CR/LF become spaces and the fixed prefix leads, so no
+# line of it starts with `::`; every legacy prefix becomes `# #[`, so no
+# column of it opens the legacy form either (PLAIN LOG LINES in the header).
+# The replacement is unquoted and holds no `&` or `\`, which bash 5.2's
+# patsub_replacement would read, so every bash version inserts it as is.
 log_decision() {
   local s="$1"
   s="${s//$'\r'/ }"
   s="${s//$'\n'/ }"
+  s="${s//"$LEGACY_PREFIX"/$LEGACY_BROKEN}"
   printf '%s %s\n' "$LOG_PREFIX" "$s"
 }
 

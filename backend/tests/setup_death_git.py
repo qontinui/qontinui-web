@@ -23,8 +23,10 @@ shard's red not a verdict, and so would the legacy spelling anywhere in a
 line, a repr or a ``--showlocals`` local included. So nothing here prints,
 every subprocess's output is captured (``assert_prints_nothing`` is the AST
 guard both modules run over themselves and over this file), every failure
-message is ``defang``-ed, and ``run_pytest_probe`` / ``command_lines`` let a
-module prove that even its FAILING run writes no workflow command.
+message is ``defang``-ed, a string that must hold the legacy prefix before a
+registered command is held in a ``Sealed`` copy, whose repr is defanged, and
+``run_pytest_probe`` / ``command_lines`` let a module prove that even its
+FAILING run writes no workflow command.
 """
 
 from __future__ import annotations
@@ -73,6 +75,25 @@ def defang(text: str) -> str:
     aside) is in the defanged text exactly when it is in ``text``.
     """
     return text.replace("::", ": :").replace(LEGACY_PREFIX, "# #[")
+
+
+class Sealed(str):
+    """A ``str`` whose ``repr`` is ``defang``-ed.
+
+    pytest prints a failing test's locals (``--showlocals``) and a failed
+    comparison's operands by ``repr``, so a string holding ``LEGACY_PREFIX``
+    with a REGISTERED command after it (``error``) would write that command
+    into the shard log. Its ``Sealed`` copy prints defanged, and a ``dict``
+    or ``list`` holding one prints it the same way. A string DERIVED from it
+    (an f-string, ``+``, a slice, ``str()``) is a plain ``str`` again, so a
+    test derives one only inside a helper that returns nothing but counts
+    and ``defang``-ed text.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return repr(defang(str.__str__(self)))
 
 
 def command_lines(text: str) -> list[str]:

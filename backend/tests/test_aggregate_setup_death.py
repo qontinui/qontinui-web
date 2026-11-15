@@ -31,7 +31,12 @@ failing assertion prints its message and pytest's explanation into the ``-ra``
 summary with no ``E`` prefix, and pytest explains ``x not in line`` by
 re-printing ``line`` indented by spaces only, so every ``in`` / ``not in``
 against a rendered line reads ``_defang(...)`` of it (the helpers return theirs
-defanged) and every message built from output is ``_defang``-ed.
+defanged) and every message built from output is ``_defang``-ed. The runner
+also reads a legacy form at ANY column (``setup_death_git.LEGACY_PREFIX``), so
+no source line here holds that prefix, and the tests that need a member name
+holding it before ``error``, a registered command, build that name only inside
+``_legacy_member_line``, in a ``Sealed`` string whose repr is defanged, and
+get back only counts and the defanged line.
 ``test_a_failing_helper_writes_no_workflow_command`` and
 ``test_a_failing_run_of_this_module_writes_no_workflow_command`` hold that for
 the helpers, the second by running pytest itself with the repo's addopts.
@@ -58,7 +63,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 import yaml
@@ -69,7 +74,9 @@ from tests.gate_lane_roster import (
 )
 from tests.setup_death_git import (
     GIT,
+    LEGACY_PREFIX,
     PrRepo,
+    Sealed,
     assert_prints_nothing,
     base_env,
     command_lines,
@@ -651,6 +658,92 @@ def test_another_red_need_is_not_laundered(github, other):
     line = _assert_declined(_decide(env))
     assert f"frontend-tests={other}" in line
     assert fake.urls == [], "a declined need must not spend a read"
+
+
+class _LegacyLine(NamedTuple):
+    """What a decision over a legacy-prefixed member name may hand a test frame."""
+
+    #: Lines of the rendered output the runner could parse as a command.
+    commands: int
+    #: Legacy prefixes left anywhere in it.
+    prefixes: int
+    #: The line, defanged: the only form an assertion message may carry.
+    shown: str
+
+
+#: Member names holding the legacy prefix with the REGISTERED command `error`
+#: after it, `{legacy}` standing for the prefix: `_legacy_member_line` builds
+#: each real name in a `Sealed` string and hands back only a `_LegacyLine`
+#: (the module docstring says why).
+LEGACY_MEMBER_NAMES = {
+    "mid-name": "Run Tests {legacy}error]m",
+    "leading": "{legacy}error title=t]m",
+    "three-hashes": "Run Tests #{legacy}error]m",
+    "twice": "Run {legacy}error]{legacy}error]m",
+}
+
+
+def _legacy_member_line(github, template: str, conclusion: str) -> _LegacyLine:
+    """The line for ONE undeclared member named ``template``, prefix filled in.
+
+    A ``failure`` member ends at rule 4 and any other conclusion at rule 3;
+    both lines quote the member's name.
+    """
+    name = Sealed(template.replace("{legacy}", LEGACY_PREFIX))
+    fake = github(
+        [{"id": 7, "name": name, "status": "completed", "conclusion": conclusion}]
+    )
+    fake.declare(7, "")
+    env = _env(
+        DECLARE_JOB="Gate",
+        MEMBER_NEED="member",
+        # re.escape escapes `#` and `[`, so the pattern holds no prefix.
+        MEMBER_NAME_RE=re.escape(name),
+        MEMBER_NOUN="job",
+        EXPECTED_MEMBERS="1",
+        NEEDS_JSON=json.dumps({"member": {"result": "failure"}}),
+    )
+    line = Sealed(_line(_decide(env)))
+    return _LegacyLine(
+        len(command_lines(line)), line.count(LEGACY_PREFIX), _defang(line)
+    )
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "said"),
+    [
+        (
+            "failure",
+            "member '{name}' carries no setup-death declaration after 4 reads, "
+            "so its red may be a verdict.",
+        ),
+        (
+            "cancelled",
+            "member(s) {name}=cancelled did not conclude success or failure, "
+            "which is not a setup death.",
+        ),
+    ],
+    ids=["rule-4", "rule-3"],
+)
+@pytest.mark.parametrize(
+    "template", list(LEGACY_MEMBER_NAMES.values()), ids=list(LEGACY_MEMBER_NAMES)
+)
+def test_a_legacy_command_in_a_member_name_comes_out_broken(
+    github, template, conclusion, said
+):
+    """A declined line quotes member names, so `render` breaks the legacy form.
+
+    The runner reads the legacy prefix at ANY column, and the line's fixed
+    lead stops only the `::` form: a member named with the prefix and `error`
+    would otherwise reach the aggregate's log as an error annotation.
+    """
+    line = _legacy_member_line(github, template, conclusion)
+    assert line.prefixes == 0, line.shown
+    assert line.commands == 0, line.shown
+    name = template.replace("{legacy}", "# #[")
+    assert line.shown == (
+        "aggregate-setup-death: no declaration: " + said.format(name=name)
+    ), line.shown
 
 
 # --- UNKNOWN withholds -------------------------------------------------------------
