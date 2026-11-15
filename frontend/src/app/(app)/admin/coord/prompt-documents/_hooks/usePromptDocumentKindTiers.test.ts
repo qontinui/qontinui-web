@@ -115,4 +115,32 @@ describe("usePromptDocumentKindTiers", () => {
 
     expect(result.current.data?.kinds[0]?.tier).toBeNull();
   });
+
+  it("does not paint a read sent before a tier was set over the write's read-back", async () => {
+    fetchKindTiers.mockResolvedValueOnce(tiers(null));
+    const { result } = renderHook(() => usePromptDocumentKindTiers(), {
+      wrapper: withPageGuard(PINNED_PAGE),
+    });
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+
+    const before = deferred<unknown>();
+    fetchKindTiers.mockReturnValueOnce(before.promise);
+    let reading: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      reading = result.current.reload();
+    });
+    setKindTier.mockResolvedValueOnce({ ok: true });
+    fetchKindTiers.mockResolvedValueOnce(tiers("allow"));
+    await act(async () => {
+      await result.current.setTier("initiative", "allow");
+    });
+    expect(result.current.data?.kinds[0]?.tier).toBe("allow");
+
+    await act(async () => {
+      before.resolve(tiers(null));
+      await reading;
+    });
+
+    expect(result.current.data?.kinds[0]?.tier).toBe("allow");
+  });
 });

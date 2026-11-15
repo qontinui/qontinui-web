@@ -869,9 +869,15 @@ describe("the page's settings are read only under the page's project", () => {
     await settle(150);
 
     expect(settingsReadTenants()).toEqual(everyReadIn([]));
-    // Nothing has been read, so there is nothing to page through.
+    // Nothing has been read, so there is nothing to page through, and no
+    // section claims a read in flight.
     expect(
       screen.queryByTestId("compliance-sessions-next")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /^Loading…$|Reading the dial…|Loading enforcement settings…|Loading session verdicts…/
+      )
     ).not.toBeInTheDocument();
     for (const id of WAITING) {
       expect(screen.getByTestId(id)).toBeInTheDocument();
