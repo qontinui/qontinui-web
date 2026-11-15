@@ -228,6 +228,27 @@ class TestRouteAbsentFallback:
         assert resp.status_code == 404
 
 
+def test_production_body_carries_the_sentence_the_frontend_reads():
+    """Under the production handler the deploy-order sentence is the top-level
+    ``message`` (``writeOutcome.ts`` ``proxyDetailOf`` falls back to it), with a
+    typed refusal beside it."""
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    from app.middleware.error_handler import http_exception_handler
+
+    app = _build_test_app()
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+    put = AsyncMock(return_value=_mock_response(404, NO_SUCH_ROUTE))
+    with _coord(put=put):
+        resp = TestClient(app).put(
+            f"{API_PREFIX}/post_merge", json={"model": None, "effort": None}
+        )
+    assert resp.status_code == 502
+    body = resp.json()
+    assert body["message"].startswith("coord does not serve ")
+    assert "refusal" in body
+
+
 class TestPut:
     def test_writes_full_pair_and_returns_coord_row(self, client: TestClient):
         put = AsyncMock(return_value=_mock_response(200, ROW_STORED))
