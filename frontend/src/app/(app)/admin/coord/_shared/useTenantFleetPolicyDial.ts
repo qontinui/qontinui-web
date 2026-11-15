@@ -49,8 +49,10 @@ function capitalise(s: string): string {
  *    `readback_error`, this does NOT optimistically set the new level — it
  *    keeps the last known-good value and surfaces `readbackError`. Painting
  *    the written level on an unconfirmed write is exactly how a toggle starts
- *    lying about the fleet. A failed READ likewise keeps the last known-good
- *    value: blanking it would render as "off", a claim we cannot make.
+ *    lying about the fleet. A caller that pins its requests reads again at
+ *    once, so the value shown becomes coord's; one that pins nothing waits
+ *    for a refresh. A failed READ likewise keeps the last known-good value:
+ *    blanking it would render as "off", a claim we cannot make.
  *
  * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Every
  *    dial bound here is decided with no repo in hand: the capture clause is
@@ -226,6 +228,9 @@ export function useTenantFleetPolicyDial<L extends string>(
             `The write went through, but the read-back failed — what ${subject} ` +
               "resolve is unknown until this refreshes."
           );
+          // A caller that pins its requests reads it again, pinned, so what
+          // is shown is coord's level and not the one from before the write.
+          if (pinsReadsRef.current) void load();
         }
         return true;
       } catch (err) {
@@ -235,7 +240,7 @@ export function useTenantFleetPolicyDial<L extends string>(
         setSaving(false);
       }
     },
-    [domain, label, subject, sendPin]
+    [domain, label, subject, sendPin, load]
   );
 
   return {

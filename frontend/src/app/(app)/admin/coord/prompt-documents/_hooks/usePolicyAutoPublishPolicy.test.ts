@@ -88,6 +88,34 @@ describe("usePolicyAutoPublishPolicy", () => {
     expect(result.current.waitingForProject).toBe(false);
   });
 
+  it("reads again, pinned, after a write whose read-back failed, and shows coord's level", async () => {
+    fetchFleetPolicy
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce(view("on"));
+    putFleetPolicy.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() => usePolicyAutoPublishPolicy(), {
+      wrapper: withPageGuard(PINNED_PAGE),
+    });
+    await waitFor(() => expect(result.current.policy).not.toBeNull());
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() =>
+      expect(result.current.policy?.effective_level).toBe("on")
+    );
+    expect(result.current.readbackError).toBeNull();
+    expect(fetchFleetPolicy.mock.calls).toEqual([
+      ["policy_auto_publish", undefined, { tenant: "t-page" }],
+      ["policy_auto_publish", undefined, { tenant: "t-page" }],
+    ]);
+  });
+
   it("does not paint a read sent before a level write landed over the write's result", async () => {
     fetchFleetPolicy.mockResolvedValueOnce(view("off"));
     const { result } = renderHook(() => usePolicyAutoPublishPolicy(), {

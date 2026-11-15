@@ -37,7 +37,8 @@ function message(err: unknown, fallback: string): string {
  *    Every state transition comes from a READ; the write's own echo is kept
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
- *    screen and the error is surfaced.
+ *    screen and the error is surfaced, and the level is read again at once,
+ *    pinned, so what is shown becomes coord's.
  *
  * What is specific to THIS domain:
  *
@@ -181,6 +182,9 @@ export function usePolicyAutoPublishPolicy() {
             "The write went through, but the read-back failed — what this " +
               "tenant resolves is unknown until this refreshes."
           );
+          // Read it again, pinned, so what is shown is coord's level and not
+          // the one from before the write.
+          void load();
         }
         return true;
       } catch (err) {
@@ -192,7 +196,7 @@ export function usePolicyAutoPublishPolicy() {
         setSaving(false);
       }
     },
-    [sendPin, writeAllowed]
+    [load, sendPin, writeAllowed]
   );
 
   // `"none"` means no row matched, which for this domain is `on` — NOT off.

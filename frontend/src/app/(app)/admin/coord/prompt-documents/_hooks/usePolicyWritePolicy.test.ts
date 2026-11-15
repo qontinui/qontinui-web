@@ -292,7 +292,11 @@ describe("usePolicyWritePolicy — writes", () => {
   });
 
   it("treats a failed read-back as UNKNOWN, not as the written value", async () => {
-    getMock.mockResolvedValue(OFF_TENANT);
+    // The write's failed read-back sends a re-read; it is held, so this is
+    // the state while what devices resolve is still unknown.
+    getMock
+      .mockResolvedValueOnce(OFF_TENANT)
+      .mockReturnValue(new Promise(() => {}));
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",
@@ -325,7 +329,11 @@ describe("usePolicyWritePolicy — writes", () => {
   });
 
   it("retires the read-back warning once a read confirms the value", async () => {
-    getMock.mockResolvedValue(OFF_TENANT);
+    // The re-read the failed read-back sends is held; the confirming read is
+    // the Refresh below.
+    getMock
+      .mockResolvedValueOnce(OFF_TENANT)
+      .mockReturnValueOnce(new Promise(() => {}));
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",

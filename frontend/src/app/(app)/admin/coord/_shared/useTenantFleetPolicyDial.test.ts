@@ -387,6 +387,27 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     );
   });
 
+  it("reads nothing more after a write whose read-back failed: today's behaviour", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+    await act(async () => {});
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result.current.readbackError).toBe("read-back timed out");
+    expect(result.current.policy?.effective_level).toBe("off");
+  });
+
   /** A dial on a page that pins its requests, before it knows its project. */
   const unresolved = () =>
     renderHook(() =>
@@ -563,6 +584,41 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
 
     expect(result.current.waitingForProject).toBe(false);
     expect(sentInit.mock.calls).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
+    ]);
+  });
+
+  it("reads again, pinned, after a write whose read-back failed, and shows coord's level", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce(view("on"));
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() =>
+      expect(result.current.policy?.effective_level).toBe("on")
+    );
+    expect(result.current.readbackError).toBeNull();
+    expect(
+      sentInit.mock.calls.filter(([, init]) => init.method === "GET")
+    ).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
       [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
     ]);
   });

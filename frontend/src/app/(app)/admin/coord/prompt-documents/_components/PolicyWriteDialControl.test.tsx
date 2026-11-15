@@ -198,7 +198,11 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   });
 
   it("names what was written beside a read-back that failed", async () => {
-    getMock.mockResolvedValue(view({ effective_level: "off" }));
+    // The write's failed read-back sends a re-read; it is held, so the dial
+    // is seen while coord's level is still unknown.
+    getMock
+      .mockResolvedValueOnce(view({ effective_level: "off" }))
+      .mockReturnValue(new Promise(() => {}));
     putMock.mockResolvedValue({
       ...okWrite(null, "coord returned 502" as unknown as null),
       written_level: "propose_only",
