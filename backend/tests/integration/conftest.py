@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -51,6 +52,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     # Create tables
     async with engine.begin() as conn:
+        # agent.work_artifacts declares a gin_trgm_ops index.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
 
     # Create session factory

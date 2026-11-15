@@ -669,7 +669,9 @@ jobs:
       # create them explicitly here. We also `CREATE EXTENSION vector`
       # — alembic does this in 05a366f58455 but conftest skips alembic,
       # so create_all hits `UndefinedObjectError: type "vector" does
-      # not exist` whenever a Vector column is materialized. Without
+      # not exist` whenever a Vector column is materialized. `pg_trgm` for
+      # the same reason: agent.work_artifacts declares a `gin_trgm_ops` index
+      # (conftest also creates it; this keeps the two preps one list). Without
       # the schema lines, create_all fails with:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
@@ -687,7 +689,8 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
-            -c "CREATE EXTENSION IF NOT EXISTS vector;"
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       # Collection is the shard split's ONLY input, and it is deliberately run
       # per shard rather than once in an upstream job: every shard computes the

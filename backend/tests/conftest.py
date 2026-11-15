@@ -298,6 +298,16 @@ async def test_engine():
     except Exception:  # noqa: BLE001 — best-effort; degrade gracefully
         vector_available = False
 
+    # pg_trgm: agent.work_artifacts declares a ``gin_trgm_ops`` index on slug
+    # (``plan_library_12_search_tsv_and_slug_trgm``), which create_all cannot
+    # build without the extension. Unguarded, unlike vector above: pg_trgm is
+    # a contrib module, which the official postgres and pgvector images (CI's
+    # substrate) and RDS all carry; a distro build packages contrib
+    # separately (e.g. ``postgresql-contrib``), and a substrate missing it
+    # should fail loudly rather than quietly drop a table.
+    async with _test_engine.begin() as ext_conn:
+        await ext_conn.execute(_sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+
     def _has_vector_column(table) -> bool:
         for col in table.columns:
             if "vector" in type(col.type).__name__.lower():

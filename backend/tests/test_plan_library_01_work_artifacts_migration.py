@@ -31,7 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
-from app.models.work_artifact import SEARCH_TSVECTOR_SQL, WorkArtifact
+from app.models.work_artifact import SEARCH_TSVECTOR_SQL
 from tests._alembic_harness import (
     admin_database_url,
     backend_root,
@@ -106,44 +106,14 @@ def test_status_carries_no_check_in_the_ddl() -> None:
     assert "status" not in " ".join(names)
 
 
-def test_the_search_index_expression_is_the_module_constant_verbatim() -> None:
-    """The index body and the ``?q=`` predicate must be the SAME string.
-
-    PostgreSQL matches an expression index by the parsed expression, so a
-    predicate that merely *resembles* the indexed expression yields a
-    perfectly healthy-looking index that is never used. Spelling it once and
-    reusing the constant is the only way that stays true under edits.
-
-    This is a regression test with a real history: the model used to inline a
-    second, table-qualified copy of the expression here while
-    ``SEARCH_TSVECTOR_SQL`` carried an unqualified one. Nothing caught it,
-    because PostgreSQL normalizes the qualification away and the two parse
-    trees agreed anyway — so the constant that exists to prevent
-    index-predicate drift was not actually the thing the index used.
-    """
-    index = next(
-        i
-        for i in WorkArtifact.__table__.indexes
-        if i.name == "ix_work_artifacts_search"
-    )
-    assert index.dialect_options["postgresql"]["using"] == "gin"
-
-    expressions = [str(e) for e in index.expressions]
-    assert expressions == [SEARCH_TSVECTOR_SQL]
-
-    # The predicate crud.work_artifact builds must embed the constant byte for
-    # byte, not a lookalike.
-    predicate = text(f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :q)")
-    assert str(predicate).startswith(SEARCH_TSVECTOR_SQL)
-
-
 def test_the_search_constant_is_unqualified_and_covers_title_and_body() -> None:
-    """Unqualified is not cosmetic — it is what the deployed index holds.
+    """Unqualified is not cosmetic — it is what this revision's index held.
 
-    A table-qualified spelling also *works* (PostgreSQL accepts it in
-    ``CREATE INDEX`` and then discards the qualification), which is precisely
-    why the old drift was invisible. Pinning the unqualified form keeps the
-    constant equal to what ``pg_get_indexdef`` reports.
+    A table-qualified spelling also *works* in ``CREATE INDEX`` (PostgreSQL
+    discards the qualification), which is precisely why an old drift between
+    the model and this index was invisible. The constant is now the stored
+    column's generation expression (``plan_library_12``), which may reference
+    only the row's own columns, so unqualified is required there too.
     """
     assert SEARCH_TSVECTOR_SQL.startswith("to_tsvector('english', ")
     assert "work_artifacts." not in SEARCH_TSVECTOR_SQL
@@ -163,7 +133,11 @@ def _normalized_sql(sql: str) -> str:
 
 
 def test_the_migration_ddl_spells_the_same_search_expression() -> None:
-    """Model constant vs migration DDL — one drifting is the whole trap.
+    """Model constant vs this revision's index DDL.
+
+    The index is gone at head, but ``plan_library_12``'s downgrade recreates
+    it with this same expression and its generated column carries it too, so
+    the three spellings still have to agree.
 
     The migration writes its ``CREATE INDEX`` as wrapped literal SQL rather
     than importing the constant (a migration must not follow the model as the
@@ -304,8 +278,12 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         assert "ix_work_artifacts_kind_status" in indexes
         assert "ix_work_artifacts_work_unit_slug" in indexes
         assert "gin" in indexes["ix_work_artifacts_repos"].lower()
-        assert "gin" in indexes["ix_work_artifacts_search"].lower()
-        assert "to_tsvector" in indexes["ix_work_artifacts_search"]
+        # This revision's expression index is replaced at head by the stored
+        # vector's (plan_library_12_search_tsv_and_slug_trgm, whose own test
+        # walks that change).
+        assert "ix_work_artifacts_search" not in indexes
+        assert "gin" in indexes["ix_work_artifacts_search_tsv"].lower()
+        assert "(search_tsv)" in indexes["ix_work_artifacts_search_tsv"]
 
         version_indexes = _index_defs(engine, "work_artifact_versions")
         assert "uq_work_artifact_versions_doc_version" in version_indexes
