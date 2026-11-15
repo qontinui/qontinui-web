@@ -70,6 +70,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Spawn launch settings (model + effort per spawn type) — coord-scoped; the
+  // backend forwards the override so the operator edits the settings of the
+  // tenant they switched to (membership-validated coord-side). Plan
+  // `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+  "/api/v1/spawn-launch-settings",
   // Project Overview — the ONE thing that scopes it. Every `overview.*` row
   // is keyed on the active coord tenant, which the backend resolves from this
   // header alone (`get_overview_tenant_id` /

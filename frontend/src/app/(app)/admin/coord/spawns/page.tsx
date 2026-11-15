@@ -33,6 +33,11 @@
  *   already reads). Tenant switches are writable in operator mode through
  *   their existing doors, and what a row shows after a write is coord's
  *   read-back.
+ * - **Model & effort by spawn type** (`SpawnLaunchSettingsPanel`, plan
+ *   `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5):
+ *   one row per spawn TYPE coord serves, with the operator's model family and
+ *   effort for it (inherit by default). Operator only — unmounted while
+ *   presenting.
  * - **Machines** (`MachineStatusSection`, derived by `machineStatus.ts`): one
  *   line per machine — drain, dispatch role, in flight against ceiling (an
  *   UNKNOWN naming the door no console reads yet) and the sessions open now.
@@ -116,6 +121,7 @@ import {
 import type { SpawnStatsWindow } from "@/lib/api/operations/coordSpawns";
 import { MachineStatusSection } from "./_components/MachineStatusSection";
 import { SpawnPathMatrixSection } from "./_components/SpawnPathMatrix";
+import { SpawnLaunchSettingsPanel } from "./_components/SpawnLaunchSettingsPanel";
 import { SpawnRateChart } from "./_components/SpawnRateChart";
 import { LedgerReadBanners } from "./_components/LedgerReadBanners";
 import { LedgerUnservedNotice } from "./_components/LedgerUnservedNotice";
@@ -423,6 +429,13 @@ export default function CoordSpawnsPage() {
             : []),
         ]}
       />
+
+      {/* Model & effort per spawn TYPE — a sibling of the per-PATH matrix
+          above (plan 2026-11-15-operator-sets-spawn-model-and-effort-per-
+          spawn-type). Every control is a write, so the operator's only. */}
+      <OperatorOnly>
+        <SpawnLaunchSettingsPanel />
+      </OperatorOnly>
 
       <MachineStatusSection
         showInFlight={unserved === null}
