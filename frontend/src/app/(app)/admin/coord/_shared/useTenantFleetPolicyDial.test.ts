@@ -637,7 +637,13 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
       [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
     ]);
-    // Coord resolves what was written: the only warning is the read-back's.
+    // Coord resolves what was written: the re-read says so, as a read-back
+    // does, and the only warning is the read-back's own.
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Some dial: now "on" for this tenant.'
+      )
+    );
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
@@ -671,6 +677,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
     );
     expect(result.current.policy?.effective_level).toBe("off");
     expect(result.current.readbackError).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("keeps the last level, the read-back warning and the read error when the re-read fails", async () => {
@@ -705,6 +712,7 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
     expect(result.current.readbackError).toBe("read-back timed out");
     // Only the read-back's warning: a failed re-read resolved nothing.
     expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("reads once, pinned, at mount when the resolver names a project then", async () => {

@@ -116,7 +116,13 @@ describe("usePolicyAutoPublishPolicy", () => {
       ["policy_auto_publish", undefined, { tenant: "t-page" }],
       ["policy_auto_publish", undefined, { tenant: "t-page" }],
     ]);
-    // Coord resolves what was written: the only warning is the read-back's.
+    // Coord resolves what was written: the re-read says so, as a read-back
+    // does, and the only warning is the read-back's own.
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Automatic publishing is now "on".'
+      )
+    );
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
@@ -145,6 +151,7 @@ describe("usePolicyAutoPublishPolicy", () => {
     );
     expect(result.current.policy?.effective_level).toBe("off");
     expect(result.current.readbackError).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("keeps the last level, the read-back warning and the read error when the re-read fails", async () => {
@@ -172,6 +179,7 @@ describe("usePolicyAutoPublishPolicy", () => {
     expect(result.current.policy?.effective_level).toBe("off");
     expect(result.current.readbackError).toBe("read-back timed out");
     expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("refuses a write beside its send when the page names no project, whatever its guard allowed", async () => {

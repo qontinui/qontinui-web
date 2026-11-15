@@ -9,6 +9,10 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
+  rereadAfterFailedReadBack,
+  resolvedOtherwise,
+} from "../../_shared/fleetPolicyReadBack";
+import {
   useFirstPinnedRead,
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
@@ -26,14 +30,8 @@ function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
 
-/** What a read-back says when the worker resolves a level other than `level`. */
-function resolvedOtherwise(level: string, view: FleetPolicyView): string {
-  return (
-    `Wrote "${level}", but the worker resolves ` +
-    `"${view.effective_level}" ` +
-    `(from the ${view.resolved_scope} scope).`
-  );
-}
+/** Who resolves this dial's level, for its read-back's warning. */
+const RESOLVERS = "the worker resolves";
 
 /**
  * The `policy_auto_publish` fleet-policy dial — whether this tenant's settled
@@ -48,8 +46,9 @@ function resolvedOtherwise(level: string, view: FleetPolicyView): string {
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
  *    screen and the error is surfaced, and the level is read again at once,
- *    pinned, so what is shown becomes coord's — with the same warning a
- *    read-back gives when that is not the level written.
+ *    pinned, so what is shown becomes coord's — saying what a read-back
+ *    would: "now X" for the level written, its warning for any other
+ *    (`rereadAfterFailedReadBack`).
  *
  * What is specific to THIS domain:
  *
@@ -186,16 +185,19 @@ export function usePolicyAutoPublishPolicy() {
         );
         writeGeneration.current += 1;
         setLastWrite(result);
+        const confirmed = `Automatic publishing is now "${level}".`;
 
         if (result.effective) {
           setPolicy(result.effective);
           setError(null);
           if (result.effective.effective_level === level) {
-            toast.success(`Automatic publishing is now "${level}".`);
+            toast.success(confirmed);
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the worker is actually on.
-            toast.warning(resolvedOtherwise(level, result.effective));
+            toast.warning(
+              resolvedOtherwise(level, RESOLVERS, result.effective)
+            );
           }
         } else {
           toast.warning(
@@ -203,13 +205,17 @@ export function usePolicyAutoPublishPolicy() {
               "tenant resolves is unknown until this refreshes."
           );
           // Read it again, pinned, so what is shown is coord's level and not
-          // the one from before the write; and, as a read-back would, say so
-          // when that is not the level written. A failed re-read keeps both
-          // the value and the warning.
-          void read().then((view) => {
-            if (view !== null && view.effective_level !== level) {
-              toast.warning(resolvedOtherwise(level, view));
-            }
+          // the one from before the write, and say what the read-back would
+          // have. A failed re-read keeps both the value and the warning.
+          void rereadAfterFailedReadBack({
+            read,
+            level,
+            confirmed,
+            resolvers: RESOLVERS,
+            onError: (err) =>
+              setError(
+                message(err, "Failed to read the automatic-publishing dial")
+              ),
           });
         }
         return true;

@@ -9,6 +9,10 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
+  rereadAfterFailedReadBack,
+  resolvedOtherwise,
+} from "./fleetPolicyReadBack";
+import {
   useFirstPinnedRead,
   useSendTimePin,
   type SendTimePinOptions,
@@ -20,19 +24,6 @@ function message(err: unknown, fallback: string): string {
 
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** What a read-back says when `subject` resolve a level other than `level`. */
-function resolvedOtherwise(
-  level: string,
-  subject: string,
-  view: FleetPolicyView
-): string {
-  return (
-    `Wrote "${level}", but ${subject} resolve ` +
-    `"${view.effective_level}" ` +
-    `(from the ${view.resolved_scope} scope).`
-  );
 }
 
 /**
@@ -63,11 +54,12 @@ function resolvedOtherwise(
  *    keeps the last known-good value and surfaces `readbackError`. Painting
  *    the written level on an unconfirmed write is exactly how a toggle starts
  *    lying about the fleet. A caller that pins its requests reads again at
- *    once, pinned, so the value shown becomes coord's, and says so, as a
- *    read-back does, when coord resolves a level other than the one written;
- *    one that pins nothing waits for a refresh. A failed READ likewise keeps
- *    the last known-good value: blanking it would render as "off", a claim
- *    we cannot make.
+ *    once, pinned, so the value shown becomes coord's, and says what a
+ *    read-back would: "now X" when coord resolves the level written, the
+ *    read-back's warning when it does not (`rereadAfterFailedReadBack`). One
+ *    that pins nothing waits for a refresh. A failed READ likewise keeps the
+ *    last known-good value: blanking it would render as "off", a claim we
+ *    cannot make.
  *
  * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Every
  *    dial bound here is decided with no repo in hand: the capture clause is
@@ -241,18 +233,20 @@ export function useTenantFleetPolicyDial<L extends string>(
         );
         writeGeneration.current += 1;
         setLastWrite(result);
+        const confirmed = `${capitalise(label)}: now "${level}" for this tenant.`;
+        const resolvers = `${subject} resolve`;
 
         if (result.effective) {
           setPolicy(result.effective);
           setError(null);
           if (result.effective.effective_level === level) {
-            toast.success(
-              `${capitalise(label)}: now "${level}" for this tenant.`
-            );
+            toast.success(confirmed);
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the fleet is actually on.
-            toast.warning(resolvedOtherwise(level, subject, result.effective));
+            toast.warning(
+              resolvedOtherwise(level, resolvers, result.effective)
+            );
           }
         } else {
           // Written, but unconfirmed. Leave `policy` alone — do NOT paint the
@@ -262,14 +256,17 @@ export function useTenantFleetPolicyDial<L extends string>(
               "resolve is unknown until this refreshes."
           );
           // A caller that pins its requests reads it again, pinned, so what
-          // is shown is coord's level and not the one from before the write;
-          // and, as a read-back would, it says so when that is not the level
-          // written. A failed re-read keeps both the value and the warning.
+          // is shown is coord's level and not the one from before the write,
+          // and says what the read-back would have. A failed re-read keeps
+          // both the value and the warning.
           if (pinsReadsRef.current) {
-            void read().then((view) => {
-              if (view !== null && view.effective_level !== level) {
-                toast.warning(resolvedOtherwise(level, subject, view));
-              }
+            void rereadAfterFailedReadBack({
+              read,
+              level,
+              confirmed,
+              resolvers,
+              onError: (err) =>
+                setError(message(err, `Failed to read the ${label} dial`)),
             });
           }
         }
