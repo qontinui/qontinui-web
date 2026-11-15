@@ -90,6 +90,15 @@ const PROPOSE_ONLY_TENANT = {
   effective_level: "propose_only",
 };
 
+/** A read the test holds in flight, and settles itself before it ends. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -294,9 +303,10 @@ describe("usePolicyWritePolicy — writes", () => {
   it("treats a failed read-back as UNKNOWN, not as the written value", async () => {
     // The write's failed read-back sends a re-read; it is held, so this is
     // the state while what devices resolve is still unknown.
+    const reread = deferred<unknown>();
     getMock
       .mockResolvedValueOnce(OFF_TENANT)
-      .mockReturnValue(new Promise(() => {}));
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",
@@ -326,14 +336,22 @@ describe("usePolicyWritePolicy — writes", () => {
     // written beside a value that was never confirmed.
     expect(result.current.lastWrite?.written_level).toBe("tightening_only");
     expect(toastSuccess).not.toHaveBeenCalled();
+
+    // Coord answers the re-read: what devices resolve is known again.
+    await act(async () =>
+      reread.resolve({ ...OFF_TENANT, effective_level: "tightening_only" })
+    );
+    expect(result.current.displayLevel).toBe("tightening_only");
+    expect(result.current.readbackError).toBeNull();
   });
 
   it("retires the read-back warning once a read confirms the value", async () => {
     // The re-read the failed read-back sends is held; the confirming read is
     // the Refresh below.
+    const reread = deferred<unknown>();
     getMock
       .mockResolvedValueOnce(OFF_TENANT)
-      .mockReturnValueOnce(new Promise(() => {}));
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",
@@ -355,13 +373,18 @@ describe("usePolicyWritePolicy — writes", () => {
     });
     expect(result.current.readbackError).toBeTruthy();
 
-    getMock.mockResolvedValue(PROPOSE_ONLY_TENANT);
+    getMock.mockResolvedValueOnce(PROPOSE_ONLY_TENANT);
     await act(async () => {
       await result.current.reload();
     });
 
     // The banner says "the value above may be stale". Leaving it beside a value
     // we just confirmed would be the opposite of honest.
+    expect(result.current.readbackError).toBeNull();
+    expect(result.current.displayLevel).toBe("propose_only");
+
+    // The held re-read answers last, with the same level: nothing changes.
+    await act(async () => reread.resolve(PROPOSE_ONLY_TENANT));
     expect(result.current.readbackError).toBeNull();
     expect(result.current.displayLevel).toBe("propose_only");
   });

@@ -25,7 +25,10 @@ import {
  *    Every state transition comes from a READ; the write's own echo is kept
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
- *    screen and the error is surfaced.
+ *    screen and the error is surfaced. The page pins this dial's requests,
+ *    so the shared dial reads the level again at once, pinned, and what is
+ *    shown becomes coord's — with the read-back's own warning when that is
+ *    not the level written.
  *
  * What is specific to THIS domain:
  *

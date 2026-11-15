@@ -29,7 +29,10 @@ import {
  *
  * 2. **A failed read-back is UNKNOWN.** On `readback_error` the last known-good
  *    value stays on screen and the error is surfaced. Painting the written level
- *    on an unconfirmed write is how a dial starts lying about the fleet.
+ *    on an unconfirmed write is how a dial starts lying about the fleet. The
+ *    page pins this dial's requests, so the shared dial reads the level again
+ *    at once, pinned, and what is shown becomes coord's — with the read-back's
+ *    own warning when that is not the level written.
  *
  * Three things are specific to THIS domain:
  *

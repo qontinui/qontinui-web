@@ -407,41 +407,6 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     expect(result.current.readbackError).toBe("read-back timed out");
     expect(result.current.policy?.effective_level).toBe("off");
   });
-
-  /** A dial on a page that pins its requests, before it knows its project. */
-  const unresolved = () =>
-    renderHook(() =>
-      useTenantFleetPolicyDial<"off" | "on">(
-        "some_dial",
-        "some dial",
-        "devices",
-        { resolvePin: () => undefined }
-      )
-    );
-
-  it("with a resolver that names no project, reads nothing and says it is waiting", async () => {
-    // A caller with no resolver keeps today's mount read (above); one with a
-    // resolver reads only under the project it names.
-    const { result } = unresolved();
-    await act(async () => {});
-
-    expect(sentInit).not.toHaveBeenCalled();
-    expect(result.current.waitingForProject).toBe(true);
-    expect(result.current.loading).toBe(false);
-    expect(result.current.policy).toBeNull();
-  });
-
-  it("sends nothing for a reload while its resolver names no project, and keeps what is shown", async () => {
-    const { result } = unresolved();
-    let applied: boolean | undefined;
-    await act(async () => {
-      applied = await result.current.reload();
-    });
-
-    expect(applied).toBe(false);
-    expect(sentInit).not.toHaveBeenCalled();
-    expect(result.current.loading).toBe(false);
-  });
 });
 
 describe("useTenantFleetPolicyDial — resolvePin, through the real client", () => {
@@ -561,6 +526,57 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
     headers: { "X-Qontinui-Active-Tenant": "t-b" },
   };
 
+  /** A dial on a page that pins its requests, before it knows its project. */
+  const unresolved = () =>
+    renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => undefined }
+      )
+    );
+
+  it("with a resolver that names no project, reads nothing and says it is waiting", async () => {
+    // A caller with no resolver keeps today's mount read; one with a
+    // resolver reads only under the project it names.
+    const { result } = unresolved();
+    await act(async () => {});
+
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.waitingForProject).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.policy).toBeNull();
+  });
+
+  it("sends nothing for a reload while its resolver names no project, and keeps what is shown", async () => {
+    const { result } = unresolved();
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+
+    expect(applied).toBe(false);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("refuses a write beside its send while its resolver names no project, and says why", async () => {
+    // Whatever its caller checked first: the write reads the pin it is sent
+    // in, and sends nothing unpinned.
+    const { result } = unresolved();
+    let sentWrite: boolean | undefined;
+    await act(async () => {
+      sentWrite = await result.current.setLevel("on");
+    });
+
+    expect(sentWrite).toBe(false);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Nothing was sent: there is no project to send the some dial change in. Select a project, or reload the page."
+    );
+  });
+
   it("reads first, once and pinned, when the resolver first names a project", async () => {
     let pin: { tenant: string } | undefined = undefined;
     getMock.mockResolvedValue(view("on"));
@@ -621,6 +637,74 @@ describe("useTenantFleetPolicyDial — the first read waits for the resolver to 
       [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
       [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
     ]);
+    // Coord resolves what was written: the only warning is the read-back's.
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a write whose read-back failed, warns as a read-back does when coord resolves another level", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce({ ...view("off"), resolved_scope: "repo" });
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenLastCalledWith(
+        'Wrote "on", but devices resolve "off" (from the repo scope).'
+      )
+    );
+    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.readbackError).toBeNull();
+  });
+
+  it("keeps the last level, the read-back warning and the read error when the re-read fails", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce(
+        new Response("coord is not reachable", { status: 502 })
+      );
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.readbackError).toBe("read-back timed out");
+    // Only the read-back's warning: a failed re-read resolved nothing.
+    expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
   it("reads once, pinned, at mount when the resolver names a project then", async () => {

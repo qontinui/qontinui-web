@@ -11,7 +11,9 @@ import { toast } from "sonner";
 import {
   ACTIVE_TENANT_STORAGE_KEY,
   readActiveTenantId,
+  type ProjectPin,
 } from "@/services/http-client";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
 
 /**
  * Why the page is locked. It names only the cause the page OBSERVED (plan
@@ -42,6 +44,22 @@ export function crossTabHeadline(cause: CrossTabLock): string {
  */
 export const NO_PIN_REFUSAL =
   "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
+
+/**
+ * The pin a write on the page's behalf is sent in, asked right before it is
+ * sent, beside the send. `undefined` sends nothing: the page's guard refused
+ * the write and said why, or there is no project to pin it to, said here. So
+ * no write goes out unpinned on the strength of a check made anywhere else.
+ */
+export function pinForWrite(
+  writeAllowed: () => boolean,
+  sendPin: ResolvePin
+): ProjectPin | undefined {
+  if (!writeAllowed()) return undefined;
+  const pin = sendPin();
+  if (pin === undefined) toast.error(NO_PIN_REFUSAL);
+  return pin;
+}
 
 /**
  * Whether a `storage` event can have changed the stored project: an event for

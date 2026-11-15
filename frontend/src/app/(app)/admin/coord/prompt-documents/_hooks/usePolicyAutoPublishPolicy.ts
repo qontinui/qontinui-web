@@ -13,6 +13,7 @@ import {
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import {
   isPolicyAutoPublishLevel,
   POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
@@ -23,6 +24,15 @@ import {
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+/** What a read-back says when the worker resolves a level other than `level`. */
+function resolvedOtherwise(level: string, view: FleetPolicyView): string {
+  return (
+    `Wrote "${level}", but the worker resolves ` +
+    `"${view.effective_level}" ` +
+    `(from the ${view.resolved_scope} scope).`
+  );
 }
 
 /**
@@ -38,7 +48,8 @@ function message(err: unknown, fallback: string): string {
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
  *    screen and the error is surfaced, and the level is read again at once,
- *    pinned, so what is shown becomes coord's.
+ *    pinned, so what is shown becomes coord's — with the same warning a
+ *    read-back gives when that is not the level written.
  *
  * What is specific to THIS domain:
  *
@@ -77,10 +88,11 @@ function message(err: unknown, fallback: string): string {
  * Nothing is read before the page knows its project: the first read goes out
  * then (`useFirstPinnedRead`), and `waitingForProject` says the hook is
  * waiting. A write is refused — nothing sent, the page says why — while that
- * switch is in effect, or while the page has no project to pin it to. Both come from the page's provider (`usePageSendGuard`), and the
- * refusal sits beside the send, so no caller can leave it out. It is never
- * mounted outside that provider, and throws if it is: there is no unguarded
- * mode.
+ * switch is in effect, or while the page has no project to pin it to. Both
+ * come from the page's provider (`usePageSendGuard`), and the refusal sits
+ * beside the send, which reads the pin it is sent in (`pinForWrite`), so no
+ * caller can leave it out. It is never mounted outside that provider, and
+ * throws if it is: there is no unguarded mode.
  */
 export function usePolicyAutoPublishPolicy() {
   const { writeAllowed, resolvePin } = usePageSendGuard();
@@ -100,10 +112,15 @@ export function usePolicyAutoPublishPolicy() {
   // (`useTenantFleetPolicyDial`).
   const writeGeneration = useRef(0);
 
-  const load = useCallback(async () => {
+  /**
+   * Read the level: the view when THIS read landed and is now what is shown,
+   * else `null` — it failed, sent nothing, or a write landed while it was in
+   * flight and it was discarded.
+   */
+  const read = useCallback(async (): Promise<FleetPolicyView | null> => {
     const pin = sendPin();
     // No project to read in yet: nothing is sent, and what is shown stays.
-    if (pin === undefined) return;
+    if (pin === undefined) return null;
     const generation = writeGeneration.current;
     try {
       setLoading(true);
@@ -112,22 +129,28 @@ export function usePolicyAutoPublishPolicy() {
         undefined,
         pin
       );
-      if (generation !== writeGeneration.current) return;
+      if (generation !== writeGeneration.current) return null;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
       // banner says "the value above may be stale", and leaving it up beside a
       // value we just confirmed would be the opposite of honest.
       setLastWrite(null);
+      return view;
     } catch (err) {
-      if (generation !== writeGeneration.current) return;
+      if (generation !== writeGeneration.current) return null;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, "Failed to read the automatic-publishing dial"));
+      return null;
     } finally {
       setLoading(false);
     }
   }, [sendPin]);
+
+  const load = useCallback(async (): Promise<void> => {
+    await read();
+  }, [read]);
 
   const waitingForProject = useFirstPinnedRead(sendPin, () => void load());
 
@@ -144,7 +167,8 @@ export function usePolicyAutoPublishPolicy() {
       level: PolicyAutoPublishLevel,
       changeNote?: string
     ): Promise<boolean> => {
-      if (!writeAllowed()) return false;
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
         const result = await putFleetPolicy(
@@ -158,7 +182,7 @@ export function usePolicyAutoPublishPolicy() {
               changeNote ??
               `Set automatic publishing to "${level}" from the console`,
           },
-          sendPin()
+          pin
         );
         writeGeneration.current += 1;
         setLastWrite(result);
@@ -171,11 +195,7 @@ export function usePolicyAutoPublishPolicy() {
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the worker is actually on.
-            toast.warning(
-              `Wrote "${level}", but the worker resolves ` +
-                `"${result.effective.effective_level}" ` +
-                `(from the ${result.effective.resolved_scope} scope).`
-            );
+            toast.warning(resolvedOtherwise(level, result.effective));
           }
         } else {
           toast.warning(
@@ -183,8 +203,14 @@ export function usePolicyAutoPublishPolicy() {
               "tenant resolves is unknown until this refreshes."
           );
           // Read it again, pinned, so what is shown is coord's level and not
-          // the one from before the write.
-          void load();
+          // the one from before the write; and, as a read-back would, say so
+          // when that is not the level written. A failed re-read keeps both
+          // the value and the warning.
+          void read().then((view) => {
+            if (view !== null && view.effective_level !== level) {
+              toast.warning(resolvedOtherwise(level, view));
+            }
+          });
         }
         return true;
       } catch (err) {
@@ -196,7 +222,7 @@ export function usePolicyAutoPublishPolicy() {
         setSaving(false);
       }
     },
-    [load, sendPin, writeAllowed]
+    [read, sendPin, writeAllowed]
   );
 
   // `"none"` means no row matched, which for this domain is `on` — NOT off.

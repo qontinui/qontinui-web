@@ -22,6 +22,19 @@ function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** What a read-back says when `subject` resolve a level other than `level`. */
+function resolvedOtherwise(
+  level: string,
+  subject: string,
+  view: FleetPolicyView
+): string {
+  return (
+    `Wrote "${level}", but ${subject} resolve ` +
+    `"${view.effective_level}" ` +
+    `(from the ${view.resolved_scope} scope).`
+  );
+}
+
 /**
  * One tenant-band fleet-policy dial — read the RESOLVED value, write a new
  * level, then read it back. Shared by every tenant-band dial in the console
@@ -50,9 +63,11 @@ function capitalise(s: string): string {
  *    keeps the last known-good value and surfaces `readbackError`. Painting
  *    the written level on an unconfirmed write is exactly how a toggle starts
  *    lying about the fleet. A caller that pins its requests reads again at
- *    once, so the value shown becomes coord's; one that pins nothing waits
- *    for a refresh. A failed READ likewise keeps the last known-good value:
- *    blanking it would render as "off", a claim we cannot make.
+ *    once, pinned, so the value shown becomes coord's, and says so, as a
+ *    read-back does, when coord resolves a level other than the one written;
+ *    one that pins nothing waits for a refresh. A failed READ likewise keeps
+ *    the last known-good value: blanking it would render as "off", a claim
+ *    we cannot make.
  *
  * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Every
  *    dial bound here is decided with no repo in hand: the capture clause is
@@ -80,9 +95,10 @@ function capitalise(s: string): string {
  * project still lands in the project the page shows. Such a page reads
  * nothing until the resolver names a project: the first read goes out then
  * (`useFirstPinnedRead`), and a later read with no project named sends
- * nothing; `waitingForProject` says the dial is waiting. Omitted, every
- * request is sent exactly as before: in the project stored when it is made,
- * the read on mount.
+ * nothing; `waitingForProject` says the dial is waiting. Its write reads the
+ * pin once, beside the send, and is refused there when none is named, so it
+ * never goes out unpinned. Omitted, every request is sent exactly as before:
+ * in the project stored when it is made, the read on mount.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -129,37 +145,47 @@ export function useTenantFleetPolicyDial<L extends string>(
   const writeGeneration = useRef(0);
 
   /**
-   * Read the resolved value. Resolves `true` only when THIS read landed and is
-   * now what is shown — `false` when it failed, or when a write landed while it
-   * was in flight and it was discarded — so a caller can tell a confirmed read
-   * from a refresh that confirmed nothing.
+   * Read the resolved value: the view when THIS read landed and is now what
+   * is shown, else `null` — it failed, sent nothing, or a write landed while
+   * it was in flight and it was discarded.
    */
-  const load = useCallback(async (): Promise<boolean> => {
+  const read = useCallback(async (): Promise<FleetPolicyView | null> => {
     const pin = sendPin();
     // No project named yet: nothing is sent, and what is shown stays.
-    if (pinsReadsRef.current && pin === undefined) return false;
+    if (pinsReadsRef.current && pin === undefined) return null;
     const generation = writeGeneration.current;
     try {
       setLoading(true);
       const view = await fetchFleetPolicy(domain, undefined, pin);
-      if (generation !== writeGeneration.current) return false;
+      if (generation !== writeGeneration.current) return null;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
       // banner it drives says "the value above may be stale" — leaving it up
       // beside a value we just confirmed would be the opposite of honest.
       setLastWrite(null);
-      return true;
+      return view;
     } catch (err) {
-      if (generation !== writeGeneration.current) return false;
+      if (generation !== writeGeneration.current) return null;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
   }, [domain, label, sendPin]);
+
+  /**
+   * Read the resolved value. Resolves `true` only when THIS read landed and is
+   * now what is shown — `false` when it failed, or when a write landed while it
+   * was in flight and it was discarded — so a caller can tell a confirmed read
+   * from a refresh that confirmed nothing.
+   */
+  const load = useCallback(
+    async (): Promise<boolean> => (await read()) !== null,
+    [read]
+  );
 
   // A caller that pins nothing reads on mount, as it always has; one that
   // pins its requests reads first when its project is known.
@@ -188,6 +214,17 @@ export function useTenantFleetPolicyDial<L extends string>(
    */
   const setLevel = useCallback(
     async (level: L, changeNote?: string): Promise<boolean> => {
+      // The project the write is sent in, read once beside the send. A
+      // caller that pins its requests sends no write without one, whatever
+      // it checked before calling: nothing would hold the write to its page.
+      const pin = sendPin();
+      if (pinsReadsRef.current && pin === undefined) {
+        toast.error(
+          `Nothing was sent: there is no project to send the ${label} ` +
+            "change in. Select a project, or reload the page."
+        );
+        return false;
+      }
       try {
         setSaving(true);
         const result = await putFleetPolicy(
@@ -200,7 +237,7 @@ export function useTenantFleetPolicyDial<L extends string>(
             change_note:
               changeNote ?? `Set ${label} to "${level}" from the console`,
           },
-          sendPin()
+          pin
         );
         writeGeneration.current += 1;
         setLastWrite(result);
@@ -215,11 +252,7 @@ export function useTenantFleetPolicyDial<L extends string>(
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the fleet is actually on.
-            toast.warning(
-              `Wrote "${level}", but ${subject} resolve ` +
-                `"${result.effective.effective_level}" ` +
-                `(from the ${result.effective.resolved_scope} scope).`
-            );
+            toast.warning(resolvedOtherwise(level, subject, result.effective));
           }
         } else {
           // Written, but unconfirmed. Leave `policy` alone — do NOT paint the
@@ -229,8 +262,16 @@ export function useTenantFleetPolicyDial<L extends string>(
               "resolve is unknown until this refreshes."
           );
           // A caller that pins its requests reads it again, pinned, so what
-          // is shown is coord's level and not the one from before the write.
-          if (pinsReadsRef.current) void load();
+          // is shown is coord's level and not the one from before the write;
+          // and, as a read-back would, it says so when that is not the level
+          // written. A failed re-read keeps both the value and the warning.
+          if (pinsReadsRef.current) {
+            void read().then((view) => {
+              if (view !== null && view.effective_level !== level) {
+                toast.warning(resolvedOtherwise(level, subject, view));
+              }
+            });
+          }
         }
         return true;
       } catch (err) {
@@ -240,7 +281,7 @@ export function useTenantFleetPolicyDial<L extends string>(
         setSaving(false);
       }
     },
-    [domain, label, subject, sendPin, load]
+    [domain, label, subject, sendPin, read]
   );
 
   return {

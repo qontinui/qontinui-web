@@ -68,6 +68,15 @@ function view(over: Partial<FleetPolicyView> = {}): FleetPolicyView {
   };
 }
 
+/** A read the test holds in flight, and settles itself before it ends. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function okWrite(effective: FleetPolicyView | null, readbackError = null) {
   return {
     ok: true,
@@ -200,9 +209,10 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("names what was written beside a read-back that failed", async () => {
     // The write's failed read-back sends a re-read; it is held, so the dial
     // is seen while coord's level is still unknown.
+    const reread = deferred<FleetPolicyView>();
     getMock
       .mockResolvedValueOnce(view({ effective_level: "off" }))
-      .mockReturnValue(new Promise(() => {}));
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ...okWrite(null, "coord returned 502" as unknown as null),
       written_level: "propose_only",
@@ -218,6 +228,48 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
     // Both halves: the write that landed, and the resolution that is unknown.
     expect(banner).toHaveTextContent("propose_only");
     expect(banner).toHaveTextContent(/unknown/i);
+
+    // Coord answers the re-read: the banner goes, and its level is shown.
+    reread.resolve(view({ effective_level: "propose_only" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("policy-write-readback-error")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      "propose_only"
+    );
+  });
+
+  it("keeps the last level beside both warnings when the re-read after a failed read-back fails", async () => {
+    getMock
+      .mockResolvedValueOnce(view({ effective_level: "off" }))
+      .mockResolvedValueOnce(
+        new Response("coord is not reachable", { status: 502 })
+      );
+    putMock.mockResolvedValue({
+      ...okWrite(null, "coord returned 502" as unknown as null),
+      written_level: "propose_only",
+    });
+
+    const user = userEvent.setup();
+    renderSection(<PolicyWriteDialControl />);
+    await screen.findByTestId("policy-write-dial");
+
+    await user.click(screen.getByLabelText(/propose_only/));
+
+    // The re-read failed: the read error, the read-back warning, and the last
+    // level coord confirmed — never the written one.
+    expect(
+      await screen.findByText("Could not read the dial.")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("policy-write-readback-error")).toHaveTextContent(
+      "propose_only"
+    );
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      /\boff\b/
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
   });
 });
 

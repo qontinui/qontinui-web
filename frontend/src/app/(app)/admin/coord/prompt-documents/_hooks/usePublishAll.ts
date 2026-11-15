@@ -15,7 +15,7 @@ import {
 } from "./usePromptDocumentPublications";
 import type { TenantPin } from "@/lib/api/operations/coordPromptDocuments";
 import { useSendTimePin } from "../../_shared/useSendTimePin";
-import { NO_PIN_REFUSAL } from "./usePageWriteGuard";
+import { pinForWrite } from "./usePageWriteGuard";
 import type { PageSendGuard } from "./usePageWriteGuardContext";
 import type {
   AutoPublishStatusEntry,
@@ -165,12 +165,10 @@ export function usePublishAll({ writeAllowed, resolvePin }: PageSendGuard) {
    * sends nothing: the page's guard refused it and said why, or there is no
    * project to pin it to.
    */
-  const writePin = useCallback((): ProjectPin | undefined => {
-    if (!writeAllowedRef.current()) return undefined;
-    const pin = sendPin();
-    if (pin === undefined) toast.error(NO_PIN_REFUSAL);
-    return pin;
-  }, [sendPin]);
+  const writePin = useCallback(
+    (): ProjectPin | undefined => pinForWrite(writeAllowedRef.current, sendPin),
+    [sendPin]
+  );
   const [candidates, setCandidates] = useState<PublishAllCandidate[] | null>(
     null
   );
