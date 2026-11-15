@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
+  readPinAtSend,
   useRetakeOnceWhenPinned,
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
@@ -126,9 +127,10 @@ const RETAKE_PENDING_REFUSAL =
  * on every attempt, so a save re-issued after another tab's switch cannot
  * change that tab's enforcement, and no such read can show that project's
  * verdicts as this one's. The mount reads can go out before the page knows
- * its project (a first visit, nothing stored), with no pin, in the project
- * stored as each attempt is made: all four are re-taken, pinned, once the
- * page has one, and the answers to the reads sent before are then dropped
+ * its project (a first visit, nothing stored), pinned to the project stored
+ * as each is sent (`readPinAtSend`; none on a first visit, so they are not
+ * retried): all four are re-taken, pinned, once the page has one, and the
+ * answers to the reads sent before are then dropped
  * (`useRetakeOnceWhenPinned`). The panel's draft is seeded from the settings
  * shown, so it is re-seeded when the re-take's settings land, even over
  * unsaved edits (`configRetakeEpoch`), and a save is refused while they are
@@ -182,7 +184,7 @@ export function useSessionCompliance() {
       generation !== writeGeneration.current || retake !== retakes.current;
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await fetchSessionComplianceConfig(sendPin());
+      const data = await fetchSessionComplianceConfig(readPinAtSend(sendPin()));
       if (superseded()) return;
       setConfig({
         data,
@@ -214,7 +216,9 @@ export function useSessionCompliance() {
       generation !== writeGeneration.current || retake !== retakes.current;
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceConfigVersions(sendPin());
+      const data = await listSessionComplianceConfigVersions(
+        readPinAtSend(sendPin())
+      );
       if (superseded()) return;
       setVersions({
         data: data.versions ?? [],
@@ -291,7 +295,7 @@ export function useSessionCompliance() {
           verdict: verdictFilter !== "all" ? verdictFilter : undefined,
           cursor,
         },
-        sendPin()
+        readPinAtSend(sendPin())
       );
       if (retake !== retakes.current) return;
       setSessions({
@@ -323,7 +327,9 @@ export function useSessionCompliance() {
     const retake = retakes.current;
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceOutstanding(sendPin());
+      const data = await listSessionComplianceOutstanding(
+        readPinAtSend(sendPin())
+      );
       if (retake !== retakes.current) return;
       setOutstanding({
         data: data.items ?? [],

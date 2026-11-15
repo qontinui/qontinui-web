@@ -25,9 +25,10 @@
  *    it went — also when that project becomes known only after the page
  *    mounted, as on a hard load under the layout's tenant provider. On a
  *    first visit, with nothing stored, the sections' mount reads go out
- *    before there is a project to pin them to: each is re-taken once, pinned,
- *    when the page's project is known, and the answer to the unpinned one,
- *    retried after another tab's switch, is not shown.
+ *    before there is a project to pin them to, pinned to the project stored
+ *    then: none. Each is re-taken once, pinned, when the page's project is
+ *    known; a 503 is not retried in another tab's project, and the answer
+ *    to a replay after a token refresh, which goes in it, is not shown.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -1024,7 +1025,7 @@ describe("the page's project known only after the page mounted", () => {
   }, 20_000);
 
   it.each(SHOWN_READS.map((read) => [read.label, read] as const))(
-    "%s: the read sent before the page had a project, retried after another tab's switch, does not land over its re-take",
+    "%s: the read sent before the page had a project, answered 503 after another tab's switch, is not retried in that tab's project",
     async (_label, read) => {
       otherProjectAnswers = [{ match: read.route, body: read.other }];
       const answerMembership = firstVisit();
@@ -1045,10 +1046,50 @@ describe("the page's project known only after the page mounted", () => {
       await settle();
       await read.open?.();
 
-      // Another tab stores its project. The mount read is answered 503, so
-      // the client retries it at once, unpinned: in the project stored now.
+      // Another tab stores its project, and the mount read is answered 503.
+      // It was pinned to the project stored when it was sent, none, so it
+      // is not retried: no attempt goes in the project stored now.
       anotherTabStoresSilently();
       await act(async () => releaseMountRead(503));
+      await settle(150);
+
+      expect(sentSince(0, "GET", read.route).map((s) => s.tenant)).toEqual([
+        null,
+        B,
+      ]);
+      read.showsOwn();
+    },
+    20_000
+  );
+
+  it.each(SHOWN_READS.map((read) => [read.label, read] as const))(
+    "%s: the read sent before the page had a project, replayed after a token refresh in another tab's project, does not land over its re-take",
+    async (_label, read) => {
+      otherProjectAnswers = [{ match: read.route, body: read.other }];
+      const answerMembership = firstVisit();
+      const releaseMountRead = holdNext("GET", read.route);
+      renderUnderTenantProvider();
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(1),
+        { timeout: 5000 }
+      );
+
+      // The page learns its project, and the read is re-taken in it and
+      // answered, while the mount read is still in flight.
+      await act(async () => answerMembership());
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(2),
+        { timeout: 5000 }
+      );
+      await settle();
+      await read.open?.();
+
+      // Another tab stores its project; the mount read is answered 401 on a
+      // stale token. The replay after the refresh is the one attempt a pin
+      // to no project cannot hold: it goes in the project stored now.
+      anotherTabStoresSilently();
+      token.expiry = Date.now() - 1000;
+      await act(async () => releaseMountRead(401));
       await waitFor(
         () => expect(sentSince(0, "GET", read.route)).toHaveLength(3),
         { timeout: 5000 }
@@ -1392,7 +1433,8 @@ describe("a re-take read sent before a write and answered after it", () => {
 /**
  * A compliance draft seeded from a superseded answer: on a first visit the
  * settings can be read in ANOTHER project before the page knows its own
- * (here, a mount read retried after another tab's switch), and the panel
+ * (here, a mount read replayed after a token refresh once another tab has
+ * switched), and the panel
  * seeds its draft from whatever is shown. Ported from the round-4 review's
  * demonstration (`complianceDraft.test.tsx`), where the operator's one edit
  * was saved into the page's project together with the other project's mode
@@ -1427,10 +1469,13 @@ describe("a compliance draft seeded from the superseded answer", () => {
     await waitFor(() => expect(sentSince(0, "GET", CFG)).toHaveLength(1), {
       timeout: 5000,
     });
-    // Another tab stores its project while the mount read is in flight; the
-    // read is answered 503 and retried, unpinned, in that project.
+    // Another tab stores its project while the mount read is in flight. The
+    // read was pinned to the project stored when it was sent, none, so the
+    // review's 503 is no longer retried; a 401 on a stale token is, by a
+    // replay after the refresh, in that project.
     localStorage.setItem(KEY, SYS);
-    await act(async () => releaseMount(503));
+    token.expiry = Date.now() - 1000;
+    await act(async () => releaseMount(401));
     await waitFor(() => expect(sentSince(0, "GET", CFG)).toHaveLength(2), {
       timeout: 5000,
     });

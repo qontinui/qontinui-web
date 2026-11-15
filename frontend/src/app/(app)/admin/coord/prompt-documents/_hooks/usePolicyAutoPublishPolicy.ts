@@ -9,6 +9,7 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
+  readPinAtSend,
   useRetakeOnceWhenPinned,
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
@@ -74,9 +75,10 @@ function message(err: unknown, fallback: string): string {
  * project, are sent in the page's project, asked as each goes out and kept on
  * every attempt, so a write re-issued after another tab's switch cannot land
  * in that tab's project. A read sent before the page knows its project (a
- * first visit, nothing stored) has no pin, so it goes in the project stored
- * as each attempt is made: it is re-taken, pinned, once the page has one, and
- * its own answer is then dropped (`useRetakeOnceWhenPinned`). A write is
+ * first visit, nothing stored) is pinned to the project stored as it is sent
+ * (`readPinAtSend`; none on a first visit, so it is not retried): it is
+ * re-taken, pinned, once the page has one, and its own answer is then
+ * dropped (`useRetakeOnceWhenPinned`). A write is
  * refused — nothing sent, the page says why — while another tab's switch is
  * in effect, or while the page has no project to pin it to. The pin and the
  * refusal both come from the page's provider (`usePageSendGuard`), and the
@@ -115,7 +117,7 @@ export function usePolicyAutoPublishPolicy() {
       const view = await fetchFleetPolicy(
         POLICY_AUTO_PUBLISH_DOMAIN,
         undefined,
-        sendPin()
+        readPinAtSend(sendPin())
       );
       if (superseded()) return;
       setPolicy(view);

@@ -9,6 +9,7 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
+  readPinAtSend,
   useRetakeOnceWhenPinned,
   useSendTimePin,
   type SendTimePinOptions,
@@ -76,11 +77,13 @@ function capitalise(s: string): string {
  * when the request goes out, on every attempt — so a write re-issued after a
  * 429, or replayed after a token refresh, once another tab has switched
  * project still lands in the project the page shows. While it names none (a
- * first visit, before the page's project is known), a request goes in the
- * project stored when each attempt is made; a mount read sent that way is
- * re-taken, pinned, once it names one, and its own answer is then dropped
+ * first visit, before the page's project is known), the read is sent pinned
+ * to the project stored when it is sent (`readPinAtSend`), so a retry cannot
+ * follow another tab's switch; it is re-taken, pinned, once the resolver
+ * names a project, and its own answer is then dropped
  * (`useRetakeOnceWhenPinned`). Omitted, every request is sent exactly as
- * before: in the project stored when it is made, and nothing is re-taken.
+ * before: in the project stored when each attempt is made, retried as
+ * always, and nothing is re-taken.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -105,6 +108,11 @@ export function useTenantFleetPolicyDial<L extends string>(
   // One identity whatever the caller passes, so the mount read below runs
   // once: the pin is read as each request goes out.
   const sendPin = useSendTimePin(resolvePin);
+  // Whether the caller pins its requests: only then is a read with no pin
+  // held to the project stored at send (`readPinAtSend`). A caller with no
+  // resolver keeps its reads exactly as they were, retries included.
+  const pinsReads = useRef(resolvePin !== undefined);
+  pinsReads.current = resolvePin !== undefined;
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -136,7 +144,11 @@ export function useTenantFleetPolicyDial<L extends string>(
       generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(domain, undefined, sendPin());
+      const view = await fetchFleetPolicy(
+        domain,
+        undefined,
+        pinsReads.current ? readPinAtSend(sendPin()) : sendPin()
+      );
       if (superseded()) return false;
       setPolicy(view);
       setError(null);

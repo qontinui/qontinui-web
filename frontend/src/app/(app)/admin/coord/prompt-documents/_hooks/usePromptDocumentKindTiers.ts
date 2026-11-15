@@ -9,6 +9,7 @@ import {
   type KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
 import {
+  readPinAtSend,
   useRetakeOnceWhenPinned,
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
@@ -62,9 +63,10 @@ function message(err: unknown, fallback: string): string {
  * a tier write re-issued after another tab's switch cannot open or close a
  * kind in that tab's project, and its read-back cannot show that project's
  * tiers as this one's. The mount read can go out before the page knows its
- * project (a first visit, nothing stored), with no pin, in the project stored
- * as each attempt is made: it is re-taken, pinned, once the page has one, and
- * its own answer is then dropped (`useRetakeOnceWhenPinned`). And a write is
+ * project (a first visit, nothing stored), pinned to the project stored as it
+ * is sent (`readPinAtSend`; none on a first visit, so it is not retried): it
+ * is re-taken, pinned, once the page has one, and its own answer is then
+ * dropped (`useRetakeOnceWhenPinned`). And a write is
  * refused — nothing sent, the page says why — while another tab's switch is in
  * effect, or while the page has no project to pin it to: the check sits
  * beside the send, so no caller can leave it out. It is never mounted outside
@@ -100,7 +102,7 @@ export function usePromptDocumentKindTiers() {
       generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
-      const view = await fetchKindTiers(sendPin());
+      const view = await fetchKindTiers(readPinAtSend(sendPin()));
       // Superseded by a landed write or the re-take: not what is shown, so
       // not a success.
       if (superseded()) return false;

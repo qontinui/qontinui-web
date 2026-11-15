@@ -387,9 +387,9 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     );
   });
 
-  it("sends the same bytes when the resolver names no project", async () => {
-    getMock.mockResolvedValueOnce(view("off"));
-    const { result } = renderHook(() =>
+  /** A dial on a page that pins its requests, before it knows its project. */
+  const unresolved = () =>
+    renderHook(() =>
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
@@ -397,11 +397,44 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
         { resolvePin: () => undefined }
       )
     );
+
+  it("pins a read its resolver names no project for to the project stored as it is sent: none, so it is not retried", async () => {
+    // As the page's status read does (`readPinAtSend`). A caller with no
+    // resolver keeps today's bytes (above); one with a resolver has opted in
+    // to pinning, and with nothing stored the pin is to no project.
+    localStorage.clear();
+    getMock.mockResolvedValueOnce(view("off"));
+    const { result } = unresolved();
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(sentInit.mock.calls).toEqual([
-      [`${DIAL_URL}?domain=some_dial`, { method: "GET", idempotent: true }],
+      [
+        `${DIAL_URL}?domain=some_dial`,
+        { method: "GET", idempotent: true, maxRetries: 0 },
+      ],
     ]);
+  });
+
+  it("pins that read to a project stored as it is sent, on every attempt", async () => {
+    localStorage.setItem(KEY, "t-stored");
+    try {
+      getMock.mockResolvedValueOnce(view("off"));
+      const { result } = unresolved();
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(sentInit.mock.calls).toEqual([
+        [
+          `${DIAL_URL}?domain=some_dial`,
+          {
+            method: "GET",
+            idempotent: true,
+            headers: { "X-Qontinui-Active-Tenant": "t-stored" },
+          },
+        ],
+      ]);
+    } finally {
+      localStorage.removeItem(KEY);
+    }
   });
 });
 
