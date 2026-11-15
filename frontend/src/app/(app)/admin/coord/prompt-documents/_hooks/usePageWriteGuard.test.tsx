@@ -7,9 +7,9 @@
  * 1. **`pin` is the project the page shows.** While the page's project has
  *    never been known (the layout's provider still reading), that is the
  *    project stored at mount, which the list's mount read is pinned to and
- *    so was answered in; once the provider answers, the page's project. With nothing stored at mount, or
- *    none selected, nothing is pinned, and every write is refused with the
- *    reason; dialogs still open.
+ *    so was answered in; once the provider answers, the page's project.
+ *    With nothing stored at mount, or none selected, nothing is pinned, and
+ *    every write is refused with the reason; dialogs still open.
  * 2. **`resolvePin` and `writeAllowed` keep one identity for the page's
  *    lifetime**, while the pin they answer changes. A hook that holds the
  *    resolver through `useSendTimePin` would absorb a new identity silently,
