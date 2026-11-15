@@ -35,9 +35,11 @@ export function tenantsListFailureMessage(
  * coord's body to tell them apart: it maps every coord 403 on
  * `/admin/coord/me` to the token — coord's `insufficient role`, or its
  * `operator_required` for a role held only outside the project `/me` was
- * scoped to — and raises the same 403 itself for an empty membership. The
- * usual cause is an account without the operator role in its home project.
- * A reload repeats the refusal whichever it is.
+ * scoped to — and raises the same 403 itself for an empty membership. A read
+ * sent with no project stored carries no project header, so `/me` is scoped
+ * to the account's home project, and the token then means the account lacks
+ * the operator role there, or belongs to no project. A reload repeats the
+ * refusal whichever it is.
  */
 export function isTenantsListUnauthorized(message: string | null): boolean {
   if (message === null) return false;

@@ -210,11 +210,15 @@ function ReloadButton({
  * failure a reload may clear reads differently from one it repeats. Coord's
  * refusal to list the account's projects (`tenant_not_resolved`, which
  * coord answers at its operator-role layer, so a reload and a project create
- * are refused alike: `isTenantsListUnauthorized`) is named as that, with the
- * project admin's operator role offered as the likely way out (the token
- * carries no reason, and has more than one cause), and no Reload. It sits
- * outside the fieldset, so its Reload is never disabled, and shows
- * only while the page is not locked: the cross-tab notice then says the
+ * are refused alike: `isTenantsListUnauthorized`) is named as that, with its
+ * cause and the way out, and no Reload. The token carries no reason, but the
+ * notice shows only with nothing stored at mount, when the provider's read
+ * went out with no project header, so `/me` was scoped to the home project:
+ * the account lacks the operator role there, or belongs to no project. The
+ * one exception is a client-side navigation to this page after the
+ * provider's read failed with a project stored, cleared before the page
+ * loaded. It sits outside the fieldset, so its Reload is never disabled, and
+ * shows only while the page is not locked: the cross-tab notice then says the
  * same thing (the page's project unknown, Reload the way on), and two alerts
  * would ask twice. The settings sections waiting for the page's project point
  * to whichever notice is up rather than repeat it (`projectListFailed`).
@@ -345,8 +349,9 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
               <p>
                 Coord refused to list your projects (tenant_not_resolved), so no
                 setting on this page is read and no change made on it is sent.
-                This usually means your account lacks the operator role in its
-                home project; ask your project&apos;s admin for it.
+                Your account lacks the operator role in its home project, or
+                belongs to no project; ask your project&apos;s admin for the
+                role.
               </p>
             ) : (
               <p>

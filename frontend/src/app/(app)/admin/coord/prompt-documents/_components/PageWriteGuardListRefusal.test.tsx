@@ -56,16 +56,20 @@ function envelope(status: number, message: string): Response {
   );
 }
 
-/** The tenants read answers `answer`; anything else is not this test's. */
+/**
+ * The tenants read answers `answer`; anything else is not this test's. The
+ * faked `fetch` is returned, so a test can read what the client sent.
+ */
 function tenantsAnswer(answer: () => Response) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string) =>
-      String(url).includes(TENANTS)
-        ? answer()
-        : new Response("{}", { status: 404 })
-    )
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >(async (url) =>
+    String(url).includes(TENANTS)
+      ? answer()
+      : new Response("{}", { status: 404 })
   );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 /** A fresh browser: nothing stored, the layout's provider over the page. */
@@ -88,8 +92,8 @@ afterEach(() => {
 });
 
 describe("the project-list notice over the real tenants client", () => {
-  it("coord's refusal to list, as the web backend answers it, offers the operator role as the likely way out and no Reload", async () => {
-    tenantsAnswer(() => envelope(403, "tenant_not_resolved"));
+  it("coord's refusal to list, as the web backend answers it, names the operator role in the home project as the way out and no Reload", async () => {
+    const fetchMock = tenantsAnswer(() => envelope(403, "tenant_not_resolved"));
     renderPage();
 
     const notice = await screen.findByTestId(
@@ -99,8 +103,17 @@ describe("the project-list notice over the real tenants client", () => {
       "Coord refused to list your projects (tenant_not_resolved)"
     );
     expect(notice).toHaveTextContent(
-      "This usually means your account lacks the operator role in its home project; ask your project's admin for it."
+      "Your account lacks the operator role in its home project, or belongs to no project; ask your project's admin for the role."
     );
+    // What that cause rests on: nothing was stored, so the read went out with
+    // no project header, and `/me` was scoped to the home project.
+    const reads = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes(TENANTS)
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const [, init] of reads) {
+      expect(init?.headers).not.toHaveProperty("X-Qontinui-Active-Tenant");
+    }
     expect(
       screen.queryByTestId("prompt-documents-project-list-failed-reload")
     ).not.toBeInTheDocument();

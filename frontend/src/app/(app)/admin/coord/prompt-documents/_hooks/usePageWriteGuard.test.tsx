@@ -505,9 +505,10 @@ describe("the project-list notice", () => {
     );
   });
 
-  it("names coord's refusal, offers the operator role as the likely way out, and no Reload, when coord will not list the account's projects", async () => {
-    // `tenant_not_resolved` carries no reason and has more than one cause;
-    // every reload is refused alike.
+  it("names coord's refusal, its cause with nothing stored, the operator role as the way out, and no Reload, when coord will not list the account's projects", async () => {
+    // `tenant_not_resolved` carries no reason. With nothing stored, the read
+    // went out scoped to the home project, which leaves two causes; every
+    // reload is refused alike.
     mountAfterTheListFailed(null, REFUSED);
 
     const notice = await screen.findByTestId(
@@ -515,7 +516,7 @@ describe("the project-list notice", () => {
     );
     expect(notice).toHaveAttribute("role", "alert");
     expect(notice).toHaveTextContent(
-      "Coord refused to list your projects (tenant_not_resolved), so no setting on this page is read and no change made on it is sent. This usually means your account lacks the operator role in its home project; ask your project's admin for it."
+      "Coord refused to list your projects (tenant_not_resolved), so no setting on this page is read and no change made on it is sent. Your account lacks the operator role in its home project, or belongs to no project; ask your project's admin for the role."
     );
     expect(
       screen.getByTestId("prompt-documents-project-list-failed-error")
