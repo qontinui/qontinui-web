@@ -60,20 +60,18 @@ export interface DeviceUnbindResponseWire {
 /**
  * `POST /fleet/devices/unbind` with `{device_ids}` (1–64 unique ids).
  *
- * Sent at most once by the retry chain: `maxRetries: 0` suppresses both the
- * 429 arm and any 5xx re-issue (`idempotent: false` alone would still retry
- * a 429). A repeat would misreport the first attempt's `unbound` rows as
+ * Sent exactly once. `maxRetries: 0` suppresses both the 429 arm and any 5xx
+ * re-issue (`idempotent: false` alone would still retry a 429). And the route
+ * never answers 401 — coord's 401 or 403 comes back as HTTP 403, with coord's
+ * own status in the body's `coord_status` — so `httpClient`'s replay after a
+ * stale-token refresh (`replayAfterRefresh`, which only a 401 enters) cannot
+ * fire for it. A repeat would misreport the first attempt's `unbound` rows as
  * `already_absent`.
  *
- * NOT covered: `httpClient` replays a request once after a 401 that arrives
- * while the access token is stale and a refresh succeeds
- * (`replayAfterRefresh` in `services/http-client.ts`), and it has no
- * per-request option to suppress that replay. The route re-raises coord's 401
- * with coord's status, so on that one path a batch could be sent twice.
- *
- * A 401/403 aborts the batch and rejects with that status (an auth failure is
- * a property of the caller, not of any row); every other per-id failure comes
- * back inside `results`. `null` when a 2xx body could not be parsed.
+ * A 403 abort (`coord_refused_caller`) rejects with that status (an auth
+ * failure is a property of the caller, not of any row); every other per-id
+ * failure comes back inside `results`. `null` when a 2xx body could not be
+ * parsed.
  */
 export async function unbindFleetDevices(
   deviceIds: readonly string[]

@@ -236,6 +236,7 @@ beforeEach(() => {
   holdReads = null;
   fetchMock.mockReset();
   toastMock.success.mockReset();
+  toastMock.warning.mockReset();
   serve();
 });
 
@@ -616,6 +617,7 @@ describe("the answer", () => {
       json(403, {
         detail: {
           error: "coord_refused_caller",
+          coord_status: 401,
           coord_error: { error: "operator_principal_required" },
           refused_device_id: DEV_CI_2,
           results: [unbound(DEV_CI), refusedRow(DEV_CI_2)],
@@ -697,6 +699,11 @@ describe("the answer", () => {
         "1 of 1 binding removed; 1 still listed through its home tenant, which only its owner can change on /runners."
       )
     );
+    // Not a clean removal: a warning, never a success toast.
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      `${HOST_A}: 1 of 1 binding removed; 1 still listed through its home tenant, which only its owner can change on /runners.`
+    );
   });
 
   it("still_member_via_pointer null says coord did not report it", async () => {
@@ -710,6 +717,8 @@ describe("the answer", () => {
         "1 of 1 binding removed; 1 may still be listed through its home tenant (coord did not report)."
       )
     );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
   });
 
   it("a second removal after a first reads already absent", async () => {
@@ -1081,5 +1090,48 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[1]).toEqual([DEV_A]);
+  });
+
+  it("quotes coord's own status from coord_status", async () => {
+    postAnswers = [
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_status: 401,
+          coord_error: { error: "unauthenticated" },
+          refused_device_id: DEV_CI,
+          results: [refusedRow(DEV_CI), abortedRow(DEV_CI_2)],
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "Coord refused the removal (coord HTTP 401): only an operator of this tenant may remove a machine from it. Nothing was removed."
+    );
+  });
+
+  it("an error whose rows leave nothing unsettled closes as settled, with no retry", async () => {
+    postAnswers = [
+      json(500, {
+        detail: { results: [unbound(DEV_CI), absent(DEV_CI_2)] },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(toastMock.success).toHaveBeenCalledWith(
+      `${CI_HOST_LABEL}: 1 of 2 bindings removed; 1 already absent.`
+    );
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "1 of 2 bindings removed; 1 already absent."
+    );
   });
 });

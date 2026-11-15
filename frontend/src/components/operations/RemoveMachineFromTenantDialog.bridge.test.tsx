@@ -131,7 +131,7 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
       "removes this tenant's binding of every device row the roster lists for this machine"
     );
     expect(action?.description).toContain(
-      "Refused while a removal is in flight."
+      "Refused while a removal is in flight or another machine's removal dialog is open."
     );
 
     const before = fetchMock.mock.calls.length;
@@ -223,5 +223,47 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     await act(async () => {
       release();
     });
+  });
+
+  it("the handler refuses while another machine's dialog is open", async () => {
+    const OTHER = "ci-box-9902";
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const res = await base(url, init);
+      if (init?.method === "POST") return res;
+      const body = (await res.json()) as {
+        machines: Record<string, unknown>[];
+      };
+      body.machines.push({
+        ...body.machines[0]!,
+        machine_key: `host:${OTHER}`,
+        ci_host_name: OTHER,
+        name: OTHER,
+        device_ids: ["e5e5e5e5-0000-4000-8000-00000000000e"],
+      });
+      return json(200, body);
+    });
+    render(<FleetRolesSection />);
+    // Open CI's dialog.
+    fireEvent.click(await screen.findByText(CI));
+    fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    expect(screen.getByTestId("fleet-roles-remove-dialog")).toBeTruthy();
+    // OTHER's handler, while CI's dialog is open.
+    fireEvent.click(screen.getByText(OTHER));
+    const other = registered.get(`fleet-roles-remove:host:${OTHER}`)
+      ?.customActions?.["remove-from-tenant"];
+    expect(other).toBeTruthy();
+    let resolved: unknown;
+    await act(async () => {
+      resolved = await other!.handler(undefined);
+    });
+    expect(resolved).toEqual({
+      opened: false,
+      reason: "another machine's removal dialog is open",
+    });
+    // The open dialog is still CI's.
+    expect(
+      screen.getByTestId("fleet-roles-remove-dialog").textContent
+    ).toContain(`Remove ${CI} from this tenant?`);
   });
 });
