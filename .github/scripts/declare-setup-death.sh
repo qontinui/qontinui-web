@@ -75,7 +75,13 @@
 #      UNKNOWN withhold, with a notice.
 #   5. A declaration prints exactly one `::error` line whose title is
 #      `<DECLARE_JOB> SETUP FAILED (not a verdict on this PR)` and whose
-#      message names the first failed setup step in row order.
+#      message names the first failed setup step in row order and asks for
+#      ONE re-run. coord re-runs a declared head once and reads a second
+#      declared red on that head as `not_a_verdict_rerun_spent`, never as
+#      another re-run (qontinui-coord repair_cause.rs `flake_arm_declared`).
+#      A setup step that fails the same way twice is a broken setup, not an
+#      outage (migration-reversal.yml `tested`'s `Install postgresql-client`
+#      on a codename PGDG does not serve, say), and the message says so.
 #   Rules 2 and 3 print one plain log line naming the decision.
 #
 # THE HARNESS-DIFF GUARD (mirrors qontinui-coord ci.yml's
@@ -464,7 +470,7 @@ main() {
   if [ "${#interrupted[@]}" -gt 0 ]; then
     lists="${lists}; interrupted: $(join_names "${interrupted[@]}")"
   fi
-  message="${lead} (${lists}). Re-run the job. Failed setup step(s): $(join_names "${setup_failed[@]}")."
+  message="${lead} (${lists}). Re-run the job once; if the same setup step fails again, the setup itself is broken and needs a fix. Failed setup step(s): $(join_names "${setup_failed[@]}")."
   printf '::error title=%s::%s\n' "$(escape_property "$title")" "$(escape_data "$message")"
 }
 
