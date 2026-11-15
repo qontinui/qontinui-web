@@ -1,7 +1,7 @@
 """agent.work_artifacts — store the search vector; index both ``?q=`` arms
 
 Revision ID: plan_library_12_search_tsv_and_slug_trgm
-Revises: overview_06_cost_category_parent
+Revises: coord_reap_ledger_01_gate_evidence_branch_reap
 Create Date: 2026-11-09
 
 Phase 1 of ``2026-11-09-plan-library-full-text-search-seq-scans-past-its-read-timeout``.
@@ -114,7 +114,7 @@ from alembic import op
 revision: str = "plan_library_12_search_tsv_and_slug_trgm"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "overview_06_cost_category_parent"
+down_revision = "coord_reap_ledger_01_gate_evidence_branch_reap"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
