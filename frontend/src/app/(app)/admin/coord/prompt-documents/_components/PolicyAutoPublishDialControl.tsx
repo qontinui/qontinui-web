@@ -153,9 +153,10 @@ function ObservedLine({
  * the page's ONE auto-publish status read (the list's badges come from the
  * same response). See `../_lib/observedWorker.ts` for the sentence per status.
  * It renders nothing when the page has not wired the observation, before the
- * first read settles, and under the existing silent latch
- * (`not_system_tenant` / `not_proxied`): outside the system tenant there is no
- * auto-publisher of this tenant's to observe.
+ * first read settles, under the existing silent latch
+ * (`not_system_tenant` / `not_proxied`) — outside the system tenant there is
+ * no auto-publisher of this tenant's to observe — and while the dial waits for
+ * the page's project, where its line says nothing has been read yet.
  */
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
@@ -208,7 +209,10 @@ export function PolicyAutoPublishDialControl({
 
   const canEdit = policy?.can_edit ?? false;
 
-  const showObserved = observed && observed.settled && !observed.unavailable;
+  // No observed-worker lines under a line that says nothing has been read:
+  // while the dial waits for the page's project, it shows that alone.
+  const showObserved =
+    observed && observed.settled && !observed.unavailable && !waitingForProject;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;

@@ -17,7 +17,8 @@
  * 3. **Absent field, failed request, coord's `unknown` and an unrecognised
  *    status all read UNKNOWN** — never a healthy loop by default.
  * 4. **The silent latch hides the line**: outside the system tenant there is no
- *    auto-publisher of this tenant's to observe.
+ *    auto-publisher of this tenant's to observe. So does the dial's waiting
+ *    line: no observation is shown under a line saying nothing has been read.
  * 5. **The reconcile rests healthy on one idle code of its own.** It does its work
  *    once a day and the ledger keeps only the latest outcome, so `recovery:not_due`
  *    with no work tick is its ordinary state. Beside the ledger's own `not_due`,
@@ -27,7 +28,11 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { PINNED_PAGE, sectionRenderer } from "../__fixtures__/pageWriteGuard";
+import {
+  PINNED_PAGE,
+  sectionRenderer,
+  testPageGuard,
+} from "../__fixtures__/pageWriteGuard";
 
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import type { AutoPublishStatusResponse } from "../types";
@@ -503,6 +508,35 @@ describe("where the observation is withheld", () => {
       expect(screen.getByTestId("harness-settled")).toHaveTextContent("true")
     );
     expect(statusGet).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByTestId("policy-auto-publish-observed")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("policy-auto-publish-observed-reconcile")
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders nothing while the dial waits for the page's project, under its line saying nothing has been read", async () => {
+    // The page's status read can settle while the dial has no project to
+    // read its level in. The dial says it is waiting, and nothing more.
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: minutesAgo(2),
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    sectionRenderer(testPageGuard())(<Harness />);
+
+    await screen.findByTestId("policy-auto-publish-waiting");
+    await waitFor(() =>
+      expect(screen.getByTestId("harness-settled")).toHaveTextContent("true")
+    );
+    expect(statusGet).toHaveBeenCalledTimes(1);
+    expect(policyGet).not.toHaveBeenCalled();
     expect(
       screen.queryByTestId("policy-auto-publish-observed")
     ).not.toBeInTheDocument();
