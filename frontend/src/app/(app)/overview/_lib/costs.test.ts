@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ENTRY_WRITABLE,
+  arrangeEntries,
   RECURRING_WRITABLE,
   CATEGORY_WRITABLE,
   categoryAndDescendants,
@@ -18,6 +19,7 @@ import {
   recurringRowProblem,
   type CategoryRow,
 } from "./costs";
+import type { CostEntry } from "./costs-api";
 
 const categories = [
   { id: "c-hw", name: "Hardware" },
@@ -281,5 +283,63 @@ describe("category tree", () => {
     expect(plan.updates).toEqual([
       { row: before[0], patch: { parent_id: "pc" } },
     ]);
+  });
+});
+
+describe("arrangeEntries", () => {
+  const entry = (
+    id: string,
+    incurred_on: string,
+    created_at = "2026-01-01T00:00:00Z"
+  ) => ({ id, incurred_on, created_at }) as CostEntry;
+  const ids = (list: CostEntry[]) => list.map((e) => e.id);
+
+  it("puts the latest entry first and the earliest last", () => {
+    const list = [
+      entry("a", "2026-02-01"),
+      entry("b", "2026-05-01"),
+      entry("c", "2026-03-15"),
+    ];
+    expect(ids(arrangeEntries(list))).toEqual(["b", "c", "a"]);
+    // The input is left as it was.
+    expect(ids(list)).toEqual(["a", "b", "c"]);
+  });
+
+  it("breaks a tie on the day by when it was recorded, newest first", () => {
+    const list = [
+      entry("old", "2026-05-01", "2026-05-01T08:00:00Z"),
+      entry("new", "2026-05-01", "2026-05-01T09:00:00Z"),
+      entry("later-day", "2026-05-02", "2026-05-01T07:00:00Z"),
+    ];
+    expect(ids(arrangeEntries(list))).toEqual(["later-day", "new", "old"]);
+  });
+
+  it("keeps just-added entries above the rest, even with an older date", () => {
+    const list = [
+      entry("a", "2026-05-01"),
+      entry("b", "2026-04-01"),
+      entry("added", "2020-01-01"),
+    ];
+    expect(ids(arrangeEntries(list, [["added"]]))).toEqual(["added", "a", "b"]);
+  });
+
+  it("puts the most recent batch first, and orders within a batch", () => {
+    const list = [
+      entry("x", "2026-05-01"),
+      entry("p1", "2020-01-01"),
+      entry("p2", "2021-01-01"),
+      entry("q", "2019-01-01"),
+    ];
+    expect(ids(arrangeEntries(list, [["q"], ["p1", "p2"]]))).toEqual([
+      "q",
+      "p2",
+      "p1",
+      "x",
+    ]);
+  });
+
+  it("ignores a pinned id that is no longer listed", () => {
+    const list = [entry("a", "2026-05-01")];
+    expect(ids(arrangeEntries(list, [["gone"]]))).toEqual(["a"]);
   });
 });
