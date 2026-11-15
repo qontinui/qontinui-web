@@ -816,7 +816,8 @@ describe("the answer", () => {
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
     expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      "1 of 1 binding removed."
+      // The whole machine: the first attempt's row and the retry's.
+      "2 of 2 bindings removed."
     );
   });
 
@@ -1227,9 +1228,81 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(posts).toHaveLength(1);
-    // The unsent 65th reads as not attempted, like the route's own rows.
+    // The route's rows say "not attempted"; the unsent 65th "not sent".
     expect(result.textContent).toContain(
-      "0 of 65 bindings removed; 1 refused (auth); 64 not attempted (aborted by an auth refusal)."
+      "0 of 65 bindings removed; 1 refused (auth); 63 not attempted (aborted by an auth refusal); 1 not sent (an earlier batch was refused)."
+    );
+  });
+
+  it("a 502 on the first of two batches leaves the second 'not sent', never 'may have been removed'", async () => {
+    const ids = Array.from(
+      { length: 65 },
+      (_, i) => `d0000000-0000-4000-8000-${String(i).padStart(12, "0")}`
+    );
+    machines = [ciHost({ device_ids: ids, device_listings: [] })];
+    postAnswers = [json(502, { detail: "bad gateway" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(posts).toHaveLength(1);
+    expect(result.textContent).toContain(
+      "0 of 65 bindings confirmed removed; 1 not sent (an earlier batch was refused); 64 not reported by the route."
+    );
+    const outcomes = within(result)
+      .getAllByTestId("fleet-roles-remove-outcome-row")
+      .map((r) => r.getAttribute("data-outcome"));
+    expect(outcomes[64]).toBe("not_sent");
+    expect(outcomes.slice(0, 64).every((o) => o === "unreported")).toBe(true);
+  });
+
+  it("a web-gate 403 on the second batch marks it not attempted and says no more were removed", async () => {
+    const ids = Array.from(
+      { length: 65 },
+      (_, i) => `d0000000-0000-4000-8000-${String(i).padStart(12, "0")}`
+    );
+    machines = [ciHost({ device_ids: ids, device_listings: [] })];
+    postAnswers = [
+      answer(ids.slice(0, 64).map((id) => unbound(id))),
+      json(403, { detail: "not_coord_tenant_admin" }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(posts.map((p) => p.length)).toEqual([64, 1]);
+    const refusal = within(result).getByTestId(
+      "fleet-roles-remove-refusal"
+    ).textContent;
+    expect(refusal).toContain(
+      "This console refused the removal (HTTP 403): only an operator of this tenant may remove a machine from it. The batch stopped there; 64 bindings were already removed."
+    );
+    expect(refusal).not.toContain("more may have been");
+    expect(result.textContent).toContain(
+      "64 of 65 bindings removed; 1 not attempted (this console refused the request)."
+    );
+    expect(
+      within(result).queryByTestId("fleet-roles-remove-may-have-applied")
+    ).toBeNull();
+  });
+
+  it("an unreadable 2xx body says the answer could not be read", async () => {
+    postAnswers = [
+      {
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("Unexpected token <");
+        },
+        text: async () => "<html>",
+      } as unknown as ReturnType<typeof json>,
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain(
+      "0 of 2 bindings confirmed removed; 2 unreported (the answer could not be read; the list re-reads to show what coord now holds)."
     );
   });
 });
