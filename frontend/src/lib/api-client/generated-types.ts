@@ -8064,7 +8064,7 @@ export interface paths {
         put?: never;
         /**
          * Execute Mock Workflow
-         * @description Execute a mock workflow using historical data (placeholder endpoint).
+         * @description Return simulated execution data for a workflow (placeholder endpoint).
          *
          *     **Authentication:** JWT token required
          *
@@ -29769,6 +29769,40 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /**
+         * CategoryTotal
+         * @description All-time spend in one category and currency, on the same terms as
+         *     :class:`CurrencyTotals` (recorded plus scheduled; a variable period still
+         *     awaiting its amount is counted, never added).
+         *
+         *     ``own_*`` is the category's own costs; ``rolled_*`` adds every
+         *     subcategory below it, to any depth. Each cost counts once in its own
+         *     category and once in each ancestor's ``rolled_*`` — so rolled figures are
+         *     NOT additive across a parent and its children. The grand total is
+         *     ``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist
+         *     for a category with anything in its own subtree; ``category_id`` is
+         *     ``null`` for costs with no category.
+         */
+        CategoryTotal: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Own Awaiting Amount Count */
+            own_awaiting_amount_count: number;
+            /** Own Recorded Micros */
+            own_recorded_micros: number;
+            /** Own Scheduled Micros */
+            own_scheduled_micros: number;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Rolled Awaiting Amount Count */
+            rolled_awaiting_amount_count: number;
+            /** Rolled Recorded Micros */
+            rolled_recorded_micros: number;
+            /** Rolled Scheduled Micros */
+            rolled_scheduled_micros: number;
+        };
         /** ChangeLogEntry */
         ChangeLogEntry: {
             /** Action */
@@ -31744,6 +31778,8 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id?: string | null;
             /**
              * Sort Order
              * @default 0
@@ -31765,6 +31801,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id: string | null;
             /** Sort Order */
             sort_order: number;
             /**
@@ -31777,12 +31815,19 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** CostCategoryUpdate */
+        /**
+         * CostCategoryUpdate
+         * @description Every field optional; ``null`` moves the category to the top level. A
+         *     category cannot be moved under itself or one of its own subcategories
+         *     (409 ``category_cycle``).
+         */
         CostCategoryUpdate: {
             /** Description */
             description?: string | null;
             /** Name */
             name?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
             /** Sort Order */
             sort_order?: number | null;
         };
@@ -31994,6 +32039,8 @@ export interface components {
             awaiting_delivery_count: number;
             /** Base Currency */
             base_currency: string;
+            /** Categories */
+            categories: components["schemas"]["CategoryTotal"][];
             /** Currencies */
             currencies: components["schemas"]["CurrencyTotals"][];
             /** Months */
@@ -47257,6 +47304,7 @@ export interface components {
             os_version?: string | null;
             /** Port */
             port: number;
+            recent_crash?: components["schemas"]["RunnerHeartbeatCrash"] | null;
             relay?: components["schemas"]["RunnerRelay"] | null;
             /**
              * Running Task Count
@@ -48100,6 +48148,7 @@ export interface components {
             os_version?: string | null;
             /** Port */
             port: number;
+            recent_crash?: components["schemas"]["RunnerHeartbeatCrash"] | null;
             relay?: components["schemas"]["RunnerRelay"] | null;
             /**
              * Running Task Count
@@ -48109,6 +48158,32 @@ export interface components {
             /** Running Task Ids */
             running_task_ids?: string[];
             ui_thread?: components["schemas"]["RunnerUiThread"] | null;
+        };
+        /**
+         * RunnerHeartbeatCrash
+         * @description The runner's most recent crash dump, as its HTTP heartbeat sends it.
+         *
+         *     The snake_case ``HeartbeatRecentCrash`` in ``heartbeat.rs``. The optional
+         *     fields are omitted, never ``null``, when the dump lacks a section. ``pid``
+         *     is omitted for a dump that predates the ``Pid:`` header
+         *     (qontinui-runner#2551 / #2722).
+         *
+         *     The route is unauthenticated and the registry lives in memory, so text is
+         *     cut to ``MAX_TEXT`` characters. Unknown keys are dropped.
+         */
+        RunnerHeartbeatCrash: {
+            /** File Path */
+            file_path: string;
+            /** Panic Location */
+            panic_location?: string | null;
+            /** Panic Message */
+            panic_message?: string | null;
+            /** Pid */
+            pid?: number | null;
+            /** Reported At */
+            reported_at: string;
+            /** Thread */
+            thread?: string | null;
         };
         /**
          * RunnerInstance

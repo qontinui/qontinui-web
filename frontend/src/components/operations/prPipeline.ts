@@ -15,8 +15,14 @@
 
 import type { Attention } from "@/components/console/attention";
 import { redactSecrets } from "./mergeTypes";
-import { PR_ATTENTION_BY_MERGE_STATUS } from "@/app/(app)/admin/coord/prs/prStatus";
+import {
+  freshenStateOf,
+  isFreshenPromiseToken,
+  PR_ATTENTION_BY_MERGE_STATUS,
+  readBehindFreshen,
+} from "./prMergeStatus";
 import type {
+  FreshenState,
   MergeEconomics,
   PrRow,
   ProposalDetail,
@@ -50,19 +56,28 @@ export type UnifiedStatusKind =
   // label says to fix it — it just sits, marked "waiting", excluded from the
   // needs-attention count. Past the deferral window we re-escalate to red.
   | "conflict-stranded"
-  // A `needs-rebase` whose wait outlived its dwell cap. `needs-rebase` makes
-  // no promise any more (whether coord's freshen will act is UNKNOWN until
-  // coord serves it — plan
+  // A `needs-rebase` or `behind-freshening` whose wait outlived its dwell cap.
+  // `needs-rebase` makes no promise (coord served no freshen reading, so
+  // whether it will act is UNKNOWN — plan
   // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`),
   // but it is still amber and outside the needs-attention count; past the
   // dwell cap with no observed GitHub activity nothing has demonstrably
   // brought the branch current, so we re-escalate to red.
   | "needs-rebase-stale"
+  // BEHIND (or red on a stale base), and coord SERVED that it is updating or will
+  // update the branch: `freshen.state` is `eligible` or `in_progress`. The one reading
+  // where a wait on coord is observed rather than assumed. Dwell-capped all the
+  // same, because a served intention is not a moved branch.
+  | "behind-freshening"
+  // BEHIND (or red on a stale base), and coord SERVED that it will not update
+  // the branch: `exhausted`, `ineligible`, `suppressed` or `disabled`. Red from
+  // the first second; there is no wait here to expire. See `readBehindFreshen`.
+  | "behind-freshen-refused"
   // BEHIND, and coord's merge predicate holds the PR for ANOTHER reason (its
   // `merge_status` is a real block token, not `behind-base`). Coord's BEHIND
   // freshen refuses any predicate-blocked PR, so nothing updates the branch
   // until that block clears. Three kinds, one per attention grade, because the
-  // grade is read from `/admin/coord/prs`'s audited per-token table
+  // grade is read from the audited per-token table both PR pages share
   // (`PR_ATTENTION_BY_MERGE_STATUS`) and this module's palette and
   // `ATTENTION_BY_KIND` are keyed by KIND — a single kind with a per-row
   // attention would paint a red hold amber (or the reverse). See
@@ -147,6 +162,9 @@ export type DwellEvidence = "measured" | "unknown";
  * | blocked          | overlaps another PR; coord serializes| no — waits   |
  * | needs-rebase     | BEHIND / red on a stale base; whether| no — waits   |
  * |                  | coord's freshen acts is UNKNOWN      | (dwell-capped)|
+ * | behind-freshening| coord served it is updating or will  | no — waits   |
+ * |                  |                                      | (dwell-capped)|
+ * | behind-freshen-refused| coord served that it will not   | YES          |
  * | conflict-deferred| true conflict, but far from merging  | no — waits   |
  * | conflict-stranded| deferred so long the premise expired | YES          |
  * | needs-rebase-stale| BEHIND past the dwell cap, unmoved  | YES          |
@@ -162,7 +180,7 @@ export type DwellEvidence = "measured" | "unknown";
  * | behind-held-stale| held-waiting so long the hold expired| YES          |
  *
  * The three `behind-held-*` grades are not chosen here: they are
- * `PR_ATTENTION_BY_MERGE_STATUS[merge_status]` (admin/coord/prs/prStatus.ts),
+ * `PR_ATTENTION_BY_MERGE_STATUS[merge_status]` (./prMergeStatus.ts),
  * mapped onto the kind whose name carries that grade, so the two pages
  * cannot grade the same hold differently and this table stays a pure
  * function of kind.
@@ -179,6 +197,8 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   unknown: "none",
   blocked: "waiting",
   "needs-rebase": "waiting",
+  "behind-freshening": "waiting",
+  "behind-freshen-refused": "author",
   "conflict-deferred": "waiting",
   "conflict-stranded": "author",
   "needs-rebase-stale": "author",
@@ -642,6 +662,7 @@ export const STALE_ESCALATION: Partial<
   Record<UnifiedStatusKind, UnifiedStatusKind>
 > = {
   "needs-rebase": "needs-rebase-stale",
+  "behind-freshening": "needs-rebase-stale",
   blocked: "blocked-stale",
   "conflict-deferred": "conflict-stranded",
   "behind-held-waiting": "behind-held-stale",
@@ -654,6 +675,7 @@ export const STALE_ESCALATION: Partial<
  */
 export type EscalatableKind =
   | "needs-rebase"
+  | "behind-freshening"
   | "blocked"
   | "conflict-deferred"
   | "behind-held-waiting";
@@ -882,8 +904,8 @@ const BEHIND_HELD_KIND_BY_ATTENTION: Record<Attention, UnifiedStatusKind> = {
  * `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
  * D2 step 1).
  *
- * Attention is NOT decided here: it is `/admin/coord/prs`'s audited per-token
- * grade, `PR_ATTENTION_BY_MERGE_STATUS[token]`, falling to that table's
+ * Attention is NOT decided here: it is the audited per-token grade both PR
+ * pages share, `PR_ATTENTION_BY_MERGE_STATUS[token]`, falling to that table's
  * `unknown` row (the ignorance floor) for a token this build does not know.
  * The grade then picks the kind (`BEHIND_HELD_KIND_BY_ATTENTION`), so
  * `ATTENTION_BY_KIND[kind] === attention` holds by construction and the
@@ -905,6 +927,24 @@ function behindHeldStatus(pr: PrRow, token: string): UnifiedStatus {
     label: "Behind main — held",
     reason: `behind ${pr.base_branch} — coord updates it only once this clears: ${block}`,
     attention,
+  };
+}
+
+/**
+ * A BEHIND or stale-base row with no hold: what coord served about the freshen,
+ * read through the function `/admin/coord/prs` renders from. The UNKNOWN
+ * reading keeps kind `needs-rebase`, so its dwell cap still re-escalates it.
+ * The dwell-evidence bit is left to `withDwellEvidence`: it describes whether
+ * a dwell CLOCK exists, and forcing it to `unknown` here would claim "coord
+ * reports no age" for a row whose clock coord does report.
+ */
+function behindFreshenStatus(pr: PrRow): UnifiedStatus {
+  const reading = readBehindFreshen(pr);
+  return {
+    kind: reading.kind ?? "needs-rebase",
+    label: reading.label ?? "Needs rebase",
+    reason: reading.reason,
+    attention: reading.attention,
   };
 }
 
@@ -949,9 +989,10 @@ function statusFromGitHub(
   // blocks, gives up after a per-PR attempt ceiling, is suppressed by a content
   // gate and has kill switches; the train's candidate rebase reaches only an
   // admitted PR and never resolves a conflict. So the arm reads what coord
-  // DOES serve — `merge_status` — and never says "no action needed" (plan
+  // DOES serve — `merge_status`, then `freshen` — and never says "no action
+  // needed" (plan
   // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
-  // D2 step 1). A BEHIND row carrying `ci-failed-stale-base` falls through to
+  // D2). A BEHIND row carrying `ci-failed-stale-base` falls through to
   // the more specific stale-base arm directly below, and a conflicted one
   // (`mergeable === false`, or coord's `conflicts`) to the conflict arm, so
   // its CI-duration-aware deferral / strand logic still applies.
@@ -966,37 +1007,20 @@ function statusFromGitHub(
       return behindHeldStatus(pr, pr.merge_status);
     }
     // `behind-base` (no other block coord knows of), or no verdict at all.
-    // Coord's freshen MAY act; whether it will is not served yet, so the row
-    // says UNKNOWN. Kind stays `needs-rebase` so the dwell cap still
-    // re-escalates it to red when nothing moves it. The dwell-evidence bit is
-    // left to `withDwellEvidence`: it describes whether a dwell CLOCK exists,
-    // and forcing it to `unknown` here would claim "coord reports no age"
-    // for a row whose clock coord does report.
-    return {
-      kind: "needs-rebase",
-      label: "Needs rebase",
-      reason: `behind ${pr.base_branch} — whether coord will update it is UNKNOWN`,
-      attention: "waiting",
-    };
+    return behindFreshenStatus(pr);
   }
   // coord's `ci-failed-stale-base` merge_status overrides the raw CI fields the
   // same way `landed-open` overrides them in `isMergedPr`: coord diagnosed the
   // red as sitting on a base `main` has moved past, so the red may be main's
   // rather than the author's. Coord's stale-base freshen MAY update the branch
   // and re-run CI, but it refuses a whole sub-population (a distance-only stale
-  // base is never freshened), so the row says UNKNOWN rather than promising
-  // the freshen — amber, under the same dwell cap that re-escalates it to red.
-  // Without the override the frozen red falls through to `checks-failing` and
+  // base is never freshened), so the row reads what coord served rather than
+  // promising the freshen. Without the override the frozen red falls through to `checks-failing` and
   // asks the author to "push a fix" for main's failure. Its sibling
   // `ci-failed-infra-kill` gets no override: no existing kind reads "re-run
   // once the runner is healthy" without naming the author.
   if (pr.merge_status === "ci-failed-stale-base") {
-    return {
-      kind: "needs-rebase",
-      label: "Needs rebase",
-      reason: `CI red on a stale base — ${pr.base_branch} moved past it; whether coord will freshen it is UNKNOWN`,
-      attention: "waiting",
-    };
+    return behindFreshenStatus(pr);
   }
   if (
     pr.mergeable === false ||
@@ -1580,10 +1604,14 @@ const KIND_RANK: Record<UnifiedStatusKind, number> = {
   requirements: 0,
   "checks-failing": 0,
   "needs-rebase": 0,
+  // Refused from the first second: the author-blocked cluster.
+  "behind-freshen-refused": 0,
   "behind-held-author": 0,
   "behind-held-stale": 0,
   blocked: 1,
   "behind-held-waiting": 1,
+  // Coord said it is on it: the waiting band, not the author-blocked one.
+  "behind-freshening": 1,
   // De-escalated conflict: "soon, not now" — sorts with the waiting-on-others
   // band, below the true act-now (rank 0) rows, above in-flight/idle.
   "conflict-deferred": 1,
@@ -1782,7 +1810,115 @@ export interface PipelineHealth {
    * default, not by measurement".
    */
   unknownDwell: number;
+  /**
+   * The BEHIND rows by what coord will do about them — plan
+   * `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
+   * D4. A coverage number like `unknownDwell`, and never a `level` input: a
+   * branch being behind says nothing about pipeline throughput.
+   */
+  behind: BehindCounts;
   lastMergedAt: string | null;
+}
+
+/** Every `freshen.state`, plus `held`: a named block stands in front of it. */
+export type BehindBucket = FreshenState | "held";
+export type BehindCounts = Record<BehindBucket, number>;
+
+/** Display order: coord acting, coord refusing, held, then what nobody read. */
+const BEHIND_BUCKET_LABEL: ReadonlyArray<
+  readonly [BehindBucket, string, string]
+> = [
+  ["eligible", "eligible", "coord will update the branch"],
+  ["in_progress", "in progress", "coord is updating the branch"],
+  ["exhausted", "exhausted", "coord stopped after its attempt ceiling"],
+  ["ineligible", "ineligible", "coord does not freshen this kind"],
+  ["suppressed", "suppressed", "coord found nothing to update"],
+  ["disabled", "disabled", "coord's branch updater is switched off"],
+  ["held", "held", "another block holds it; coord will not update it yet"],
+  ["unknown", "unknown", "coord served no reading"],
+];
+
+/** The states where coord said it will not act: rows that are already red. */
+const BEHIND_REFUSED_BUCKETS: readonly BehindBucket[] = [
+  "exhausted",
+  "ineligible",
+  "suppressed",
+  "disabled",
+];
+
+/**
+ * Which bucket a PR counts in, or `null` when it is not a BEHIND row.
+ *
+ * The population is GitHub's BEHIND plus coord's `ci-failed-stale-base`, which
+ * GitHub may report as anything: this tenant's rulesets rarely make GitHub say
+ * BEHIND, and `ineligible` only ever lands on a stale-base row, so a BEHIND-only
+ * filter would make that bucket unreachable. Settled rows are not behind in any
+ * sense worth counting.
+ *
+ * `held` agrees with the row: `behindHeldStatus` (a real block), and a conflict
+ * (coord's freshen will not take it). A BEHIND row whose token names no block
+ * (`ready`, `queued`, `unknown`, or none at all) renders UNKNOWN, so it counts
+ * `unknown` here. A count that disagreed with its row would be this plan's
+ * defect in a second place.
+ */
+export function behindBucketOf(pr: PrRow): BehindBucket | null {
+  if (isMergedPr(pr) || pr.pr_state === "draft") return null;
+  if (pr.merge_state_status === "DRAFT") return null;
+  if (pr.merge_status === "ci-failed-stale-base") {
+    return freshenStateOf(pr.freshen);
+  }
+  if (pr.merge_state_status !== "BEHIND") return null;
+  if (pr.mergeable === false || pr.merge_status === "conflicts") return "held";
+  if (isBehindHoldToken(pr.merge_status)) return "held";
+  return isFreshenPromiseToken(pr.merge_status)
+    ? freshenStateOf(pr.freshen)
+    : "unknown";
+}
+
+/**
+ * D4's count, one per PR. Only PR rows carry a `pr`; a multi-repo group's own
+ * row has none, and each of its members has a row of its own.
+ *
+ * A row with an active proposal is rendered from that proposal
+ * (`statusFromProposal`, the same predicate `buildPipelineRows` uses), not
+ * from GitHub's BEHIND, so it is not counted: the train holds it, and a
+ * bucket here would contradict what its row says.
+ */
+export function deriveBehindCounts(rows: PipelineRow[]): BehindCounts {
+  const counts = Object.fromEntries(
+    BEHIND_BUCKET_LABEL.map(([bucket]) => [bucket, 0])
+  ) as BehindCounts;
+  for (const row of rows) {
+    if (!row.pr) continue;
+    if (row.activeProposal && !isMergedPr(row.pr)) continue;
+    const bucket = behindBucketOf(row.pr);
+    if (bucket) counts[bucket] += 1;
+  }
+  return counts;
+}
+
+export function behindCountsTotal(counts: BehindCounts): number {
+  return BEHIND_BUCKET_LABEL.reduce((sum, [b]) => sum + counts[b], 0);
+}
+
+/** How many BEHIND rows coord has refused — the part that is already red. */
+export function behindRefusedCount(counts: BehindCounts): number {
+  return BEHIND_REFUSED_BUCKETS.reduce((sum, b) => sum + counts[b], 0);
+}
+
+/** `behind 5 · in progress 1 · held 3 · unknown 1`; zero buckets stay out. */
+export function behindCountsBadgeLabel(counts: BehindCounts): string {
+  const parts = BEHIND_BUCKET_LABEL.filter(([b]) => counts[b] > 0).map(
+    ([b, label]) => `${label} ${counts[b]}`
+  );
+  return [`behind ${behindCountsTotal(counts)}`, ...parts].join(" · ");
+}
+
+/** Every bucket with its meaning, so a zero is readable as a measured zero. */
+export function behindCountsBadgeTitle(counts: BehindCounts): string {
+  return BEHIND_BUCKET_LABEL.map(
+    ([b, label, meaning]) => `${label} ${counts[b]}: ${meaning}`
+  ).join("\n");
 }
 
 // Thresholds. The fleet's slowest CI (runner windows job) runs ~60–120m, so
@@ -1887,6 +2023,7 @@ export function derivePipelineHealth(
   const unknownDwell = rows.filter(
     (r) => r.pr !== null && r.status.dwellEvidence === "unknown"
   ).length;
+  const behind = deriveBehindCounts(rows);
 
   // Land times come from BOTH sources. `GET /merge/queue` is the in-flight
   // view — it excludes terminal proposals — so reading only `attempts` left
@@ -2036,6 +2173,7 @@ export function derivePipelineHealth(
     needsAttention,
     conflicted: conflicts,
     unknownDwell,
+    behind,
     lastMergedAt,
   };
 }

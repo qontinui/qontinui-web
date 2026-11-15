@@ -40,6 +40,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import type { TenantPin } from "@/services/http-client";
 import { useClauses } from "../_hooks/useClauses";
 import { CLAUSE_HEADER } from "../_lib/clauseMerge";
 import { ClauseEditorDialog } from "./ClauseEditorDialog";
@@ -66,6 +67,11 @@ interface ClauseManagerDialogProps {
   onDocsReload: () => void;
   /** Checked before every clause write; `false` sends nothing. */
   canWrite?: () => boolean;
+  /**
+   * The project every clause read and write is sent in, on every attempt —
+   * the page's. Omitted, each goes in the project stored when it is sent.
+   */
+  pin?: TenantPin;
 }
 
 /**
@@ -81,6 +87,7 @@ export function ClauseManagerDialog({
   loadingBody,
   onDocsReload,
   canWrite,
+  pin,
 }: ClauseManagerDialogProps) {
   const name = document?.name ?? "";
   const {
@@ -94,13 +101,11 @@ export function ClauseManagerDialog({
     reorderClauses,
     importCandidates,
     saveAttrs,
-  } = useClauses(
-    "policy",
-    name,
-    open && document !== null,
-    onDocsReload,
-    canWrite
-  );
+  } = useClauses("policy", name, open && document !== null, {
+    onAttrsSaved: onDocsReload,
+    canWrite,
+    pin,
+  });
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Clause | null>(null);
@@ -399,9 +404,15 @@ function ClauseRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <code className="text-sm font-medium">{clause.clause_id}</code>
-          <Badge variant={CLAUSE_STATUS_VARIANT[clause.status]}>
-            {clause.status}
-          </Badge>
+          {/* A raw row's `status` is not the rule's state: coord leaves it at
+              the import seed's default (`proposed`), the body never sets it,
+              and the compiler emits the body without it. Showing it would
+              mark nearly every served rule "proposed". */}
+          {!raw && (
+            <Badge variant={CLAUSE_STATUS_VARIANT[clause.status]}>
+              {clause.status}
+            </Badge>
+          )}
           {raw ? (
             <Badge
               variant="secondary"

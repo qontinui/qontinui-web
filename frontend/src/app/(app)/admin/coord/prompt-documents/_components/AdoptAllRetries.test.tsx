@@ -18,11 +18,10 @@
  *    switch made synchronously in the 429 answer, so the client's immediate
  *    re-issue would carry the NEW project if the write were not pinned.
  * 4. **A request with no project to pin is not retried.**
- * 5. **Adopt all is never offered over another project's rows, nor while
- *    another project is stored.** Row writes themselves are not pinned (the
- *    page-wide cross-tab hazard is pre-existing and not this change's), so a
- *    row write after another tab's switch lands in, and re-reads, that
- *    project.
+ * 5. **A row write in flight across another tab's switch stays in the page's
+ *    project, and Adopt all is withdrawn while another project is stored.**
+ *    The write and the re-read it takes are pinned to the page's project, so
+ *    the rows stay the page's own.
  * 6. **A `null`-pinned status read replayed after a token refresh under
  *    another project does not count** once the provider has reconciled: the
  *    read is re-taken pinned to the page's project.
@@ -332,22 +331,28 @@ describe("pinned requests through the real HttpClient", () => {
     );
   }
 
-  it("never offers the button over another project's rows after a row write lands in it", async () => {
+  it("keeps a row write's re-read in the page's project when another tab switches while it is in flight, and withdraws the button", async () => {
     await inBravoBesideTheSystemTenant();
     // A row write here goes out in Bravo; another tab switches to the system
-    // tenant while it is in flight — past the page's call-time guard. Its
-    // re-read is not pinned, so it goes to the system tenant.
+    // tenant while it is in flight — past the page's call-time guard. The
+    // write's re-read is pinned to Bravo, so Bravo answers it, though the
+    // system tenant is stored by then.
     onPatch = () => localStorage.setItem(KEY, SYS);
     const listReadsBefore = listTenantsSent().length;
     await setTier();
     await waitFor(() =>
       expect(listTenantsSent().length).toBeGreaterThan(listReadsBefore)
     );
-    // The rows on screen are now the system tenant's three updatable
-    // policies — and the button is not offered over them.
-    expect(
-      await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 })
-    ).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    expect(listTenantsSent().slice(listReadsBefore)).toEqual([B]);
+    // The rows on screen are still Bravo's own, never the system tenant's
+    // three updatable policies...
+    expect(screen.getByTestId("doc-row-policy-a")).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-row-policy-sys1")).not.toBeInTheDocument();
+    // ...and the button is withdrawn while another project is stored.
     expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
   }, 20_000);
 

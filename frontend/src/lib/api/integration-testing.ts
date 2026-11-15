@@ -1,5 +1,5 @@
 // lib/api/integration-testing.ts
-// API client for Integration Testing feature (mock mode testing with historical data)
+// API client for Integration Testing feature (mock mode testing with simulated data)
 
 import type {
   MockExecutionRequest,
@@ -12,18 +12,21 @@ import { ApiConfig } from "@/services/api-config";
 const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 /**
- * Execute a mock workflow using historical data.
+ * Return simulated execution data for a workflow (the backend placeholder).
  * This is used for Config Testing (workflow validation).
  */
 export async function executeMockWorkflow(
   request: MockExecutionRequest
 ): Promise<MockExecutionResponse> {
-  const response = await httpClient.fetch(`${API}/integration-testing/execute`, {
-    method: "POST",
-    body: JSON.stringify(request),
-    // Safe to re-issue: `execute_mock_workflow` computes a mock result, no writes.
-    idempotent: true,
-  });
+  const response = await httpClient.fetch(
+    `${API}/integration-testing/execute`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+      // Safe to re-issue: `execute_mock_workflow` computes a mock result, no writes.
+      idempotent: true,
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
@@ -87,24 +90,27 @@ export interface PDFReportOptions {
 export async function generatePDFReport(
   options: PDFReportOptions
 ): Promise<Blob> {
-  const response = await httpClient.fetch(`${API}/integration-testing/reports/pdf`, {
-    method: "POST",
-    body: JSON.stringify({
-      execution_result: options.executionResult,
-      screenshots_dir: options.screenshotsDir,
-      include_screenshots: options.includeScreenshots ?? true,
-      include_coverage: options.includeCoverage ?? true,
-      include_timeline: options.includeTimeline ?? true,
-      include_recommendations: options.includeRecommendations ?? true,
-      include_appendices: options.includeAppendices ?? true,
-      screenshot_quality: options.screenshotQuality ?? "medium",
-      page_size: options.pageSize ?? "letter",
-      title: options.title,
-    }),
-    // Safe to re-issue: `generate_pdf_report_endpoint` renders a PDF from the
-    // body; its only side effect is an idempotent mkdir.
-    idempotent: true,
-  });
+  const response = await httpClient.fetch(
+    `${API}/integration-testing/reports/pdf`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        execution_result: options.executionResult,
+        screenshots_dir: options.screenshotsDir,
+        include_screenshots: options.includeScreenshots ?? true,
+        include_coverage: options.includeCoverage ?? true,
+        include_timeline: options.includeTimeline ?? true,
+        include_recommendations: options.includeRecommendations ?? true,
+        include_appendices: options.includeAppendices ?? true,
+        screenshot_quality: options.screenshotQuality ?? "medium",
+        page_size: options.pageSize ?? "letter",
+        title: options.title,
+      }),
+      // Safe to re-issue: `generate_pdf_report_endpoint` renders a PDF from the
+      // body; its only side effect is an idempotent mkdir.
+      idempotent: true,
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();

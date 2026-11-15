@@ -80,7 +80,8 @@ export default function ModelCostComparisonPage() {
   }, [tokensM, currency]);
 
   return (
-    // The (app) shell is h-screen overflow-hidden — pages own their scroll.
+    // The (app) shell gives <main> a fixed height; pages own their scroll (main
+    // scrolls only what overflows it, e.g. under a lit co-pilot banner).
     <div className="h-full overflow-y-auto">
       <div className="container mx-auto max-w-6xl space-y-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">

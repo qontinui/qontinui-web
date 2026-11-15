@@ -5,7 +5,7 @@
  * `route.caller-identity.test.ts` reads what the route forwards to a mocked
  * SDK. These tests leave `@qontinui/ui-bridge/server` unmocked and read what
  * the SDK itself does with the forwarded request, so a disagreement between
- * the route's body peek and the SDK's parser shows up here. The relay is a
+ * the route's body peek and the SDK's reader shows up here. The relay is a
  * real `CommandRelay` built by the real `createRelayHandlers`; only its
  * `queueCommand` is replaced by a recorder (so every dispatch the SDK makes,
  * with the `ownerCheck` it attaches, is observed without a browser) and it
@@ -19,15 +19,19 @@ import { NextRequest } from "next/server";
 import { UI_BRIDGE_ROUTES } from "@qontinui/ui-bridge/server";
 import { startRelayClient } from "@qontinui/ui-bridge/injected";
 
+import { makeMockRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest, laneFor } from "./_rate-limit";
 import {
+  HEALTHY_STREAM_MIN_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEATS_PER_TAB_PER_MIN,
   RELAY_COMMAND_STREAM_HEARTBEAT_MS,
   RELAY_RESULTS_PER_TAB_PER_MIN,
   RELAY_SNAPSHOTS_PER_STREAM_OPEN,
   SSE_RECONNECT_DELAY_MS,
+  STREAM_LEASE_MS,
   STREAM_OPENS_PER_TAB_PER_MIN,
 } from "./_transport";
 
@@ -76,36 +80,19 @@ function withBoms(count: number, json: string): Uint8Array {
   ]);
 }
 
-/** A rate-limit store that always admits (the route keys it per principal). */
-function admittingRedis() {
-  const pipeline = {
-    incr() {
-      return pipeline;
-    },
-    expire() {
-      return pipeline;
-    },
-    async exec() {
-      return [
-        [null, 1],
-        [null, 1],
-      ];
-    },
-  };
-  return {
-    pipeline: () => pipeline,
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-}
-
+/**
+ * One request through the route, on a fresh rate-limit store. The sweeps
+ * below send far more requests than any lane admits (the GET sweep installs
+ * its own fresh store per request), and none of them may be refused.
+ */
 function send(
-  method: "POST" | "PUT",
+  method: BodyMethod,
   path: string,
-  body: Uint8Array,
+  body: Uint8Array | string | ReadableStream<Uint8Array>,
   contentType: string
 ): Promise<Response> {
   __resetAuthCache();
-  __setRedisClientForTest(admittingRedis());
+  __setRedisClientForTest(makeMockRedis().client);
   const request = new NextRequest(`http://localhost/api/ui-bridge${path}`, {
     method,
     headers: {
@@ -114,14 +101,17 @@ function send(
       "content-type": contentType,
     },
     body,
+    // A streamed body (chunked, no Content-Length) needs a half-duplex request.
+    ...(body instanceof ReadableStream ? { duplex: "half" } : {}),
   });
   const context = {
     params: Promise.resolve({ path: path.slice(1).split("/") }),
   };
-  return method === "PUT"
-    ? route.PUT(request, context)
-    : route.POST(request, context);
+  return route[method](request, context);
 }
+
+/** The methods the route forwards a request body on. */
+type BodyMethod = "POST" | "PUT" | "DELETE";
 
 /** The `ownerCheck.userId` of a recorded dispatch, or null when it has none. */
 function ownerOf(options: unknown): string | null {
@@ -154,14 +144,13 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     __setRedisClientForTest(undefined);
   });
 
-  it("dispatches an action whose body names another caller behind two byte-order marks under the verified owner", async () => {
+  const SPOOFED_ACTION = `{"action":"click","callerUserId":"${SPOOFED}","__callerUserId":"${SPOOFED}","request":{"__callerUserId":"${SPOOFED}"}}`;
+
+  it("dispatches an action whose body names another caller behind a byte-order mark under the verified owner", async () => {
     const res = await send(
       "POST",
       "/control/element/save/action",
-      withBoms(
-        2,
-        `{"action":"click","callerUserId":"${SPOOFED}","__callerUserId":"${SPOOFED}","request":{"__callerUserId":"${SPOOFED}"}}`
-      ),
+      withBoms(1, SPOOFED_ACTION),
       "application/json"
     );
     expect(res.status).toBe(200);
@@ -171,12 +160,23 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     );
   });
 
-  it("registers a tab a two-byte-order-mark heartbeat claims for another user to the verified caller", async () => {
+  it("refuses an action body behind two byte-order marks, which the SDK's reader refuses, and dispatches nothing", async () => {
+    const res = await send(
+      "POST",
+      "/control/element/save/action",
+      withBoms(2, SPOOFED_ACTION),
+      "application/json"
+    );
+    expect(res.status).toBe(400);
+    expect(dispatched).toEqual([]);
+  });
+
+  it("registers a tab a byte-order-mark heartbeat claims for another user to the verified caller", async () => {
     const res = await send(
       "POST",
       "/heartbeat",
       withBoms(
-        2,
+        1,
         `{"tabId":"tab-heartbeat","registrationMetadata":{"userId":"${SPOOFED}","sessionId":"s1"}}`
       ),
       "text/plain"
@@ -208,30 +208,61 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
       config: { ...named },
       steps: [{ action: "click", ...named }],
     });
+    // The SDK's reader drops ONE leading byte-order mark, so a body behind
+    // two or more does not parse: declared JSON it is refused, by the route
+    // under the gate as by the SDK; declared `text/plain` it is no body.
     const encodings = [
-      { label: "JSON", bytes: withBoms(0, body), type: "application/json" },
-      { label: "text/plain", bytes: withBoms(0, body), type: "text/plain" },
-      { label: "one mark", bytes: withBoms(1, body), type: "application/json" },
+      {
+        label: "JSON",
+        bytes: withBoms(0, body),
+        type: "application/json",
+        refused: false,
+      },
+      {
+        label: "text/plain",
+        bytes: withBoms(0, body),
+        type: "text/plain",
+        refused: false,
+      },
+      {
+        label: "one mark",
+        bytes: withBoms(1, body),
+        type: "application/json",
+        refused: false,
+      },
+      {
+        label: "one mark, text/plain",
+        bytes: withBoms(1, body),
+        type: "text/plain",
+        refused: false,
+      },
       {
         label: "two marks",
         bytes: withBoms(2, body),
         type: "application/json",
+        refused: true,
       },
       {
         label: "two marks, text/plain",
         bytes: withBoms(2, body),
         type: "text/plain",
+        refused: false,
       },
       {
         label: "three marks",
         bytes: withBoms(3, body),
         type: "application/json",
+        refused: true,
       },
     ];
+    const isBodyMethod = (method: string): method is BodyMethod =>
+      method === "POST" || method === "PUT" || method === "DELETE";
     const routes = [
-      ...UI_BRIDGE_ROUTES.filter(
-        (r) => r.method === "POST" || r.method === "PUT"
-      ).map((r) => ({ method: r.method as "POST" | "PUT", path: r.path })),
+      // Every SDK route a body can ride on, DELETE included: the SDK reads
+      // the body of `DELETE /control/media/override`.
+      ...UI_BRIDGE_ROUTES.flatMap((r) =>
+        isBodyMethod(r.method) ? [{ method: r.method, path: r.path }] : []
+      ),
       // The relay-transport POST routes this route forwards, outside
       // UI_BRIDGE_ROUTES (`_browser-required.ts`); only /commands reads a body.
       { method: "POST" as const, path: "/commands" },
@@ -257,7 +288,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
         ) {
           spoofedCells.push(cell);
         }
-        if (encoding.label === "three marks" && res.status !== 400) {
+        if (encoding.refused && res.status !== 400) {
           unrefusedCells.push(`${cell} -> ${res.status}`);
         }
       }
@@ -268,6 +299,10 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     // Not vacuous: the sweep reached the relay under the verified owner, so
     // its silence about a spoofed owner is evidence rather than an empty run.
     expect(routes.length).toBeGreaterThan(100);
+    expect(routes).toContainEqual({
+      method: "DELETE",
+      path: "/control/media/override",
+    });
     expect(
       dispatched.filter(({ options }) => ownerOf(options) === VERIFIED).length
     ).toBeGreaterThan(100);
@@ -297,7 +332,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     for (const routePath of routes) {
       const path = routePath.replace(/:[^/]+/g, "x1");
       __resetAuthCache();
-      __setRedisClientForTest(admittingRedis());
+      __setRedisClientForTest(makeMockRedis().client);
       const before = dispatched.length;
       const request = new NextRequest(
         `http://localhost/api/ui-bridge${path}${query}`,
@@ -335,30 +370,103 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
   }, 120_000);
 });
 
-describe("the installed SDK's Next handler reads request bodies only with request.json()", () => {
-  // `route.ts` refuses, under the gate, a body `request.json()` cannot parse,
-  // exempting no route, because the SDK reads no body any other way. This pins
-  // that census: a release whose Next adapter reads a body as text, form data
-  // or bytes must revisit the exemption list in `route.ts` before it ships.
-  it("finds request.json() reads and no other request-body reader", () => {
-    const bundle = readFileSync(
-      createRequire(import.meta.url).resolve("@qontinui/ui-bridge/server"),
-      "utf8"
+describe("route.ts + the real SDK: empty and over-cap bodies, gate off and on", () => {
+  // Next gives every non-GET/HEAD request a body stream, a zero-byte one
+  // included. The route reads it to learn it is empty, and the SDK's reader
+  // refuses a body something already read (400 "Request body could not be
+  // read"), so an empty POST must reach the SDK as a request with no body —
+  // which its handler reads as `{}`, as it did before the SDK's 0.46 reader.
+  beforeEach(() => {
+    dispatched.length = 0;
+    vi.stubEnv("BACKEND_URL", "http://backend.test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/api/v1/auth/users/me")
+          ? new Response(JSON.stringify({ id: VERIFIED }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          : new Response(null, { status: 201 })
+      )
     );
-    const start = bundle.indexOf("// src/server/nextjs.ts");
-    expect(
-      start,
-      "the SDK bundle has no src/server/nextjs.ts section"
-    ).toBeGreaterThan(-1);
-    const end = bundle.indexOf("\n// src/", start + 1);
-    const nextAdapter = bundle.slice(start, end === -1 ? undefined : end);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    __setRedisClientForTest(undefined);
+  });
+
+  it.each([
+    ["off", "0", null],
+    ["on", "1", VERIFIED],
+  ] as const)(
+    "gate %s: an empty POST /control/find reaches the handler",
+    async (_gate, flag, owner) => {
+      vi.stubEnv("UI_BRIDGE_REQUIRE_AUTH", flag);
+      const res = await send("POST", "/control/find", "", "application/json");
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(dispatched).toHaveLength(1);
+      expect(ownerOf(dispatched[0].options)).toBe(owner);
+    }
+  );
+
+  // The SDK refuses (413) a body that runs past its 10 MiB cap before it
+  // reads what the body means, so a blank body or a non-JSON-declared one
+  // over the cap is refused there, not read as none. Streamed with no
+  // Content-Length, only reading the body finds its size.
+  it.each([
+    ["off", "0", "a blank body", 0x20, "application/json"],
+    ["on", "1", "a blank body", 0x20, "application/json"],
+    ["off", "0", "a non-JSON body", 0x78, "text/plain"],
+    ["on", "1", "a non-JSON body", 0x78, "text/plain"],
+  ] as const)(
+    "gate %s (UI_BRIDGE_REQUIRE_AUTH=%s): %s over the SDK's cap, streamed, is refused 413 and dispatches nothing",
+    async (_gate, flag, _what, fill, contentType) => {
+      vi.stubEnv("UI_BRIDGE_REQUIRE_AUTH", flag);
+      const CHUNK = 1024 * 1024;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let i = 0; i < 11; i++) {
+            controller.enqueue(new Uint8Array(CHUNK).fill(fill));
+          }
+          controller.close();
+        },
+      });
+      const res = await send("POST", "/control/find", body, contentType);
+      expect(res.status, await res.clone().text()).toBe(413);
+      expect(dispatched).toEqual([]);
+    },
+    60_000
+  );
+});
+
+describe("the installed SDK's Next handler reads request bodies only through its JSON body reader", () => {
+  // `route.ts` refuses, under the gate, a body the SDK's reader would refuse,
+  // exempting no route, because the SDK reads no body any other way. Since
+  // 0.46 every body the Next adapter reads — a `bodyRequired` route's, and
+  // the hand-routed `/heartbeat`, `/commands` and `/tabs/cdp/new` ones — goes
+  // through ONE reader, `readJsonBody` (ui-bridge `src/server/request-body.ts`).
+  // The peek applies that reader's rule, and
+  // `body-passthrough.differential.test.ts` holds it to the installed SDK's
+  // handler case by case, under every content type a client may declare;
+  // this pins that the adapter has no OTHER reader the
+  // differential would not see. A release whose Next adapter reads a body any
+  // other way (as text, form data or bytes, or by `request.json()`) must
+  // revisit the peek and the exemption list in `route.ts` before it ships.
+  it("finds readJsonBody reads and no other request-body reader in the Next adapter", () => {
+    const nextAdapter = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/nextjs.ts"
+    );
 
     expect(
-      nextAdapter.match(/\brequest\.json\(\)/g)?.length ?? 0
+      nextAdapter.match(/\breadJsonBody\(request\)/g)?.length ?? 0
     ).toBeGreaterThan(0);
     expect(
       nextAdapter.match(
-        /\b(?:request|req)\.(?:text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
+        /\b(?:request|req)\.(?:json|text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
       ) ?? []
     ).toEqual([]);
   });
@@ -374,15 +482,17 @@ describe("the installed SDK's Next handler reads request bodies only with reques
  * hold that restatement to the SDK `node_modules` resolves, two ways:
  *
  *   1. the constants themselves, read out of the installed bundles (sliced
- *      by source file, as the request.json() census above slices the Next
+ *      by source file, as the body-reader census above slices the Next
  *      adapter);
  *   2. the behaviour: the installed `startRelayClient`
  *      (`@qontinui/ui-bridge/injected`) is driven under fake timers for three
  *      minutes against a stub relay that answers the way the SDK server does:
  *      a `ping` every RELAY_COMMAND_STREAM_HEARTBEAT_MS, the proactive
- *      snapshot and its one retry after every connect, and `tabRegistered`
- *      from whether it holds an open stream for the tab (the relay answers
- *      from the instance's open listeners, `connectedTabs`). Every request
+ *      snapshot and its one retry after every connect, the lease's `rotate`
+ *      frame at STREAM_LEASE_MS with the old stream ended (`replaced`) once
+ *      the tab's next stream registers, and `tabRegistered` from whether it
+ *      holds an open stream for the tab (the relay answers from the
+ *      instance's open listeners, `connectedTabs`). Every request
  *      the client sends must be one of the three transport routes, billed to
  *      its own sub-lane, and within that route's per-tab cadence in EVERY
  *      60-s window — for a visible tab on a healthy stream, a hidden tab
@@ -416,7 +526,7 @@ function bundledNumber(section: string, name: string): number | null {
 }
 
 describe("the installed SDK's transport cadences are the ones _transport.ts restates", () => {
-  it("relay client: HEARTBEAT_INTERVAL_MS and SSE_RECONNECT_DELAY_MS", () => {
+  it("relay client: HEARTBEAT_INTERVAL_MS", () => {
     const client = bundleSection(
       "@qontinui/ui-bridge/injected",
       "src/relay/relay-client.ts"
@@ -424,9 +534,29 @@ describe("the installed SDK's transport cadences are the ones _transport.ts rest
     expect(bundledNumber(client, "HEARTBEAT_INTERVAL_MS")).toBe(
       HEARTBEAT_INTERVAL_MS
     );
-    expect(bundledNumber(client, "SSE_RECONNECT_DELAY_MS")).toBe(
+  });
+
+  it("relay client stream lifecycle: SSE_RECONNECT_DELAY_MS and HEALTHY_STREAM_MIN_MS", () => {
+    const lifecycle = bundleSection(
+      "@qontinui/ui-bridge/injected",
+      "src/relay/stream-lifecycle.ts"
+    );
+    expect(bundledNumber(lifecycle, "SSE_RECONNECT_DELAY_MS")).toBe(
       SSE_RECONNECT_DELAY_MS
     );
+    expect(bundledNumber(lifecycle, "HEALTHY_STREAM_MIN_MS")).toBe(
+      HEALTHY_STREAM_MIN_MS
+    );
+  });
+
+  it("stream lease: STREAM_LEASE_MS", () => {
+    const lease = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/stream-lease.ts"
+    );
+    expect(bundledNumber(lease, "STREAM_LEASE_MS")).toBe(STREAM_LEASE_MS);
+    // The stub relay below restates the rotate grace its `rotate` frame names.
+    expect(bundledNumber(lease, "ROTATE_GRACE_MS")).toBe(10_000);
   });
 
   it("Next adapter: RELAY_COMMAND_STREAM_HEARTBEAT_MS", () => {
@@ -470,6 +600,17 @@ describe("the installed SDK's relay client sends only transport, within its cade
     at: number;
   }
 
+  /** One command stream the stub relay served: when it opened, and how and when it ended. */
+  interface StreamLife {
+    id: string;
+    openedAt: number;
+    endedAt?: number;
+    reason?: "replaced" | "abort";
+  }
+
+  /** The SDK relay's default rotate grace (`stream-lease.ts` `ROTATE_GRACE_MS`). */
+  const ROTATE_GRACE_MS = 10_000;
+
   afterEach(() => {
     Reflect.deleteProperty(document, "visibilityState");
     vi.useRealTimers();
@@ -488,11 +629,16 @@ describe("the installed SDK's relay client sends only transport, within its cade
     tabRegistered?: TabRegisteredAnswer;
   }) {
     const sent: Sent[] = [];
+    const streams: StreamLife[] = [];
     const encoder = new TextEncoder();
     let beats = 0;
     let opens = 0;
     /** Streams the relay currently holds open (its `connectedTabs`). */
     let openStreams = 0;
+    /** The most streams the relay held open at once. */
+    let peakOpenStreams = 0;
+    /** The tab's registered stream: the one its next stream replaces. */
+    let current: { end: (reason: "replaced" | "abort") => void } | null = null;
 
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -508,10 +654,14 @@ describe("the installed SDK's relay client sends only transport, within its cade
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           openStreams += 1;
-          const push = (frame: unknown) => {
+          peakOpenStreams = Math.max(peakOpenStreams, openStreams);
+          const life: StreamLife = { id: streamId, openedAt: Date.now() };
+          streams.push(life);
+          const push = (frame: unknown, event?: string) => {
             if (!closed) {
+              const head = event === undefined ? "" : `event: ${event}\n`;
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(frame)}\n\n`)
+                encoder.encode(`${head}data: ${JSON.stringify(frame)}\n\n`)
               );
             }
           };
@@ -527,24 +677,55 @@ describe("the installed SDK's relay client sends only transport, within its cade
             setTimeout(() => snapshot("snapshot"), 500),
             setTimeout(() => snapshot("snapshot-retry"), 2000),
           ];
+          // The lease (`stream-lease.ts`): a rotate-capable stream is sent a
+          // `rotate` frame at STREAM_LEASE_MS and stays open until the tab's
+          // next stream registers (make-before-break).
+          timers.push(
+            setTimeout(
+              () =>
+                push(
+                  { type: "rotate", streamId, graceMs: ROTATE_GRACE_MS },
+                  "rotate"
+                ),
+              STREAM_LEASE_MS
+            )
+          );
           const ping = setInterval(
             () => push({ type: "ping" }),
             RELAY_COMMAND_STREAM_HEARTBEAT_MS
           );
-          signal?.addEventListener("abort", () => {
+          const end = (reason: "replaced" | "abort") => {
             if (closed) {
               return;
             }
+            // A server-made end tells the client why, as the relay's `end` frame does.
+            if (reason === "replaced") {
+              push({ type: "end", reason }, "end");
+            }
             closed = true;
             openStreams -= 1;
+            life.endedAt = Date.now();
+            life.reason = reason;
             timers.forEach((timer) => clearTimeout(timer));
             clearInterval(ping);
+            if (current?.end === end) {
+              current = null;
+            }
             try {
               controller.close();
             } catch {
               // already closed by the reader
             }
-          });
+          };
+          signal?.addEventListener("abort", () => end("abort"));
+          // The new stream's listener registers, and the relay ends the
+          // stream it replaces (`stream-lease.ts`, reason `replaced`) before
+          // the new one writes `connected`, as `addCommandListener` does. The
+          // real relay replaces only a rotated stream or one with the same
+          // `cid`; one client with one stable `cid` is always that case.
+          const previous = current;
+          current = { end };
+          previous?.end("replaced");
           push({ type: "connected", streamId });
         },
       });
@@ -556,7 +737,9 @@ describe("the installed SDK's relay client sends only transport, within its cade
 
     const fetchStub = vi.fn(
       async (input: string | URL | Request, init?: RequestInit) => {
-        const url = new URL(input instanceof Request ? input.url : String(input));
+        const url = new URL(
+          input instanceof Request ? input.url : String(input)
+        );
         const route = `${(init?.method ?? "GET").toUpperCase()} ${url.pathname.slice(BASE_PATH.length)}`;
         sent.push({ route, at: Date.now() });
         if (route === "GET /commands/stream") {
@@ -578,7 +761,19 @@ describe("the installed SDK's relay client sends only transport, within its cade
         return json({ success: true });
       }
     );
-    return { fetchStub, sent };
+    return {
+      fetchStub,
+      sent,
+      streams,
+      peakOpenStreams: () => peakOpenStreams,
+    };
+  }
+
+  /** What one tab's run sent, and the streams the stub relay served it. */
+  interface TabRun {
+    sent: Sent[];
+    streams: StreamLife[];
+    peakOpenStreams: number;
   }
 
   /** Run one tab's relay client for RUN_MS of fake time; return what it sent. */
@@ -586,14 +781,14 @@ describe("the installed SDK's relay client sends only transport, within its cade
     visibility: "visible" | "hidden";
     streamOk: boolean;
     tabRegistered?: TabRegisteredAnswer;
-  }): Promise<Sent[]> {
+  }): Promise<TabRun> {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => opts.visibility,
     });
-    const { fetchStub, sent } = stubRelay(opts);
+    const { fetchStub, sent, streams, peakOpenStreams } = stubRelay(opts);
     vi.stubGlobal("fetch", fetchStub);
 
     const client = startRelayClient({
@@ -611,7 +806,7 @@ describe("the installed SDK's relay client sends only transport, within its cade
     await vi.advanceTimersByTimeAsync(RUN_MS);
     client.stop();
     await vi.advanceTimersByTimeAsync(0);
-    return sent;
+    return { sent, streams, peakOpenStreams: peakOpenStreams() };
   }
 
   const count = (sent: readonly Sent[], route: string) =>
@@ -664,11 +859,37 @@ describe("the installed SDK's relay client sends only transport, within its cade
     );
   }
 
-  it("a visible tab on a healthy stream: one open, its two snapshot results, heartbeats within cadence", async () => {
-    const sent = await runTab({ visibility: "visible", streamOk: true });
+  /**
+   * The relay ends each stream at its lease, make-before-break: every stream
+   * but the last got its `rotate` frame at STREAM_LEASE_MS, its replacement
+   * opened then, and the relay ended it `replaced` as that replacement
+   * registered, so two streams were open at once and none was ever missing.
+   */
+  function expectLeaseRotation(run: TabRun, rotated: readonly StreamLife[]) {
+    expect(rotated.length).toBeGreaterThan(1);
+    for (let i = 1; i < rotated.length; i += 1) {
+      const previous = rotated[i - 1]!;
+      const next = rotated[i]!;
+      expect(next.openedAt - previous.openedAt, next.id).toBe(STREAM_LEASE_MS);
+      expect(previous.reason, previous.id).toBe("replaced");
+      expect(previous.endedAt, previous.id).toBe(next.openedAt);
+    }
+    expect(run.peakOpenStreams).toBe(2);
+  }
+
+  it("a visible tab on a healthy stream: one open per lease, each with its two snapshot results, heartbeats within cadence", async () => {
+    const run = await runTab({ visibility: "visible", streamOk: true });
+    const { sent, streams } = run;
     expectTransportWithinCadence(sent);
-    expect(count(sent, "GET /commands/stream")).toBe(1);
-    expect(count(sent, "POST /commands")).toBe(2);
+    // Read exactly: the boot open, then one rotation per STREAM_LEASE_MS
+    // (50 s) in the 180-s run — at 50, 100 and 150 s. That is at most 2 in
+    // any 60-s window, inside STREAM_OPENS_PER_TAB_PER_MIN (6).
+    expect(count(sent, "GET /commands/stream")).toBe(4);
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(2);
+    expect(count(sent, "POST /commands")).toBe(8);
+    expectLeaseRotation(run, streams);
+    // The run's end, not the relay, closed the last stream.
+    expect(streams.at(-1)?.reason).toBe("abort");
     // Not vacuous: the timer beat all through the run.
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
@@ -678,27 +899,40 @@ describe("the installed SDK's relay client sends only transport, within its cade
     // `tabRegistered: false`, and the boot heartbeat's answer reopens the
     // stream at once beside the boot open. The reopen clears the pending
     // reconnect, so from then on the client opens once per heartbeat.
-    const sent = await runTab({ visibility: "hidden", streamOk: false });
+    const { sent, streams } = await runTab({
+      visibility: "hidden",
+      streamOk: false,
+    });
     expectTransportWithinCadence(sent, { forcedReopens: 1 });
     // Read exactly, so both bounds are met rather than merely respected:
     // 6 + the one forced reopen in the first minute, 6 in every later window.
     expect(peakPerMinute(sent, "GET /commands/stream")).toBe(7);
     expect(peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)).toBe(6);
+    expect(count(sent, "GET /commands/stream")).toBe(20);
+    expect(streams).toEqual([]);
     expect(count(sent, "POST /commands")).toBe(0);
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
 
-  it("a tab once answered tabRegistered:false: one forced reopen and its snapshots, all within cadence", async () => {
-    const sent = await runTab({
+  it("a tab once answered tabRegistered:false: one forced reopen, then lease rotation, all within cadence", async () => {
+    const run = await runTab({
       visibility: "visible",
       streamOk: true,
       // The per-instance recovery path: one heartbeat lands on an instance
       // that holds no stream for the tab.
       tabRegistered: (beat, holdsStream) => (beat === 2 ? false : holdsStream),
     });
+    const { sent, streams } = run;
     expectTransportWithinCadence(sent);
-    expect(count(sent, "GET /commands/stream")).toBe(2);
-    expect(count(sent, "POST /commands")).toBe(4);
+    // Read exactly: the boot open; the forced reopen at the second heartbeat
+    // (10 s), which aborts the boot stream first (`forceReconnect`); then one
+    // rotation per lease from it — at 60, 110 and 160 s.
+    expect(count(sent, "GET /commands/stream")).toBe(5);
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(2);
+    expect(count(sent, "POST /commands")).toBe(10);
+    expect(streams[0]).toMatchObject({ reason: "abort", endedAt: T0 + 10_000 });
+    expectLeaseRotation(run, streams.slice(1));
+    expect(streams.at(-1)?.reason).toBe("abort");
   });
 
   it("bills every UI_BRIDGE_ROUTES entry to a command lane except POST /heartbeat", () => {

@@ -8,7 +8,14 @@ No authentication required — dev-only, LAN-accessible.
 import ipaddress
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.schemas.base import IsoDatetime
 
@@ -153,6 +160,35 @@ class RunnerUiThread(BaseModel):
         return self
 
 
+class RunnerHeartbeatCrash(BaseModel):
+    """The runner's most recent crash dump, as its HTTP heartbeat sends it.
+
+    The snake_case ``HeartbeatRecentCrash`` in ``heartbeat.rs``. The optional
+    fields are omitted, never ``null``, when the dump lacks a section. ``pid``
+    is omitted for a dump that predates the ``Pid:`` header
+    (qontinui-runner#2551 / #2722).
+
+    The route is unauthenticated and the registry lives in memory, so text is
+    cut to ``MAX_TEXT`` characters. Unknown keys are dropped.
+    """
+
+    MAX_TEXT: ClassVar[int] = 2048
+
+    file_path: str
+    reported_at: str
+    panic_location: str | None = None
+    panic_message: str | None = None
+    thread: str | None = None
+    pid: int | None = Field(default=None, ge=0)
+
+    @field_validator(
+        "file_path", "reported_at", "panic_location", "panic_message", "thread"
+    )
+    @classmethod
+    def _bounded(cls, value: str | None) -> str | None:
+        return value if value is None else value[: cls.MAX_TEXT]
+
+
 class RunnerHeartbeat(BaseModel):
     """Sent by runners every 30s."""
 
@@ -177,6 +213,22 @@ class RunnerHeartbeat(BaseModel):
     # Native UI-thread liveness — see ``RunnerUiThread``. ``None`` when the
     # runner predates the block, which is UNKNOWN and never "not wedged".
     ui_thread: RunnerUiThread | None = None
+    # Most recent crash dump — see ``RunnerHeartbeatCrash``. ``None`` when the
+    # runner has no fresh dump or predates the field. A malformed block is
+    # dropped to ``None`` rather than rejected: a 422 would lose the whole
+    # heartbeat, and with it the runner's liveness, over one diagnostic field.
+    recent_crash: RunnerHeartbeatCrash | None = None
+
+    @field_validator("recent_crash", mode="wrap")
+    @classmethod
+    def _crash_never_rejects_the_heartbeat(
+        cls, value: Any, handler: Any
+    ) -> RunnerHeartbeatCrash | None:
+        try:
+            result: RunnerHeartbeatCrash | None = handler(value)
+        except ValidationError:
+            return None
+        return result
 
     @field_validator("ip")
     @classmethod
@@ -233,6 +285,10 @@ class RegisteredRunner(BaseModel):
     # only evidence anyone will get. Read it with ``is_healthy`` and
     # ``last_heartbeat`` — on an unhealthy runner it is a last-known reading.
     ui_thread: RunnerUiThread | None = None
+    # Pass-through of ``RunnerHeartbeat.recent_crash``. A heartbeat without
+    # one replaces it with ``None``: the runner stops sending a dump once it
+    # is no longer fresh, so a cleared crash clears here too.
+    recent_crash: RunnerHeartbeatCrash | None = None
     last_heartbeat: IsoDatetime
     is_healthy: bool = True  # False if heartbeat missed > 90s
 
