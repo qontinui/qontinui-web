@@ -68,13 +68,14 @@ export function useSendTimePin(resolvePin: ResolvePin | undefined): ResolvePin {
  * project stored then (`readPinAtSend`), none on a first visit. Such a read
  * answers from whatever project the server takes for none, and its replay
  * after a token refresh from the project stored by then, possibly another
- * tab's. So the first time `sendPin` names a project, `retake` runs, once. It re-sends the hook's reads, which
- * now go out pinned, and must drop the answer to any read sent before them,
- * so a late unpinned answer cannot land over the pinned one. Mount reads that
- * went out pinned are never re-taken: every attempt of them was held to the
- * page's project. Nothing else changes (D10): the mount reads still run once,
- * and no callback changes identity, because the pin is asked after each
- * commit rather than depended on.
+ * tab's. So the first time `sendPin` names a project, `retake` runs, once.
+ * It re-sends the hook's reads, which now go out with the page's pin, and
+ * must drop the answer to any read sent before them, so a late answer to an
+ * earlier read cannot land over the pinned one. Mount reads that went out
+ * with the page's pin are never re-taken: every attempt of them was held to
+ * the page's project. Nothing else changes (D10): the mount reads still run
+ * once, and no callback changes identity, because the pin is asked after
+ * each commit rather than depended on.
  *
  * `sendPin` is the hook's {@link useSendTimePin} resolver. A caller that
  * passes no resolver never names a pin, so nothing is re-taken for it; one
