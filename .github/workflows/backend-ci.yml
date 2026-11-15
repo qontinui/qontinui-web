@@ -1563,16 +1563,25 @@ jobs:
       # while the check itself is a VERDICT step. Fused, a PyPI outage read as
       # a failed scan and could never be declared.
       #
-      # PYTHONSAFEPATH: `poetry run pip` execs `<venv>/bin/python -m pip`
-      # (poetry's `get_pip_command`), which would put this job's ./backend
-      # first on sys.path, so a module the PR adds there could kill this SETUP
-      # step. The variable is -P for every Python the step starts; `poetry run`
-      # takes no interpreter flag.
+      # The venv's own interpreter, by path, never `poetry run pip`. `poetry
+      # run` runs a `[tool.poetry.scripts]` entry of the PR's pyproject.toml
+      # in place of an installed command of the same name (measured on Poetry
+      # 2.5.1: a `pip` script there ran instead of pip), so the PR could kill
+      # this SETUP step with its own file; and it execs `<venv>/bin/python -m
+      # pip` with no interpreter flag, which puts this job's ./backend first
+      # on sys.path. `-P` keeps the checkout off sys.path for the interpreter
+      # started here. PYTHONSAFEPATH stays as the backstop for any Python
+      # started in turn (pip can start children, to build an sdist say): a
+      # child inherits the variable and the cwd, but not the flag. It is
+      # harmless to poetry itself, an entry-point script that imports from
+      # its own venv (measured: `poetry env info --executable` answers the
+      # same under it).
       - name: Install safety
         id: safety_install
         env:
           PYTHONSAFEPATH: '1'
-        run: poetry run pip install safety
+        run: |
+          "$(poetry env info --executable)" -P -m pip install safety
 
       - name: Run safety check (dependency vulnerabilities)
         id: safety_check
