@@ -149,7 +149,9 @@ class FakeGitHub:
 
     def __init__(self, jobs: list[dict[str, Any]]):
         self.jobs = jobs
-        self.annotations: dict[int, list[list[dict[str, Any]]]] = {}
+        #: Per check run, the payloads successive reads serve, in turn: an
+        #: annotation page (a list of objects), or any JSON at all.
+        self.annotations: dict[int, list[Any]] = {}
         self.urls: list[str] = []
         self.timeouts: list[float] = []
         self.fail_jobs = False
@@ -166,6 +168,10 @@ class FakeGitHub:
     def serve_in_turn(self, job_id: int, *pages: list[str]) -> None:
         """Successive reads serve successive pages (annotation lag)."""
         self.annotations[job_id] = [[_annotation(t) for t in page] for page in pages]
+
+    def serve_payload(self, job_id: int, payload: Any) -> None:
+        """Every read of this check run serves ``payload`` as is, page or not."""
+        self.annotations[job_id] = [payload]
 
     def urlopen(self, request, timeout):
         url = request.full_url
@@ -767,6 +773,40 @@ def test_a_jobs_read_error_is_unknown(github):
 def test_an_annotations_read_error_is_unknown(github):
     github(_with_conclusions(s1="failure")).fail_annotations = True
     assert "a GitHub read failed" in _assert_withheld(_decide(_env()))
+
+
+@pytest.mark.parametrize(
+    ("payload", "refusal"),
+    [
+        # What the API serves for a check run it cannot find: an object.
+        ({"message": "Not Found"}, "returned no annotation list"),
+        # The member's OWN title is on the page, and the page is still refused.
+        (
+            [_annotation(_shard_title(1)), "not an annotation"],
+            "returned a non-object annotation",
+        ),
+    ],
+    ids=["not-a-list", "a-non-object-beside-the-own-title"],
+)
+def test_an_annotation_page_that_is_not_a_list_of_objects_is_unknown(
+    github, payload, refusal
+):
+    """`_titles` refuses the page, and a refused page withholds the title.
+
+    It is a read error, not a lagging annotation: read once, never re-read.
+    """
+    fake = github(_with_conclusions(s1="failure"))
+    shard1 = _shard(fake.jobs, 1)["id"]
+    fake.serve_payload(shard1, payload)
+    sleeps = _Sleeps()
+    message = _assert_withheld(_decide(_env(), sleeps))
+    url = f"{API}/repos/{REPO}/check-runs/{shard1}/annotations?per_page=50"
+    assert message == (
+        f"a GitHub read failed: {url} {refusal}. Nothing was declared for this "
+        "aggregate."
+    )
+    assert [u for u in fake.urls if "/annotations?" in u] == [url]
+    assert sleeps.calls == []
 
 
 def test_an_unfinished_member_is_unknown(github):
