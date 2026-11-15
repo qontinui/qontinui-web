@@ -1946,4 +1946,63 @@ describe("the answer", () => {
     );
     expect(toastMock.success).not.toHaveBeenCalled();
   });
+
+  it("a refused session between a lost answer and an absence keeps the earlier word", async () => {
+    rosterFollows = false;
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: null,
+          still_member_via_pointer: null,
+        },
+      ]),
+      json(403, { detail: "not_coord_tenant_admin" }),
+      answer([absent(DEV_CI), absent(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    const cancelAfterAnswer = async (n: number) => {
+      fireEvent.click(confirmButton());
+      await waitFor(() => expect(posts).toHaveLength(n));
+      await screen.findByTestId("fleet-roles-remove-result");
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+      fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-cancel"));
+      await waitFor(() =>
+        expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+      );
+      fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
+    };
+    // Session 1: a lost answer. Session 2: this console refused it.
+    await cancelAfterAnswer(1);
+    await cancelAfterAnswer(2);
+    // Session 3: both absent now.
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(ackText()).toContain(
+      "This attempt: 0 of 2 bindings removed; 1 absent now (the earlier attempt's answer was lost); 1 already absent."
+    );
+    expect(toastMock.info).not.toHaveBeenCalled();
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("a listing coord explained (the home-tenant pointer) gets no still-listed note", async () => {
+    // The pointer keeps DEV_CI listed; DEV_CI_2 leaves the roster.
+    postAnswers = [answer([unbound(DEV_CI, true), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(ackText()).toBe(
+      "2 of 2 bindings removed; 1 still listed through its home tenant, which only its owner can change on /runners."
+    );
+    expect(ackText()).not.toContain(STILL_LISTED_NOTE);
+  });
 });
