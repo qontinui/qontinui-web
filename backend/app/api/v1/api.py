@@ -70,6 +70,7 @@ from app.api.v1.endpoints import (
     feedback_scores,
     files_sharing,
     finding_categories,
+    fleet_device_bindings,
     fleet_dispatch,
     fleet_targets,
     health,
@@ -282,6 +283,15 @@ api_router.include_router(
 # `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
 api_router.include_router(
     session_runs.router, prefix="/operations", tags=["operations"]
+)
+# Fleet device bindings — remove a roster machine's device rows from the
+# caller's tenant (coord's per-tenant `DELETE /coord/devices/:id/tenant-binding`,
+# once per id, with a per-id outcome). Under `/operations` so the active-tenant
+# prefix rule covers it; a sibling module so the operations hub file is
+# untouched. Plan
+# `2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console` Phase 1.
+api_router.include_router(
+    fleet_device_bindings.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
