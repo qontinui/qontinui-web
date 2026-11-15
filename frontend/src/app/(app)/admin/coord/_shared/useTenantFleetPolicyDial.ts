@@ -9,8 +9,7 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
-  readPinAtSend,
-  useRetakeOnceWhenPinned,
+  useFirstPinnedRead,
   useSendTimePin,
   type SendTimePinOptions,
 } from "./useSendTimePin";
@@ -76,14 +75,12 @@ function capitalise(s: string): string {
  * `resolvePin`, the read and the write are each sent in the project it names
  * when the request goes out, on every attempt — so a write re-issued after a
  * 429, or replayed after a token refresh, once another tab has switched
- * project still lands in the project the page shows. While it names none (a
- * first visit, before the page's project is known), the read is sent pinned
- * to the project stored when it is sent (`readPinAtSend`), so a retry cannot
- * follow another tab's switch; it is re-taken, pinned, once the resolver
- * names a project, and its own answer is then dropped
- * (`useRetakeOnceWhenPinned`). Omitted, every request is sent exactly as
- * before: in the project stored when each attempt is made, retried as
- * always, and nothing is re-taken.
+ * project still lands in the project the page shows. Such a page reads
+ * nothing until the resolver names a project: the first read goes out then
+ * (`useFirstPinnedRead`), and a later read with no project named sends
+ * nothing; `waitingForProject` says the dial is waiting. Omitted, every
+ * request is sent exactly as before: in the project stored when it is made,
+ * the read on mount.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -105,16 +102,18 @@ export function useTenantFleetPolicyDial<L extends string>(
   subject: string = "devices",
   { resolvePin }: SendTimePinOptions = {}
 ) {
-  // One identity whatever the caller passes, so the mount read below runs
-  // once: the pin is read as each request goes out.
+  // One identity whatever the caller passes, so the first read runs once: the
+  // pin is read as each request goes out.
   const sendPin = useSendTimePin(resolvePin);
-  // Whether the caller pins its requests: only then is a read with no pin
-  // held to the project stored at send (`readPinAtSend`). A caller with no
-  // resolver keeps its reads exactly as they were, retries included.
-  const pinsReads = useRef(resolvePin !== undefined);
-  pinsReads.current = resolvePin !== undefined;
+  // A caller that passes a resolver reads only under the project it names.
+  const pinsReads = resolvePin !== undefined;
+  const pinsReadsRef = useRef(pinsReads);
+  pinsReadsRef.current = pinsReads;
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading only once a read goes out: not while waiting for a project.
+  const [loading, setLoading] = useState(
+    () => !pinsReads || sendPin() !== undefined
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
@@ -126,30 +125,22 @@ export function useTenantFleetPolicyDial<L extends string>(
   // rejected write changes nothing, so it does not bump — otherwise a Refresh
   // in flight beside it would be silently discarded.
   const writeGeneration = useRef(0);
-  // Bumped by the one re-take of an unpinned mount read (`resolvePin` callers
-  // only, below). A read sent before it is superseded: its answer is dropped,
-  // and `loading` is left to the re-take.
-  const retakes = useRef(0);
 
   /**
    * Read the resolved value. Resolves `true` only when THIS read landed and is
-   * now what is shown — `false` when it failed, or when a write landed (or
-   * the re-take was sent) while it was in flight and it was discarded — so a
-   * caller can tell a confirmed read from a refresh that confirmed nothing.
+   * now what is shown — `false` when it failed, or when a write landed while it
+   * was in flight and it was discarded — so a caller can tell a confirmed read
+   * from a refresh that confirmed nothing.
    */
   const load = useCallback(async (): Promise<boolean> => {
+    const pin = sendPin();
+    // No project named yet: nothing is sent, and what is shown stays.
+    if (pinsReadsRef.current && pin === undefined) return false;
     const generation = writeGeneration.current;
-    const retake = retakes.current;
-    const superseded = () =>
-      generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(
-        domain,
-        undefined,
-        pinsReads.current ? readPinAtSend(sendPin()) : sendPin()
-      );
-      if (superseded()) return false;
+      const view = await fetchFleetPolicy(domain, undefined, pin);
+      if (generation !== writeGeneration.current) return false;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
@@ -158,26 +149,22 @@ export function useTenantFleetPolicyDial<L extends string>(
       setLastWrite(null);
       return true;
     } catch (err) {
-      if (superseded()) return false;
+      if (generation !== writeGeneration.current) return false;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
       return false;
     } finally {
-      if (retake === retakes.current) setLoading(false);
+      setLoading(false);
     }
   }, [domain, label, sendPin]);
 
+  // A caller that pins nothing reads on mount, as it always has; one that
+  // pins its requests reads first when its project is known.
   useEffect(() => {
-    load();
+    if (!pinsReadsRef.current) load();
   }, [load]);
-
-  // A caller that passes no `resolvePin` never names a pin, so nothing is
-  // re-taken for it, and it sends exactly what it always did.
-  useRetakeOnceWhenPinned(sendPin, () => {
-    retakes.current += 1;
-    void load();
-  });
+  const waiting = useFirstPinnedRead(sendPin, () => void load());
 
   /**
    * A write to this domain LANDED outside this hook — a repo-band write whose
@@ -254,6 +241,12 @@ export function useTenantFleetPolicyDial<L extends string>(
   return {
     policy,
     loading,
+    /**
+     * A caller that pins its requests, before its resolver names a project:
+     * nothing has been read, and nothing is shown as read. Always `false`
+     * for a caller that passes no resolver.
+     */
+    waitingForProject: pinsReads && waiting,
     saving,
     error,
     /** Set only when the last write's read-back failed. UNKNOWN, not "off". */

@@ -1,16 +1,14 @@
 /**
- * The page guard fixture answers a write as the page's provider does unless a
- * suite opts out by name (plan
- * `2026-11-09-prompt-documents-cross-tab-write-guard`, review round 2, A4). A
- * suite that forgets to opt in therefore gets the provider's refusal, and no
- * test can assert "allowed" on an answer the page never gives without naming
- * `UNPINNED_WRITES_ALLOWED`. No other suite fails if the default goes back to
- * allowing every write, so this one holds it.
+ * The page guard fixture answers a write as the page's provider does (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard`, review rounds 2 and
+ * 5): with no pin a write is refused, and `PINNED_PAGE` pins and allows. No
+ * other suite fails if the default goes back to allowing every write, so
+ * this one holds it.
  */
 
 import { describe, it, expect } from "vitest";
 import type { ProjectPin } from "@/services/http-client";
-import { testPageGuard, UNPINNED_WRITES_ALLOWED } from "./pageWriteGuard";
+import { PINNED_PAGE, testPageGuard } from "./pageWriteGuard";
 
 describe("the page guard fixture", () => {
   it("refuses a write while there is no pin, as the page's provider does", () => {
@@ -29,9 +27,9 @@ describe("the page guard fixture", () => {
     expect(guard.resolvePin()).toBe(pin);
   });
 
-  it("allows a write with no pin only under UNPINNED_WRITES_ALLOWED, the opt-in by name", () => {
-    expect(UNPINNED_WRITES_ALLOWED.pin).toBeUndefined();
-    expect(UNPINNED_WRITES_ALLOWED.resolvePin()).toBeUndefined();
-    expect(UNPINNED_WRITES_ALLOWED.writeAllowed()).toBe(true);
+  it("PINNED_PAGE pins every request to the page's project, and allows a write", () => {
+    expect(PINNED_PAGE.pin).toEqual({ tenant: "t-page" });
+    expect(PINNED_PAGE.resolvePin()).toEqual({ tenant: "t-page" });
+    expect(PINNED_PAGE.writeAllowed()).toBe(true);
   });
 });

@@ -10,14 +10,14 @@
  * own here. (`usePublishAll` reads no guard: its caller hands it one, so its
  * suite passes its own.)
  *
- * By default the guard answers as the real provider does: a write is refused
- * while there is no pin to send it in, and allowed once there is. A suite
- * whose writes go out with no pin, so that its requests are asserted exactly
- * as the section builds them, opts in by name to `UNPINNED_WRITES_ALLOWED`,
- * the one answer the real provider never gives. What the real provider does
- * is proven by the page-level suites (`PromptDocumentsCrossTab`,
- * `PromptDocumentsPageCrossTab`, `PromptDocumentsPageSettingsCrossTab`,
- * `usePageWriteGuard.test.tsx`).
+ * The guard answers as the real provider does. By default it is the page
+ * before it knows its project: no pin, so a write is refused and a settings
+ * section reads nothing (`useFirstPinnedRead`). `PINNED_PAGE` is the page
+ * once its project is known: every request pinned to it, and a write allowed.
+ * A suite that tests a section's reads and writes takes `PINNED_PAGE`. What
+ * the real provider does is proven by the page-level suites
+ * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
+ * `PromptDocumentsPageSettingsCrossTab`, `usePageWriteGuard.test.tsx`).
  */
 
 import type { ReactElement, ReactNode } from "react";
@@ -52,13 +52,11 @@ export function testPageGuard(
 }
 
 /**
- * Every write allowed, and nothing pinned: the answer the real provider never
- * gives, since it refuses a write it cannot pin. For a suite that tests a
- * section's own writes, sent with no pin so its requests are asserted exactly
- * as the section builds them. Opted into by name.
+ * The page once its project is known: every request pinned to it, and a
+ * write allowed.
  */
-export const UNPINNED_WRITES_ALLOWED: PageWriteGuardValue = testPageGuard({
-  writeAllowed: () => true,
+export const PINNED_PAGE: PageWriteGuardValue = testPageGuard({
+  pin: { tenant: "t-page" },
 });
 
 /** A wrapper rendering its children under `guard`. */

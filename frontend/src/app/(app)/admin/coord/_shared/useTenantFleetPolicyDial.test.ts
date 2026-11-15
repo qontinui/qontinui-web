@@ -398,43 +398,28 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
       )
     );
 
-  it("pins a read its resolver names no project for to the project stored as it is sent: none, so it is not retried", async () => {
-    // As the page's status read does (`readPinAtSend`). A caller with no
-    // resolver keeps today's bytes (above); one with a resolver has opted in
-    // to pinning, and with nothing stored the pin is to no project.
-    localStorage.clear();
-    getMock.mockResolvedValueOnce(view("off"));
+  it("with a resolver that names no project, reads nothing and says it is waiting", async () => {
+    // A caller with no resolver keeps today's mount read (above); one with a
+    // resolver reads only under the project it names.
     const { result } = unresolved();
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {});
 
-    expect(sentInit.mock.calls).toEqual([
-      [
-        `${DIAL_URL}?domain=some_dial`,
-        { method: "GET", idempotent: true, maxRetries: 0 },
-      ],
-    ]);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.waitingForProject).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.policy).toBeNull();
   });
 
-  it("pins that read to a project stored as it is sent, on every attempt", async () => {
-    localStorage.setItem(KEY, "t-stored");
-    try {
-      getMock.mockResolvedValueOnce(view("off"));
-      const { result } = unresolved();
-      await waitFor(() => expect(result.current.loading).toBe(false));
+  it("sends nothing for a reload while its resolver names no project, and keeps what is shown", async () => {
+    const { result } = unresolved();
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
 
-      expect(sentInit.mock.calls).toEqual([
-        [
-          `${DIAL_URL}?domain=some_dial`,
-          {
-            method: "GET",
-            idempotent: true,
-            headers: { "X-Qontinui-Active-Tenant": "t-stored" },
-          },
-        ],
-      ]);
-    } finally {
-      localStorage.removeItem(KEY);
-    }
+    expect(applied).toBe(false);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
   });
 });
 
@@ -546,15 +531,18 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
   });
 });
 
-describe("useTenantFleetPolicyDial — the re-take of a read sent before the resolver named a project", () => {
+describe("useTenantFleetPolicyDial — the first read waits for the resolver to name a project", () => {
   beforeEach(() => localStorage.clear());
 
-  it("re-takes the mount read once, pinned, when the resolver first names a project, and drops the earlier answer", async () => {
+  const PINNED_GET = {
+    method: "GET",
+    idempotent: true,
+    headers: { "X-Qontinui-Active-Tenant": "t-b" },
+  };
+
+  it("reads first, once and pinned, when the resolver first names a project", async () => {
     let pin: { tenant: string } | undefined = undefined;
-    const mountRead = deferred<unknown>();
-    getMock
-      .mockReturnValueOnce(mountRead.promise)
-      .mockResolvedValueOnce(view("on"));
+    getMock.mockResolvedValue(view("on"));
     const { result, rerender } = renderHook(() =>
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
@@ -563,40 +551,25 @@ describe("useTenantFleetPolicyDial — the re-take of a read sent before the res
         { resolvePin: () => pin }
       )
     );
-    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(sentInit).not.toHaveBeenCalled();
 
     pin = { tenant: "t-b" };
     rerender();
     await waitFor(() =>
       expect(result.current.policy?.effective_level).toBe("on")
     );
-    // The mount read answers last: it was sent before the re-take, so it is
-    // dropped rather than painted over the page's own answer.
-    await act(async () => {
-      mountRead.resolve(view("off"));
-    });
     rerender();
 
-    expect(result.current.policy?.effective_level).toBe("on");
+    expect(result.current.waitingForProject).toBe(false);
     expect(sentInit.mock.calls).toEqual([
-      [
-        `${DIAL_URL}?domain=some_dial`,
-        { method: "GET", idempotent: true, maxRetries: 0 },
-      ],
-      [
-        `${DIAL_URL}?domain=some_dial`,
-        {
-          method: "GET",
-          idempotent: true,
-          headers: { "X-Qontinui-Active-Tenant": "t-b" },
-        },
-      ],
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
     ]);
   });
 
-  it("re-takes nothing when the resolver named a project at mount", async () => {
+  it("reads once, pinned, at mount when the resolver names a project then", async () => {
     let pin: { tenant: string } | undefined = { tenant: "t-b" };
-    getMock.mockResolvedValueOnce(view("on"));
+    getMock.mockResolvedValue(view("on"));
     const { result, rerender } = renderHook(() =>
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
@@ -611,6 +584,8 @@ describe("useTenantFleetPolicyDial — the re-take of a read sent before the res
     rerender();
     rerender();
 
-    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(sentInit.mock.calls).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
+    ]);
   });
 });

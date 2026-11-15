@@ -17,6 +17,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
 import type { PublishAllState } from "../_hooks/usePublishAll";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   describeObservedPass,
   describeObservedReconcile,
@@ -173,9 +174,9 @@ export function PolicyAutoPublishDialControl({
    */
   observed?: AutoPublishObserved;
 } = {}) {
-  // On the prompt-documents page the write, and the read once the page knows
-  // its project, are sent in the page's project (a mount read sent before then
-  // is re-taken in it), and a write raced past another tab's switch is refused
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
   // — by the hook itself, beside its send: the page's disabled fieldset
   // reaches neither a confirmation (it portals out) nor a click that lands
   // before the switch is seen. A refused write answers `false`, so the page's
@@ -183,6 +184,7 @@ export function PolicyAutoPublishDialControl({
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
@@ -253,7 +255,9 @@ export function PolicyAutoPublishDialControl({
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-auto-publish-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 

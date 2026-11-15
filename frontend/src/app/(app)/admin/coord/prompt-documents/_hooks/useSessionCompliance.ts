@@ -11,8 +11,7 @@ import {
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
-  readPinAtSend,
-  useRetakeOnceWhenPinned,
+  useFirstPinnedRead,
   useSendTimePin,
 } from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
@@ -100,13 +99,8 @@ const EMPTY: Loaded<never> = {
   error: null,
 };
 
-/**
- * Why a save is refused while the re-take of the settings is still out: the
- * draft it would send was seeded from settings read before the page knew its
- * project, which may be another project's.
- */
-const RETAKE_PENDING_REFUSAL =
-  "Nothing was sent: these settings are being re-read for this page's project. Save again once they have loaded.";
+/** Before the page knows its project: nothing is read, so nothing is loading. */
+const IDLE: Loaded<never> = { ...EMPTY, loading: false };
 
 /**
  * Reads and mutates the tenant's session-compliance enforcement surface via the
@@ -122,36 +116,33 @@ const RETAKE_PENDING_REFUSAL =
  * store isn't provisioned), `error` (coord unreachable/refusing). None of them
  * is "nothing to show".
  *
- * On the prompt-documents page the save, and every read once the page knows
- * its project, are sent in the page's project, asked as each goes out and kept
- * on every attempt, so a save re-issued after another tab's switch cannot
- * change that tab's enforcement, and no such read can show that project's
- * verdicts as this one's. The mount reads can go out before the page knows
- * its project (a first visit, nothing stored), pinned to the project stored
- * as each is sent (`readPinAtSend`; none on a first visit, so they are not
- * retried): all four are re-taken, pinned, once the page has one, and the
- * answers to the reads sent before are then dropped
- * (`useRetakeOnceWhenPinned`). The panel's draft is seeded from the settings
- * shown, so it is re-seeded when the re-take's settings land, even over
- * unsaved edits (`configRetakeEpoch`), and a save is refused while they are
- * still out. And the save is refused — nothing sent, the page says why —
- * while that switch is in effect, or while the page has no project to pin it
- * to. The pin and the refusal both come from the page's
- * provider (`usePageSendGuard`), and the refusal sits beside the send, so no
- * caller can leave it out. It is never mounted outside that provider, and
- * throws if it is: there is no unguarded mode.
+ * On the prompt-documents page every read and the save are sent in the page's
+ * project, asked as each goes out and kept on every attempt, so a save
+ * re-issued after another tab's switch cannot change that tab's enforcement,
+ * and no read can show that project's verdicts as this one's. Nothing is read
+ * before the page knows its project: the first read of all four goes out
+ * then (`useFirstPinnedRead`), a Refresh, filter or page change with no
+ * project sends nothing, and `waitingForProject` says the hook is waiting.
+ * And the save is refused — nothing sent, the page says why — while that
+ * switch is in effect, or while the page has no project to pin it to.
+ * Both come from the page's provider (`usePageSendGuard`), and the refusal
+ * sits beside the send, so no caller can leave it out. It is never mounted
+ * outside that provider, and throws if it is: there is no unguarded mode.
  */
 export function useSessionCompliance() {
   const { writeAllowed, resolvePin } = usePageSendGuard();
-  // One identity whatever the provider hands over, so the mount reads run once.
+  // One identity whatever the provider hands over, so the first read runs once.
   const sendPin = useSendTimePin(resolvePin);
-  const [config, setConfig] = useState<Loaded<SessionComplianceConfig>>(EMPTY);
+  // Loading from the first render only when a read goes out at mount.
+  const [initial] = useState(() => (sendPin() === undefined ? IDLE : EMPTY));
+  const [config, setConfig] =
+    useState<Loaded<SessionComplianceConfig>>(initial);
   const [versions, setVersions] =
-    useState<Loaded<SessionComplianceConfigVersion[]>>(EMPTY);
+    useState<Loaded<SessionComplianceConfigVersion[]>>(initial);
   const [sessions, setSessions] =
-    useState<Loaded<SessionComplianceRow[]>>(EMPTY);
+    useState<Loaded<SessionComplianceRow[]>>(initial);
   const [outstanding, setOutstanding] =
-    useState<Loaded<OutstandingItem[]>>(EMPTY);
+    useState<Loaded<OutstandingItem[]>>(initial);
 
   const [saving, setSaving] = useState(false);
   const [verdictFilter, setVerdictFilter] = useState<ComplianceVerdict | "all">(
@@ -159,33 +150,24 @@ export function useSessionCompliance() {
   );
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  // Bumped by the one re-take of unpinned mount reads (below). A read sent
-  // before it is superseded: its answer is dropped, so it can neither show
-  // another project's state nor end the re-take's loading.
-  const retakes = useRef(0);
   // Bumped when a save LANDS. A settings or history read that began before it
-  // may answer after the save's own result; applying it would show the
-  // settings, or their history, as they were before the save. Its answer is
-  // dropped, as the shared dial does (`useTenantFleetPolicyDial`). The
-  // verdicts and the ledger are not changed by a save, so they keep theirs.
+  // may answer after the save's own result; applying it would show them as
+  // they were before the save. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`). A save does not change the verdicts or the
+  // ledger, so their reads keep their answers.
   const writeGeneration = useRef(0);
-  // The re-take the settings shown were read under: 0 until the re-take's
-  // settings land, then 1. The panel re-seeds its draft when it changes, and
-  // a save waits for it while a re-take is out (`saveConfig`).
-  const [configRetakeEpoch, setConfigRetakeEpoch] = useState(0);
-  const shownConfigRetake = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
   const loadConfig = useCallback(async () => {
+    const pin = sendPin();
+    // No project to read in yet: nothing is sent, and what is shown stays.
+    if (pin === undefined) return;
     const generation = writeGeneration.current;
-    const retake = retakes.current;
-    const superseded = () =>
-      generation !== writeGeneration.current || retake !== retakes.current;
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await fetchSessionComplianceConfig(readPinAtSend(sendPin()));
-      if (superseded()) return;
+      const data = await fetchSessionComplianceConfig(pin);
+      if (generation !== writeGeneration.current) return;
       setConfig({
         data,
         loading: false,
@@ -193,10 +175,8 @@ export function useSessionCompliance() {
         degraded: data.degraded ?? null,
         error: null,
       });
-      shownConfigRetake.current = retake;
-      setConfigRetakeEpoch(retake);
     } catch (err) {
-      if (superseded()) return;
+      if (generation !== writeGeneration.current) return;
       setConfig({
         data: null,
         loading: false,
@@ -210,16 +190,13 @@ export function useSessionCompliance() {
   }, [sendPin]);
 
   const loadVersions = useCallback(async () => {
+    const pin = sendPin();
+    if (pin === undefined) return;
     const generation = writeGeneration.current;
-    const retake = retakes.current;
-    const superseded = () =>
-      generation !== writeGeneration.current || retake !== retakes.current;
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceConfigVersions(
-        readPinAtSend(sendPin())
-      );
-      if (superseded()) return;
+      const data = await listSessionComplianceConfigVersions(pin);
+      if (generation !== writeGeneration.current) return;
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -228,7 +205,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
-      if (superseded()) return;
+      if (generation !== writeGeneration.current) return;
       setVersions({
         data: null,
         loading: false,
@@ -249,14 +226,6 @@ export function useSessionCompliance() {
   const saveConfig = useCallback(
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
       if (!writeAllowed()) return false;
-      // The draft was seeded from the settings shown. While the re-take's are
-      // still out, those were read before the page knew its project and may
-      // be another project's: nothing is sent until they land and the panel
-      // has re-seeded the draft from them.
-      if (shownConfigRetake.current !== retakes.current) {
-        toast.error(RETAKE_PENDING_REFUSAL);
-        return false;
-      }
       setSaving(true);
       try {
         const updated = await saveSessionComplianceConfig(patch, sendPin());
@@ -286,7 +255,8 @@ export function useSessionCompliance() {
   /* ---- sessions -------------------------------------------------------- */
 
   const loadSessions = useCallback(async () => {
-    const retake = retakes.current;
+    const pin = sendPin();
+    if (pin === undefined) return;
     setSessions((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceSessions(
@@ -295,9 +265,8 @@ export function useSessionCompliance() {
           verdict: verdictFilter !== "all" ? verdictFilter : undefined,
           cursor,
         },
-        readPinAtSend(sendPin())
+        pin
       );
-      if (retake !== retakes.current) return;
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -307,7 +276,6 @@ export function useSessionCompliance() {
       });
       setNextCursor(data.next_cursor ?? null);
     } catch (err) {
-      if (retake !== retakes.current) return;
       setSessions({
         data: null,
         loading: false,
@@ -324,13 +292,11 @@ export function useSessionCompliance() {
   /* ---- outstanding ledger ---------------------------------------------- */
 
   const loadOutstanding = useCallback(async () => {
-    const retake = retakes.current;
+    const pin = sendPin();
+    if (pin === undefined) return;
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceOutstanding(
-        readPinAtSend(sendPin())
-      );
-      if (retake !== retakes.current) return;
+      const data = await listSessionComplianceOutstanding(pin);
       setOutstanding({
         data: data.items ?? [],
         loading: false,
@@ -339,7 +305,6 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
-      if (retake !== retakes.current) return;
       setOutstanding({
         data: null,
         loading: false,
@@ -352,14 +317,14 @@ export function useSessionCompliance() {
     }
   }, [sendPin]);
 
+  // The verdicts are re-read when their filter or page changes. Their first
+  // read is the hook's first read (below), so a commit that changes neither
+  // reads nothing here, StrictMode's second mount included.
+  const sessionsReadWith = useRef(loadSessions);
   useEffect(() => {
-    loadConfig();
-    loadVersions();
-    loadOutstanding();
-  }, [loadConfig, loadVersions, loadOutstanding]);
-
-  useEffect(() => {
-    loadSessions();
+    if (sessionsReadWith.current === loadSessions) return;
+    sessionsReadWith.current = loadSessions;
+    void loadSessions();
   }, [loadSessions]);
 
   /** Reset paging whenever the verdict filter changes. */
@@ -375,10 +340,7 @@ export function useSessionCompliance() {
     loadOutstanding();
   }, [loadConfig, loadVersions, loadSessions, loadOutstanding]);
 
-  useRetakeOnceWhenPinned(sendPin, () => {
-    retakes.current += 1;
-    reloadAll();
-  });
+  const waitingForProject = useFirstPinnedRead(sendPin, reloadAll);
 
   /**
    * True when EVERY compliance route 404s — i.e. the whole feature isn't on
@@ -411,13 +373,9 @@ export function useSessionCompliance() {
     setCursor,
     atFirstPage: cursor === null,
     saveConfig,
-    /**
-     * The re-take the settings shown were read under. When it changes, the
-     * settings were re-read for the page's project: the panel re-seeds its
-     * draft from them, even over unsaved edits.
-     */
-    configRetakeEpoch,
     reloadAll,
     featureUnavailable,
+    /** No project to read in yet: nothing has been read, or is shown as read. */
+    waitingForProject,
   };
 }

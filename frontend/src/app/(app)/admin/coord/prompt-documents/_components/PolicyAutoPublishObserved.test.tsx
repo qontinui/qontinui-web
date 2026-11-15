@@ -27,7 +27,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { sectionRenderer, testPageGuard } from "../__fixtures__/pageWriteGuard";
+import { PINNED_PAGE, sectionRenderer } from "../__fixtures__/pageWriteGuard";
 
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import type { AutoPublishStatusResponse } from "../types";
@@ -62,9 +62,10 @@ import {
 import { usePublishAll } from "../_hooks/usePublishAll";
 import { useRequiredPageWriteGuard } from "../_hooks/usePageWriteGuardContext";
 
-// A section mounted on its own, under a test page guard: the hooks it uses
-// require one. It answers as the page's provider does (`__fixtures__`).
-const renderSection = sectionRenderer(testPageGuard());
+// A section mounted on its own, under the page's guard once its project is
+// known: the hooks it uses require one, and a settings section reads only
+// under the page's pin (`__fixtures__`).
+const renderSection = sectionRenderer(PINNED_PAGE);
 
 /**
  * The dial over one `usePublishAll` read, as the page wires it. The page-level

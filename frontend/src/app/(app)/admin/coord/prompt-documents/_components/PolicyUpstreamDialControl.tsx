@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, CloudDownload } from "lucide-react";
 import { usePolicyUpstreamPolicy } from "../_hooks/usePolicyUpstreamPolicy";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   POLICY_UPSTREAM_CONFIRMED_LEVELS,
   POLICY_UPSTREAM_DEFAULT_LEVEL,
@@ -69,15 +70,16 @@ import {
  * - **A failed read-back is UNKNOWN**, not the level that was written.
  */
 export function PolicyUpstreamDialControl() {
-  // On the prompt-documents page the write, and the read once the page knows
-  // its project, are sent in the page's project (a mount read sent before then
-  // is re-taken in it), and a write raced past another tab's switch is refused
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
   // — by the hook itself, beside its send: the page's disabled fieldset
   // reaches neither a confirmation (it portals out) nor a click that lands
   // before the switch is seen.
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
@@ -139,7 +141,9 @@ export function PolicyUpstreamDialControl() {
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-upstream-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 

@@ -20,10 +20,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import {
-  UNPINNED_WRITES_ALLOWED,
-  withPageGuard,
-} from "../__fixtures__/pageWriteGuard";
+import { PINNED_PAGE, withPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -62,11 +59,9 @@ vi.mock("sonner", () => ({
 
 import { usePolicyWritePolicy } from "./usePolicyWritePolicy";
 
-// The hook on its own, under a test page guard: it requires one. This suite
-// asserts the hook's own writes as it builds them, sent with no pin, so it
-// opts in by name to a guard that allows them; the page's provider never does
-// (`__fixtures__`).
-const SectionGuard = withPageGuard(UNPINNED_WRITES_ALLOWED);
+// The hook on its own, under the page's guard once its project is known: it
+// requires one, and reads only under the page's pin (`__fixtures__`).
+const SectionGuard = withPageGuard(PINNED_PAGE);
 
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {

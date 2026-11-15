@@ -19,6 +19,7 @@ import type {
   KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { usePromptDocumentKindTiers } from "../_hooks/usePromptDocumentKindTiers";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   AGENT_WRITE_TIERS,
   isAgentWriteTier,
@@ -285,14 +286,21 @@ function clearTitle(row: KindTierRow): string {
 }
 
 export function KindAuthorshipTierControl() {
-  // On the prompt-documents page every write here, and every read once the
-  // page knows its project, is sent in the page's project (a mount read sent
-  // before then is re-taken in it), and a write raced past another tab's
-  // switch is refused — by the hook itself, beside its send: the page's
-  // disabled fieldset reaches neither a confirmation (it portals out) nor a
-  // click that lands before the switch is seen.
-  const { data, loading, saving, error, setTier, clearTier } =
-    usePromptDocumentKindTiers();
+  // On the prompt-documents page every read and write here is sent in the
+  // page's project, and nothing is read before the page knows it (the
+  // section says it is waiting). A write raced past another tab's switch is
+  // refused — by the hook itself, beside its send: the page's disabled
+  // fieldset reaches neither a confirmation (it portals out) nor a click that
+  // lands before the switch is seen.
+  const {
+    data,
+    loading,
+    saving,
+    error,
+    waitingForProject,
+    setTier,
+    clearTier,
+  } = usePromptDocumentKindTiers();
   const [pending, setPending] = useState<{
     kind: string;
     tier: AgentWriteTier;
@@ -398,8 +406,11 @@ export function KindAuthorshipTierControl() {
         </div>
       )}
 
-      {loading && !data && (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      {waitingForProject ? (
+        <WaitingForProject testId="kind-tier-waiting" />
+      ) : (
+        loading &&
+        !data && <p className="text-sm text-muted-foreground">Loading…</p>
       )}
 
       {data && (
