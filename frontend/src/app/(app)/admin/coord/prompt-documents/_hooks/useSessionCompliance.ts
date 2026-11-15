@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   fetchSessionComplianceConfig,
@@ -10,7 +10,10 @@ import {
   saveSessionComplianceConfig,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { useSendTimePin } from "../../_shared/useSendTimePin";
+import {
+  useRetakeOnceWhenPinned,
+  useSendTimePin,
+} from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
 import type {
   ComplianceVerdict,
@@ -110,14 +113,20 @@ const EMPTY: Loaded<never> = {
  * store isn't provisioned), `error` (coord unreachable/refusing). None of them
  * is "nothing to show".
  *
- * On the prompt-documents page every read and the save are sent in the page's
- * project, asked as each goes out and kept on every attempt, so a save
- * re-issued after another tab's switch cannot change that tab's enforcement,
- * and no read can show that project's verdicts as this one's; and the save is
- * refused — nothing sent, the page says why — while that switch is in effect.
- * Both come from the page's provider (`usePageSendGuard`), and the refusal
- * sits beside the send, so no caller can leave it out. It is never mounted
- * outside that provider, and throws if it is: there is no unguarded mode.
+ * On the prompt-documents page the save, and every read once the page knows
+ * its project, are sent in the page's project, asked as each goes out and kept
+ * on every attempt, so a save re-issued after another tab's switch cannot
+ * change that tab's enforcement, and no such read can show that project's
+ * verdicts as this one's. The mount reads can go out before the page knows
+ * its project (a first visit, nothing stored), with no pin, in the project
+ * stored as each attempt is made: all four are re-taken, pinned, once the
+ * page has one, and the answers to the reads sent before are then dropped
+ * (`useRetakeOnceWhenPinned`). And the save is refused — nothing sent, the
+ * page says why — while that switch is in effect, or while the page has no
+ * project to pin it to. The pin and the refusal both come from the page's
+ * provider (`usePageSendGuard`), and the refusal sits beside the send, so no
+ * caller can leave it out. It is never mounted outside that provider, and
+ * throws if it is: there is no unguarded mode.
  */
 export function useSessionCompliance() {
   const { writeAllowed, resolvePin } = usePageSendGuard();
@@ -137,13 +146,19 @@ export function useSessionCompliance() {
   );
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // Bumped by the one re-take of unpinned mount reads (below). A read sent
+  // before it is superseded: its answer is dropped, so it can neither show
+  // another project's state nor end the re-take's loading.
+  const retakes = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
   const loadConfig = useCallback(async () => {
+    const retake = retakes.current;
     setConfig((s) => ({ ...s, loading: true }));
     try {
       const data = await fetchSessionComplianceConfig(sendPin());
+      if (retake !== retakes.current) return;
       setConfig({
         data,
         loading: false,
@@ -152,6 +167,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
+      if (retake !== retakes.current) return;
       setConfig({
         data: null,
         loading: false,
@@ -165,9 +181,11 @@ export function useSessionCompliance() {
   }, [sendPin]);
 
   const loadVersions = useCallback(async () => {
+    const retake = retakes.current;
     setVersions((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceConfigVersions(sendPin());
+      if (retake !== retakes.current) return;
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -176,6 +194,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
+      if (retake !== retakes.current) return;
       setVersions({
         data: null,
         loading: false,
@@ -224,6 +243,7 @@ export function useSessionCompliance() {
   /* ---- sessions -------------------------------------------------------- */
 
   const loadSessions = useCallback(async () => {
+    const retake = retakes.current;
     setSessions((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceSessions(
@@ -234,6 +254,7 @@ export function useSessionCompliance() {
         },
         sendPin()
       );
+      if (retake !== retakes.current) return;
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -243,6 +264,7 @@ export function useSessionCompliance() {
       });
       setNextCursor(data.next_cursor ?? null);
     } catch (err) {
+      if (retake !== retakes.current) return;
       setSessions({
         data: null,
         loading: false,
@@ -259,9 +281,11 @@ export function useSessionCompliance() {
   /* ---- outstanding ledger ---------------------------------------------- */
 
   const loadOutstanding = useCallback(async () => {
+    const retake = retakes.current;
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
       const data = await listSessionComplianceOutstanding(sendPin());
+      if (retake !== retakes.current) return;
       setOutstanding({
         data: data.items ?? [],
         loading: false,
@@ -270,6 +294,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
+      if (retake !== retakes.current) return;
       setOutstanding({
         data: null,
         loading: false,
@@ -304,6 +329,11 @@ export function useSessionCompliance() {
     loadSessions();
     loadOutstanding();
   }, [loadConfig, loadVersions, loadSessions, loadOutstanding]);
+
+  useRetakeOnceWhenPinned(sendPin, () => {
+    retakes.current += 1;
+    reloadAll();
+  });
 
   /**
    * True when EVERY compliance route 404s — i.e. the whole feature isn't on

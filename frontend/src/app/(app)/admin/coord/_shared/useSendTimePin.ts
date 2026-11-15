@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ProjectPin } from "@/services/http-client";
 
 /**
@@ -32,10 +32,54 @@ export interface SendTimePinOptions {
  * did — a new resolver on every render cannot re-fire a read, and neither can
  * the pin it resolves changing (plan
  * `2026-11-09-prompt-documents-cross-tab-write-guard` D10). Without a
- * resolver, it resolves `undefined`.
+ * resolver, it resolves `undefined`. A mount read that went out with no pin
+ * is re-taken once a pin appears: {@link useRetakeOnceWhenPinned}.
  */
 export function useSendTimePin(resolvePin: ResolvePin | undefined): ResolvePin {
   const latest = useRef(resolvePin);
   latest.current = resolvePin;
   return useCallback(() => latest.current?.(), []);
+}
+
+/**
+ * Re-takes a hook's reads ONCE, pinned, when its mount reads went out with NO
+ * pin and a pin then appears.
+ *
+ * A page that cannot name its project when it mounts (a first visit, with
+ * nothing stored) sends its mount reads unpinned, and an unpinned request
+ * goes in whatever project is stored when each attempt of it is made: a read
+ * retried after a 503, or replayed after a token refresh, once another tab
+ * has stored a project answers from THAT project. So the first time `sendPin`
+ * names a project, `retake` runs, once. It re-sends the hook's reads, which
+ * now go out pinned, and must drop the answer to any read sent before them,
+ * so a late unpinned answer cannot land over the pinned one. Mount reads that
+ * went out pinned are never re-taken: every attempt of them was held to the
+ * page's project. Nothing else changes (D10): the mount reads still run once,
+ * and no callback changes identity, because the pin is asked after each
+ * commit rather than depended on.
+ *
+ * `sendPin` is the hook's {@link useSendTimePin} resolver. With `optIn` false
+ * this does nothing at all, for a shared hook whose caller pins nothing.
+ */
+export function useRetakeOnceWhenPinned(
+  sendPin: ResolvePin,
+  retake: () => void,
+  optIn = true
+): void {
+  // Unset until the first commit. Then: whether the reads sent at mount went
+  // out with no pin and are still waiting for one.
+  const waiting = useRef<boolean | undefined>(undefined);
+  const latestRetake = useRef(retake);
+  latestRetake.current = retake;
+  useEffect(() => {
+    if (!optIn) return;
+    if (waiting.current === undefined) {
+      // The first commit, beside the mount reads: the pin they went out in.
+      waiting.current = sendPin() === undefined;
+      return;
+    }
+    if (!waiting.current || sendPin() === undefined) return;
+    waiting.current = false;
+    latestRetake.current();
+  });
 }

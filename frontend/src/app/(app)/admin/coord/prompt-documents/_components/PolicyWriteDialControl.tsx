@@ -69,11 +69,12 @@ import {
  *   is broken.
  */
 export function PolicyWriteDialControl() {
-  // On the prompt-documents page the read and the write are sent in the
-  // page's project, and a write raced past another tab's switch is refused —
-  // by the hook itself, beside its send: the page's disabled fieldset reaches
-  // neither a confirmation (it portals out) nor a click that lands before the
-  // switch is seen.
+  // On the prompt-documents page the write, and the read once the page knows
+  // its project, are sent in the page's project (a mount read sent before then
+  // is re-taken in it), and a write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen.
   const {
     policy,
     loading,

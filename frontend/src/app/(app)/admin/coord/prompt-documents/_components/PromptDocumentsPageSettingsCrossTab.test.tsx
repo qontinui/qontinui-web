@@ -23,7 +23,11 @@
  *    dial write. The page pins them to the project its provider pins the
  *    list's rows to, so each is told apart from an unpinned request by where
  *    it went — also when that project becomes known only after the page
- *    mounted, as on a hard load under the layout's tenant provider.
+ *    mounted, as on a hard load under the layout's tenant provider. On a
+ *    first visit, with nothing stored, the sections' mount reads go out
+ *    before there is a project to pin them to: each is re-taken once, pinned,
+ *    when the page's project is known, and the answer to the unpinned one,
+ *    retried after another tab's switch, is not shown.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -108,6 +112,29 @@ function inAnswerTo(
 ) {
   insides.push({ method, match, run, status });
 }
+
+/**
+ * Hold the next request matching in flight, after its header was recorded,
+ * until the returned `release(status)` runs; it is then answered with that
+ * status (a 503, say), or with the route's own answer for a 200.
+ */
+type Held = { method: string; match: RegExp; status: Promise<number> };
+let helds: Held[] = [];
+function holdNext(method: string, match: RegExp): (status: number) => void {
+  let release: (status: number) => void = () => {};
+  const status = new Promise<number>((resolve) => {
+    release = resolve;
+  });
+  helds.push({ method, match, status });
+  return (s) => release(s);
+}
+
+/**
+ * What a GET sent in the OTHER project (`SYS`) is answered with, by route,
+ * where a test needs that project's answer told apart from the page's on the
+ * page. A route not listed answers as it does in the page's project.
+ */
+let otherProjectAnswers: { match: RegExp; body: unknown }[] = [];
 
 function view(domain: string, level: string) {
   return {
@@ -216,6 +243,8 @@ const json = (status: number, body: unknown) =>
 beforeEach(() => {
   sent = [];
   insides = [];
+  helds = [];
+  otherProjectAnswers = [];
   extraKindRows = [];
   listTenantsMock.mockReset();
   token.expiry = Date.now() + 3_600_000;
@@ -231,6 +260,19 @@ beforeEach(() => {
           "X-Qontinui-Active-Tenant"
         ] ?? null;
       sent.push({ method, url, tenant });
+      const held = helds.findIndex(
+        (h) => h.method === method && h.match.test(url)
+      );
+      if (held >= 0) {
+        const [entry] = helds.splice(held, 1);
+        const status = entry ? await entry.status : 200;
+        if (status !== 200) {
+          return json(status, {
+            error: "TRANSIENT",
+            message: `answered ${status}`,
+          });
+        }
+      }
       const inside = insides.findIndex(
         (i) => i.method === method && i.match.test(url)
       );
@@ -244,11 +286,17 @@ beforeEach(() => {
           });
         }
       }
+      const other =
+        method === "GET" && tenant === SYS
+          ? otherProjectAnswers.find((a) => a.match.test(url))
+          : undefined;
       return json(
         200,
-        method === "GET"
-          ? answer(url)
-          : written(url, typeof init?.body === "string" ? init.body : null)
+        other
+          ? other.body
+          : method === "GET"
+            ? answer(url)
+            : written(url, typeof init?.body === "string" ? init.body : null)
       );
     })
   );
@@ -401,6 +449,21 @@ const DIAL_WRITE = /\/fleet-policy$/;
 const KIND_TIERS = /\/prompt-document-kind-tiers$/;
 /** The page's one auto-publish status read. */
 const STATUS = /\/auto-publish\/status$/;
+
+/** Every read the settings sections send on mount, by section. */
+const SETTINGS_READS = [
+  ["kind tiers", KIND_TIERS],
+  ["the policy-write dial", /\/fleet-policy\?domain=policy_write$/],
+  ["the upstream dial", /\/fleet-policy\?domain=policy_upstream$/],
+  ["the auto-publish dial", /\/fleet-policy\?domain=policy_auto_publish$/],
+  ["session compliance's settings", /\/session-compliance\/config$/],
+  [
+    "session compliance's settings history",
+    /\/session-compliance\/config\/versions$/,
+  ],
+  ["session compliance's verdicts", /\/session-compliance\/sessions\?/],
+  ["session compliance's ledger", /\/session-compliance\/outstanding$/],
+] as const;
 
 /**
  * One settings write the page sends, and how to send it: `setup` runs before
@@ -604,19 +667,7 @@ describe("a settings write sent before the switch and re-issued after it lands i
 });
 
 describe("a settings read in flight across the switch stays in the page's project", () => {
-  it.each([
-    ["kind tiers", KIND_TIERS],
-    ["the policy-write dial", /\/fleet-policy\?domain=policy_write$/],
-    ["the upstream dial", /\/fleet-policy\?domain=policy_upstream$/],
-    ["the auto-publish dial", /\/fleet-policy\?domain=policy_auto_publish$/],
-    ["session compliance's settings", /\/session-compliance\/config$/],
-    [
-      "session compliance's settings history",
-      /\/session-compliance\/config\/versions$/,
-    ],
-    ["session compliance's verdicts", /\/session-compliance\/sessions\?/],
-    ["session compliance's ledger", /\/session-compliance\/outstanding$/],
-  ] as const)(
+  it.each(SETTINGS_READS)(
     "%s: answered 503 with the switch inside the answer, retried in the page's project",
     async (_label, route) => {
       inAnswerTo("GET", route, anotherTabStoresSilently, 503);
@@ -695,7 +746,248 @@ describe("the page's auto-publish status read", () => {
   }, 20_000);
 });
 
+/**
+ * A hard load on a first visit: nothing is stored, and the layout's provider
+ * is still reading the membership list when the page mounts, so the page's
+ * project is UNKNOWN at first and its provider pins nothing. The returned
+ * function answers that read; the provider then stores Bravo and the page's
+ * project is Bravo.
+ */
+function firstVisit(): () => void {
+  localStorage.clear();
+  let answerMembership: () => void = () => {};
+  listTenantsMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answerMembership = () =>
+          resolve({
+            tenants: [
+              { id: B, slug: "b", name: "Bravo" },
+              { id: SYS, slug: "s", name: "System" },
+            ],
+            active_tenant_id: B,
+          });
+      })
+  );
+  return () => answerMembership();
+}
+
+function renderUnderTenantProvider() {
+  render(
+    <TenantProvider>
+      <PromptDocumentsPage />
+    </TenantProvider>
+  );
+}
+
+/** A session verdict, a ledger item and a history row only the OTHER project has. */
+const OTHER_SESSION = {
+  id: "sc-other",
+  claude_session_id: "sess-other-project",
+  verdict: "not_applicable",
+  reason: "enforcement_disabled",
+  report: { items: [] },
+  reconciliation: { items: [], unreconciled_refs: [] },
+  checked_at: "2026-11-01T12:00:00Z",
+  finalized: true,
+};
+const OTHER_ITEM = {
+  claude_session_id: "sess-other-project",
+  checked_at: "2026-11-01T12:00:00Z",
+  ref: "the other project's follow-up",
+  state: "deferred",
+  reason: "out of scope",
+};
+const OTHER_VERSION = {
+  version_number: 42,
+  enabled: true,
+  mode: "nudge",
+  enforced_clause_ref: "policy/planning-and-scope#finish-to-zero",
+  max_attempts: 9,
+  edited_by: "other-project-editor@example.com",
+  created_at: "2026-11-01T12:00:00Z",
+};
+
+/**
+ * One settings read whose answer the page shows: what the OTHER project
+ * answers it with, and a check that passes only while the page shows its
+ * own project's answer, not that one. `open` runs once the page has
+ * answered, before the switch, where the answer is shown only on request.
+ */
+type ShownRead = {
+  label: string;
+  route: RegExp;
+  other: unknown;
+  open?: () => Promise<void>;
+  showsOwn: () => void;
+};
+
+const SHOWN_READS: ShownRead[] = [
+  {
+    label: "kind tiers",
+    route: KIND_TIERS,
+    other: {
+      ...(answer("/prompt-document-kind-tiers") as Record<string, unknown>),
+      kinds: [
+        ...(answer("/prompt-document-kind-tiers") as { kinds: unknown[] })
+          .kinds,
+        {
+          kind: "initiative",
+          tier: "allow",
+          unreadable: false,
+          builtin_default_tier: "allow_with_notification",
+          effective_tier: "allow",
+          effective_source: "tenant",
+        },
+      ],
+    },
+    showsOwn: () => {
+      expect(
+        screen.getByTestId("kind-tier-row-audience_profile")
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("kind-tier-row-initiative")
+      ).not.toBeInTheDocument();
+    },
+  },
+  {
+    label: "the policy-write dial",
+    route: /\/fleet-policy\?domain=policy_write$/,
+    other: view("policy_write", "full"),
+    showsOwn: () =>
+      expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+        /In force:\s*tightening_only/
+      ),
+  },
+  {
+    label: "the auto-publish dial",
+    route: /\/fleet-policy\?domain=policy_auto_publish$/,
+    other: view("policy_auto_publish", "on"),
+    showsOwn: () =>
+      expect(
+        screen.getByTestId("policy-auto-publish-in-force")
+      ).toHaveTextContent(/In force:\s*off/),
+  },
+  {
+    label: "session compliance's settings",
+    route: /\/session-compliance\/config$/,
+    other: { ...COMPLIANCE_CONFIG, max_attempts: 5 },
+    showsOwn: () =>
+      expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(1),
+  },
+  {
+    label: "session compliance's settings history",
+    route: /\/session-compliance\/config\/versions$/,
+    other: { versions: [OTHER_VERSION] },
+    open: () =>
+      user().click(screen.getByTestId("compliance-config-history-toggle")),
+    showsOwn: () =>
+      expect(
+        screen.getByTestId("compliance-config-history")
+      ).not.toHaveTextContent("other-project-editor"),
+  },
+  {
+    label: "session compliance's verdicts",
+    route: /\/session-compliance\/sessions\?/,
+    other: { sessions: [OTHER_SESSION] },
+    showsOwn: () => {
+      expect(screen.getByTestId("compliance-sessions")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("compliance-session-sess-other-project")
+      ).not.toBeInTheDocument();
+    },
+  },
+  {
+    label: "session compliance's ledger",
+    route: /\/session-compliance\/outstanding$/,
+    other: { items: [OTHER_ITEM] },
+    showsOwn: () => {
+      expect(screen.getByTestId("outstanding-ledger")).toBeInTheDocument();
+      expect(
+        screen.queryByText("the other project's follow-up")
+      ).not.toBeInTheDocument();
+    },
+  },
+];
+
 describe("the page's project known only after the page mounted", () => {
+  it("every settings read sent before the page had a project is re-taken once, pinned to it", async () => {
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    // Every section has sent its mount reads, with no project to pin them to.
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route)).toHaveLength(1);
+        }
+      },
+      { timeout: 5000 }
+    );
+    await settle();
+
+    await act(async () => answerMembership());
+
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route)).toHaveLength(2);
+        }
+      },
+      { timeout: 5000 }
+    );
+    await settle();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    // Once each, and pinned to the project the page now shows.
+    expect(
+      SETTINGS_READS.map(([label, route]) => [
+        label,
+        sentSince(0, "GET", route).map((s) => s.tenant),
+      ])
+    ).toEqual(SETTINGS_READS.map(([label]) => [label, [null, B]]));
+  }, 20_000);
+
+  it.each(SHOWN_READS.map((read) => [read.label, read] as const))(
+    "%s: the read sent before the page had a project, retried after another tab's switch, does not land over its re-take",
+    async (_label, read) => {
+      otherProjectAnswers = [{ match: read.route, body: read.other }];
+      const answerMembership = firstVisit();
+      const releaseMountRead = holdNext("GET", read.route);
+      renderUnderTenantProvider();
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(1),
+        { timeout: 5000 }
+      );
+
+      // The page learns its project, and the read is re-taken in it and
+      // answered, while the mount read is still in flight.
+      await act(async () => answerMembership());
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(2),
+        { timeout: 5000 }
+      );
+      await settle();
+      await read.open?.();
+
+      // Another tab stores its project. The mount read is answered 503, so
+      // the client retries it at once, unpinned: in the project stored now.
+      anotherTabStoresSilently();
+      await act(async () => releaseMountRead(503));
+      await waitFor(
+        () => expect(sentSince(0, "GET", read.route)).toHaveLength(3),
+        { timeout: 5000 }
+      );
+      await settle();
+
+      expect(sentSince(0, "GET", read.route).map((s) => s.tenant)).toEqual([
+        null,
+        B,
+        SYS,
+      ]);
+      read.showsOwn();
+    },
+    20_000
+  );
+
   it("a settings write sent once the provider has answered lands in the page's project", async () => {
     // A hard load: the layout's provider is still reading the membership list
     // when the page mounts, so the page's project is UNKNOWN at first and the

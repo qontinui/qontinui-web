@@ -18,10 +18,11 @@ import { SessionComplianceSessions } from "./SessionComplianceSessions";
  * the text it enforces is how the two drift apart.
  */
 export function SessionComplianceSection() {
-  // On the prompt-documents page every read and the save are sent in the
-  // page's project, and a save raced past another tab's switch is refused —
-  // by the hook itself, beside its send: the page's disabled fieldset does not
-  // reach a click that lands before the switch is seen.
+  // On the prompt-documents page the save, and every read once the page
+  // knows its project, are sent in the page's project (mount reads sent before
+  // then are re-taken in it), and a save raced past another tab's switch is
+  // refused — by the hook itself, beside its send: the page's disabled
+  // fieldset does not reach a click that lands before the switch is seen.
   const {
     config,
     versions,

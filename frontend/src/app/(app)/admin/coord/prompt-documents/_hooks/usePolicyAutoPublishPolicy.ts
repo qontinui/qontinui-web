@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   fetchFleetPolicy,
@@ -8,7 +8,10 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
-import { useSendTimePin } from "../../_shared/useSendTimePin";
+import {
+  useRetakeOnceWhenPinned,
+  useSendTimePin,
+} from "../../_shared/useSendTimePin";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
 import {
   isPolicyAutoPublishLevel,
@@ -67,11 +70,16 @@ function message(err: unknown, fallback: string): string {
  * presses.
  *
  * **Which project it reads and writes, and when it writes nothing.** On the
- * prompt-documents page the read and the write are sent in the page's
- * project, asked as each goes out and kept on every attempt, so a write
- * re-issued after another tab's switch cannot land in that tab's project; and
- * a write is refused — nothing sent, the page says why — while that switch is
- * in effect. Both come from the page's provider (`usePageSendGuard`), and the
+ * prompt-documents page the write, and the read once the page knows its
+ * project, are sent in the page's project, asked as each goes out and kept on
+ * every attempt, so a write re-issued after another tab's switch cannot land
+ * in that tab's project. A read sent before the page knows its project (a
+ * first visit, nothing stored) has no pin, so it goes in the project stored
+ * as each attempt is made: it is re-taken, pinned, once the page has one, and
+ * its own answer is then dropped (`useRetakeOnceWhenPinned`). A write is
+ * refused — nothing sent, the page says why — while another tab's switch is
+ * in effect, or while the page has no project to pin it to. The pin and the
+ * refusal both come from the page's provider (`usePageSendGuard`), and the
  * refusal sits beside the send, so no caller can leave it out. It is never
  * mounted outside that provider, and throws if it is: there is no unguarded
  * mode.
@@ -87,8 +95,13 @@ export function usePolicyAutoPublishPolicy() {
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
     null
   );
+  // Bumped by the one re-take of an unpinned mount read (below). A read sent
+  // before it is superseded: its answer is dropped, and `loading` is left to
+  // the re-take.
+  const retakes = useRef(0);
 
   const load = useCallback(async () => {
+    const retake = retakes.current;
     try {
       setLoading(true);
       const view = await fetchFleetPolicy(
@@ -96,6 +109,7 @@ export function usePolicyAutoPublishPolicy() {
         undefined,
         sendPin()
       );
+      if (retake !== retakes.current) return;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
@@ -103,17 +117,23 @@ export function usePolicyAutoPublishPolicy() {
       // value we just confirmed would be the opposite of honest.
       setLastWrite(null);
     } catch (err) {
+      if (retake !== retakes.current) return;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, "Failed to read the automatic-publishing dial"));
     } finally {
-      setLoading(false);
+      if (retake === retakes.current) setLoading(false);
     }
   }, [sendPin]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useRetakeOnceWhenPinned(sendPin, () => {
+    retakes.current += 1;
+    void load();
+  });
 
   /**
    * Write `level` at the tenant band.

@@ -46,9 +46,12 @@ import {
  * that.
  *
  * **Which project, and when nothing is written.** On the prompt-documents
- * page the read and the write are sent in the page's project, asked as each
- * goes out, and a write is refused — nothing sent, the page says why — while
- * another tab's project switch is in effect. Both come from the page's
+ * page the write, and the read once the page knows its project, are sent in
+ * the page's project, asked as each goes out. A mount read sent before then
+ * (a first visit, nothing stored) has no pin, so the shared dial re-takes it,
+ * pinned, once the page has one. A write is refused — nothing sent, the page
+ * says why — while another tab's project switch is in effect, or while the
+ * page has no project to pin it to. Both come from the page's
  * provider (`usePageSendGuard`), and the refusal sits here, beside the send,
  * so no caller can leave it out. It is never mounted outside that provider,
  * and throws if it is: there is no unguarded mode.

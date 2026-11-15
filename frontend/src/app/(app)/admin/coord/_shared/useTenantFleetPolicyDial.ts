@@ -8,7 +8,11 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
-import { useSendTimePin, type SendTimePinOptions } from "./useSendTimePin";
+import {
+  useRetakeOnceWhenPinned,
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "./useSendTimePin";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -71,8 +75,12 @@ function capitalise(s: string): string {
  * `resolvePin`, the read and the write are each sent in the project it names
  * when the request goes out, on every attempt — so a write re-issued after a
  * 429, or replayed after a token refresh, once another tab has switched
- * project still lands in the project the page shows. Omitted, every request is
- * sent exactly as before: in the project stored when it is made.
+ * project still lands in the project the page shows. While it names none (a
+ * first visit, before the page's project is known), a request goes in the
+ * project stored when each attempt is made; a mount read sent that way is
+ * re-taken, pinned, once it names one, and its own answer is then dropped
+ * (`useRetakeOnceWhenPinned`). Omitted, every request is sent exactly as
+ * before: in the project stored when it is made, and nothing is re-taken.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -110,19 +118,26 @@ export function useTenantFleetPolicyDial<L extends string>(
   // rejected write changes nothing, so it does not bump — otherwise a Refresh
   // in flight beside it would be silently discarded.
   const writeGeneration = useRef(0);
+  // Bumped by the one re-take of an unpinned mount read (`resolvePin` callers
+  // only, below). A read sent before it is superseded: its answer is dropped,
+  // and `loading` is left to the re-take.
+  const retakes = useRef(0);
 
   /**
    * Read the resolved value. Resolves `true` only when THIS read landed and is
-   * now what is shown — `false` when it failed, or when a write landed while it
-   * was in flight and it was discarded — so a caller can tell a confirmed read
-   * from a refresh that confirmed nothing.
+   * now what is shown — `false` when it failed, or when a write landed (or
+   * the re-take was sent) while it was in flight and it was discarded — so a
+   * caller can tell a confirmed read from a refresh that confirmed nothing.
    */
   const load = useCallback(async (): Promise<boolean> => {
     const generation = writeGeneration.current;
+    const retake = retakes.current;
+    const superseded = () =>
+      generation !== writeGeneration.current || retake !== retakes.current;
     try {
       setLoading(true);
       const view = await fetchFleetPolicy(domain, undefined, sendPin());
-      if (generation !== writeGeneration.current) return false;
+      if (superseded()) return false;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
@@ -131,19 +146,30 @@ export function useTenantFleetPolicyDial<L extends string>(
       setLastWrite(null);
       return true;
     } catch (err) {
-      if (generation !== writeGeneration.current) return false;
+      if (superseded()) return false;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
       return false;
     } finally {
-      setLoading(false);
+      if (retake === retakes.current) setLoading(false);
     }
   }, [domain, label, sendPin]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Opt-in: a caller that passes no `resolvePin` pins nothing, so it has
+  // nothing to re-take, and sends exactly what it always did.
+  useRetakeOnceWhenPinned(
+    sendPin,
+    () => {
+      retakes.current += 1;
+      void load();
+    },
+    resolvePin !== undefined
+  );
 
   /**
    * A write to this domain LANDED outside this hook — a repo-band write whose
