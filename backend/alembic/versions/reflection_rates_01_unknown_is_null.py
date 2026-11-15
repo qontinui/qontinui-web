@@ -17,10 +17,10 @@ Two ``project`` columns were created unable to say "not measured":
   ``server_default`` of ``1.0`` by
   ``consolidation_phase1_18_architecture_components``. The default asserts a
   health nobody measured, so it is dropped as well. The index
-  ``idx_arch_comp_health`` stays; a btree indexes NULLs.
+  ``idx_arch_comp_health`` stays; a btree index over a nullable column is valid.
 
 ``project.component_health_snapshots.health_score`` is deliberately untouched:
-the runner writes a snapshot only for a component whose health is known.
+no runner writer exists yet; the writer the plan adds (decision D5) will write only for a component whose health is known.
 
 The runner carries a matching idempotent boot self-heal in ``PgDb::new``
 (``qontinui-runner`` ``src-tauri/src/database/pg/mod.rs``) for runner
