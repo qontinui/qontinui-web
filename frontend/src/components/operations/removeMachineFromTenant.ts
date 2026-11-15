@@ -217,9 +217,9 @@ export type UnbindRowOutcome =
    */
   | "request_rejected"
   /**
-   * A retry found the binding absent after an earlier attempt that may have
-   * removed it (its answer was lost or unreported): the earlier attempt
-   * removed it. Counted as removed.
+   * A retry found the binding absent after an earlier attempt whose answer
+   * was lost or unreported. Probably that attempt removed it, but nothing
+   * confirmed it, so it has its own clause and is not counted as removed.
    */
   | "removed_earlier"
   /**
@@ -481,8 +481,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
   const unreadableCount = rows.filter(
     (r) => r.outcome === "unreported" && r.unreadable === true
   ).length;
-  const bindingsRemoved =
-    removed + stillListed + pointerUnknown + removedEarlier;
+  const bindingsRemoved = removed + stillListed + pointerUnknown;
 
   const n = rows.length;
   const its = (k: number) => plural(k, "its", "their");
@@ -508,7 +507,7 @@ export function summarizeRows(rows: UnbindRowResult[]): UnbindSummary {
     );
   if (removedEarlier > 0)
     parts.push(
-      `${removedEarlier} removed by the earlier attempt (confirmed absent now)`
+      `${removedEarlier} absent now (the earlier attempt's answer was lost)`
     );
   if (alreadyAbsent > 0) parts.push(`${alreadyAbsent} already absent`);
   if (failed > 0) parts.push(`${failed} failed`);
@@ -618,6 +617,9 @@ export interface UnbindRefusal {
   authFrame?: { lead: string; tail: string };
 }
 
+export const STILL_LISTED_HOME_TENANT_TEXT =
+  "No binding to remove; still listed through its home tenant, which only its owner can change on /runners.";
+
 export const MAY_HAVE_APPLIED_TEXT =
   "Some bindings may have been removed — the list re-reads to show what coord now holds.";
 
@@ -654,12 +656,29 @@ export function authWhatClause(partial: UnbindSummary | null): string {
 export function mergeRefusalOver(
   requested: readonly string[],
   base: UnbindSummary,
-  refusal: UnbindRefusal
+  refusal: UnbindRefusal,
+  /** The ids this attempt sent: unreported when it came back with no rows. */
+  attemptIds: readonly string[] = []
 ): UnbindRefusal {
   const partial =
     refusal.partial !== null
       ? combineSummaries(requested, base, refusal.partial)
-      : base;
+      : refusal.mayHaveApplied && attemptIds.length > 0
+        ? // A rowless answer that may have acted: this attempt's ids are
+          // unknown now, the rest keep what the earlier attempts said.
+          combineSummaries(
+            requested,
+            base,
+            summarizeRows(
+              attemptIds.map((deviceId) => ({
+                deviceId,
+                outcome: "unreported",
+                status: null,
+                error: null,
+              }))
+            )
+          )
+        : base;
   if (!refusal.auth || refusal.authFrame === undefined) {
     return { ...refusal, partial };
   }
