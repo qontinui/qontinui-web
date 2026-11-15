@@ -21,7 +21,7 @@
  * every control here is a write and coord's descriptions are its own words.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { CheckCircle2, Cpu, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,11 +87,14 @@ function SettingRow({
   write: LaunchWriteState | undefined;
   onSave: (draft: Draft) => void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const shown: Draft = draft ?? { model: row.model, effort: row.effort };
-  const dirty =
-    draft !== null &&
-    (draft.model !== row.model || draft.effort !== row.effort);
+  // Per field: `undefined` follows coord's row, so a refresh that changes the
+  // field the operator did not touch shows (and saves) coord's newer value.
+  const [draft, setDraft] = useState<Partial<Draft>>({});
+  const shown: Draft = {
+    model: draft.model !== undefined ? draft.model : row.model,
+    effort: draft.effort !== undefined ? draft.effort : row.effort,
+  };
+  const dirty = shown.model !== row.model || shown.effort !== row.effort;
   const saving = write?.phase === "saving";
   const unknown = write?.phase === "unknown" ? write.reason : null;
   const id = row.spawn_type;
@@ -100,9 +103,10 @@ function SettingRow({
 
   // Once a save settles — read back, refused or unconfirmed — the row shows
   // coord's value again, never the request.
+  // A layout effect, so the request is never painted over the read-back.
   const wasSaving = useRef(false);
-  useEffect(() => {
-    if (wasSaving.current && phase !== "saving") setDraft(null);
+  useLayoutEffect(() => {
+    if (wasSaving.current && phase !== "saving") setDraft({});
     wasSaving.current = phase === "saving";
   }, [phase]);
 
@@ -137,13 +141,13 @@ function SettingRow({
             value={shown.model ?? INHERIT}
             disabled={!canEdit || saving}
             onChange={(e) =>
-              setDraft({
-                ...shown,
+              setDraft((d) => ({
+                ...d,
                 model:
                   e.target.value === INHERIT
                     ? null
                     : (e.target.value as ModelFamily),
-              })
+              }))
             }
             data-testid="spawn-launch-model"
           >
@@ -172,13 +176,13 @@ function SettingRow({
             value={shown.effort ?? INHERIT}
             disabled={!canEdit || saving}
             onChange={(e) =>
-              setDraft({
-                ...shown,
+              setDraft((d) => ({
+                ...d,
                 effort:
                   e.target.value === INHERIT
                     ? null
                     : (e.target.value as EffortLevel),
-              })
+              }))
             }
             data-testid="spawn-launch-effort"
           >
