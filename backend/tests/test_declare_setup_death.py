@@ -1594,19 +1594,44 @@ def test_each_carriers_own_env_declares_its_first_setup_death(
 # checkout: run from `${{ runner.temp }}`, or set PYTHONSAFEPATH, which every
 # child inherits. (`python -P -m venv` needs no more: venv starts its
 # ensurepip child in the new venv's own directory.)
+#
+# No SETUP step uses `poetry run` at all now: it runs a `[tool.poetry.scripts]`
+# entry of the PR's pyproject.toml in place of an installed command of the
+# same name, so the PR's own file could kill the step. A step that needs the
+# job venv's Python starts it by path, `"$(poetry env info --executable)"`,
+# which the detector reads as a `python` start with its own options.
 
-#: Every carrier SETUP step whose `run:` starts a Python, in step order: the
-#: census the sys.path test judges, pinned so that a detector which finds
-#: nothing fails here instead of passing everything.
-SETUP_PYTHON_STEPS: dict[tuple[str, str], list[str]] = {
-    ("backend-ci.yml", "lint"): ["Install Poetry"],
-    ("backend-ci.yml", "test"): ["Install Poetry"],
-    ("backend-ci.yml", "security-scan"): ["Install Poetry", "Install safety"],
-    ("memory-recall-eval.yml", "recall-eval"): ["Install Poetry"],
-    ("e2e-tests.yml", "backend-tests"): ["Create a job venv"],
+#: One Python start in the census: ``(how, options as sorted letters, program)``.
+_Start = tuple[str, str, str | None]
+
+#: Every carrier SETUP step whose `run:` starts a Python, in step order, with
+#: every start it makes: the census the sys.path test judges. Pinned so that a
+#: detector which finds nothing fails here instead of passing everything, and
+#: so that a step changing HOW it starts Python (back to `poetry run`, or
+#: without its -P) is a reviewed edit to this table.
+SETUP_PYTHON_STEPS: dict[tuple[str, str], list[tuple[str, list[_Start]]]] = {
+    ("backend-ci.yml", "lint"): [("Install Poetry", [("python", "P", "-")])],
+    ("backend-ci.yml", "test"): [("Install Poetry", [("python", "P", "-")])],
+    ("backend-ci.yml", "security-scan"): [
+        ("Install Poetry", [("python", "P", "-")]),
+        # The venv's interpreter by path, with -P: never `poetry run pip`.
+        ("Install safety", [("python", "P", "-m")]),
+    ],
+    ("memory-recall-eval.yml", "recall-eval"): [
+        ("Install Poetry", [("python", "P", "-")])
+    ],
+    ("e2e-tests.yml", "backend-tests"): [
+        ("Create a job venv", [("python", "P", "-m")])
+    ],
 }
 
 _PYTHON_WORD = re.compile(r"python(?:3(?:\.\d+)?)?")
+#: The job venv's interpreter, named by poetry, as ONE quoted shell word: a
+#: Python a step starts by path. Unquoted, the shell splits the substitution
+#: and so does the detector, which then finds no start (the census catches it).
+_POETRY_ENV_PYTHON = frozenset(
+    {"$(poetry env info --executable)", "$(poetry env info -e)"}
+)
 _SHELL_OPERATORS = frozenset({"|", "||", "|&", "&", "&&", ";", ";;", "(", ")"})
 _RUNNER_TEMP = re.compile(r"\$\{\{\s*runner\.temp\s*\}\}(?:/.*)?")
 
@@ -1662,15 +1687,18 @@ def _interpreter_options(args: list[str]) -> tuple[frozenset[str], str | None]:
 def _python_starts(run: str) -> list[tuple[str, frozenset[str], str | None]]:
     """Every Python ``run`` starts: ``(how, options, program)``.
 
-    ``how`` is ``python`` (a ``python``, ``python3`` or ``python3.N`` word, or
-    a path ending in one) or ``poetry run``.
+    ``how`` is ``python`` (a ``python``, ``python3`` or ``python3.N`` word, a
+    path ending in one, or the job venv's interpreter poetry names,
+    ``_POETRY_ENV_PYTHON``) or ``poetry run``.
     """
     starts: list[tuple[str, frozenset[str], str | None]] = []
     for tokens in _shell_commands(run):
         for index, token in enumerate(tokens):
             if token == "poetry" and tokens[index + 1 : index + 2] == ["run"]:
                 starts.append(("poetry run", frozenset(), None))
-            elif _PYTHON_WORD.fullmatch(token.rsplit("/", 1)[-1]):
+            elif token in _POETRY_ENV_PYTHON or _PYTHON_WORD.fullmatch(
+                token.rsplit("/", 1)[-1]
+            ):
                 starts.append(("python", *_interpreter_options(tokens[index + 1 :])))
     return starts
 
@@ -1746,6 +1774,14 @@ def _sets_pythonsafepath(doc: dict, job: dict, step: dict) -> bool:
         ("python3 scripts/ci/x.py --flag", [("python", frozenset(), "script")]),
         ('"$RUNNER_TEMP/v/bin/python3.12" -m pip', [("python", frozenset(), "-m")]),
         ("poetry run pip install safety", [("poetry run", frozenset(), None)]),
+        (
+            '"$(poetry env info --executable)" -P -m pip install safety',
+            [("python", frozenset("P"), "-m")],
+        ),
+        ('"$(poetry env info -e)" -m pip', [("python", frozenset(), "-m")]),
+        # Unquoted, the substitution is split: no start found (and the census,
+        # which pins every start, fails on the step that lost it).
+        ("$(poetry env info --executable) -P -m pip install safety", []),
         ("# python3 -m venv, a comment line\necho done", []),
         ("echo setup-python  # python3 -m venv, a trailing comment", []),
         ("poetry install --no-root && pip install x", []),
@@ -1757,15 +1793,18 @@ def test_the_python_start_detector(run, expected):
 
 
 def test_the_setup_python_census_is_the_literal_table():
-    found: dict[tuple[str, str], list[str]] = {}
+    found: dict[tuple[str, str], list[tuple[str, list[_Start]]]] = {}
     for workflow, job_id in CARRIERS:
-        names = [
-            str(step.get("name"))
-            for step in _setup_steps(_job(workflow, job_id))
-            if _python_starts(str(step.get("run") or ""))
-        ]
-        if names:
-            found[(workflow, job_id)] = names
+        steps = []
+        for step in _setup_steps(_job(workflow, job_id)):
+            starts = [
+                (how, "".join(sorted(flags)), program)
+                for how, flags, program in _python_starts(str(step.get("run") or ""))
+            ]
+            if starts:
+                steps.append((str(step.get("name")), starts))
+        if steps:
+            found[(workflow, job_id)] = steps
     assert found == SETUP_PYTHON_STEPS
 
 
