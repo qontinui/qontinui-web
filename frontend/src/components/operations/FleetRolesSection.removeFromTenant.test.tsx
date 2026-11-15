@@ -60,6 +60,7 @@ import {
   LAST_CI_HOST_TEXT,
   MAYBE_LAST_CI_HOST_TEXT,
   MAY_HAVE_APPLIED_TEXT,
+  STILL_LISTED_HOME_TENANT_TEXT as STILL_LISTED_NOTE,
   LIVENESS_UNKNOWN_TEXT,
   LISTING_NOT_SERVED,
   STILL_LISTED_TEXT,
@@ -739,7 +740,8 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "1 of 1 binding removed; 1 may still be listed through its home tenant (coord did not report)."
+        // The re-read still lists it: the note follows, naming no cause.
+        `1 of 1 binding removed; 1 may still be listed through its home tenant (coord did not report). ${STILL_LISTED_NOTE}`
       )
     );
     expect(toastMock.success).not.toHaveBeenCalled();
@@ -762,14 +764,14 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "Nothing to remove; 1 already absent. No binding to remove; still listed through its home tenant, which only its owner can change on /runners."
+        `Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
       )
     );
     expect(posts).toEqual([[DEV_A], [DEV_A]]);
     // Nothing removed, yet the re-read still lists it: a warning, naming the
     // home tenant — never a calm info.
     expect(toastMock.warning).toHaveBeenCalledWith(
-      `${HOST_A}: Nothing to remove; 1 already absent. No binding to remove; still listed through its home tenant, which only its owner can change on /runners.`
+      `${HOST_A}: Nothing to remove; 1 already absent. ${STILL_LISTED_NOTE}`
     );
     expect(toastMock.info).not.toHaveBeenCalled();
     expect(toastMock.success).toHaveBeenCalledTimes(1);
@@ -1160,11 +1162,14 @@ describe("the answer", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
     );
-    expect(toastMock.success).toHaveBeenCalledWith(
-      `${CI_HOST_LABEL}: 1 of 2 bindings removed; 1 already absent.`
+    // Still listed after the re-read, with an already-absent row: the note
+    // and a warning, not a success.
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      `${CI_HOST_LABEL}: 1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`
     );
+    expect(toastMock.success).not.toHaveBeenCalled();
     expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      "1 of 2 bindings removed; 1 already absent."
+      `1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`
     );
   });
 
@@ -1679,6 +1684,56 @@ describe("the answer", () => {
     );
     expect(confirmButton().textContent).toBe(
       "Retry the 1 device row not confirmed removed"
+    );
+  });
+
+  it("a mixed removed and already-absent answer on a still-listed machine gets the note and a warning", async () => {
+    postAnswers = [answer([unbound(DEV_CI), absent(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    const sentence = `1 of 2 bindings removed; 1 already absent. ${STILL_LISTED_NOTE}`;
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      sentence
+    );
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      `${CI_HOST_LABEL}: ${sentence}`
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("a 422 retry over an earlier lost answer keeps 'may have been removed'", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: { error: "coord_answer_lost", detail: "timed out" },
+          still_member_via_pointer: null,
+        },
+      ]),
+      json(422, { detail: "device_ids must be unique" }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(2));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    const result = screen.getByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-may-have-applied")
+        .textContent
+    ).toBe(MAY_HAVE_APPLIED_TEXT);
+    expect(result.textContent).toContain(
+      "1 of 2 bindings confirmed removed; 1 may have been removed (coord's answer was lost; reload to check)."
     );
   });
 });

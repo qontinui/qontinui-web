@@ -233,16 +233,17 @@ export function useRemoveMachineFromTenant(
     const outcome: UnbindOutcome = await unbind(ids);
     if (outcome.state === "in_flight") return;
     const settle = (s: UnbindSummary, summarySentence: string) => {
-      // Nothing removed, nothing uncertain — yet the re-read still lists the
-      // machine: it is listed through its home tenant, which this removal
-      // cannot change.
+      // The re-read still lists the machine while some row says there was no
+      // binding (already absent) or did not say whether the home tenant keeps
+      // it listed: say so, without asserting a cause coord did not report.
       const read = readNow();
       const stillListedAfter =
         read !== null &&
         read.state === "known" &&
         read.machines.some((x) => x.key === m.key);
       const nothingRemoved = s.bindingsRemoved === 0 && s.removedEarlier === 0;
-      const homeTenant = nothingRemoved && stillListedAfter;
+      const homeTenant =
+        stillListedAfter && s.alreadyAbsent + s.pointerUnknown > 0;
       const sentence = homeTenant
         ? `${summarySentence} ${STILL_LISTED_HOME_TENANT_TEXT}`
         : summarySentence;
