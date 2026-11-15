@@ -1,7 +1,7 @@
 """coord.git_write_ledger: gate_id + evidence columns, admit initiator 'branch_reap'
 
 Revision ID: coord_reap_ledger_01_gate_evidence_branch_reap
-Revises: cireserve_01_devices_ci_reserved_gib
+Revises: overview_06_cost_category_parent
 Create Date: 2026-11-15
 
 Phase 1 (web DDL) of plan
@@ -29,7 +29,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_reap_ledger_01_gate_evidence_branch_reap"
-down_revision: str | Sequence[str] | None = "cireserve_01_devices_ci_reserved_gib"
+down_revision: str | Sequence[str] | None = "overview_06_cost_category_parent"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
