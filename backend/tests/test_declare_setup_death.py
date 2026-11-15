@@ -132,8 +132,9 @@ VERDICT_NOT_RUN = (
 POETRY_DIED_MESSAGE = (
     "step 'Install Poetry' failed, and no scan/test step in this job concluded "
     "failure (passed: none; did not run: Run ruff (linting), Run ruff format "
-    "(formatting), Run mypy (type checking)). Re-run the job. Failed setup "
-    "step(s): Install Poetry."
+    "(formatting), Run mypy (type checking)). Re-run the job once; if the same "
+    "setup step fails again, the setup itself is broken and needs a fix. Failed "
+    "setup step(s): Install Poetry."
 )
 
 
@@ -329,8 +330,9 @@ def test_two_failed_setup_rows_name_the_first_in_row_order(clean_pr):
             "qontinui-cloud-control)' failed, and no scan/test step in this job "
             "concluded failure (passed: none; did not run: Run ruff (linting), "
             "Run ruff format (formatting), Run mypy (type checking)). Re-run the "
-            "job. Failed setup step(s): Checkout sibling repos (qontinui-schemas, "
-            "qontinui, qontinui-cloud-control), Install Poetry.",
+            "job once; if the same setup step fails again, the setup itself is "
+            "broken and needs a fix. Failed setup step(s): Checkout sibling repos "
+            "(qontinui-schemas, qontinui, qontinui-cloud-control), Install Poetry.",
         )
     ], _defang(out)
 
@@ -355,8 +357,9 @@ def test_a_verdict_step_that_passed_before_the_setup_death_is_listed(clean_pr):
             "Security Scanning SETUP FAILED (not a verdict on this PR)",
             "step 'Install safety' failed, and no scan/test step in this job "
             "concluded failure (passed: Run Trivy vulnerability scanner; did not "
-            "run: Run safety check (dependency vulnerabilities)). Re-run the job. "
-            "Failed setup step(s): Install safety.",
+            "run: Run safety check (dependency vulnerabilities)). Re-run the job "
+            "once; if the same setup step fails again, the setup itself is broken "
+            "and needs a fix. Failed setup step(s): Install safety.",
         )
     ], _defang(out)
 
@@ -380,8 +383,10 @@ def test_a_marked_verdict_failure_after_a_setup_death_is_its_cascade(clean_pr):
             "step 'Install Playwright Chromium system deps (apt)' failed, and no "
             "scan/test step in this job concluded failure before it; step(s) 'Run "
             "vision-audit (analyze + assert) per route + summarize' failed after "
-            "it, as its cascade (passed: none; did not run: none). Re-run the job. "
-            "Failed setup step(s): Install Playwright Chromium system deps (apt).",
+            "it, as its cascade (passed: none; did not run: none). Re-run the job "
+            "once; if the same setup step fails again, the setup itself is broken "
+            "and needs a fix. Failed setup step(s): Install Playwright Chromium "
+            "system deps (apt).",
         )
     ], _defang(out)
 
