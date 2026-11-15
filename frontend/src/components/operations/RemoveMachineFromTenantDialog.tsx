@@ -88,7 +88,8 @@ function refusalSentence(r: UnbindRefusal): string {
   return [
     r.reading.sentence,
     r.partial?.sentence ?? null,
-    r.mayHaveApplied ? MAY_HAVE_APPLIED_TEXT : null,
+    // An auth abort's own sentence already says what may have happened.
+    r.mayHaveApplied && !r.auth ? MAY_HAVE_APPLIED_TEXT : null,
   ]
     .filter((x): x is string => x !== null && x !== "")
     .join(" ");
@@ -142,7 +143,20 @@ export function useRemoveMachineFromTenant(
   const { status, busy, unbind, reset } = useUnbindFleetDevices(refresh);
   const [target, setTarget] = useState<RemovalTarget | null>(null);
   const [open, setOpenState] = useState(false);
-  const [retryIds, setRetryIds] = useState<string[] | null>(null);
+  // Keyed to the machine they came from, so a retry can never send another
+  // machine's ids after the dialog's target changed.
+  const [retry, setRetry] = useState<{ key: string; ids: string[] } | null>(
+    null
+  );
+  const retryIds =
+    retry !== null && target !== null && retry.key === target.machine.key
+      ? retry.ids
+      : null;
+  const setRetryIds = useCallback(
+    (key: string, ids: string[] | null) =>
+      setRetry(ids === null ? null : { key, ids }),
+    []
+  );
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
@@ -161,7 +175,7 @@ export function useRemoveMachineFromTenant(
       roster: RosterCompleteness
     ) => {
       reset();
-      setRetryIds(null);
+      setRetry(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
       setOpenState(true);
@@ -195,10 +209,10 @@ export function useRemoveMachineFromTenant(
       }));
       if (s.allSettled) {
         toast.success(`${m.name}: ${s.sentence}`);
-        setRetryIds(null);
+        setRetryIds(m.key, null);
         setOpenState(false);
       } else {
-        setRetryIds(unsettledIds(s));
+        setRetryIds(m.key, unsettledIds(s));
       }
       return;
     }
@@ -209,8 +223,8 @@ export function useRemoveMachineFromTenant(
     }));
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
-    setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [retryIds, status, target, unbind]);
+    setRetryIds(m.key, r.partial !== null ? unsettledIds(r.partial) : [...ids]);
+  }, [retryIds, setRetryIds, status, target, unbind]);
 
   return {
     target,
@@ -302,7 +316,7 @@ function ResultBlock({
           error={refusal.reading}
           data-testid="fleet-roles-remove-refusal"
         />
-        {refusal.mayHaveApplied && (
+        {refusal.mayHaveApplied && !refusal.auth && (
           <p
             className="text-xs break-words text-amber-600 dark:text-amber-500"
             data-testid="fleet-roles-remove-may-have-applied"
@@ -344,12 +358,17 @@ export function RemoveMachineButton({
     () => openFor(m, machines, roster),
     [m, machines, openFor, roster]
   );
-  // The UI Bridge may hold the handler from an earlier registration: it calls
-  // through this ref, so it always opens the machine as the roster now reads.
+  // The UI Bridge may hold the handler from an earlier registration: it reads
+  // these refs, so it always acts on the machine as the roster now reads it
+  // and on whether a removal is in flight now.
   const openRef = useRef(open);
+  const effectRef = useRef(effect);
+  const busyRef = useRef(busy);
   useEffect(() => {
     openRef.current = open;
-  }, [open]);
+    effectRef.current = effect;
+    busyRef.current = busy;
+  }, [open, effect, busy]);
   // While mounted with rows, this row shows the machine's acknowledgement.
   useEffect(
     () => (hasRows ? showAck(m.key) : undefined),
@@ -363,16 +382,23 @@ export function RemoveMachineButton({
       "remove-from-tenant": {
         id: "remove-from-tenant",
         label: "Remove from this tenant",
+        // No count here: a registration can outlive a roster read, so the
+        // count is in the handler's result, read when it runs.
         description:
-          `Opens the confirmation that ${effect} (${m.name}). ` +
-          "The removal itself needs a real click on the dialog's confirm " +
+          "Opens the confirmation that removes this tenant's binding of " +
+          "every device row the roster lists for this machine; the result " +
+          "names how many. Refused while a removal is in flight. The " +
+          "removal itself needs a real click on the dialog's confirm " +
           "button, which refuses synthetic clicks.",
         // Declared, not re-derived: the action this control leads to removes
         // bindings, so an autonomous walk must exclude it.
         effect: "destructive",
         handler: async () => {
+          if (busyRef.current) {
+            return { opened: false, reason: "a removal is in flight" };
+          }
           openRef.current();
-          return { opened: true, effect };
+          return { opened: true, effect: effectRef.current };
         },
       },
     },
@@ -388,7 +414,7 @@ export function RemoveMachineButton({
         variant="outline"
         disabled={busy}
         onClick={open}
-        aria-label={`Remove ${m.name} from this tenant`}
+        aria-label={`Remove from this tenant… (${m.name})`}
         title={`Opens a confirmation; ${effect}.`}
         data-testid="fleet-roles-remove-open"
         data-ui-bridge-id={`fleet-roles-remove:${m.key}`}
@@ -465,11 +491,14 @@ export function RemoveMachineFromTenantDialog({
       }
       confirmLabel={
         retrying
-          ? `Retry the ${retryIds.length} not confirmed removed`
+          ? `Retry the ${retryIds.length} device ${
+              retryIds.length === 1 ? "row" : "rows"
+            } not confirmed removed`
           : "Remove from this tenant"
       }
       confirmPhrase={confirmPhraseFor(m)}
       busy={busy}
+      cancelDisabled={busy}
       confirmDisabled={retrying && retryIds.length === 0}
       onConfirm={() => void confirm()}
       testId="fleet-roles-remove-dialog"
@@ -538,7 +567,7 @@ export function RemoveMachineFromTenantDialog({
           .
         </p>
       )}
-      {retrying && (
+      {retrying && retryIds.length > 0 && (
         <p
           className="break-words text-muted-foreground"
           data-testid="fleet-roles-remove-retry-scope"
