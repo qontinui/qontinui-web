@@ -1,7 +1,7 @@
 """coord.ci_runner_scope_listings — the last COMPLETE GitHub runner listing per scope
 
 Revision ID: cirscope_01_ci_runner_scope_listings
-Revises: cireserve_01_devices_ci_reserved_gib
+Revises: overview_06_cost_category_parent
 Create Date: 2026-11-15
 
 Phase 2 of plan
@@ -94,15 +94,25 @@ is all it needs.
 Merge-train classifier disposition
 ==================================
 
-The verdict of the coord migration classifier
-(``crates/coord/src/pr_merge/migration_classifier.rs``) on this file is UNKNOWN:
-it was not run against it. Every statement but one in ``upgrade()`` is one the
-``sessruns_01_session_runs`` revision documents as an admitted branch
+The coord migration classifier
+(``crates/coord/src/pr_merge/migration_classifier.rs``) is expected to classify
+this file **Reject**, so its PR takes the escalated land path (an operator
+clears it) rather than auto-landing. Every other statement in ``upgrade()`` is
+one the ``sessruns_01_session_runs`` revision documents as an admitted branch
 (``CREATE SCHEMA IF NOT EXISTS``, plain ``CREATE TABLE``, ``COMMENT ON`` with
-plain literals). The exception is the owner-only ``REVOKE``, the same statement
-``ingcred_01`` carries; whether the classifier admits it is part of the UNKNOWN
-above. ``AutoSafeIfNewTables`` is the expected verdict, subject to coord's trunk
-proof that the table is new. Every SQL string is a static literal.
+plain literals), but the classifier does not parse ``REVOKE`` or ``GRANT``: it
+answers "unparseable/unrecognized SQL statement (fail-closed)" for the
+owner-only ``REVOKE``, and one rejected statement rejects the file.
+``secrets_broker_01_coord_tables`` and ``coord_repo_tenant_bindings_01`` record
+the same classifier behaviour; they could leave the privileges alone because
+their tables carry ``tenant_id``, which this one does not.
+
+The ``REVOKE`` stays anyway, as in ``ingcred_01``. Without it the tenant roles
+keep the DML ``coordrls_01``'s default privileges grant, on a table no tenant
+oracle will ever revisit (see "Owner-only"), so a tenant-role connection could
+read or rewrite another tenant's runner evidence. An escalated land costs one
+operator review once; a missing ``REVOKE`` would be a standing cross-tenant
+grant. Every SQL string is a static literal, so nothing is rejected as dynamic.
 
 Safety
 ======
@@ -124,7 +134,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cirscope_01_ci_runner_scope_listings"
-down_revision: str | Sequence[str] | None = "cireserve_01_devices_ci_reserved_gib"
+down_revision: str | Sequence[str] | None = "overview_06_cost_category_parent"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
