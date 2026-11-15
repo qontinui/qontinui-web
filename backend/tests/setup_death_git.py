@@ -26,7 +26,11 @@ guard both modules run over themselves and over this file), every failure
 message is ``defang``-ed, a string that must hold the legacy prefix before a
 registered command is held in a ``Sealed`` copy, whose repr is defanged, and
 ``run_pytest_probe`` / ``command_lines`` let a module prove that even its
-FAILING run writes no workflow command.
+FAILING run writes no workflow command. The gitleaks fetch's tests
+(``tests/test_secret_scan_download_guard.py``) use ``defang``,
+``run_pytest_probe`` and ``command_lines`` the same way, because that
+script's own output carries a
+``Gitleaks DID NOT RUN (not a verdict on this PR)`` title.
 """
 
 from __future__ import annotations
