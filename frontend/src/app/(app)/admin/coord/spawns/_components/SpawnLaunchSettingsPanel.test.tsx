@@ -292,8 +292,13 @@ describe("SpawnLaunchSettingsPanel", () => {
 
   it("a field set back to coord's value follows coord again across a refresh", async () => {
     await renderPanel();
-    const model = selectOf("post_merge", "model");
-    fireEvent.change(model, { target: { value: "opus" } });
+    fireEvent.change(selectOf("post_merge", "model"), {
+      target: { value: "opus" },
+    });
+    expect(
+      within(row("post_merge")).getByTestId("spawn-launch-model-hint")
+        .textContent
+    ).toBe("Unsaved — coord holds: Sonnet (latest)");
     fireEvent.change(selectOf("post_merge", "model"), {
       target: { value: "sonnet" },
     });
@@ -309,6 +314,9 @@ describe("SpawnLaunchSettingsPanel", () => {
     });
     await settle();
     expect(selectOf("post_merge", "model").value).toBe("haiku");
+    expect(
+      within(row("post_merge")).queryByTestId("spawn-launch-model-hint")
+    ).toBeNull();
     expect(
       (
         within(row("post_merge")).getByTestId(
