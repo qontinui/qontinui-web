@@ -755,6 +755,16 @@ describe("the page's auto-publish status read", () => {
  */
 function firstVisit(): () => void {
   localStorage.clear();
+  return membershipPending();
+}
+
+/**
+ * A hard load: the layout's provider is still reading the membership list
+ * when the page mounts. The returned function answers it, with Bravo the
+ * server's choice: the provider keeps a stored member project, and stores
+ * Bravo when none is stored.
+ */
+function membershipPending(): () => void {
   let answerMembership: () => void = () => {};
   listTenantsMock.mockImplementation(
     () =>
@@ -984,6 +994,80 @@ describe("the page's project known only after the page mounted", () => {
         SYS,
       ]);
       read.showsOwn();
+    },
+    20_000
+  );
+
+  it("a settings read sent pinned at mount is not re-taken when the provider answers", async () => {
+    // Bravo is stored, so the page pins its mount reads to it while the
+    // provider is still reading; the provider then answers Bravo.
+    const answerMembership = membershipPending();
+    renderUnderTenantProvider();
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route)).toHaveLength(1);
+        }
+      },
+      { timeout: 5000 }
+    );
+    await settle();
+
+    await act(async () => answerMembership());
+    await settle(200);
+
+    // Each once, in Bravo: every attempt of it was held to the page's project.
+    expect(
+      SETTINGS_READS.map(([label, route]) => [
+        label,
+        sentSince(0, "GET", route).map((s) => s.tenant),
+      ])
+    ).toEqual(SETTINGS_READS.map(([label]) => [label, [B]]));
+  }, 20_000);
+
+  it.each([
+    ["kind tiers", KIND_TIERS, "kind-authorship-tier-control", "Loading…"],
+    [
+      "the policy-write dial",
+      /\/fleet-policy\?domain=policy_write$/,
+      "policy-write-dial",
+      "Reading the dial…",
+    ],
+    [
+      "the auto-publish dial",
+      /\/fleet-policy\?domain=policy_auto_publish$/,
+      "policy-auto-publish-dial",
+      "Reading the dial…",
+    ],
+  ] as const)(
+    "%s: the answer to the read its re-take replaced does not end the section's loading",
+    async (_label, route, section, reading) => {
+      const answerMembership = firstVisit();
+      const releaseMountRead = holdNext("GET", route);
+      renderUnderTenantProvider();
+      await waitFor(() => expect(sentSince(0, "GET", route)).toHaveLength(1), {
+        timeout: 5000,
+      });
+      // The re-take is held too, so it is still in flight below.
+      const releaseRetake = holdNext("GET", route);
+      await act(async () => answerMembership());
+      await waitFor(() => expect(sentSince(0, "GET", route)).toHaveLength(2), {
+        timeout: 5000,
+      });
+
+      await act(async () => releaseMountRead(200));
+      await settle();
+
+      // Its answer is dropped, and the section still says it is reading:
+      // not an empty section that looks read.
+      expect(screen.getByTestId(section)).toHaveTextContent(reading);
+
+      await act(async () => releaseRetake(200));
+      await waitFor(
+        () =>
+          expect(screen.getByTestId(section)).not.toHaveTextContent(reading),
+        { timeout: 5000 }
+      );
     },
     20_000
   );
