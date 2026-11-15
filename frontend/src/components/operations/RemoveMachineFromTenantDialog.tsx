@@ -77,6 +77,9 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
   failed: "failed",
   refused_auth: "refused (auth)",
   not_attempted: "not attempted",
+  answer_lost:
+    "may have been removed — coord's answer was lost; reload to check",
+  deadline_not_attempted: "not attempted (time limit) — retry",
   unreported: "not reported",
 };
 

@@ -19,8 +19,18 @@ import { OPERATIONS_BASE, readJson } from "./base";
 /** One id's outcome, as the web route serves it. */
 export interface DeviceUnbindResultWire {
   device_id: string;
-  /** `already_absent` = coord's 404 `binding_not_found`. */
-  outcome: "unbound" | "already_absent" | "failed" | (string & {});
+  /**
+   * `already_absent` = coord's 404 `binding_not_found`; `unknown` = coord's
+   * answer was lost (the binding MAY have been removed); `not_attempted` = the
+   * batch hit its deadline before this id.
+   */
+  outcome:
+    | "unbound"
+    | "already_absent"
+    | "failed"
+    | "unknown"
+    | "not_attempted"
+    | (string & {});
   /** Coord's HTTP status for this id. */
   status: number | null;
   /** Coord's structured refusal (or its text) for a `failed` id. */
@@ -38,6 +48,9 @@ export interface DeviceUnbindResponseWire {
   unbound: number;
   already_absent: number;
   failed: number;
+  /** Absent on a route predating the outcome; the per-id rows decide. */
+  unknown?: number;
+  not_attempted?: number;
 }
 
 /**
