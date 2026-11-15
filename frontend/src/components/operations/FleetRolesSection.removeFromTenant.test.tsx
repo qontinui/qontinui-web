@@ -66,6 +66,7 @@ import {
   confirmPhraseFor,
   isLastCiHost,
   removalRows,
+  combineSummaries,
   summarizeUnbind,
 } from "./removeMachineFromTenant";
 
@@ -1247,12 +1248,12 @@ describe("the answer", () => {
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(posts).toHaveLength(1);
     expect(result.textContent).toContain(
-      "0 of 65 bindings confirmed removed; 1 not sent (an earlier batch was refused); 64 not reported by the route."
+      "0 of 65 bindings confirmed removed; 1 not sent (an earlier batch failed or its answer was lost); 64 not reported by the route."
     );
     const outcomes = within(result)
       .getAllByTestId("fleet-roles-remove-outcome-row")
       .map((r) => r.getAttribute("data-outcome"));
-    expect(outcomes[64]).toBe("not_sent");
+    expect(outcomes[64]).toBe("not_sent_after_failure");
     expect(outcomes.slice(0, 64).every((o) => o === "unreported")).toBe(true);
   });
 
@@ -1303,6 +1304,119 @@ describe("the answer", () => {
     const result = await screen.findByTestId("fleet-roles-remove-result");
     expect(result.textContent).toContain(
       "0 of 2 bindings confirmed removed; 2 unreported (the answer could not be read; the list re-reads to show what coord now holds)."
+    );
+  });
+
+  it("a retry that finds the bindings absent after a lost answer credits the earlier attempt", async () => {
+    postAnswers = [
+      new TypeError("Failed to fetch"),
+      answer([absent(DEV_CI), absent(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-may-have-applied");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "2 of 2 bindings removed; 2 removed by the earlier attempt (confirmed absent now)."
+    );
+    // Something was removed: a success, never "Nothing to remove".
+    expect(toastMock.success).toHaveBeenCalledTimes(1);
+    expect(toastMock.info).not.toHaveBeenCalled();
+  });
+
+  it("a retry after one lost row credits only that row's earlier attempt", async () => {
+    postAnswers = [
+      answer([
+        unbound(DEV_CI),
+        {
+          device_id: DEV_CI_2,
+          outcome: "unknown",
+          status: 504,
+          error: { error: "coord_answer_lost", detail: "timed out" },
+          still_member_via_pointer: null,
+        },
+      ]),
+      answer([absent(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "2 of 2 bindings removed; 1 removed by the earlier attempt (confirmed absent now)."
+    );
+  });
+
+  it("a not-attempted row's own detail picks its words, whatever the abort says", async () => {
+    postAnswers = [
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_status: 403,
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI,
+          results: [
+            refusedRow(DEV_CI),
+            {
+              device_id: DEV_CI_2,
+              outcome: "not_attempted",
+              status: null,
+              error: {
+                error: "not_attempted",
+                detail: "the batch's time budget ran out",
+              },
+              still_member_via_pointer: null,
+            },
+          ],
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["refused_auth", "deadline_not_attempted"]);
+  });
+
+  it("a non-auth 4xx says the request was rejected, never 'may have been removed'", async () => {
+    postAnswers = [json(422, { detail: "device_ids must be unique" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(result.textContent).toContain(
+      "0 of 2 bindings removed; 2 not attempted (the request was rejected: HTTP 422)."
+    );
+    expect(
+      within(result).getAllByTestId("fleet-roles-remove-outcome-row")[0]!
+        .textContent
+    ).toBe(`${DEV_CI}: not attempted (the request was rejected: HTTP 422)`);
+    expect(
+      within(result).queryByTestId("fleet-roles-remove-may-have-applied")
+    ).toBeNull();
+  });
+
+  it("combineSummaries keeps an earlier row's unreadable answer", () => {
+    const earlier = summarizeUnbind([DEV_CI, DEV_CI_2], null);
+    const later = summarizeUnbind([DEV_CI], { results: [unbound(DEV_CI)] });
+    const whole = combineSummaries([DEV_CI, DEV_CI_2], earlier, later);
+    expect(whole.sentence).toBe(
+      "1 of 2 bindings confirmed removed; 1 unreported (the answer could not be read; the list re-reads to show what coord now holds)."
     );
   });
 });
