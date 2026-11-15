@@ -77,6 +77,9 @@ export const UI_BRIDGE_CONTEXT_FREE_EXPORTS = [
   "pollForTaggedElement",
   "routePatternFromParams",
   "createRouteUnmatchedSignal",
+  // 0.46: reads a globalThis-backed store of live passive-capture mounts
+  // (ui-bridge `src/recording/passive-capture.ts`), no React context.
+  "getPassiveCaptureStatuses",
   "DEFAULT_CAPTURE_HOST_IDS",
   "UI_BRIDGE_CONTENT_ATTR",
   "UI_BRIDGE_ID_ATTR",

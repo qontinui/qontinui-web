@@ -527,7 +527,7 @@ export default function CoordRunnersPage() {
         )
       : fleet.data && pickableDevices(devices).shown.length === 0
         ? appendRosterExclusions(
-            "No runner machine to offer: every device coord reported is a CI runner registration or abandoned. A device id in the link still works.",
+            "No runner machine to offer: every device coord reported is a CI runner registration. A device id in the link still works.",
             fleet.data
           )
         : null;

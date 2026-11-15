@@ -46,6 +46,7 @@ from tests._alembic_harness import (
     ephemeral_database,
     index_exists,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -160,17 +161,7 @@ def test_no_drop_column_outside_downgrade() -> None:
 
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    module = _module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_module(), step, monkeypatch)
 
 
 def _on_table(statements: list[str], table: str) -> list[str]:

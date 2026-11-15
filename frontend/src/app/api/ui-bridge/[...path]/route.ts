@@ -325,14 +325,14 @@ async function forwardToRelay(
     return noBrowserResponse(path);
   }
 
-  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH so the SDK's
-  // `request.json()` sees the inbound body byte-for-byte with an explicit
+  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH/DELETE so the
+  // SDK's JSON body reader sees the inbound body byte-for-byte with an explicit
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
   //
   // We use `passThroughBodyWithPeek` (a `passThroughBody` superset) so we
-  // get the body back, parsed by the SDK's own parser, on the same read —
+  // get the body back, read by the SDK's own rule, on the same read —
   // needed for the caller-identity strip and for the audit-log safe
   // summary in the auditable-write branch below.
   const {
@@ -342,20 +342,33 @@ async function forwardToRelay(
   } = await passThroughBodyWithPeek(request, method);
 
   // Fail closed under the auth gate. The caller-identity strip below can
-  // only remove an identity from a body it parsed, so a body present but
-  // not parseable the way the SDK parses it is refused with a typed 400
-  // instead of being forwarded as it came. With the gate off nothing
-  // changes: there is no verified identity to protect.
+  // only remove an identity from a body it parsed, so a body the SDK's
+  // reader would refuse (declared JSON, or declared as nothing, and not
+  // JSON) is refused with a typed 400 instead of being forwarded as it came.
+  // A body the SDK reads as none (blank, or declared as a non-JSON type and
+  // not JSON) was already handed on with no body by the peek. A body over the
+  // SDK's cap goes on unparsed (with its Content-Type forced to JSON), and every
+  // SDK path that reads a body refuses it (413); a handler that never reads a
+  // body runs without it. With the gate off nothing changes: there is no
+  // verified identity to protect.
+  //
+  // The deliberate residual: this refusal does not know the route. Under the
+  // gate an unparseable body declared JSON (or nothing) is refused even on a
+  // route whose handler never reads a body, where the SDK alone would have
+  // answered; an unparseable body declared as a non-JSON type is forwarded
+  // with no body on every route.
   //
   // No route is exempt, because the SDK's Next handler reads every body it
-  // reads with `request.json()` — the `bodyRequired` routes of
-  // `UI_BRIDGE_ROUTES`, its hand-routed POSTs, `POST /heartbeat`,
-  // `POST /commands` and `POST /tabs/cdp/new` — and no route reads a
-  // multipart, binary or text body. Its own clients, and this app's, send
-  // only JSON bodies. That census is a property of the INSTALLED SDK, so it
-  // is not pinned to a version here: `route.real-sdk.test.ts` re-takes it
-  // against whatever `node_modules` resolves, and fails on any release that
-  // reads a body another way.
+  // reads as JSON, through its one reader `readJsonBody` — the
+  // `bodyRequired` routes of `UI_BRIDGE_ROUTES` (`DELETE
+  // /control/media/override` among them, which is why DELETE is peeked
+  // too), its hand-routed POSTs, `POST /heartbeat`, `POST /commands` and
+  // `POST /tabs/cdp/new` — and no route reads a multipart, binary or text
+  // body. Its own clients, and this app's, send only JSON bodies. That
+  // census is a property of the INSTALLED SDK, so it is not pinned to a
+  // version here: `route.real-sdk.test.ts` re-takes it against whatever
+  // `node_modules` resolves, and fails on any release that reads a body
+  // another way.
   if (
     callerUserId &&
     (bodyState === "unparseable" || bodyState === "unreadable")

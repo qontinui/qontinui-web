@@ -48,10 +48,12 @@
  * server-side (`logLaneRefused`, sampled by overflow).
  *
  * Window: clock-aligned minute. Counter key embeds the lane and the minute
- * index so a principal can't carry budget across a window boundary, and the
- * keys naturally expire (we set EXPIRE 70s on each INCR — slightly larger
- * than the window so a final INCR near the boundary doesn't lose its TTL).
- * One request is one INCR on one key.
+ * index so a principal can't carry budget across a window boundary. Keys
+ * expire on their own: EXPIRE 70 s on the first INCR of each key (the INCR
+ * that answers 1), longer than the window, so a key outlives every request it
+ * counts. One request is one INCR on one key, and the first request of each
+ * principal-lane-window also sends that EXPIRE: the provider bills per
+ * command (`incrAndGet`).
  *
  * Every response the relay returns after the check carries the budget of
  * the lane it drew on (`X-RateLimit-Lane`, `-Limit`, `-Remaining`,
@@ -79,6 +81,7 @@
 import IORedis, { type Redis } from "ioredis";
 
 import { createLogger } from "@/lib/logger";
+import { safeRedisErrorText } from "@/lib/ui-bridge/redis-redact";
 
 import {
   HEARTBEATS_PER_TAB_PER_MIN,
@@ -187,13 +190,15 @@ function getClient(): Redis | null {
     c.on("error", (err: Error) => {
       // Don't log on every retry — ioredis emits these in storms. One
       // line at warn-level is enough for an operator to notice.
-      log.warn("redis_error_failing_open", { error: err.message });
+      log.warn("redis_error_failing_open", {
+        error: safeRedisErrorText(err, [url]),
+      });
     });
     client = c;
     return c;
   } catch (err) {
     log.warn("redis_init_failed_failing_open", {
-      error: err instanceof Error ? err.message : String(err),
+      error: safeRedisErrorText(err, [url]),
     });
     client = null;
     return null;
@@ -243,44 +248,82 @@ function secondsUntilNextWindow(now: number = Date.now()): number {
   return Math.max(1, Math.ceil((windowEnd - now) / 1000));
 }
 
-function keyFor(userId: string, kind: RateLimitKind, windowIdx: number): string {
+function keyFor(
+  userId: string,
+  kind: RateLimitKind,
+  windowIdx: number
+): string {
   // Short lane prefixes keep the Redis bill predictable.
   return `bridge:rl:${LANES[kind].keyPrefix}:${userId}:${windowIdx}`;
 }
 
 /**
- * Atomically INCR the per-(principal, lane, window) counter. On the first
- * INCR of a window the EXPIRE is set so the key self-cleans.
+ * INCR the per-(principal, lane, window) counter and return its count. The
+ * INCR that answers 1, the key's first, also sends the EXPIRE that makes the
+ * key self-clean. So a counted request costs one Redis command, and each
+ * principal-lane-window one more; the provider bills per command.
  *
- * Pipeline gives us both ops in one RTT; the INCR result is what we
- * compare against the limit. The EXPIRE return is fire-and-forget
- * (success/failure doesn't gate the request).
+ * The EXPIRE is not awaited, and its outcome does not gate the request. If it
+ * fails, that key keeps no TTL. The key embeds its window index (`keyFor`),
+ * so nothing reads it after its window: it leaks one small key and can never
+ * over-count. The failure is logged (`logExpireFailed`). One TTL-less leak is
+ * NOT logged: an INCR that Redis applied but whose reply was lost (the request
+ * fails open, and the key's next INCR answers 2, so no EXPIRE is ever sent).
+ * Main re-sent EXPIRE with every INCR and so repaired that key; this costs one
+ * leaked key per lost first reply, which is accepted for halving the commands.
  *
- * THROWS when the pipeline yields no count. With `enableOfflineQueue: false`
- * ioredis does not reject a pipeline sent on a connection that is not ready
- * yet (every cold instance's first request, and every request while Redis is
- * down): it RESOLVES it with an error per command. Read as a count of 0, that
- * admitted the request as counted and reported a full budget; thrown, it takes
- * `checkRateLimit`'s fail-open path, which says the count is unknown.
+ * THROWS, taking `checkRateLimit`'s fail-open path (which says the count is
+ * unknown), when the INCR rejects or answers something that is not a count.
+ * With `enableOfflineQueue: false` ioredis rejects a command sent on a
+ * connection that is not ready ("Stream isn't writeable…"): every cold
+ * instance's first request, and every request while Redis is down.
  */
-async function incrAndGet(key: string, redis: Redis): Promise<number> {
-  const pipeline = redis.pipeline();
-  pipeline.incr(key);
-  pipeline.expire(key, COUNTER_TTL_SEC);
-  const results = await pipeline.exec();
-  const incrResult = results?.[0];
-  if (!incrResult) {
-    throw new Error("redis pipeline returned no INCR result");
-  }
-  const [err, value] = incrResult;
-  if (err) {
-    throw err;
-  }
+async function incrAndGet(
+  key: string,
+  redis: Redis,
+  kind: RateLimitKind,
+  windowIdx: number
+): Promise<number> {
+  const value: unknown = await redis.incr(key);
   const count = Number(value);
   if (!Number.isFinite(count) || count < 1) {
     throw new Error(`redis INCR returned ${String(value)}, not a count`);
   }
+  if (count === 1) {
+    void redis.expire(key, COUNTER_TTL_SEC).catch((err: unknown) => {
+      logExpireFailed(err, kind, windowIdx, redis.status);
+    });
+  }
   return count;
+}
+
+/** The minute window of the last EXPIRE failure this process logged. */
+let lastExpireFailLogWindow: number | null = null;
+
+/**
+ * Warn that a counter key's EXPIRE failed, so that key keeps no TTL. At most
+ * once per minute window per process: a provider refusing every EXPIRE would
+ * otherwise cost a line per principal-lane-window.
+ *
+ * `status` is the client's connection state when the failure arrived. `ready`
+ * beside the error reads as Redis refusing the EXPIRE; any other state, as
+ * the connection dropping under it.
+ */
+function logExpireFailed(
+  err: unknown,
+  kind: RateLimitKind,
+  windowIdx: number,
+  status: string | undefined
+): void {
+  if (windowIdx === lastExpireFailLogWindow) {
+    return;
+  }
+  lastExpireFailLogWindow = windowIdx;
+  log.warn("rate_limit_expire_failed", {
+    error: safeRedisErrorText(err, [resolveUrl()]),
+    kind,
+    status: status ?? "unknown",
+  });
 }
 
 /** The minute window of the last fail-open warning this process logged. */
@@ -303,7 +346,7 @@ function logFailingOpen(
   err: unknown,
   kind: RateLimitKind,
   now: number,
-  status: string | undefined,
+  status: string | undefined
 ): void {
   const windowIdx = currentWindowIndex(now);
   if (windowIdx === lastFailOpenLogWindow) {
@@ -311,7 +354,7 @@ function logFailingOpen(
   }
   lastFailOpenLogWindow = windowIdx;
   log.warn("rate_limit_redis_op_failed_failing_open", {
-    error: err instanceof Error ? err.message : String(err),
+    error: safeRedisErrorText(err, [resolveUrl()]),
     kind,
     status: status ?? "unknown",
   });
@@ -327,7 +370,7 @@ function logFailingOpen(
 export async function checkRateLimit(
   userId: string,
   kind: RateLimitKind,
-  now: number = Date.now(),
+  now: number = Date.now()
 ): Promise<RateLimitResult> {
   const limit = LANES[kind].limit;
   const retryAfterSec = secondsUntilNextWindow(now);
@@ -349,7 +392,7 @@ export async function checkRateLimit(
 
   let count: number;
   try {
-    count = await incrAndGet(key, redis);
+    count = await incrAndGet(key, redis, kind, windowIdx);
   } catch (err) {
     // Any Redis-side error (a connection not ready yet, timeout, AUTH,
     // MOVED in a misconfigured cluster) → fail open, and say the count is
@@ -385,7 +428,7 @@ export async function checkRateLimit(
  * `unknown` — never a number that would read as headroom.
  */
 export function rateLimitHeaders(
-  result: RateLimitResult,
+  result: RateLimitResult
 ): Record<string, string> {
   return {
     "X-RateLimit-Lane": result.kind,
@@ -404,7 +447,7 @@ export function rateLimitHeaders(
  */
 export function withRateLimitHeaders(
   response: Response,
-  result: RateLimitResult,
+  result: RateLimitResult
 ): Response {
   const budget = Object.entries(rateLimitHeaders(result));
   try {
@@ -447,7 +490,7 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
         "Retry-After": String(result.retryAfterSec),
         ...rateLimitHeaders(result),
       },
-    },
+    }
   );
 }
 
@@ -465,7 +508,7 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
  */
 export function logLaneRefused(
   result: RateLimitResult,
-  principalKind: "user" | "device" | null,
+  principalKind: "user" | "device" | null
 ): void {
   const overflow = result.count - result.limit;
   if (overflow < 1 || (overflow & (overflow - 1)) !== 0) {
