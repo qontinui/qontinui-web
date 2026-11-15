@@ -327,27 +327,49 @@ class TestOutcomes:
             "not_attempted": 0,
         }
 
-    def test_500_is_failed_with_coords_body(self, auth_client: TestClient):
-        coord_body = {"error": "tenant_device_binding_delete_failed"}
+    @pytest.mark.parametrize(
+        "coord_body",
+        [
+            # What coord sends when the delete's COMMIT failed — the binding
+            # may already be gone.
+            {"error": "db_error", "op": "tenant.device_binding.delete"},
+            {"error": "tenant_device_binding_delete_failed"},
+        ],
+    )
+    def test_coord_500_is_unknown_never_failed(
+        self, auth_client: TestClient, coord_body: dict[str, str]
+    ):
         stub = _CoordStub({DEVICE_A: [_mock_response(500, coord_body)]})
         resp = _post(auth_client, stub, {"device_ids": [DEVICE_A]})
         assert resp.status_code == 200
-        assert resp.json()["results"] == [
-            {
-                "device_id": DEVICE_A,
-                "outcome": "failed",
-                "status": 500,
-                "error": coord_body,
-                "still_member_via_pointer": None,
-            }
-        ]
+        assert resp.json() == {
+            "results": [
+                {
+                    "device_id": DEVICE_A,
+                    "outcome": "unknown",
+                    "status": 500,
+                    "error": {
+                        "error": "coord_answer_lost",
+                        "detail": "coord reported an internal error after it "
+                        "may have acted",
+                        "upstream": coord_body,
+                    },
+                    "still_member_via_pointer": None,
+                }
+            ],
+            "unbound": 0,
+            "already_absent": 0,
+            "unknown": 1,
+            "failed": 0,
+            "not_attempted": 0,
+        }
 
     def test_many_ids_mixed_outcomes_are_reported_per_id(self, auth_client: TestClient):
         stub = _CoordStub(
             {
                 DEVICE_A: [_bound(DEVICE_A)],
                 DEVICE_B: [_not_found(DEVICE_B)],
-                DEVICE_C: [_mock_response(500, {"error": "db_error"})],
+                DEVICE_C: [_mock_response(503, {"error": "tenant_devices_absent"})],
                 DEVICE_D: [_bound(DEVICE_D, still_member_via_pointer=False)],
             }
         )
@@ -380,8 +402,8 @@ class TestOutcomes:
                 {
                     "device_id": DEVICE_C,
                     "outcome": "failed",
-                    "status": 500,
-                    "error": {"error": "db_error"},
+                    "status": 503,
+                    "error": {"error": "tenant_devices_absent"},
                     "still_member_via_pointer": None,
                 },
                 {
@@ -989,6 +1011,36 @@ class TestDeadline:
         rows = [e for e in logs if e["event"] == "fleet_devices_unbind_row"]
         assert len(rows) == 1
         assert len(rows[0]["error"]) == 501
+
+    def test_every_finished_row_that_changed_or_may_have_changed_is_logged(
+        self, auth_client: TestClient
+    ):
+        import structlog
+
+        stub = _CoordStub(
+            {
+                DEVICE_A: [_bound(DEVICE_A, still_member_via_pointer=True)],
+                DEVICE_B: [_not_found(DEVICE_B)],
+                DEVICE_C: [_mock_response(500, {"error": "db_error"})],
+                DEVICE_D: [_mock_response(503, {"error": "tenant_devices_absent"})],
+            }
+        )
+        with structlog.testing.capture_logs() as logs:
+            resp = _post(
+                auth_client,
+                stub,
+                {"device_ids": [DEVICE_A, DEVICE_B, DEVICE_C, DEVICE_D]},
+            )
+        assert resp.status_code == 200
+        rows = [e for e in logs if e["event"] == "fleet_devices_unbind_row"]
+        # already_absent changed nothing and is not logged per row.
+        assert [(r["device_id"], r["outcome"], r["log_level"]) for r in rows] == [
+            (DEVICE_A, "unbound", "info"),
+            (DEVICE_C, "unknown", "warning"),
+            (DEVICE_D, "failed", "warning"),
+        ]
+        assert rows[0]["status"] == 200
+        assert rows[0]["still_member_via_pointer"] is True
 
     def test_the_budget_is_45_seconds(self):
         from app.api.v1.endpoints import fleet_device_bindings
