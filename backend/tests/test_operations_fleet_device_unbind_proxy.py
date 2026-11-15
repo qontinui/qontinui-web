@@ -14,7 +14,7 @@ The properties pinned here:
    ``binding_not_found`` → ``already_absent``; any other refusal → ``failed``
    with coord's structured body. A batch reports partial success as partial.
 3. **A coord 401/403 aborts the batch** with HTTP 403 (coord's own status is
-   kept in ``coord_status``; the route never answers 401), carrying a result for
+   kept in ``coord_status``; the abort never answers 401), carrying a result for
    every id: those recorded before it, the refused id as ``failed``, and the
    rest as ``not_attempted``.
 4. **``still_member_via_pointer`` is never defaulted**: coord's boolean passes

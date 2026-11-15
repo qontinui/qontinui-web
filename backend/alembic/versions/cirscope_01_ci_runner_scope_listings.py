@@ -29,7 +29,8 @@ LEADER only, and keeps what it learned in process memory. A follower, or any
 replica after a restart, therefore reads the registrar's view as UNKNOWN, so the
 fleet roster (``GET /coord/fleet/dispatch-roles``) cannot say, from whichever
 replica serves it, whether GitHub still lists a CI registration. That is how a
-dead host (``spaceship-wsl`` on 2026-11-15, gone from GitHub for days) stayed on
+dead host (``spaceship-wsl`` on 2026-11-15, last seen 2026-11-11 and absent from GitHub's
+runner list) stayed on
 the roster with nothing marking it.
 
 This table makes the registrar's last COMPLETE listing of each polled scope

@@ -55,7 +55,9 @@ Per-id outcomes — every requested id gets exactly one:
 
 **A coord 401 / 403 aborts the batch, and this route answers 403 for both.**
 An auth refusal is a property of the caller, not of the row, so continuing would
-only repeat it. The route never answers HTTP 401: the web client treats a 401
+only repeat it. The batch abort never answers HTTP 401 (a 401 from the route's
+own auth dependency comes before any coord call, so a replay of it is harmless):
+the web client treats a 401
 as a stale token, refreshes it and REPLAYS the POST, which would re-run a batch
 whose earlier ids already landed. Coord's own status is kept in the body as
 ``coord_status``. The error body still carries a complete ``results`` list (the refused id as
