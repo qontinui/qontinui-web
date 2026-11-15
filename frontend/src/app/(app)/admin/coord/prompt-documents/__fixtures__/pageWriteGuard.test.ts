@@ -17,6 +17,13 @@ describe("the page guard fixture", () => {
     expect(guard.pin).toBeUndefined();
     expect(guard.writeAllowed()).toBe(false);
     expect(guard.resolvePin()).toBeUndefined();
+    // A state the provider reaches: the layout's provider still reading the
+    // membership list on a first visit, so the page's project is UNKNOWN.
+    expect(guard.tenantContext?.loading).toBe(true);
+    expect(guard.tenantContext?.error).toBeNull();
+    expect(guard.mountTenant).toBeNull();
+    expect(guard.pageTenant).toBeUndefined();
+    expect(guard.projectListFailed).toBe(false);
   });
 
   it("allows a write once there is a pin, and resolves that pin", () => {
@@ -28,8 +35,14 @@ describe("the page guard fixture", () => {
   });
 
   it("PINNED_PAGE pins every request to the page's project, and allows a write", () => {
-    // A state the provider reaches: the page's project known, and the pin
-    // naming it (`usePageProject`).
+    // A state the provider reaches: the layout's provider has read the list
+    // and named the page's project, and the pin names it (`usePageProject`).
+    expect(PINNED_PAGE.tenantContext?.loading).toBe(false);
+    expect(PINNED_PAGE.tenantContext?.error).toBeNull();
+    expect(PINNED_PAGE.tenantContext?.activeTenantId).toBe("t-page");
+    expect(PINNED_PAGE.tenantContext?.tenants.map((t) => t.id)).toEqual([
+      "t-page",
+    ]);
     expect(PINNED_PAGE.pageTenant).toBe("t-page");
     expect(PINNED_PAGE.pin).toEqual({ tenant: "t-page" });
     expect(PINNED_PAGE.resolvePin()).toEqual({ tenant: "t-page" });

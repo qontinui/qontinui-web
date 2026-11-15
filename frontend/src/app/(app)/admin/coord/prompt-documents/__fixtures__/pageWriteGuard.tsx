@@ -10,17 +10,19 @@
  * own here. (`usePublishAll` reads no guard: its caller hands it one, so its
  * suite passes its own.)
  *
- * The two guards exported here are states the real provider reaches. By
- * default it is the page on a first visit, before it knows its project:
- * nothing stored at mount, the page's project UNKNOWN, no pin — so a write is
- * refused and a settings section reads nothing (`useFirstPinnedRead`).
- * `PINNED_PAGE` is that page once the provider has named its project: the
- * page's project and its pin are that project, so every request is pinned to
- * it and a write is allowed. A suite that tests a section's reads and writes
- * takes `PINNED_PAGE`. `testPageGuard(overrides)` can also build a state the
- * provider never reaches (a write allowed with no pin, say); a test that does
- * says what it builds and why. What the real provider does is proven by the
- * page-level suites (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
+ * The two guards exported here are states `PageWriteGuardProvider` reaches
+ * under the layout's tenant provider, as `usePageProject` derives them. By
+ * default it is the page on a first visit while that provider is still
+ * reading the membership list: nothing stored at mount, the page's project
+ * UNKNOWN, no pin — so a write is refused and a settings section reads
+ * nothing (`useFirstPinnedRead`). `PINNED_PAGE` is that page once the provider
+ * has read the list and named `t-page`: the page's project and its pin are
+ * that project, so every request is pinned to it and a write is allowed. A
+ * suite that tests a section's reads and writes takes `PINNED_PAGE`.
+ * `testPageGuard(overrides)` can also build a state the provider never
+ * reaches (a write allowed with no pin, say); a test that does says what it
+ * builds and why. What the real provider does is proven by the page-level
+ * suites (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
  * `PromptDocumentsPageSettingsCrossTab`, `usePageWriteGuard.test.tsx`).
  */
 
@@ -31,11 +33,36 @@ import {
   type PageWriteGuardValue,
 } from "../_hooks/usePageWriteGuardContext";
 
+/** The layout's tenant provider, as a page guard hands it on. */
+type LayoutTenants = NonNullable<PageWriteGuardValue["tenantContext"]>;
+
+/** The layout's provider on a first visit, still reading the membership list. */
+const READING_TENANTS: LayoutTenants = {
+  tenants: [],
+  activeTenantId: null,
+  isMultiTenant: false,
+  loading: true,
+  error: null,
+  setActiveTenantId: () => {},
+  refresh: async () => false,
+};
+
+/** The layout's provider once it has read the list and named `t-page`. */
+const LOADED_TENANTS: LayoutTenants = {
+  tenants: [{ id: "t-page", slug: "page", name: "Page project" }],
+  activeTenantId: "t-page",
+  isMultiTenant: false,
+  loading: false,
+  error: null,
+  setActiveTenantId: () => {},
+  refresh: async () => true,
+};
+
 /**
  * A page guard answering as the real provider does, unless `overrides` say
- * otherwise: nothing stored differs from the page's project, and a write is
- * allowed only while there is a pin (`overrides.pin`, which `resolvePin` also
- * answers).
+ * otherwise: the layout's provider still reading, nothing stored differs from
+ * the page's project, and a write is allowed only while there is a pin
+ * (`overrides.pin`, which `resolvePin` also answers).
  */
 export function testPageGuard(
   overrides: Partial<PageWriteGuardValue> = {}
@@ -44,7 +71,7 @@ export function testPageGuard(
   return {
     pageTenant: undefined,
     mountTenant: null,
-    tenantContext: null,
+    tenantContext: READING_TENANTS,
     projectListFailed: false,
     locked: null,
     writeAllowed: () => pin !== undefined,
@@ -57,11 +84,12 @@ export function testPageGuard(
 }
 
 /**
- * The page once its provider has named its project, on a first visit: the
- * page's project is that project, every request is pinned to it, and a write
- * is allowed. Nothing was stored at mount.
+ * The page on a first visit once the layout's provider has read the list and
+ * named `t-page`: the page's project is that project, every request is
+ * pinned to it, and a write is allowed. Nothing was stored at mount.
  */
 export const PINNED_PAGE: PageWriteGuardValue = testPageGuard({
+  tenantContext: LOADED_TENANTS,
   pageTenant: "t-page",
   pin: { tenant: "t-page" },
 });
