@@ -20,6 +20,7 @@ import {
   CircleCheck,
   CircleSlash,
   History,
+  Info,
   Loader2,
   ShieldCheck,
 } from "lucide-react";
@@ -54,6 +55,14 @@ interface EnforcementPanelProps {
   /** Coord unreachable or refusing the config-versions read. */
   versionsError: string | null;
   onSave: (patch: SessionComplianceConfigUpdate) => Promise<boolean>;
+  /**
+   * The re-take the settings shown were read under (`useSessionCompliance`).
+   * When it changes they were re-read for the page's project, and the draft
+   * is re-seeded from them even over unsaved edits: those edits were made to
+   * settings read before the page knew its project, possibly another
+   * project's. The panel says when it discarded any.
+   */
+  retakeEpoch: number;
 }
 
 /**
@@ -84,6 +93,7 @@ export function SessionComplianceEnforcementPanel({
   versionsDegraded,
   versionsError,
   onSave,
+  retakeEpoch,
 }: EnforcementPanelProps) {
   const [enabled, setEnabled] = useState(false);
   const [mode, setMode] = useState<SessionComplianceMode>("nudge");
@@ -98,6 +108,13 @@ export function SessionComplianceEnforcementPanel({
    * whole form into a reducer.
    */
   const seededFrom = useRef<SessionComplianceConfig | null>(null);
+  /** The re-take epoch the form was last seeded at. */
+  const seededAtRetake = useRef(retakeEpoch);
+  /**
+   * Set when a re-take re-seeded the form over unsaved edits; the note says
+   * so.
+   */
+  const [editsDiscarded, setEditsDiscarded] = useState(false);
 
   // Re-seed the form from coord's view — but NOT over unsaved edits. A refetch
   // (the Refresh button, or a poll) that silently replaced a half-typed clause
@@ -116,17 +133,24 @@ export function SessionComplianceEnforcementPanel({
     // incoming config (the post-save case), where re-seeding is a no-op but
     // must still refresh the baseline or it would go stale forever.
     const untouched = prev === null || matches(prev) || matches(config);
-    if (!untouched) return;
+    // Re-read for the page's project: a form seeded before that may hold
+    // another project's settings, so it is re-seeded even over unsaved
+    // edits, and the note below says they were discarded.
+    const retaken = retakeEpoch !== seededAtRetake.current;
+    if (!untouched && !retaken) return;
+    if (!untouched) setEditsDiscarded(true);
     seededFrom.current = config;
+    seededAtRetake.current = retakeEpoch;
     setEnabled(config.enabled);
     setMode(config.mode);
     setClauseRef(config.enforced_clause_ref ?? "");
     setMaxAttempts(String(config.max_attempts ?? 1));
     setChangeNote("");
-    // Intentionally keyed on `config` only: the form fields are read to decide
-    // whether re-seeding is safe, but a keystroke must not itself re-run this.
+    // Intentionally keyed on `config` and the re-take epoch only: the form
+    // fields are read to decide whether re-seeding is safe, but a keystroke
+    // must not itself re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config]);
+  }, [config, retakeEpoch]);
 
   if (loading && !config) {
     return (
@@ -164,7 +188,10 @@ export function SessionComplianceEnforcementPanel({
       max_attempts: attemptsValid ? attemptsNumber : config.max_attempts,
       ...(changeNote.trim() ? { change_note: changeNote.trim() } : {}),
     });
-    if (ok) setChangeNote("");
+    if (ok) {
+      setChangeNote("");
+      setEditsDiscarded(false);
+    }
   };
 
   return (
@@ -282,6 +309,19 @@ export function SessionComplianceEnforcementPanel({
 
       {/* ---- Controls --------------------------------------------------- */}
       <div className="space-y-4">
+        {editsDiscarded ? (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+            data-testid="compliance-draft-retaken"
+          >
+            <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              These settings were re-read for this page&apos;s project, and your
+              unsaved edits were discarded.
+            </p>
+          </div>
+        ) : null}
         <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
           <div className="min-w-0">
             <Label htmlFor="compliance-enabled" className="text-sm">

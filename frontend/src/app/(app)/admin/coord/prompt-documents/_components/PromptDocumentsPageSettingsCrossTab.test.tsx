@@ -78,6 +78,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import PromptDocumentsPage from "../page";
 import { TenantProvider } from "@/contexts/tenant-context";
 
@@ -87,7 +88,12 @@ const B = "t-bravo";
 /** The project another tab switches to. */
 const SYS = "t-system";
 
-type Sent = { method: string; url: string; tenant: string | null };
+type Sent = {
+  method: string;
+  url: string;
+  tenant: string | null;
+  body: string | null;
+};
 let sent: Sent[] = [];
 
 /**
@@ -340,8 +346,8 @@ beforeEach(() => {
         ((init?.headers ?? {}) as Record<string, string>)[
           "X-Qontinui-Active-Tenant"
         ] ?? null;
-      sent.push({ method, url, tenant });
       const body = typeof init?.body === "string" ? init.body : null;
+      sent.push({ method, url, tenant, body });
       const held = helds.findIndex(
         (h) => h.method === method && h.match.test(url)
       );
@@ -1321,8 +1327,10 @@ describe("a re-take read sent before a write and answered after it", () => {
     expect(clearButton()).toBeDisabled();
   }, 20_000);
 
-  // Session compliance's settings and history reads race a save as well:
-  // these two rows send the read through Refresh.
+  // Session compliance's settings and history reads race a save as well. A
+  // save is refused while the re-take of the settings is out (the draft may
+  // have been seeded from another project's), so these two rows send the
+  // racing read through Refresh.
   const CONFIG = /\/session-compliance\/config$/;
   const HISTORY = /\/session-compliance\/config\/versions$/;
 
@@ -1377,6 +1385,131 @@ describe("a re-take read sent before a write and answered after it", () => {
     await settle(80);
     expect(screen.getByTestId("compliance-config-history")).toHaveTextContent(
       "v4"
+    );
+  }, 20_000);
+});
+
+/**
+ * A compliance draft seeded from a superseded answer: on a first visit the
+ * settings can be read in ANOTHER project before the page knows its own
+ * (here, a mount read retried after another tab's switch), and the panel
+ * seeds its draft from whatever is shown. Ported from the round-4 review's
+ * demonstration (`complianceDraft.test.tsx`), where the operator's one edit
+ * was saved into the page's project together with the other project's mode
+ * and clause. The round-4 decision: when the re-take's settings land, the
+ * draft is re-seeded from them even over unsaved edits, and the panel says
+ * the edits were discarded.
+ */
+describe("a compliance draft seeded from the superseded answer", () => {
+  const CFG = /\/session-compliance\/config$/;
+  /** The other tab's project's settings: nothing of them may reach Bravo. */
+  const SYSTEM_CONFIG = {
+    ...COMPLIANCE_CONFIG,
+    mode: "reopen",
+    max_attempts: 5,
+    enforced_clause_ref: "policy/other-project#its-clause",
+  };
+  const NOTE =
+    "These settings were re-read for this page's project, and your unsaved edits were discarded.";
+  const putsTo = (match: RegExp) =>
+    sent.filter((s) => s.method === "PUT" && match.test(s.url));
+
+  /**
+   * The review's steps up to the re-take: System's settings are shown and
+   * seed the draft, the page learns its project, and the re-take of the
+   * settings is held in flight. Returns its release.
+   */
+  async function systemSeededDraft(): Promise<(status: number) => void> {
+    otherProjectAnswers = [{ match: CFG, body: SYSTEM_CONFIG }];
+    const answerMembership = firstVisit();
+    const releaseMount = holdNext("GET", CFG);
+    renderUnderTenantProvider();
+    await waitFor(() => expect(sentSince(0, "GET", CFG)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    // Another tab stores its project while the mount read is in flight; the
+    // read is answered 503 and retried, unpinned, in that project.
+    localStorage.setItem(KEY, SYS);
+    await act(async () => releaseMount(503));
+    await waitFor(() => expect(sentSince(0, "GET", CFG)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    expect(sentSince(0, "GET", CFG).map((s) => s.tenant)).toEqual([null, SYS]);
+    await settle(150);
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(5);
+    // The page learns its project (the provider stores Bravo); the re-take
+    // is in flight while the operator edits the one field they mean to
+    // change.
+    const releaseRetake = holdNext("GET", CFG);
+    await act(async () => answerMembership());
+    await waitFor(() => expect(sentSince(0, "GET", CFG)).toHaveLength(3), {
+      timeout: 5000,
+    });
+    expect(sentSince(0, "GET", CFG)[2]!.tenant).toBe(B);
+    expect(localStorage.getItem(KEY)).toBe(B);
+    await settle(80);
+    const attempts = screen.getByTestId("compliance-max-attempts");
+    await user().clear(attempts);
+    await user().type(attempts, "2");
+    return releaseRetake;
+  }
+
+  it("is not saved into the page's project", async () => {
+    const releaseRetake = await systemSeededDraft();
+    await act(async () => releaseRetake(200));
+    await settle(80);
+
+    // Re-seeded from Bravo's settings, over the edit, and it says so.
+    expect(screen.getByTestId("compliance-draft-retaken")).toHaveTextContent(
+      NOTE
+    );
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(1);
+    // Nothing is saved until it is re-edited: nothing differs from Bravo's.
+    await user().click(screen.getByTestId("compliance-save"));
+    await settle(80);
+    expect(putsTo(CFG)).toEqual([]);
+
+    const attempts = screen.getByTestId("compliance-max-attempts");
+    await user().clear(attempts);
+    await user().type(attempts, "2");
+    await user().click(screen.getByTestId("compliance-save"));
+    await waitFor(() => expect(putsTo(CFG)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    const put = putsTo(CFG)[0]!;
+    const body = JSON.parse(put.body ?? "{}") as Record<string, unknown>;
+    expect(put.tenant).toBe(B);
+    expect(body.max_attempts).toBe(2);
+    // Nothing read from the other project may be written into this one.
+    expect(body.mode).toBe(COMPLIANCE_CONFIG.mode);
+    expect(body.enforced_clause_ref).toBe(
+      COMPLIANCE_CONFIG.enforced_clause_ref
+    );
+    // Saved: the note has said what it had to.
+    expect(
+      screen.queryByTestId("compliance-draft-retaken")
+    ).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("a save sent while the re-take of the settings is out sends nothing, and says why", async () => {
+    vi.mocked(toast.error).mockClear();
+    const releaseRetake = await systemSeededDraft();
+
+    await user().click(screen.getByTestId("compliance-save"));
+    await settle(80);
+
+    expect(putsTo(CFG)).toEqual([]);
+    expect(vi.mocked(toast.error).mock.calls).toEqual([
+      [
+        "Nothing was sent: these settings are being re-read for this page's project. Save again once they have loaded.",
+      ],
+    ]);
+    // Once the re-take lands, the draft is Bravo's and the note says why.
+    await act(async () => releaseRetake(200));
+    await settle(80);
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(1);
+    expect(screen.getByTestId("compliance-draft-retaken")).toHaveTextContent(
+      NOTE
     );
   }, 20_000);
 });

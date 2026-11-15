@@ -35,6 +35,7 @@ export function SessionComplianceSection() {
     setCursor,
     atFirstPage,
     saveConfig,
+    configRetakeEpoch,
     reloadAll,
     featureUnavailable,
   } = useSessionCompliance();
@@ -90,6 +91,7 @@ export function SessionComplianceSection() {
             versionsDegraded={versions.degraded}
             versionsError={versions.error}
             onSave={saveConfig}
+            retakeEpoch={configRetakeEpoch}
           />
 
           <SessionComplianceSessions

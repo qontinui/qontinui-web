@@ -100,6 +100,14 @@ const EMPTY: Loaded<never> = {
 };
 
 /**
+ * Why a save is refused while the re-take of the settings is still out: the
+ * draft it would send was seeded from settings read before the page knew its
+ * project, which may be another project's.
+ */
+const RETAKE_PENDING_REFUSAL =
+  "Nothing was sent: these settings are being re-read for this page's project. Save again once they have loaded.";
+
+/**
  * Reads and mutates the tenant's session-compliance enforcement surface via the
  * coord-proxy (`/api/v1/operations/coord/session-compliance/*`).
  *
@@ -121,9 +129,12 @@ const EMPTY: Loaded<never> = {
  * its project (a first visit, nothing stored), with no pin, in the project
  * stored as each attempt is made: all four are re-taken, pinned, once the
  * page has one, and the answers to the reads sent before are then dropped
- * (`useRetakeOnceWhenPinned`). And the save is refused — nothing sent, the
- * page says why — while that switch is in effect, or while the page has no
- * project to pin it to. The pin and the refusal both come from the page's
+ * (`useRetakeOnceWhenPinned`). The panel's draft is seeded from the settings
+ * shown, so it is re-seeded when the re-take's settings land, even over
+ * unsaved edits (`configRetakeEpoch`), and a save is refused while they are
+ * still out. And the save is refused — nothing sent, the page says why —
+ * while that switch is in effect, or while the page has no project to pin it
+ * to. The pin and the refusal both come from the page's
  * provider (`usePageSendGuard`), and the refusal sits beside the send, so no
  * caller can leave it out. It is never mounted outside that provider, and
  * throws if it is: there is no unguarded mode.
@@ -156,6 +167,11 @@ export function useSessionCompliance() {
   // dropped, as the shared dial does (`useTenantFleetPolicyDial`). The
   // verdicts and the ledger are not changed by a save, so they keep theirs.
   const writeGeneration = useRef(0);
+  // The re-take the settings shown were read under: 0 until the re-take's
+  // settings land, then 1. The panel re-seeds its draft when it changes, and
+  // a save waits for it while a re-take is out (`saveConfig`).
+  const [configRetakeEpoch, setConfigRetakeEpoch] = useState(0);
+  const shownConfigRetake = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
@@ -175,6 +191,8 @@ export function useSessionCompliance() {
         degraded: data.degraded ?? null,
         error: null,
       });
+      shownConfigRetake.current = retake;
+      setConfigRetakeEpoch(retake);
     } catch (err) {
       if (superseded()) return;
       setConfig({
@@ -227,6 +245,14 @@ export function useSessionCompliance() {
   const saveConfig = useCallback(
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
       if (!writeAllowed()) return false;
+      // The draft was seeded from the settings shown. While the re-take's are
+      // still out, those were read before the page knew its project and may
+      // be another project's: nothing is sent until they land and the panel
+      // has re-seeded the draft from them.
+      if (shownConfigRetake.current !== retakes.current) {
+        toast.error(RETAKE_PENDING_REFUSAL);
+        return false;
+      }
       setSaving(true);
       try {
         const updated = await saveSessionComplianceConfig(patch, sendPin());
@@ -379,6 +405,12 @@ export function useSessionCompliance() {
     setCursor,
     atFirstPage: cursor === null,
     saveConfig,
+    /**
+     * The re-take the settings shown were read under. When it changes, the
+     * settings were re-read for the page's project: the panel re-seeds its
+     * draft from them, even over unsaved edits.
+     */
+    configRetakeEpoch,
     reloadAll,
     featureUnavailable,
   };
