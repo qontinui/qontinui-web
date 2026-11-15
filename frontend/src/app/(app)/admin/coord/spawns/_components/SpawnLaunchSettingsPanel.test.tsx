@@ -290,6 +290,34 @@ describe("SpawnLaunchSettingsPanel", () => {
     expect(puts()[0]?.body).toEqual({ model: "opus", effort: "low" });
   });
 
+  it("a field set back to coord's value follows coord again across a refresh", async () => {
+    await renderPanel();
+    const model = selectOf("post_merge", "model");
+    fireEvent.change(model, { target: { value: "opus" } });
+    fireEvent.change(selectOf("post_merge", "model"), {
+      target: { value: "sonnet" },
+    });
+    routes.launchSettings = () => {
+      const body = launchSettingsBody() as {
+        settings: Record<string, unknown>[];
+      };
+      body.settings[0] = { ...body.settings[0], model: "haiku" };
+      return { body };
+    };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("spawn-launch-refresh"));
+    });
+    await settle();
+    expect(selectOf("post_merge", "model").value).toBe("haiku");
+    expect(
+      (
+        within(row("post_merge")).getByTestId(
+          "spawn-launch-save"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
+  });
+
   it("a settled save clears the draft: a refused one shows coord's value again", async () => {
     routes.putLaunchSetting = () => ({ status: 422, body: { detail: "no" } });
     await renderPanel();
