@@ -54131,6 +54131,191 @@
         "title": "SnapshotRunUpdate",
         "type": "object"
       },
+      "SpawnLaunchSettingPut": {
+        "additionalProperties": false,
+        "description": "The full ``{model, effort}`` pair. Both keys are required and each is\nnullable: ``null`` writes inherit, so clearing a stored value is a write.",
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fable",
+                  "opus",
+                  "sonnet",
+                  "haiku"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "model",
+          "effort"
+        ],
+        "title": "SpawnLaunchSettingPut",
+        "type": "object"
+      },
+      "SpawnLaunchSettingRow": {
+        "description": "One settable spawn type as coord resolves it.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fable",
+                  "opus",
+                  "sonnet",
+                  "haiku"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "source": {
+            "enum": [
+              "stored",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "spawn_type": {
+            "title": "Spawn Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "spawn_type",
+          "model",
+          "effort",
+          "source"
+        ],
+        "title": "SpawnLaunchSettingRow",
+        "type": "object"
+      },
+      "SpawnLaunchSettingsResponse": {
+        "description": "Every settable spawn type, coord's two vocabularies, and edit rights.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "effort_levels": {
+            "items": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Effort Levels",
+            "type": "array"
+          },
+          "model_families": {
+            "items": {
+              "enum": [
+                "fable",
+                "opus",
+                "sonnet",
+                "haiku"
+              ],
+              "type": "string"
+            },
+            "title": "Model Families",
+            "type": "array"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/SpawnLaunchSettingRow"
+            },
+            "title": "Settings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "settings",
+          "model_families",
+          "effort_levels",
+          "can_edit"
+        ],
+        "title": "SpawnLaunchSettingsResponse",
+        "type": "object"
+      },
       "StateAnnotation": {
         "description": "A state discovered during extraction.\n\nStates represent distinct UI regions or views identified by their\nvisual and semantic properties.",
         "properties": {
@@ -130969,6 +131154,92 @@
         "summary": "Get Snapshot Screenshots",
         "tags": [
           "snapshots"
+        ]
+      }
+    },
+    "/api/v1/spawn-launch-settings": {
+      "get": {
+        "description": "Every settable spawn type's model and effort for the effective tenant.",
+        "operationId": "api_v1_spawn_launch_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpawnLaunchSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn Launch Settings",
+        "tags": [
+          "spawn-launch-settings"
+        ]
+      }
+    },
+    "/api/v1/spawn-launch-settings/{spawn_type}": {
+      "put": {
+        "description": "Write one spawn type's model and effort; answer with coord's row.\n\nTenant-admin gated web-side; coord re-checks and its refusals (403, and the\n422 naming the settable types) pass through as coord sent them.",
+        "operationId": "api_v1_spawn_launch_settings_spawn_type_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "spawn_type",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "title": "Spawn Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpawnLaunchSettingPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpawnLaunchSettingRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Spawn Launch Setting",
+        "tags": [
+          "spawn-launch-settings"
         ]
       }
     },

@@ -1645,6 +1645,21 @@ it may take ("Takes sessions and builds", "Takes no new work"), under the header
 rendered — the path's verdict already reads every switch, and opening the line names
 each in full.
 
+**Model & effort by spawn type** (`spawns/_components/SpawnLaunchSettingsPanel.tsx`
+over `_lib/useSpawnLaunchSettings.ts`; plan
+`2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5) is a
+sibling of the Spawn paths matrix, not more columns on it: the matrix is one row per
+spawn PATH, this is one row per spawn TYPE as coord serves them. It adds no
+primitive and no palette: a plain table like the matrix's, native `select`s with the
+`.select` class (the shape `plan-library/_components/ModelRoutingPanel.tsx` set for a
+model-family choice), `INERT` for the stored/default badge, `UNKNOWN_AMBER` for a
+row whose save outcome is open and `UnknownNote` for a failed read — which renders
+UNKNOWN, never "Inherit", since inherit is a value. Each row saves on its own and
+then shows the PUT's answer (coord's row as stored), the "after a write, the
+read-back" pattern above; a refusal shows coord's value with "Not applied". Every
+control is a write, so the whole panel is `OperatorOnly` and nothing of it renders
+while presenting.
+
 ### 3.9 The session-load console — recorded under §6.4
 
 `/admin/coord/session-load` (plan
