@@ -989,32 +989,22 @@ describe("the page's project known only after the page mounted", () => {
   );
 
   it("a settings write sent once the provider has answered lands in the page's project", async () => {
-    // A hard load: the layout's provider is still reading the membership list
-    // when the page mounts, so the page's project is UNKNOWN at first and the
-    // page's provider pins nothing. Once the provider answers, the page's
-    // project is the one it loaded in.
-    let answer: () => void = () => {};
-    listTenantsMock.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = () =>
-            resolve({
-              tenants: [
-                { id: B, slug: "b", name: "Bravo" },
-                { id: SYS, slug: "s", name: "System" },
-              ],
-              active_tenant_id: B,
-            });
-        })
-    );
-    render(
-      <TenantProvider>
-        <PromptDocumentsPage />
-      </TenantProvider>
-    );
+    // A first visit on a hard load: nothing is stored, and the layout's
+    // provider is still reading the membership list when the page mounts, so
+    // the page's project is UNKNOWN at first and its provider pins nothing.
+    // Once the provider answers it stores Bravo, and the page's project and
+    // pin are Bravo. A resolver that kept the pin it had at mount would send
+    // this write unpinned, and its re-issue after the 429 would go in the
+    // project the other tab stored.
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
     await screen.findByTestId("policy-write-dial", {}, { timeout: 5000 });
     await settle();
-    await act(async () => answer());
+    // Nothing was pinned at mount: the dial's mount read went with no project.
+    expect(
+      sentSince(0, "GET", /\/fleet-policy\?domain=policy_write$/)[0]?.tenant
+    ).toBeNull();
+    await act(async () => answerMembership());
     await settle();
     await user().click(radio("policy-write-full"));
     await screen.findByTestId("policy-write-confirm");
