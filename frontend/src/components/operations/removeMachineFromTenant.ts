@@ -523,7 +523,13 @@ export function describeUnbindRejection(
         sentence:
           // Without `refused_device_id` the refusal is this console's own
           // gate, before any id reached coord.
-          `${abort !== null ? "Coord" : "This console"} refused the removal (HTTP ${status}): only an operator of this tenant may remove a machine from it. ` +
+          `${
+            abort === null
+              ? `This console refused the removal (HTTP ${status})`
+              : typeof inner?.coord_status === "number"
+                ? `Coord refused the removal (coord HTTP ${inner.coord_status})`
+                : `Coord refused the removal (HTTP ${status})`
+          }: only an operator of this tenant may remove a machine from it. ` +
           what +
           (reading.sentence && !/^HTTP \d{3}$/.test(reading.sentence)
             ? ` (${reading.sentence})`
