@@ -52,6 +52,7 @@ import {
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
   combineSummaries,
+  summarizeRows,
   confirmPhraseFor,
   isLastCiHost,
   listingText,
@@ -82,9 +83,22 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
     "may have been removed — coord's answer was lost; reload to check",
   deadline_not_attempted: "not attempted (time limit) — retry",
   not_sent: "not sent (an earlier batch was refused)",
+  not_sent_after_failure:
+    "not sent (an earlier batch failed or its answer was lost)",
+  request_rejected: "not attempted (the request was rejected)",
+  removed_earlier: "removed (by the earlier attempt, confirmed absent now)",
   console_refused: "not attempted (this console refused the request)",
   unreported: "not reported",
 };
+
+/** One row's outcome in words, with what only the row itself knows. */
+function rowText(r: UnbindRowResult): string {
+  if (r.outcome === "request_rejected" && r.status !== null)
+    return `not attempted (the request was rejected: HTTP ${r.status})`;
+  if (r.outcome === "unreported" && r.unreadable)
+    return "not reported (the answer could not be read)";
+  return ROW_OUTCOME_TEXT[r.outcome];
+}
 
 /** A refusal in one sentence, for the acknowledgement. */
 function refusalSentence(r: UnbindRefusal): string {
@@ -241,6 +255,21 @@ export function useRemoveMachineFromTenant(
         ? { ...refusal, partial: whole(refusal.partial) }
         : refusal;
     if (r.partial !== null) setSoFar(r.partial);
+    else if (r.mayHaveApplied)
+      // No rows, but it may have acted: remember every id as unreported, so
+      // a retry that finds them absent credits this attempt.
+      setSoFar(
+        whole(
+          summarizeRows(
+            ids.map((deviceId) => ({
+              deviceId,
+              outcome: "unreported",
+              status: null,
+              error: null,
+            }))
+          )
+        )
+      );
     // A non-auth error whose rows leave nothing unsettled is settled: there
     // is nothing to retry, so no "Retry the 0…" dialog is left behind.
     if (!r.auth && r.partial !== null && r.partial.allSettled) {
@@ -288,7 +317,7 @@ function OutcomeRows({ summary }: { summary: UnbindSummary }) {
           data-testid="fleet-roles-remove-outcome-row"
         >
           <span className="font-mono break-all">{r.deviceId}</span>:{" "}
-          {ROW_OUTCOME_TEXT[r.outcome]}
+          {rowText(r)}
           {r.error !== null && (
             <BackendErrorMessage
               error={r.error}
