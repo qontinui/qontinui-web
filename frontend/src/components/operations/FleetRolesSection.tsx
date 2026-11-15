@@ -101,6 +101,7 @@ import {
   type RoleMachine,
   type RoleWriteRefusal,
 } from "./fleetDispatchRoles";
+import { RemoveMachineFromTenantControl } from "./RemoveMachineFromTenantDialog";
 import {
   putDispatchRole,
   useFleetDispatchRoles,
@@ -691,6 +692,16 @@ export function FleetRolesSection() {
                       <CoordAdminOnly fallback={<ReadOnlyNotice />}>
                         <div className="space-y-1.5">
                           <RoleButtons m={m} onPick={pickFor(m)} />
+                          {/* Removing this tenant's binding (plan
+                              2026-11-15-stale-ci-hosts-…); an assigned-but-
+                              unregistered machine has no rows to remove. */}
+                          {m.deviceIds.length > 0 && read.state === "known" && (
+                            <RemoveMachineFromTenantControl
+                              machine={m}
+                              machines={read.machines}
+                              refresh={refresh}
+                            />
+                          )}
                           {m.role === null && m.suggestion && (
                             <Button
                               size="sm"
