@@ -8,6 +8,10 @@ import {
   setKindTier,
   type KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
+import {
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "../../_shared/useSendTimePin";
 import type { AgentWriteTier } from "../types";
 
 function message(err: unknown, fallback: string): string {
@@ -47,8 +51,22 @@ function message(err: unknown, fallback: string): string {
  * and `warning` come back on every response for that reason, and the UI must
  * show them. A control whose NAME promises more than the deployed build
  * delivers — in the permissive direction — is worse than no control.
+ *
+ * ## Which project it reads and writes
+ *
+ * With `resolvePin`, every read — the read-back after each write included —
+ * and every write is sent in the project it names, asked as each goes out and
+ * kept on every attempt. The prompt-documents page passes the project its list
+ * shows, so a tier write re-issued after another tab's switch cannot open or
+ * close a kind in that tab's project, and its read-back cannot show that
+ * project's tiers as this one's. Omitted, each is sent in the project stored
+ * when it is made.
  */
-export function usePromptDocumentKindTiers() {
+export function usePromptDocumentKindTiers({
+  resolvePin,
+}: SendTimePinOptions = {}) {
+  // One identity whatever the caller passes, so the mount read runs once.
+  const sendPin = useSendTimePin(resolvePin);
   const [data, setData] = useState<KindTiersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,7 +80,7 @@ export function usePromptDocumentKindTiers() {
   const load = useCallback(async (): Promise<boolean> => {
     try {
       setLoading(true);
-      const view = await fetchKindTiers();
+      const view = await fetchKindTiers(sendPin());
       setData(view);
       setError(null);
       return true;
@@ -75,7 +93,7 @@ export function usePromptDocumentKindTiers() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sendPin]);
 
   useEffect(() => {
     load();
@@ -95,7 +113,7 @@ export function usePromptDocumentKindTiers() {
     async (kind: string, tier: AgentWriteTier): Promise<boolean> => {
       try {
         setSaving(true);
-        await setKindTier(kind, tier);
+        await setKindTier(kind, tier, sendPin());
         const confirmed = await load();
         // `deny` goes through this same function, so one message for all three
         // tiers said "Agents may now write ... : deny" — the display asserting
@@ -122,7 +140,7 @@ export function usePromptDocumentKindTiers() {
         setSaving(false);
       }
     },
-    [load]
+    [load, sendPin]
   );
 
   /** Clear one kind's tier, returning it to coord's compile-time default. */
@@ -130,7 +148,7 @@ export function usePromptDocumentKindTiers() {
     async (kind: string): Promise<boolean> => {
       try {
         setSaving(true);
-        await clearKindTier(kind);
+        await clearKindTier(kind, sendPin());
         const confirmed = await load();
         const what =
           `Cleared the tenant setting for \`${kind}\` — coord's built-in ` +
@@ -151,7 +169,7 @@ export function usePromptDocumentKindTiers() {
         setSaving(false);
       }
     },
-    [load]
+    [load, sendPin]
   );
 
   return {

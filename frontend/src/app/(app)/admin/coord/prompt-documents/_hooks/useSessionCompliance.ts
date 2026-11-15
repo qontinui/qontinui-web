@@ -10,6 +10,10 @@ import {
   saveSessionComplianceConfig,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "../../_shared/useSendTimePin";
 import type {
   ComplianceVerdict,
   OutstandingItem,
@@ -107,10 +111,18 @@ const EMPTY: Loaded<never> = {
  * `unavailable` (coord doesn't serve this yet), `degraded` (coord answered, its
  * store isn't provisioned), `error` (coord unreachable/refusing). None of them
  * is "nothing to show".
+ *
+ * With `resolvePin`, every read and the save are sent in the project it names,
+ * asked as each goes out and kept on every attempt — the prompt-documents page
+ * passes the project its list shows, so a save re-issued after another tab's
+ * switch cannot change that tab's enforcement, and no read can show that
+ * project's verdicts as this one's. Omitted, each is sent in the project
+ * stored when it is made.
  */
-export function useSessionCompliance() {
-  const [config, setConfig] =
-    useState<Loaded<SessionComplianceConfig>>(EMPTY);
+export function useSessionCompliance({ resolvePin }: SendTimePinOptions = {}) {
+  // One identity whatever the caller passes, so the mount reads run once.
+  const sendPin = useSendTimePin(resolvePin);
+  const [config, setConfig] = useState<Loaded<SessionComplianceConfig>>(EMPTY);
   const [versions, setVersions] =
     useState<Loaded<SessionComplianceConfigVersion[]>>(EMPTY);
   const [sessions, setSessions] =
@@ -130,7 +142,7 @@ export function useSessionCompliance() {
   const loadConfig = useCallback(async () => {
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await fetchSessionComplianceConfig();
+      const data = await fetchSessionComplianceConfig(sendPin());
       setConfig({
         data,
         loading: false,
@@ -149,12 +161,12 @@ export function useSessionCompliance() {
           : message(err, "Failed to load enforcement settings"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
   const loadVersions = useCallback(async () => {
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceConfigVersions();
+      const data = await listSessionComplianceConfigVersions(sendPin());
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -173,7 +185,7 @@ export function useSessionCompliance() {
           : message(err, "Failed to load setting history"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
   /**
    * Save the enforcement settings. Coord versions the row, so a change is
@@ -184,7 +196,7 @@ export function useSessionCompliance() {
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
       setSaving(true);
       try {
-        const updated = await saveSessionComplianceConfig(patch);
+        const updated = await saveSessionComplianceConfig(patch, sendPin());
         setConfig({
           data: updated,
           loading: false,
@@ -204,7 +216,7 @@ export function useSessionCompliance() {
         setSaving(false);
       }
     },
-    [loadVersions]
+    [loadVersions, sendPin]
   );
 
   /* ---- sessions -------------------------------------------------------- */
@@ -212,11 +224,14 @@ export function useSessionCompliance() {
   const loadSessions = useCallback(async () => {
     setSessions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceSessions({
-        limit: SESSIONS_PAGE,
-        verdict: verdictFilter !== "all" ? verdictFilter : undefined,
-        cursor,
-      });
+      const data = await listSessionComplianceSessions(
+        {
+          limit: SESSIONS_PAGE,
+          verdict: verdictFilter !== "all" ? verdictFilter : undefined,
+          cursor,
+        },
+        sendPin()
+      );
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -237,14 +252,14 @@ export function useSessionCompliance() {
       });
       setNextCursor(null);
     }
-  }, [verdictFilter, cursor]);
+  }, [verdictFilter, cursor, sendPin]);
 
   /* ---- outstanding ledger ---------------------------------------------- */
 
   const loadOutstanding = useCallback(async () => {
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceOutstanding();
+      const data = await listSessionComplianceOutstanding(sendPin());
       setOutstanding({
         data: data.items ?? [],
         loading: false,
@@ -263,7 +278,7 @@ export function useSessionCompliance() {
           : message(err, "Failed to load the outstanding-work ledger"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
   useEffect(() => {
     loadConfig();
@@ -276,13 +291,10 @@ export function useSessionCompliance() {
   }, [loadSessions]);
 
   /** Reset paging whenever the verdict filter changes. */
-  const changeVerdictFilter = useCallback(
-    (next: ComplianceVerdict | "all") => {
-      setVerdictFilter(next);
-      setCursor(null);
-    },
-    []
-  );
+  const changeVerdictFilter = useCallback((next: ComplianceVerdict | "all") => {
+    setVerdictFilter(next);
+    setCursor(null);
+  }, []);
 
   const reloadAll = useCallback(() => {
     loadConfig();

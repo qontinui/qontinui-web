@@ -29,6 +29,8 @@ from sqlalchemy.engine import Engine
 
 from tests._alembic_harness import (
     admin_database_url,
+    alter_statement,
+    assert_nullable_add_only,
     backend_root,
     can_connect,
     column_comment,
@@ -36,6 +38,7 @@ from tests._alembic_harness import (
     comment_body_from_source,
     ephemeral_database,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -140,28 +143,27 @@ def test_the_revision_docstring_states_the_retention_posture() -> None:
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
     """Run ``upgrade`` or ``downgrade`` against a recording ``op`` stub."""
-    module = _revision_module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_revision_module(), step, monkeypatch)
 
 
 def _add_statement(monkeypatch: pytest.MonkeyPatch) -> str:
     """The one ``ALTER TABLE … ADD COLUMN`` statement ``upgrade()`` emits."""
-    adds = [
-        sql
-        for sql in _recorded_sql(monkeypatch, "upgrade")
-        if "ADD COLUMN" in sql.upper()
-    ]
-    assert len(adds) == 1, f"expected one ADD COLUMN statement, got {len(adds)}"
-    return adds[0]
+    return alter_statement(
+        _recorded_sql(monkeypatch, "upgrade"), "coord", _TABLE, "ADD"
+    )
+
+
+def test_upgrade_never_drops_defaults_or_constrains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nullable, no DEFAULT / CHECK / constraint, no DROP, no backfill — static.
+
+    The DB walk below checks nullability and default only where a Postgres is
+    reachable; this reads the WHOLE recorded ADD statement, whitespace-collapsed
+    (``_alembic_harness.assert_nullable_add_only``), so it also runs locally and
+    catches a clause on a continuation line.
+    """
+    assert_nullable_add_only(_recorded_sql(monkeypatch, "upgrade"), "coord", _TABLE)
 
 
 def test_the_static_add_and_drop_cover_exactly_the_one_column(

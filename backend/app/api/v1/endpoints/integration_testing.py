@@ -2,11 +2,11 @@
 Config Testing API Endpoints
 
 Endpoints for mock execution and PDF report generation used by the
-Config Testing feature (workflow validation with historical data).
+Config Testing feature (workflow validation against simulated execution data).
 
-Note: This was previously named integration_testing.py but renamed to
-config_testing.py to align with Qontinui terminology:
-- Config Testing = Mock mode testing with historical data
+The module keeps its integration_testing.py name, but the feature it serves
+is called Config Testing in Qontinui terminology:
+- Config Testing = Mock mode testing with simulated execution data
 - QA Testing = Real test runs from the runner (see testing.py)
 """
 
@@ -187,7 +187,7 @@ async def execute_mock_workflow(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, Any]:
     """
-    Execute a mock workflow using historical data (placeholder endpoint).
+    Return simulated execution data for a workflow (placeholder endpoint).
 
     **Authentication:** JWT token required
 

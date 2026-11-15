@@ -44,10 +44,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from alembic.config import CommandLine, Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def admin_database_url() -> str:
@@ -450,6 +454,108 @@ def column_comment(
         ).scalar_one_or_none()
 
 
+# --------------------------------------------------------------------------
+# Index readers, for revisions that build an index CONCURRENTLY
+#
+# A killed CONCURRENTLY build leaves an INVALID index that ``IF NOT EXISTS``
+# keeps. So a test of such a revision checks validity and the key and predicate
+# as Postgres renders them, and tells a REINDEX (same oid, new storage file)
+# from a rebuild (new oid) and from no work at all. Older suites keep private
+# single-index copies of these. New tests use these instead.
+# --------------------------------------------------------------------------
+
+
+def index_state(
+    engine: Engine, index_name: str, schema: str = "coord"
+) -> tuple[bool, bool, str]:
+    """``(indisvalid, indisunique, predicate)``, predicate ``""`` when none.
+
+    Raises when the index does not exist.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT i.indisvalid, i.indisunique,
+                       pg_get_expr(i.indpred, i.indrelid)
+                  FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = :schema AND c.relname = :idx
+                """
+            ),
+            {"schema": schema, "idx": index_name},
+        ).one()
+    return bool(row[0]), bool(row[1]), str(row[2] or "")
+
+
+def index_definition(engine: Engine, index_name: str, schema: str = "coord") -> str:
+    """``pg_get_indexdef`` for the index: its key as Postgres renders it."""
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                text("SELECT pg_get_indexdef(CAST(:q AS regclass))"),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def index_oid(engine: Engine, index_name: str, schema: str = "coord") -> int:
+    """The index's oid. A drop and re-create changes it; a REINDEX keeps it."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text("SELECT CAST(:q AS regclass)::oid"),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def index_filenode(engine: Engine, index_name: str, schema: str = "coord") -> int:
+    """The index's storage file. A REINDEX gives it a new one under the same oid."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT relfilenode FROM pg_class WHERE oid = CAST(:q AS regclass)"
+                ),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def is_superuser(engine: Engine) -> bool:
+    """Whether the connected role may write ``pg_index``, as
+    :func:`invalidate_index` needs."""
+    with engine.connect() as conn:
+        return (
+            conn.execute(text("SELECT current_setting('is_superuser')")).scalar()
+            == "on"
+        )
+
+
+def invalidate_index(engine: Engine, index_name: str, schema: str = "coord") -> None:
+    """Mark the index INVALID, the state a killed CONCURRENTLY build leaves.
+
+    Writes ``pg_index``, so the role must be a superuser (:func:`is_superuser`).
+    """
+    with engine.begin() as conn:
+        updated = conn.execute(
+            text(
+                """
+                UPDATE pg_index i
+                   SET indisvalid = false
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE c.oid = i.indexrelid
+                   AND n.nspname = :schema AND c.relname = :idx
+                """
+            ),
+            {"schema": schema, "idx": index_name},
+        ).rowcount
+    assert updated == 1, f"expected to invalidate exactly {schema}.{index_name}"
+
+
 def load_revision_module(path: Path, module_name: str) -> ModuleType:
     """Import a revision file directly, so its functions can be re-invoked.
 
@@ -653,3 +759,139 @@ def upgrade_execute_calls(
     for statement in upgrades[0].body:
         visit(statement, False)
     return calls
+
+
+# ---------------------------------------------------------------------------
+# Recorded-SQL helpers for revisions written as static ``op.execute`` DDL.
+#
+# topcons_01's and kernel_gauges_01's tests each carried a private copy of
+# these, and scanned for forbidden clauses only on the lines containing
+# ``ADD COLUMN``, so a ``NOT NULL`` or ``DEFAULT`` on a continuation line, a
+# ``NOT NULL`` split across lines, or an ``ADD CONSTRAINT`` in the same ALTER
+# passed. runmem_01's test (web#2207, open when this landed, still carrying its
+# own private copy) fixed the scan; this hoists that fix so every migration
+# test can share it.
+# ---------------------------------------------------------------------------
+
+#: Clauses a nullable "NULL means UNKNOWN" column's ADD must never carry: each
+#: either fabricates a reading or puts a second door on an input coord
+#: validates app-side.
+FORBIDDEN_ADD_CLAUSES: tuple[str, ...] = (
+    "NOT NULL",
+    "DEFAULT",
+    "CHECK",
+    "CONSTRAINT",
+    "REFERENCES",
+    "UNIQUE",
+)
+
+
+def recorded_sql(
+    module: ModuleType, step: str, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    """Run ``module.upgrade()`` / ``downgrade()`` against a recording ``op``.
+
+    Returns every ``op.execute`` argument, in order, as a string. Only
+    ``execute`` is stubbed: a revision that reaches for any other ``op``
+    method raises ``AttributeError``, which is the right failure for a test
+    that relies on the DDL being static ``op.execute`` text.
+    """
+    executed: list[str] = []
+
+    class _RecordingOp:
+        @staticmethod
+        def execute(sql: object) -> None:
+            executed.append(str(sql))
+
+    monkeypatch.setattr(module, "op", _RecordingOp)
+    getattr(module, step)()
+    return executed
+
+
+def alter_statement(statements: list[str], schema: str, table: str, verb: str) -> str:
+    """The ONE ``ALTER TABLE <schema>.<table> ... <verb> COLUMN`` statement.
+
+    Fails (assert) on zero or on more than one, so a revision that splits its
+    ADD across two ALTERs is caught rather than half-read.
+    """
+    head = re.compile(rf"^\s*ALTER TABLE {re.escape(schema)}\.{re.escape(table)}\s")
+    found = [
+        sql for sql in statements if head.match(sql) and f"{verb} COLUMN" in sql.upper()
+    ]
+    assert len(found) == 1, (
+        f"expected one {verb} statement for {schema}.{table}, got {len(found)}"
+    )
+    return found[0]
+
+
+def collapsed_upper(sql: str) -> str:
+    """``sql`` upper-cased with every whitespace run collapsed to one space."""
+    return " ".join(sql.upper().split())
+
+
+def forbidden_add_clauses(
+    statement: str, clauses: tuple[str, ...] = FORBIDDEN_ADD_CLAUSES
+) -> list[str]:
+    """The forbidden clauses present ANYWHERE in ``statement``.
+
+    Reads the WHOLE statement, whitespace-collapsed, so a clause on a
+    continuation line or split across lines is found; matches on word
+    boundaries, so a column NAMED ``default_x`` or ``checked_at`` is not.
+    """
+    text_ = collapsed_upper(statement)
+    return [
+        clause
+        for clause in clauses
+        if re.search(rf"(?<![\w]){re.escape(clause)}(?![\w])", text_)
+    ]
+
+
+def backfill_statements(statements: list[str]) -> list[str]:
+    """Every recorded statement that may write rows.
+
+    Any statement other than a ``COMMENT ON`` (whose body is prose) that
+    mentions ``UPDATE``, ``INSERT`` or ``COPY`` as a word — so a
+    ``WITH ... UPDATE`` or a ``DO`` block is caught, not only a statement that
+    starts with the verb.
+    """
+    return [
+        sql
+        for sql in statements
+        if not re.match(r"\s*COMMENT\s+ON\b", sql, re.I)
+        and re.search(r"\b(UPDATE|INSERT|COPY)\b", sql, re.I)
+    ]
+
+
+def drop_statements(statements: list[str]) -> list[str]:
+    """Every recorded statement, other than a ``COMMENT ON``, naming ``DROP``.
+
+    Case-insensitive and word-bounded; comment prose is skipped, so a column
+    comment that mentions dropping something is not a false positive.
+    """
+    return [
+        sql
+        for sql in statements
+        if not re.match(r"\s*COMMENT\s+ON\b", sql, re.I)
+        and re.search(r"\bDROP\b", sql, re.I)
+    ]
+
+
+def assert_nullable_add_only(statements: list[str], schema: str, table: str) -> None:
+    """The recorded ``upgrade()`` is ONE nullable ADD on ``schema.table``, then
+    only ``COMMENT ON COLUMN`` statements: no forbidden clause anywhere in the
+    ADD, no DROP, no backfill.
+
+    Static (no database), so it runs where the DB walks skip. For a revision
+    that also emits a lock bound, compose the parts by hand instead.
+    """
+    add = alter_statement(statements, schema, table, "ADD")
+    found = forbidden_add_clauses(add)
+    assert not found, f"the ADD carries {found}; NULL is load-bearing"
+    assert not drop_statements(statements), drop_statements(statements)
+    assert not backfill_statements(statements), (
+        "the revision backfills; rows written before it must keep NULL"
+    )
+    # Pin the shape so a second ALTER the finder's anchor does not match
+    # (``ALTER TABLE ONLY``, another table, a ``SET DEFAULT``) cannot slip past.
+    others = [sql for sql in statements if sql is not add]
+    assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others), others

@@ -118,7 +118,7 @@ jobs:
   # `verify`. A failed production build, a timeout or an API error ends it RED.
   validate:
     name: Resolve production deployment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The resolver waits up to 15 min for Vercel. Build time, measured
     # 2026-10-02 via the Vercel v6 deployments API as `ready - created` over
     # the last 100 production deployments: p50 167 s, p90 ~224 s, max 496 s.
@@ -257,7 +257,7 @@ jobs:
     # migrate.yml, whose environment_url is a github.com job URL -- the cause
     # of spurious rollbacks before the old creator gate) cannot reach here.
     if: needs.validate.outputs.ok == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # One verify per prod URL. Cancel-in-progress is OFF: a rollback mid-flight
     # (promote requested, alias re-point not yet settled) must not be
     # interrupted. Keyed on the VALIDATED URL, never on a dispatch input.

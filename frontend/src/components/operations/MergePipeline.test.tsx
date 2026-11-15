@@ -2165,3 +2165,67 @@ describe("MergePipeline gate join across row shapes", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// D4 on the health strip (plan
+// 2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act).
+// ---------------------------------------------------------------------------
+describe("MergePipeline BEHIND count badge", () => {
+  const behindPr = (n: number, overrides: Partial<PrRow> = {}) =>
+    pr({
+      pr_number: n,
+      branch: `b${n}`,
+      merge_state_status: "BEHIND",
+      merge_status: "behind-base",
+      ...overrides,
+    });
+
+  it("renders the per-state count on the strip, red when coord refused one", () => {
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [
+        behindPr(1, {
+          freshen: {
+            state: "in_progress",
+            attempts: 1,
+            max_attempts: 6,
+            last_attempt_at: null,
+            skip: null,
+            reason: "x",
+          },
+        }),
+        behindPr(2, {
+          freshen: {
+            state: "exhausted",
+            attempts: 6,
+            max_attempts: 6,
+            last_attempt_at: null,
+            skip: null,
+            reason: "x",
+          },
+        }),
+        behindPr(3),
+        behindPr(4, { merge_status: "predicate-blocked" }),
+      ],
+    };
+    render(<MergePipeline />);
+    const badge = within(screen.getByTestId("pipeline-health")).getByTestId(
+      "pipeline-behind"
+    );
+    expect(badge).toHaveTextContent(
+      /^behind 4 · in progress 1 · exhausted 1 · held 1 · unknown 1$/
+    );
+    expect(badge.className).toContain("text-red-200");
+    expect(badge.getAttribute("title")).toContain("disabled 0");
+  });
+
+  it("a measured zero prints, and stays calm", () => {
+    hookData.current = { ...hookData.current, proposals: [], prs: [pr()] };
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-behind");
+    expect(badge).toHaveTextContent(/^behind 0$/);
+    expect(badge.className).not.toContain("text-red-200");
+    expect(badge.className).not.toContain("text-amber-200");
+  });
+});

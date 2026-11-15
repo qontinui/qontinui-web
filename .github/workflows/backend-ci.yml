@@ -234,7 +234,8 @@ jobs:
     # (2026-10-04 amendment). Poetry installs under $RUNNER_TEMP, never the
     # shared runner HOME. Plan
     # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
 
     defaults:
       run:
@@ -331,7 +332,8 @@ jobs:
 
   test:
     name: Run Tests (shard ${{ matrix.shard }}/6)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # SHARDED SIX WAYS (plan
     # 2026-09-12-web-gating-run-tests-fills-its-budget-so-the-suite-is-sharded).
     #
@@ -1333,7 +1335,8 @@ jobs:
     # p50 2.42 / p90 4.03 / max 7.20 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Security Scanning
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       security-events: write
@@ -1538,7 +1541,8 @@ jobs:
     # shard SKIPS this job, and a skipped check is not a red check -- the
     # aggregate would go MISSING at exactly the moment it needs to say no.
     if: always()
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Assert every shard succeeded
@@ -1575,7 +1579,8 @@ jobs:
     # Own override first: WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST=hosted sends only this job back to
     # hosted. On #2091's run it started in the PR's fan-out burst and hit its 15-min cap (job 127450115878)
     # while the shards on the same pool stayed in budget.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST || vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST || vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend
@@ -1668,7 +1673,8 @@ jobs:
     # `always()` so a failed or budget-cancelled shard still gets measured --
     # a shard cancelled AT its budget is the loudest over_margin there is.
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # Same scopes as the workflow-level `permissions:` today; restated here so
     # the jobs read this job makes (`actions: read`) survives any later
