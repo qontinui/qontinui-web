@@ -83,6 +83,8 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
   not_attempted: "not attempted (aborted by an auth refusal)",
   answer_lost:
     "may have been removed — coord's answer was lost; reload to check",
+  request_lost:
+    "may have been removed — the route's answer to that request was lost",
   deadline_not_attempted: "not attempted (time limit) — retry",
   not_sent: "not sent (an earlier batch was refused)",
   not_sent_after_failure:
@@ -97,6 +99,8 @@ const ROW_OUTCOME_TEXT: Record<UnbindRowResult["outcome"], string> = {
 function rowText(r: UnbindRowResult): string {
   if (r.outcome === "request_rejected" && r.status !== null)
     return `not attempted (the request was rejected: HTTP ${r.status})`;
+  if (r.outcome === "answer_lost" && r.detail)
+    return `may have been removed — ${r.detail}`;
   if (r.outcome === "unreported" && r.unreadable)
     return "not reported (the answer could not be read)";
   return ROW_OUTCOME_TEXT[r.outcome];
@@ -185,6 +189,16 @@ export function useRemoveMachineFromTenant(
   const [attemptIds, setAttemptIds] = useState<string[]>([]);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
+  // Each machine's whole-machine rows and retry scope, kept across Cancel
+  // and reopen: a reopened attempt merges over them, so earlier removals and
+  // lost-answer credit survive.
+  const saved = useRef<
+    Record<string, { soFar: UnbindSummary | null; retryIds: string[] | null }>
+  >({});
+  useEffect(() => {
+    if (target !== null)
+      saved.current[target.machine.key] = { soFar, retryIds };
+  }, [target, soFar, retryIds]);
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
 
   const showAck = useCallback((key: string) => {
@@ -201,8 +215,13 @@ export function useRemoveMachineFromTenant(
       roster: RosterCompleteness
     ) => {
       reset();
-      setRetryIds(null);
-      setSoFar(null);
+      // Resume this machine's unsettled ids, as far as it still has them.
+      const kept = saved.current[m.key];
+      const current = new Set(m.deviceIds.map((id) => id.toLowerCase()));
+      const resumed =
+        kept?.retryIds?.filter((id) => current.has(id.toLowerCase())) ?? [];
+      setRetryIds(resumed.length > 0 ? resumed : null);
+      setSoFar(resumed.length > 0 ? (kept?.soFar ?? null) : null);
       setBase(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
@@ -237,10 +256,17 @@ export function useRemoveMachineFromTenant(
       // binding (already absent) or did not say whether the home tenant keeps
       // it listed: say so, without asserting a cause coord did not report.
       const read = readNow();
+      // Still listed = the re-read's row for this machine still holds one of
+      // the ids this removal sent (a row with no device rows holds none).
+      const sent = new Set(m.deviceIds.map((id) => id.toLowerCase()));
       const stillListedAfter =
         read !== null &&
         read.state === "known" &&
-        read.machines.some((x) => x.key === m.key);
+        read.machines.some(
+          (x) =>
+            x.key === m.key &&
+            x.deviceIds.some((id) => sent.has(id.toLowerCase()))
+        );
       const nothingRemoved = s.bindingsRemoved === 0 && s.removedEarlier === 0;
       const homeTenant =
         stillListedAfter && s.alreadyAbsent + s.pointerUnknown > 0;

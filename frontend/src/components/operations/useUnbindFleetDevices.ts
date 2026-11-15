@@ -67,62 +67,65 @@ export function useUnbindFleetDevices(
       if (inFlight.current) return { state: "in_flight" };
       inFlight.current = true;
       setBusy(true);
-      setStatus({ state: "busy" });
-      // The route takes at most UNBIND_BATCH_LIMIT ids: send sequential
-      // batches and merge their rows. Any rejection stops the run; the ids of
-      // later batches were never sent and read "not sent" (refused, or failed
-      // / answer lost), never "not reported": nothing can have happened to
-      // them.
-      const batches: string[][] = [];
-      for (let i = 0; i < deviceIds.length; i += UNBIND_BATCH_LIMIT) {
-        batches.push(deviceIds.slice(i, i + UNBIND_BATCH_LIMIT));
-      }
-      const prior: DeviceUnbindResultWire[] = [];
-      // A 2xx whose body could not be read: its ids stay unreported, and
-      // their rows say the answer could not be read.
-      const unreadableIds: string[] = [];
-      let outcome: UnbindOutcome | null = null;
-      for (let b = 0; b < batches.length; b += 1) {
-        try {
-          const body = await unbindFleetDevices(batches[b]!);
-          if (body !== null && Array.isArray(body.results))
-            prior.push(...body.results);
-          else unreadableIds.push(...batches[b]!);
-        } catch (err) {
-          outcome = {
-            state: "refused",
-            refusal: describeUnbindRejection(deviceIds, err, {
-              prior,
-              current: batches[b]!,
-              neverSent: batches.slice(b + 1).flat(),
-              unreadableIds,
-            }),
-          };
-          break;
-        }
-      }
-      if (outcome === null) {
-        outcome = {
-          state: "answered",
-          summary: summarizeUnbind(
-            deviceIds,
-            { results: prior },
-            null,
-            unreadableIds
-          ),
-        };
-      }
-      setStatus(outcome);
+      // Whatever throws below, busy and the in-flight guard are released.
       try {
-        await refresh();
-      } catch {
-        // The roster's own read reports its failure as UNKNOWN; the removal's
-        // answer above stands either way.
+        setStatus({ state: "busy" });
+        // The route takes at most UNBIND_BATCH_LIMIT ids: send sequential
+        // batches and merge their rows. Any rejection stops the run; the ids
+        // of later batches were never sent and read "not sent" (refused, or
+        // failed / answer lost), never "not reported": nothing can have
+        // happened to them.
+        const batches: string[][] = [];
+        for (let i = 0; i < deviceIds.length; i += UNBIND_BATCH_LIMIT) {
+          batches.push(deviceIds.slice(i, i + UNBIND_BATCH_LIMIT));
+        }
+        const prior: DeviceUnbindResultWire[] = [];
+        // A 2xx whose body could not be read: its ids stay unreported, and
+        // their rows say the answer could not be read.
+        const unreadableIds: string[] = [];
+        let outcome: UnbindOutcome | null = null;
+        for (let b = 0; b < batches.length; b += 1) {
+          try {
+            const body = await unbindFleetDevices(batches[b]!);
+            if (body !== null && Array.isArray(body.results))
+              prior.push(...body.results);
+            else unreadableIds.push(...batches[b]!);
+          } catch (err) {
+            outcome = {
+              state: "refused",
+              refusal: describeUnbindRejection(deviceIds, err, {
+                prior,
+                current: batches[b]!,
+                neverSent: batches.slice(b + 1).flat(),
+                unreadableIds,
+              }),
+            };
+            break;
+          }
+        }
+        if (outcome === null) {
+          outcome = {
+            state: "answered",
+            summary: summarizeUnbind(
+              deviceIds,
+              { results: prior },
+              null,
+              unreadableIds
+            ),
+          };
+        }
+        setStatus(outcome);
+        try {
+          await refresh();
+        } catch {
+          // The roster's own read reports its failure as UNKNOWN; the
+          // removal's answer above stands either way.
+        }
+        return outcome;
       } finally {
         inFlight.current = false;
         setBusy(false);
       }
-      return outcome;
     },
     [refresh]
   );
