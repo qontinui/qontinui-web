@@ -116,6 +116,8 @@ export interface RemoveMachineController {
   busy: boolean;
   /** Ids a retry will send (only those not confirmed removed); `null` = all. */
   retryIds: string[] | null;
+  /** The machine key whose dialog is open, or `null`. */
+  openKey: string | null;
   /** The previous attempt's sentence, while retrying. */
   previous: string | null;
   acks: Readonly<Record<string, RemovalAck>>;
@@ -143,20 +145,9 @@ export function useRemoveMachineFromTenant(
   const { status, busy, unbind, reset } = useUnbindFleetDevices(refresh);
   const [target, setTarget] = useState<RemovalTarget | null>(null);
   const [open, setOpenState] = useState(false);
-  // Keyed to the machine they came from, so a retry can never send another
-  // machine's ids after the dialog's target changed.
-  const [retry, setRetry] = useState<{ key: string; ids: string[] } | null>(
-    null
-  );
-  const retryIds =
-    retry !== null && target !== null && retry.key === target.machine.key
-      ? retry.ids
-      : null;
-  const setRetryIds = useCallback(
-    (key: string, ids: string[] | null) =>
-      setRetry(ids === null ? null : { key, ids }),
-    []
-  );
+  // Cleared by every `openFor`, which is the only way the target changes, so
+  // a retry can never send another machine's ids.
+  const [retryIds, setRetryIds] = useState<string[] | null>(null);
   const [previous, setPrevious] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, RemovalAck>>({});
   const [shownAcks, setShownAcks] = useState<Record<string, number>>({});
@@ -175,7 +166,7 @@ export function useRemoveMachineFromTenant(
       roster: RosterCompleteness
     ) => {
       reset();
-      setRetry(null);
+      setRetryIds(null);
       setPrevious(null);
       setTarget({ machine: m, lastCiHost: isLastCiHost(machines, m, roster) });
       setOpenState(true);
@@ -201,30 +192,48 @@ export function useRemoveMachineFromTenant(
       setPrevious(refusalSentence(status.refusal));
     const outcome: UnbindOutcome = await unbind(ids);
     if (outcome.state === "in_flight") return;
-    if (outcome.state === "answered") {
-      const s = outcome.summary;
+    const settle = (s: UnbindSummary, sentence: string) => {
       setAcks((prev) => ({
         ...prev,
-        [m.key]: { name: m.name, sentence: s.sentence, settled: s.allSettled },
+        [m.key]: { name: m.name, sentence, settled: true },
       }));
+      // Every id unbound or already absent. A binding the home-tenant
+      // pointer keeps listed (or may keep listed) is not a clean removal, so
+      // it gets a warning rather than a success.
+      if (s.stillListed + s.pointerUnknown > 0)
+        toast.warning(`${m.name}: ${sentence}`);
+      else toast.success(`${m.name}: ${sentence}`);
+      setRetryIds(null);
+      setOpenState(false);
+    };
+    if (outcome.state === "answered") {
+      const s = outcome.summary;
       if (s.allSettled) {
-        toast.success(`${m.name}: ${s.sentence}`);
-        setRetryIds(m.key, null);
-        setOpenState(false);
-      } else {
-        setRetryIds(m.key, unsettledIds(s));
+        settle(s, s.sentence);
+        return;
       }
+      setAcks((prev) => ({
+        ...prev,
+        [m.key]: { name: m.name, sentence: s.sentence, settled: false },
+      }));
+      setRetryIds(unsettledIds(s));
       return;
     }
     const r = outcome.refusal;
+    // A non-auth error whose rows leave nothing unsettled is settled: there
+    // is nothing to retry, so no "Retry the 0…" dialog is left behind.
+    if (!r.auth && r.partial !== null && r.partial.allSettled) {
+      settle(r.partial, r.partial.sentence);
+      return;
+    }
     setAcks((prev) => ({
       ...prev,
       [m.key]: { name: m.name, sentence: refusalSentence(r), settled: false },
     }));
     // With per-id rows, only what is not yet settled is sent again; without
     // them nothing is known, so a retry sends every id of this attempt.
-    setRetryIds(m.key, r.partial !== null ? unsettledIds(r.partial) : [...ids]);
-  }, [retryIds, setRetryIds, status, target, unbind]);
+    setRetryIds(r.partial !== null ? unsettledIds(r.partial) : [...ids]);
+  }, [retryIds, status, target, unbind]);
 
   return {
     target,
@@ -232,6 +241,7 @@ export function useRemoveMachineFromTenant(
     status,
     busy,
     retryIds,
+    openKey: open && target !== null ? target.machine.key : null,
     previous,
     acks,
     shownAcks,
@@ -351,7 +361,7 @@ export function RemoveMachineButton({
   roster: RosterCompleteness;
   controller: RemoveMachineController;
 }) {
-  const { openFor, busy, acks, showAck } = controller;
+  const { openFor, busy, acks, showAck, openKey } = controller;
   const effect = removalEffect(m.deviceIds.length);
   const hasRows = m.deviceIds.length > 0;
   const open = useCallback(
@@ -364,11 +374,13 @@ export function RemoveMachineButton({
   const openRef = useRef(open);
   const effectRef = useRef(effect);
   const busyRef = useRef(busy);
+  const openKeyRef = useRef(openKey);
   useEffect(() => {
     openRef.current = open;
     effectRef.current = effect;
     busyRef.current = busy;
-  }, [open, effect, busy]);
+    openKeyRef.current = openKey;
+  }, [open, effect, busy, openKey]);
   // While mounted with rows, this row shows the machine's acknowledgement.
   useEffect(
     () => (hasRows ? showAck(m.key) : undefined),
@@ -387,7 +399,8 @@ export function RemoveMachineButton({
         description:
           "Opens the confirmation that removes this tenant's binding of " +
           "every device row the roster lists for this machine; the result " +
-          "names how many. Refused while a removal is in flight. The " +
+          "names how many. Refused while a removal is in flight or another " +
+          "machine's removal dialog is open. The " +
           "removal itself needs a real click on the dialog's confirm " +
           "button, which refuses synthetic clicks.",
         // Declared, not re-derived: the action this control leads to removes
@@ -396,6 +409,12 @@ export function RemoveMachineButton({
         handler: async () => {
           if (busyRef.current) {
             return { opened: false, reason: "a removal is in flight" };
+          }
+          if (openKeyRef.current !== null && openKeyRef.current !== m.key) {
+            return {
+              opened: false,
+              reason: "another machine's removal dialog is open",
+            };
           }
           openRef.current();
           return { opened: true, effect: effectRef.current };
