@@ -111,10 +111,73 @@ const NO = new Set(["no", "n", "false", "0", ""]);
 export interface CategoryChoice {
   id: string;
   name: string;
+  /** The category it sits under; absent or `null` at the top level. */
+  parent_id?: string | null;
+}
+
+/** A category placed in the tree. */
+export interface CategoryNode<C extends CategoryChoice = CategoryChoice> {
+  category: C;
+  /** 0 at the top level. */
+  depth: number;
+  /** "Computers › spaceship": the names from the top down. */
+  path: string;
+}
+
+/**
+ * The categories in tree order — each one directly followed by its own
+ * subcategories — with the order of `categories` kept among siblings (the
+ * server sorts by sort order, then name). A category whose parent is not in
+ * the list is shown at the top level, and one caught in a cycle the server
+ * should have refused is appended there too, so none is ever lost.
+ */
+export function categoryTree<C extends CategoryChoice>(
+  categories: C[]
+): CategoryNode<C>[] {
+  const known = new Set(categories.map((c) => c.id));
+  const children = new Map<string | null, C[]>();
+  for (const c of categories) {
+    const parent = c.parent_id && known.has(c.parent_id) ? c.parent_id : null;
+    children.set(parent, [...(children.get(parent) ?? []), c]);
+  }
+  const out: CategoryNode<C>[] = [];
+  const placed = new Set<string>();
+  const visit = (c: C, depth: number, above: string) => {
+    if (placed.has(c.id)) return;
+    placed.add(c.id);
+    const path = above ? `${above} › ${c.name}` : c.name;
+    out.push({ category: c, depth, path });
+    for (const child of children.get(c.id) ?? []) visit(child, depth + 1, path);
+  };
+  for (const root of children.get(null) ?? []) visit(root, 0, "");
+  for (const c of categories) visit(c, 0, "");
+  return out;
+}
+
+/** `id` and every category below it, to any depth. */
+export function categoryAndDescendants(
+  categories: CategoryChoice[],
+  id: string
+): Set<string> {
+  const found = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const c of categories) {
+      if (c.parent_id && found.has(c.parent_id) && !found.has(c.id)) {
+        found.add(c.id);
+        grew = true;
+      }
+    }
+  }
+  return found;
 }
 
 function categoryOptions(categories: CategoryChoice[]) {
-  return categories.map((c) => ({ value: c.id, label: c.name }));
+  return categoryTree(categories).map((n) => ({
+    value: n.category.id,
+    label: n.path,
+  }));
 }
 
 function findCategory(
@@ -229,17 +292,45 @@ export function bodyOf<Row>(
 export interface CategoryRow extends Planned {
   version: number;
   name: string;
+  /** The category it sits under; `null` at the top level. */
+  parent_id: string | null;
   description: string;
 }
 
-export const CATEGORY_WRITABLE = ["name", "description"] as const;
+export const CATEGORY_WRITABLE = ["name", "parent_id", "description"] as const;
 
 export function categoryToRow(c: CostCategory): CategoryRow {
   return {
     id: c.id,
     version: c.version,
     name: c.name,
+    parent_id: c.parent_id,
     description: c.description,
+  };
+}
+
+/**
+ * A move the server would refuse, caught before sending: a category under
+ * itself or under one of its own subcategories. `categories` is the list as
+ * stored. (The server checks again, and also refuses another project's.)
+ */
+export function categoryRowProblem(
+  categories: CategoryChoice[]
+): (row: CategoryRow) => string | null {
+  const parentOf = new Map(categories.map((c) => [c.id, c.parent_id ?? null]));
+  return (row) => {
+    if (!row.parent_id || !row.id) return null;
+    const seen = new Set<string>();
+    for (
+      let node: string | null = row.parent_id;
+      node !== null && !seen.has(node);
+      node = parentOf.get(node) ?? null
+    ) {
+      if (node === row.id)
+        return "cannot be placed under itself or one of its own subcategories.";
+      seen.add(node);
+    }
+    return null;
   };
 }
 
@@ -268,6 +359,7 @@ export function parseCategoriesCsv(text: string): CsvResult<CategoryRow> {
       id: "",
       version: 0,
       name: name.trim(),
+      parent_id: null,
       description,
       // The name is how the row is matched, so a paste never rewrites it.
       supplied: description ? ["description"] : [],
@@ -277,26 +369,58 @@ export function parseCategoriesCsv(text: string): CsvResult<CategoryRow> {
   return { rows, issues, lines: rowLines };
 }
 
-export const CATEGORY_TABLE: TableDeclaration<CategoryRow> = {
-  resource: "cost_categories",
-  schemaDef: "CostCategoryCreate",
-  singular: "category",
-  plural: "categories",
-  emptyText: "No categories yet.",
-  identity: ["name"],
-  fields: [
-    { field: "name", label: "Category", kind: "text", required: true },
-    { field: "description", label: "What goes in it", kind: "text" },
-  ],
-  blank: () => ({ id: "", version: 0, name: "", description: "" }),
-  csv: {
-    label: "Paste categories",
-    help: "One category per line: name, then what goes in it. A line whose name matches an existing category updates its description; every other line adds one.",
-    placeholder:
-      "name,description\nHardware,Servers and parts\nLegal & registration,Incorporation and trademarks",
-    parse: parseCategoriesCsv,
-  },
-};
+/**
+ * The categories table. Its rows are shown in tree order (pass the records
+ * through `categoryTree` first), each subcategory indented under its parent;
+ * the parent is picked from every category by its full path, "Top level"
+ * being the empty choice.
+ */
+export function categoryTable(
+  categories: CategoryChoice[]
+): TableDeclaration<CategoryRow> {
+  const depth = new Map(
+    categoryTree(categories).map((n) => [n.category.id, n.depth])
+  );
+  return {
+    resource: "cost_categories",
+    schemaDef: "CostCategoryCreate",
+    singular: "category",
+    plural: "categories",
+    emptyText: "No categories yet.",
+    identity: ["name"],
+    fields: [
+      {
+        field: "name",
+        label: "Category",
+        kind: "text",
+        required: true,
+        indent: (row) => depth.get(row.id) ?? 0,
+      },
+      {
+        field: "parent_id",
+        label: "Under",
+        kind: "select",
+        options: categoryOptions(categories),
+        emptyLabel: "Top level",
+      },
+      { field: "description", label: "What goes in it", kind: "text" },
+    ],
+    blank: () => ({
+      id: "",
+      version: 0,
+      name: "",
+      parent_id: null,
+      description: "",
+    }),
+    csv: {
+      label: "Paste categories",
+      help: "One category per line: name, then what goes in it. A line whose name matches an existing category updates its description; every other line adds a top-level one (move it under another category in the table afterwards).",
+      placeholder:
+        "name,description\nHardware,Servers and parts\nLegal & registration,Incorporation and trademarks",
+      parse: parseCategoriesCsv,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Recurring costs
