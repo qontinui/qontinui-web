@@ -27,6 +27,34 @@ from collections.abc import Sequence
 
 from alembic import op
 
+_NEW = (
+    "CHECK (initiator IN ('outbound_mirror','merge_scheduler',"
+    "'restack_engine','conflict_engine','agent_ref_migrate',"
+    "'mcp_push_tool','branch_reap'))"
+)
+_OLD = (
+    "CHECK (initiator IN ('outbound_mirror','merge_scheduler',"
+    "'restack_engine','conflict_engine','agent_ref_migrate',"
+    "'mcp_push_tool'))"
+)
+_T = "ALTER TABLE coord.git_write_ledger "
+
+
+def _swap_check(definition: str) -> None:
+    """Replace the initiator CHECK without a long ACCESS EXCLUSIVE scan.
+
+    ADD ... NOT VALID takes only a brief lock; VALIDATE CONSTRAINT then scans
+    under SHARE UPDATE EXCLUSIVE, which does not block writers.
+    """
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(_T + "DROP CONSTRAINT IF EXISTS git_write_ledger_initiator_chk")
+    op.execute(
+        _T + "ADD CONSTRAINT git_write_ledger_initiator_chk " + definition + " NOT VALID"
+    )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
+    op.execute(_T + "VALIDATE CONSTRAINT git_write_ledger_initiator_chk")
+
+
 # revision identifiers, used by Alembic.
 revision: str = "coord_reap_ledger_01_gate_evidence_branch_reap"
 down_revision: str | Sequence[str] | None = "cireserve_01_devices_ci_reserved_gib"
@@ -36,39 +64,24 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add gate_id/evidence and widen the initiator CHECK. Idempotent."""
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger ADD COLUMN IF NOT EXISTS gate_id uuid"
-    )
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger ADD COLUMN IF NOT EXISTS evidence jsonb"
-    )
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger "
-        "DROP CONSTRAINT IF EXISTS git_write_ledger_initiator_chk"
-    )
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger "
-        "ADD CONSTRAINT git_write_ledger_initiator_chk "
-        "CHECK (initiator IN ('outbound_mirror','merge_scheduler',"
-        "'restack_engine','conflict_engine','agent_ref_migrate',"
-        "'mcp_push_tool','branch_reap'))"
-    )
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(_T + "ADD COLUMN IF NOT EXISTS gate_id uuid")
+    op.execute(_T + "ADD COLUMN IF NOT EXISTS evidence jsonb")
+    _swap_check(_NEW)
 
 
 def downgrade() -> None:
-    # Reverting requires no 'branch_reap' rows to remain (they would violate
-    # the narrower constraint); purge or reclassify them first. The two
-    # columns are dropped with their data.
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger "
-        "DROP CONSTRAINT IF EXISTS git_write_ledger_initiator_chk"
-    )
-    op.execute(
-        "ALTER TABLE coord.git_write_ledger "
-        "ADD CONSTRAINT git_write_ledger_initiator_chk "
-        "CHECK (initiator IN ('outbound_mirror','merge_scheduler',"
-        "'restack_engine','conflict_engine','agent_ref_migrate',"
-        "'mcp_push_tool'))"
-    )
-    op.execute("ALTER TABLE coord.git_write_ledger DROP COLUMN IF EXISTS evidence")
-    op.execute("ALTER TABLE coord.git_write_ledger DROP COLUMN IF EXISTS gate_id")
+    # Deleting audit rows is destructive, so refuse instead: the narrower
+    # CHECK cannot hold 'branch_reap' rows.
+    n = op.get_bind().exec_driver_sql(
+        "SELECT count(*) FROM coord.git_write_ledger WHERE initiator = 'branch_reap'"
+    ).scalar()
+    if n:
+        raise RuntimeError(
+            f"cannot downgrade: {n} coord.git_write_ledger row(s) have "
+            "initiator='branch_reap'; reclassify or archive them first"
+        )
+    _swap_check(_OLD)
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(_T + "DROP COLUMN IF EXISTS evidence")
+    op.execute(_T + "DROP COLUMN IF EXISTS gate_id")
