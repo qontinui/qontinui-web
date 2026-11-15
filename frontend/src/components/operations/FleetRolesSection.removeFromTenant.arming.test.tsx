@@ -135,7 +135,15 @@ beforeEach(() => {
     if (init?.method === "POST" && url.endsWith("/fleet/devices/unbind")) {
       return postAnswers.shift() ?? json(500, { detail: "unexpected" });
     }
-    return json(200, { state: "known", roles_table: "present", machines });
+    // A complete roster read: the last-CI-host warning is only asserted
+    // (rather than "may be") over one.
+    return json(200, {
+      state: "known",
+      roles_table: "present",
+      roster_truncated: false,
+      older_machines_omitted: 0,
+      machines,
+    });
   });
 });
 
@@ -236,13 +244,13 @@ describe("FleetRolesSection — remove from this tenant (arming)", () => {
     await openRemoval(CI_NAME);
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
-    expect(result.textContent).toContain("1 of 2 rows removed; 1 failed.");
+    expect(result.textContent).toContain("1 of 2 bindings removed; 1 failed.");
     expect(result.textContent).toContain(
       "coord.tenant_devices is not provisioned"
     );
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "1 of 2 rows removed; 1 failed."
+        "1 of 2 bindings removed; 1 failed."
       )
     );
     expect(toastMock.success).not.toHaveBeenCalled();

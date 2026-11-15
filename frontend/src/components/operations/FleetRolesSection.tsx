@@ -101,7 +101,12 @@ import {
   type RoleMachine,
   type RoleWriteRefusal,
 } from "./fleetDispatchRoles";
-import { RemoveMachineFromTenantControl } from "./RemoveMachineFromTenantDialog";
+import {
+  DetachedRemovalAcks,
+  RemoveMachineButton,
+  RemoveMachineFromTenantDialog,
+  useRemoveMachineFromTenant,
+} from "./RemoveMachineFromTenantDialog";
 import {
   putDispatchRole,
   useFleetDispatchRoles,
@@ -341,6 +346,9 @@ const ROLES_NOTE_WITHHELD =
 
 export function FleetRolesSection() {
   const { read, asOfMs, refresh } = useFleetDispatchRoles();
+  // "Remove from this tenant…" (plan 2026-11-15-stale-ci-hosts-…): its state
+  // lives here, not in the row, so its answer survives the row leaving.
+  const removal = useRemoveMachineFromTenant(refresh);
   const { presenting } = usePresentationMode();
   const machineName = useMachineAliaser();
   const rowKey = useRowKey();
@@ -696,10 +704,14 @@ export function FleetRolesSection() {
                               2026-11-15-stale-ci-hosts-…); an assigned-but-
                               unregistered machine has no rows to remove. */}
                           {m.deviceIds.length > 0 && read.state === "known" && (
-                            <RemoveMachineFromTenantControl
+                            <RemoveMachineButton
                               machine={m}
                               machines={read.machines}
-                              refresh={refresh}
+                              roster={{
+                                rosterTruncated: read.rosterTruncated,
+                                omitted: read.omitted,
+                              }}
+                              controller={removal}
                             />
                           )}
                           {m.role === null && m.suggestion && (
@@ -857,6 +869,15 @@ export function FleetRolesSection() {
                 whose role must be set there.
               </p>
             </div>
+            <DetachedRemovalAcks
+              controller={removal}
+              listedKeys={
+                read.state === "known"
+                  ? new Set(read.machines.map((m) => m.key))
+                  : null
+              }
+            />
+            <RemoveMachineFromTenantDialog controller={removal} />
           </CoordAdminOnly>
 
           <Dialog

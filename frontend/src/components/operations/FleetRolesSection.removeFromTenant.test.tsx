@@ -57,6 +57,8 @@ import { FleetRolesSection } from "./FleetRolesSection";
 import {
   ALIVE_TEXT,
   LAST_CI_HOST_TEXT,
+  MAYBE_LAST_CI_HOST_TEXT,
+  MAY_HAVE_APPLIED_TEXT,
   LIVENESS_UNKNOWN_TEXT,
   LISTING_NOT_SERVED,
   STILL_LISTED_TEXT,
@@ -134,8 +136,14 @@ const workstation = (over: Record<string, unknown> = {}) =>
 
 let machines: Record<string, unknown>[];
 let posts: string[][];
-let postAnswers: Array<ReturnType<typeof json>>;
+let postAnswers: Array<ReturnType<typeof json> | Error>;
 let gets: number;
+/** Extra fields on the roster body (e.g. `roster_truncated: true`). */
+let rosterExtras: Record<string, unknown>;
+/** Fail every roster read from now on (the post-removal re-read). */
+let failReads: boolean;
+/** Answer the next POST only when this is resolved. */
+let holdPost: Promise<void> | null;
 
 function serve() {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -143,10 +151,21 @@ function serve() {
       posts.push(
         (JSON.parse(String(init.body)) as { device_ids: string[] }).device_ids
       );
-      return postAnswers.shift() ?? json(500, { detail: "unexpected" });
+      if (holdPost) await holdPost;
+      const next = postAnswers.shift();
+      if (next instanceof Error) throw next;
+      return next ?? json(500, { detail: "unexpected" });
     }
     gets += 1;
-    return json(200, { state: "known", roles_table: "present", machines });
+    if (failReads) return json(500, { detail: "roster read failed" });
+    return json(200, {
+      state: "known",
+      roles_table: "present",
+      roster_truncated: false,
+      older_machines_omitted: 0,
+      machines,
+      ...rosterExtras,
+    });
   });
 }
 
@@ -188,6 +207,9 @@ beforeEach(() => {
   posts = [];
   postAnswers = [];
   gets = 0;
+  rosterExtras = {};
+  failReads = false;
+  holdPost = null;
   fetchMock.mockReset();
   toastMock.success.mockReset();
   serve();
@@ -285,7 +307,15 @@ describe("removal rules", () => {
 
   it("the last CI host is the one whose rows cover every CI-host row", () => {
     const only = readMachine(ciHost());
-    expect(isLastCiHost([only], only)).toBe(true);
+    expect(isLastCiHost([only], only)).toBe("yes");
+    // Over a cut, gappy or unreported roster read it is only "maybe".
+    for (const roster of [
+      { rosterTruncated: true, omitted: 0 },
+      { rosterTruncated: false, omitted: 2 },
+      { rosterTruncated: null, omitted: null },
+    ]) {
+      expect(isLastCiHost([only], only, roster)).toBe("maybe");
+    }
     const other = readMachine(
       ciHost({
         machine_key: "host:other-ci",
@@ -294,9 +324,9 @@ describe("removal rules", () => {
         device_ids: [DEV_CI_OTHER],
       })
     );
-    expect(isLastCiHost([only, other], only)).toBe(false);
+    expect(isLastCiHost([only, other], only)).toBe("no");
     const ws = readMachine(workstation());
-    expect(isLastCiHost([ws], ws)).toBe(false);
+    expect(isLastCiHost([ws], ws)).toBe("no");
   });
 
   it("an answer that omits a sent id reports it unreported, not removed", () => {
@@ -307,7 +337,7 @@ describe("removal rules", () => {
       failed: 0,
     } as never);
     expect(s.sentence).toBe(
-      "1 of 2 rows removed; 1 not reported by the route."
+      "1 of 2 bindings removed; 1 not reported by the route."
     );
     expect(s.allSettled).toBe(false);
   });
@@ -417,6 +447,17 @@ describe("the dialog, per GitHub listing and heartbeat", () => {
     ).toBeNull();
   });
 
+  it("over a truncated roster read it says the host MAY be the last", async () => {
+    rosterExtras = { roster_truncated: true };
+    render(<FleetRolesSection />);
+    const dialog = await openRemoval(CI_HOST_LABEL);
+    const warning = within(dialog).getByTestId(
+      "fleet-roles-remove-last-ci-host"
+    );
+    expect(warning.getAttribute("data-last-ci-host")).toBe("maybe");
+    expect(warning.textContent).toBe(MAYBE_LAST_CI_HOST_TEXT);
+  });
+
   it("a workstation row links its owner's full deregistration on /runners", async () => {
     machines = [workstation({ heartbeat_fresh: false })];
     render(<FleetRolesSection />);
@@ -462,6 +503,14 @@ describe("the dialog, per GitHub listing and heartbeat", () => {
     expect(open.getAttribute("title")).toBe(
       "Opens a confirmation; removes this tenant's binding of 2 devices."
     );
+    expect(open.getAttribute("aria-label")).toBe(
+      `Remove ${CI_HOST_LABEL} from this tenant`
+    );
+    // The live region is mounted before there is anything to say.
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe("");
+    expect(
+      screen.getByTestId("fleet-roles-remove-ack").getAttribute("role")
+    ).toBe("status");
   });
 });
 
@@ -477,10 +526,10 @@ describe("the answer", () => {
     );
     expect(posts).toEqual([[DEV_CI, DEV_CI_2]]);
     expect(toastMock.success).toHaveBeenCalledWith(
-      `${CI_HOST_LABEL}: 2 of 2 rows removed.`
+      `${CI_HOST_LABEL}: 2 of 2 bindings removed.`
     );
     expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-      "2 of 2 rows removed."
+      "2 of 2 bindings removed."
     );
     await waitFor(() => expect(gets).toBeGreaterThan(before));
   });
@@ -491,7 +540,7 @@ describe("the answer", () => {
     await openRemoval(CI_HOST_LABEL);
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
-    expect(result.textContent).toContain("1 of 2 rows removed; 1 failed.");
+    expect(result.textContent).toContain("1 of 2 bindings removed; 1 failed.");
     const outcomes = within(result)
       .getAllByTestId("fleet-roles-remove-outcome-row")
       .map((r) => r.getAttribute("data-outcome"));
@@ -509,7 +558,7 @@ describe("the answer", () => {
     await openRemoval(CI_HOST_LABEL);
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
-    expect(result.textContent).toContain("0 of 2 rows removed; 2 failed.");
+    expect(result.textContent).toContain("0 of 2 bindings removed; 2 failed.");
     expect(
       within(result).getAllByTestId("fleet-roles-remove-row-error")
     ).toHaveLength(2);
@@ -531,12 +580,19 @@ describe("the answer", () => {
     expect(toastMock.success).not.toHaveBeenCalled();
   });
 
-  it("a 403 after the first id keeps the rows already answered", async () => {
+  it("a 403 after the first id reads the refused id and keeps the rows already answered", async () => {
+    // The route's real abort body (`coord_refused_caller`).
     postAnswers = [
       json(403, {
         detail: {
-          error: "operator_principal_required",
+          error: "coord_refused_caller",
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI_2,
+          not_attempted: [],
           results: [unbound(DEV_CI)],
+          unbound: 1,
+          already_absent: 0,
+          failed: 0,
         },
       }),
     ];
@@ -544,12 +600,58 @@ describe("the answer", () => {
     await openRemoval(CI_HOST_LABEL);
     fireEvent.click(confirmButton());
     const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(result.getAttribute("data-refused")).toBe("auth");
     expect(result.textContent).toContain(
-      "The batch stopped there; the rows below were already answered."
+      "The batch stopped there; 1 binding was already removed (see the rows below)."
     );
     expect(result.textContent).toContain(
-      "1 of 2 rows removed; 1 not reported by the route."
+      "1 of 2 bindings removed; 1 refused (auth)."
     );
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["removed", "refused_auth"]);
+    expect(result.textContent).not.toContain("not reported");
+    // Its rows say exactly what happened: no "may have been removed".
+    expect(
+      screen.queryByTestId("fleet-roles-remove-may-have-applied")
+    ).toBeNull();
+  });
+
+  it("a 403 on the first id says nothing was removed and names the ids never sent", async () => {
+    postAnswers = [
+      json(403, {
+        detail: {
+          error: "coord_refused_caller",
+          coord_error: { error: "operator_principal_required" },
+          refused_device_id: DEV_CI,
+          not_attempted: [DEV_CI_2],
+          results: [],
+          unbound: 0,
+          already_absent: 0,
+          failed: 0,
+        },
+      }),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain("Nothing was removed.");
+    expect(result.textContent).toContain(
+      "0 of 2 bindings removed; 1 refused (auth); 1 not attempted."
+    );
+    expect(
+      within(result)
+        .getAllByTestId("fleet-roles-remove-outcome-row")
+        .map((r) => r.getAttribute("data-outcome"))
+    ).toEqual(["refused_auth", "not_attempted"]);
+    expect(
+      screen.queryByTestId("fleet-roles-remove-may-have-applied")
+    ).toBeNull();
   });
 
   it("still_member_via_pointer true is still listed, never removed", async () => {
@@ -560,7 +662,7 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "0 of 1 row removed; 1 binding removed; still listed through its home tenant, which only its owner can change on /runners."
+        "1 of 1 binding removed; 1 still listed through its home tenant, which only its owner can change on /runners."
       )
     );
   });
@@ -573,7 +675,7 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "0 of 1 row removed; 1 binding removed; coord did not report whether it is still listed through its home tenant."
+        "1 of 1 binding removed; 1 may still be listed through its home tenant (coord did not report)."
       )
     );
   });
@@ -594,9 +696,117 @@ describe("the answer", () => {
     fireEvent.click(confirmButton());
     await waitFor(() =>
       expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
-        "0 of 1 row removed; 1 already absent."
+        "0 of 1 binding removed; 1 already absent."
       )
     );
     expect(posts).toEqual([[DEV_A], [DEV_A]]);
+  });
+
+  it("the acknowledgement survives a re-read that fails after the removal", async () => {
+    postAnswers = [answer([unbound(DEV_CI), failed(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    failReads = true;
+    fireEvent.click(confirmButton());
+    // The roster turns UNKNOWN, so the row is gone ...
+    await screen.findByTestId("fleet-roles-unknown");
+    expect(screen.queryByTestId("fleet-roles-row")).toBeNull();
+    // ... and the outcome is still on screen, outside it.
+    expect(
+      screen.getByTestId("fleet-roles-remove-ack-detached").textContent
+    ).toBe(
+      `Remove from this tenant — ${CI_HOST_LABEL}: 1 of 2 bindings removed; 1 failed.`
+    );
+    expect(
+      screen.getByTestId("fleet-roles-remove-result").textContent
+    ).toContain("1 of 2 bindings removed; 1 failed.");
+  });
+
+  it("the acknowledgement survives the re-read dropping the machine", async () => {
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    machines = [workstation()];
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(screen.queryByText(CI_HOST_LABEL)).toBeNull());
+    expect(
+      screen.getByTestId("fleet-roles-remove-ack-detached").textContent
+    ).toBe(
+      `Remove from this tenant — ${CI_HOST_LABEL}: 2 of 2 bindings removed.`
+    );
+  });
+
+  it("a retry after a partial answer sends only the ids not yet removed", async () => {
+    postAnswers = [
+      answer([unbound(DEV_CI), failed(DEV_CI_2)]),
+      answer([unbound(DEV_CI_2)]),
+    ];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    await screen.findByTestId("fleet-roles-remove-result");
+    expect(confirmButton().textContent).toBe("Retry the 1 not yet removed");
+    expect(
+      screen.getByTestId("fleet-roles-remove-retry-scope").textContent
+    ).toBe("A retry sends only the 1 device row not yet removed.");
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2], [DEV_CI_2]]);
+    expect(screen.getByTestId("fleet-roles-remove-ack").textContent).toBe(
+      "1 of 1 binding removed."
+    );
+  });
+
+  it("two confirms while the first is in flight send one request", async () => {
+    let release: () => void = () => {};
+    holdPost = new Promise<void>((r) => {
+      release = r;
+    });
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(confirmButton().disabled).toBe(true);
+    release();
+    await waitFor(() =>
+      expect(screen.queryByTestId("fleet-roles-remove-dialog")).toBeNull()
+    );
+    expect(posts).toHaveLength(1);
+  });
+
+  it("a 502 says some bindings may have been removed", async () => {
+    postAnswers = [json(502, { detail: "bad gateway" })];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-may-have-applied")
+        .textContent
+    ).toBe(MAY_HAVE_APPLIED_TEXT);
+    expect(toastMock.success).not.toHaveBeenCalled();
+    // Nothing is known per id, so a retry sends both again.
+    expect(confirmButton().textContent).toBe("Retry the 2 not yet removed");
+  });
+
+  it("a dropped connection says some bindings may have been removed", async () => {
+    postAnswers = [new TypeError("Failed to fetch")];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    fireEvent.click(confirmButton());
+    const result = await screen.findByTestId("fleet-roles-remove-result");
+    expect(
+      within(result).getByTestId("fleet-roles-remove-refusal").textContent
+    ).toContain(
+      "The request failed before an answer arrived (Failed to fetch)."
+    );
+    expect(
+      within(result).getByTestId("fleet-roles-remove-may-have-applied")
+        .textContent
+    ).toBe(MAY_HAVE_APPLIED_TEXT);
   });
 });
