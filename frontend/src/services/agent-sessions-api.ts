@@ -147,7 +147,8 @@ export interface SessionCardMachine {
 export type SessionCardMachineUnknownReason =
   | "device_id_absent"
   | "no_device_row"
-  | "devenv_read_failed";
+  | "devenv_read_failed"
+  | "device_read_failed";
 
 /**
  * The runner page (terminal tab) the session's pane sits on, from the

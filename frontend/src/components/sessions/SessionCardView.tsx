@@ -89,6 +89,8 @@ function reasonText(reason: string): string {
       return "no device row";
     case "devenv_read_failed":
       return "devenv read failed";
+    case "device_read_failed":
+      return "device read failed";
     case "no_handle":
       return "no runner handle";
     case "never_reported":
