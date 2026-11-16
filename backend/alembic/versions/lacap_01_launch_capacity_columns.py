@@ -1,7 +1,7 @@
 """coord launch capacity: the runner's own launch verdict on the sample row, and the retire-hold index
 
 Revision ID: lacap_01
-Revises: coord_subprojects_01
+Revises: coord_subprojects_02_session_reported_index
 Create Date: 2026-11-14
 
 Phase 1 of plan
@@ -188,7 +188,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "lacap_01"
-down_revision: str | Sequence[str] | None = "coord_subprojects_01"
+down_revision: str = "coord_subprojects_02_session_reported_index"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -386,7 +386,7 @@ def downgrade() -> None:
     ``IF EXISTS``. Re-running the upgrade does NOT rebuild the index, because
     the database is still stamped ``lacap_01`` and the upgrade is a no-op. To
     restore the index instead, run ``alembic stamp
-    coord_subprojects_01`` and then ``alembic upgrade
+    coord_subprojects_02_session_reported_index`` and then ``alembic upgrade
     lacap_01``.
     """
     with op.get_context().autocommit_block():
