@@ -162,9 +162,6 @@ class DeviceConnection(Base):
 
     # Relationships
     user = relationship("User", back_populates="device_connections")
-    software_test_runs = relationship(
-        "SoftwareTestRun", back_populates="device_connection"
-    )
 
     def calculate_duration(self) -> None:
         """Calculate and set the duration_seconds field."""

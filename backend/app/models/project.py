@@ -68,25 +68,11 @@ class Project(Base):
     capture_sessions = relationship(
         "CaptureSession", back_populates="project", cascade="all, delete-orphan"
     )
-    software_test_runs = relationship(
-        "SoftwareTestRun", back_populates="project", cascade="all, delete-orphan"
-    )
-    coverage_snapshots = relationship(
-        "CoverageSnapshot", back_populates="project", cascade="all, delete-orphan"
-    )
-    transition_reliability_stats = relationship(
-        "TransitionReliability", back_populates="project", cascade="all, delete-orphan"
-    )
     screenshots = relationship(
         "ProjectScreenshot", back_populates="project", cascade="all, delete-orphan"
     )
     images = relationship(
         "ProjectImage", back_populates="project", cascade="all, delete-orphan"
-    )
-    visual_baselines = relationship(
-        "VisualBaseline",
-        back_populates="project",
-        cascade="all, delete-orphan",
     )
     embeddings = relationship(
         "ProjectEmbedding",

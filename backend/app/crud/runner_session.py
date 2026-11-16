@@ -6,7 +6,7 @@ renamed ``RunnerSession`` → ``DeviceConnection`` and moved the table
 to ``coord.device_connections``. This shim adapts the legacy call
 shape — ``runner_id=`` / ``session_pk=`` — to the new
 ``device_id=`` / ``connection_pk=`` signature so the broader fleet
-of consumers (``websockets/testing/handler.py`` etc.) compiles while
+of consumers compiles while
 the rename propagates.
 """
 

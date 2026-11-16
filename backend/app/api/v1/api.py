@@ -142,13 +142,10 @@ from app.api.v1.endpoints import (
     variables,
     versions,
     videos,
-    visual_baselines,
-    visual_comparison,
     workflow_dispatch,
     workflow_step_types,
 )
 from app.api.v1.endpoints import auth as auth_pkg
-from app.api.v1.endpoints import testing as testing_pkg
 from app.extensions import register_cloud_extensions
 from app.overview.router import router as overview_authoring_router
 
@@ -359,13 +356,6 @@ api_router.include_router(
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
 api_router.include_router(ai_prompts.router, tags=["ai-prompts"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
-api_router.include_router(testing_pkg.router, prefix="/testing", tags=["testing"])
-api_router.include_router(
-    visual_baselines.router, prefix="/testing", tags=["visual-regression"]
-)
-api_router.include_router(
-    visual_comparison.router, prefix="/testing", tags=["visual-regression"]
-)
 api_router.include_router(
     training_datasets.router, prefix="/datasets", tags=["training-datasets"]
 )

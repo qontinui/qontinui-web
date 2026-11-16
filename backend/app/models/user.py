@@ -170,11 +170,6 @@ class User(Base):
     capture_sessions = relationship(
         "CaptureSession", back_populates="user", cascade="all, delete-orphan"
     )
-    assigned_deficiencies = relationship(
-        "TestDeficiency",
-        back_populates="assigned_to",
-        foreign_keys="TestDeficiency.assigned_to_user_id",
-    )
     workflow_events = relationship(
         "WorkflowEvent", back_populates="user", cascade="all, delete-orphan"
     )

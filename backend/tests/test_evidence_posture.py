@@ -70,7 +70,10 @@ from app.core.evidence_posture import (
 #: * ``POST /plan-library/{artifact_id}/edges`` — the edge verbs (#1459);
 #: * ``PATCH /plan-library/edges/{edge_id}`` — the edge verbs (#1459);
 #: * ``POST /session-repository`` [identity] — this plan;
-#: * ``POST /testing/runs``, ``…/deficiencies``, ``…/screenshots`` — this plan.
+#: * ``POST /testing/runs``, ``…/deficiencies``, ``…/screenshots`` — this plan
+#:   (all three REMOVED with the route on 2026-11-09, plan
+#:   ``2026-11-06-verification-stores-nothing-writes-are-deleted-and-their-open-write-doors-close``
+#:   Phase 3: nothing ever wrote that store, so it was deleted, not corrected).
 #:
 #: Three more when every overview write began admitting a device JWT
 #: (2026-10-07, plan ``2026-10-07-agents-publish-documents-to-the-project-overview``):
@@ -80,7 +83,9 @@ from app.core.evidence_posture import (
 #: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
 #:   phase progress and ids, this plan;
 #: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
-GAP_COUNT_PIN = 10
+#:
+#: Then -3 when the testing-runs store and its three Gaps were deleted.
+GAP_COUNT_PIN = 7
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;
@@ -88,8 +93,10 @@ GAP_COUNT_PIN = 10
 #: ``deficiencies[].severity``, ``deficiencies[].deficiency_type``, the
 #: completion ``status`` and the screenshot ``screenshot_type``. Then +1:
 #: ``POST /plan-library`` ``status``, closed per spec kind only
-#: (``2026-10-09-spec-front-end-of-the-software-factory``).
-UNSERVED_CLOSED_FIELD_PIN = 8
+#: (``2026-10-09-spec-front-end-of-the-software-factory``). Then -6: the six
+#: testing-report fields went with the deleted testing-runs store (plan
+#: ``2026-11-06-verification-stores-nothing-writes-are-deleted-and-their-open-write-doors-close``).
+UNSERVED_CLOSED_FIELD_PIN = 2
 
 #: A plan stem as the corpus spells one: ``YYYY-MM-DD-kebab-case``.
 _PLAN_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -142,7 +149,9 @@ def test_the_population_is_not_vacuous(
     """
     assert ("POST", "/api/v1/plan-library") in population
     assert ("POST", "/api/v1/memory/records") in population
-    assert ("POST", "/api/v1/testing/runs") in population  # hand-delegating wrapper
+    # Admitted only through a nested wrapper (require_edit ->
+    # get_overview_access -> get_overview_principal).
+    assert ("POST", "/api/v1/overview/files") in population
     assert len(population) >= 24, sorted(population)
 
 
@@ -275,8 +284,8 @@ def _functions_verifying_a_device_jwt(admitting_names: frozenset[str]) -> set[st
     verify_token``, a root verifier, an admitting dependency BY HAND (a
     ``Depends()`` default is not a call and does not count), or any function
     already in the set — iterated to a fixpoint, so a wrapper that delegates
-    by hand (``get_runner_user`` calling ``get_authenticated_device_user``
-    in its body, invisible to the dependency walk) is found however deep.
+    by hand (a wrapper calling ``get_authenticated_device_user`` in its
+    body, invisible to the dependency walk) is found however deep.
     """
     functions: dict[str, tuple[str, set[str], bool]] = {}
     for path in sorted(_APP_DIR.rglob("*.py")):

@@ -55,7 +55,12 @@ from pathlib import Path
 #: ``endpoints/historical.py`` left with the file when every
 #: ``/api/v1/testing/historical`` route was deleted. A deletion, not a
 #: conversion.
-BASELINE = 789
+#: 763 (from 789), the same plan's Phase 3: the 26 bare refusals of the deleted
+#: writer-less testing store (``endpoints/testing/deps.py`` 4,
+#: ``query_endpoints.py`` 1, ``runner_endpoints.py`` 2, ``visual_baselines.py``
+#: 11, ``visual_comparison.py`` 8) left with their files. A deletion, not a
+#: conversion.
+BASELINE = 763
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
