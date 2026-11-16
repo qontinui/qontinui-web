@@ -44,12 +44,15 @@ import {
   headroomTone,
   HEADROOM_LABEL,
   HEADROOM_MEANING,
+  historySwapRatio,
   hostIsBindingConstraint,
   pressureFormula,
   pressureLabel,
+  pressureLineName,
   rowHeadroom,
   rowShowsSwapAxis,
   safeRatio,
+  sparklinePoints,
   swapReading,
   threadHeadroom,
   summarizeFleetAdmission,
@@ -60,6 +63,7 @@ import type {
   EffectiveFloor,
   EffectivePressureFloor,
   HeadroomSource,
+  HistoryPoint,
   ResourceSampleRow,
 } from "./fleetResources";
 
@@ -406,6 +410,118 @@ describe("§C1 — the row says WHICH metric it is showing", () => {
     delete old.swap_ratio;
     expect(rowShowsSwapAxis(old)).toBe(false);
     expect(rowShowsSwapAxis(null)).toBe(false);
+  });
+});
+
+describe("the sparkline's swap line — coord's served history `swap_ratio`", () => {
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: every history point now carries `swap_ratio`.
+  const point = (
+    sampled_at: string,
+    pressure: number | null,
+    swap_ratio?: number | null
+  ): HistoryPoint => {
+    const p: HistoryPoint = {
+      sampled_at,
+      pressure,
+      disk_free_bytes: null,
+      disk_total_bytes: null,
+      build_slots_busy: null,
+      build_slots_total: null,
+      ci_jobs_running: null,
+    };
+    // `undefined` means the KEY is absent, as an older coord sends it.
+    if (swap_ratio !== undefined) p.swap_ratio = swap_ratio;
+    return p;
+  };
+
+  it("plots a served ratio, and nothing for null, absent or unreadable", () => {
+    expect(historySwapRatio(point("t", 0.8, 0.9999))).toBe(0.9999);
+    // 0 is a reading (an idle swap device), so it plots.
+    expect(historySwapRatio(point("t", 0.8, 0))).toBe(0);
+    expect(historySwapRatio(point("t", 0.8, null))).toBeNull();
+    const absent = point("t", 0.8);
+    expect("swap_ratio" in absent).toBe(false);
+    expect(historySwapRatio(absent)).toBeNull();
+    expect(historySwapRatio(null)).toBeNull();
+    for (const bad of [1.2, -0.1, NaN, Infinity, "0.9"]) {
+      expect(
+        historySwapRatio(point("t", 0.8, bad as unknown as number))
+      ).toBeNull();
+    }
+  });
+
+  it("gives a Linux host its swap trajectory beside commit (nilan, 2026-11-09)", () => {
+    const pts = sparklinePoints({
+      lane: "host",
+      points: [
+        point("2026-11-09T18:00:00Z", 0.8, 0.62),
+        point("2026-11-09T18:30:00Z", 0.815, 0.9999),
+      ],
+    });
+    expect(pts).toEqual([
+      { sampled_at: "2026-11-09T18:00:00Z", pressure: 0.8, swap: 0.62 },
+      { sampled_at: "2026-11-09T18:30:00Z", pressure: 0.815, swap: 0.9999 },
+    ]);
+  });
+
+  it("gives a Windows host (null) and an older coord (absent) no swap value, never 0", () => {
+    const windows = sparklinePoints({
+      lane: "host",
+      points: [point("a", 0.4, null), point("b", 0.5, null)],
+    });
+    expect(windows?.map((p) => p.swap)).toEqual([null, null]);
+    const older = sparklinePoints({
+      lane: "host",
+      points: [point("a", 0.4), point("b", 0.5)],
+    });
+    expect(older?.map((p) => p.swap)).toEqual([null, null]);
+  });
+
+  it("keeps a gap a gap: a missing swap reading inside a window stays null", () => {
+    const pts = sparklinePoints({
+      lane: "host",
+      points: [
+        point("a", 0.4, 0.7),
+        point("b", 0.4, null),
+        point("c", 0.4, 0.8),
+      ],
+    });
+    expect(pts?.map((p) => p.swap)).toEqual([0.7, null, 0.8]);
+  });
+
+  it("gives wsl and container lanes no second line: their pressure already IS swap", () => {
+    for (const lane of ["wsl", "container"]) {
+      const pts = sparklinePoints({
+        lane,
+        points: [point("a", 0.6, 0.6), point("b", 0.7, 0.7)],
+      });
+      expect(pts?.map((p) => p.pressure)).toEqual([0.6, 0.7]);
+      expect(pts?.map((p) => p.swap)).toEqual([null, null]);
+    }
+  });
+
+  it("has no points for a lane with no series", () => {
+    expect(sparklinePoints(undefined)).toBeUndefined();
+    expect(sparklinePoints(null)).toBeUndefined();
+  });
+
+  it("does not throw on a series that carries no points", () => {
+    // One malformed series must not take the whole strip's memo down.
+    const noPoints = { lane: "host" } as unknown as Parameters<
+      typeof sparklinePoints
+    >[0];
+    expect(sparklinePoints(noPoints)).toEqual([]);
+  });
+
+  it("names the lead line only for a basis it knows, never a guessed 'commit used'", () => {
+    expect(pressureLineName("commit")).toBe("commit used");
+    expect(pressureLineName("swap")).toBe("swap used");
+    expect(pressureLineName("threads")).toBe(pressureLabel("threads"));
+    // `pressureLabel` falls through to "commit used"; this must not.
+    expect(pressureLineName("gpu")).toBeUndefined();
+    expect(pressureLineName(null)).toBeUndefined();
+    expect(pressureLineName(undefined)).toBeUndefined();
   });
 });
 
