@@ -145,11 +145,11 @@ function timeToCloseStats(v: FlowView | null): Stat[] {
     },
     {
       key: "absentUnproven",
-      label: "gone across a rebuild",
+      label: "gone across a restart",
       value: countValue(t?.absentUnproven),
       tone: "muted",
       title:
-        "stopped, then missing from a later full pass on a different or unknown runner build: a rebuild restarts the runner, so these are not counted as closed",
+        "stopped, then missing from a later full pass after the runner restarted (a rebuild, or a restart onto the same build) or when either pass could not say which runner it read: a restart ends every session in it, so these are not counted as closed",
       "data-testid": "overlord-flow-ttc-absent-unproven",
     },
   ];
@@ -227,17 +227,17 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
       value: finishCountsValue(n),
       title:
         n?.finishUnproven === undefined
-          ? "finished out of every nudged session: this coord does not count sessions gone across a rebuild apart, so they are in the denominator as not finished"
-          : "finished out of the nudged sessions whose outcome is known: the rate's own numerator and denominator, so sessions gone across a rebuild are left out",
+          ? "finished out of every nudged session: this coord does not count sessions gone across a restart apart, so they are in the denominator as not finished"
+          : "finished out of the nudged sessions whose outcome is known: the rate's own numerator and denominator, so sessions gone across a restart are left out",
       "data-testid": "overlord-flow-nudge-finish-counts",
     },
     {
       key: "unproven",
-      label: "gone across a rebuild",
+      label: "gone across a restart",
       value: countValue(n?.finishUnproven),
       tone: "muted",
       title:
-        "nudged, then missing from a later full pass on a different or unknown runner build: unknown whether they finished, so not in the rate",
+        "nudged, then missing from a later full pass after the runner restarted (a rebuild, or a restart onto the same build) or when either pass could not say which runner it read: unknown whether they finished, so not in the rate",
       "data-testid": "overlord-flow-nudge-finish-unproven",
     },
   ];
