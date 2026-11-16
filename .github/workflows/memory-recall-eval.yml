@@ -114,7 +114,8 @@ jobs:
     # p50 3.67 / p90 4.51 / max 7.47 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Recall eval (report only)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MEMORY_RECALL_EVAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MEMORY_RECALL_EVAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend

@@ -40,6 +40,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import type { TenantPin } from "@/services/http-client";
 import { useClauses } from "../_hooks/useClauses";
 import { CLAUSE_HEADER } from "../_lib/clauseMerge";
 import { ClauseEditorDialog } from "./ClauseEditorDialog";
@@ -66,6 +67,11 @@ interface ClauseManagerDialogProps {
   onDocsReload: () => void;
   /** Checked before every clause write; `false` sends nothing. */
   canWrite?: () => boolean;
+  /**
+   * The project every clause read and write is sent in, on every attempt —
+   * the page's. Omitted, each goes in the project stored when it is sent.
+   */
+  pin?: TenantPin;
 }
 
 /**
@@ -81,6 +87,7 @@ export function ClauseManagerDialog({
   loadingBody,
   onDocsReload,
   canWrite,
+  pin,
 }: ClauseManagerDialogProps) {
   const name = document?.name ?? "";
   const {
@@ -94,13 +101,11 @@ export function ClauseManagerDialog({
     reorderClauses,
     importCandidates,
     saveAttrs,
-  } = useClauses(
-    "policy",
-    name,
-    open && document !== null,
-    onDocsReload,
-    canWrite
-  );
+  } = useClauses("policy", name, open && document !== null, {
+    onAttrsSaved: onDocsReload,
+    canWrite,
+    pin,
+  });
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Clause | null>(null);

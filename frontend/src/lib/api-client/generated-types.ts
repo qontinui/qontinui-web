@@ -23332,6 +23332,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/spawn-launch-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn Launch Settings
+         * @description Every settable spawn type's model and effort for the effective tenant.
+         */
+        get: operations["api_v1_spawn_launch_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spawn-launch-settings/{spawn_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Spawn Launch Setting
+         * @description Write one spawn type's model and effort; answer with coord's row.
+         *
+         *     Tenant-admin gated web-side; coord re-checks and its refusals (403, and the
+         *     422 naming the settable types) pass through as coord sent them.
+         */
+        put: operations["api_v1_spawn_launch_settings_spawn_type_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/state-discovery/sessions/{session_id}/discover-states": {
         parameters: {
             query?: never;
@@ -29769,6 +29812,40 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /**
+         * CategoryTotal
+         * @description All-time spend in one category and currency, on the same terms as
+         *     :class:`CurrencyTotals` (recorded plus scheduled; a variable period still
+         *     awaiting its amount is counted, never added).
+         *
+         *     ``own_*`` is the category's own costs; ``rolled_*`` adds every
+         *     subcategory below it, to any depth. Each cost counts once in its own
+         *     category and once in each ancestor's ``rolled_*`` — so rolled figures are
+         *     NOT additive across a parent and its children. The grand total is
+         *     ``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist
+         *     for a category with anything in its own subtree; ``category_id`` is
+         *     ``null`` for costs with no category.
+         */
+        CategoryTotal: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Own Awaiting Amount Count */
+            own_awaiting_amount_count: number;
+            /** Own Recorded Micros */
+            own_recorded_micros: number;
+            /** Own Scheduled Micros */
+            own_scheduled_micros: number;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Rolled Awaiting Amount Count */
+            rolled_awaiting_amount_count: number;
+            /** Rolled Recorded Micros */
+            rolled_recorded_micros: number;
+            /** Rolled Scheduled Micros */
+            rolled_scheduled_micros: number;
+        };
         /** ChangeLogEntry */
         ChangeLogEntry: {
             /** Action */
@@ -31744,6 +31821,8 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id?: string | null;
             /**
              * Sort Order
              * @default 0
@@ -31765,6 +31844,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Parent Id */
+            parent_id: string | null;
             /** Sort Order */
             sort_order: number;
             /**
@@ -31777,12 +31858,19 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** CostCategoryUpdate */
+        /**
+         * CostCategoryUpdate
+         * @description Every field optional; ``null`` moves the category to the top level. A
+         *     category cannot be moved under itself or one of its own subcategories
+         *     (409 ``category_cycle``).
+         */
         CostCategoryUpdate: {
             /** Description */
             description?: string | null;
             /** Name */
             name?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
             /** Sort Order */
             sort_order?: number | null;
         };
@@ -31994,6 +32082,8 @@ export interface components {
             awaiting_delivery_count: number;
             /** Base Currency */
             base_currency: string;
+            /** Categories */
+            categories: components["schemas"]["CategoryTotal"][];
             /** Currencies */
             currencies: components["schemas"]["CurrencyTotals"][];
             /** Months */
@@ -50579,6 +50669,54 @@ export interface components {
             run_name?: string | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /**
+         * SpawnLaunchSettingPut
+         * @description The full ``{model, effort}`` pair. Both keys are required and each is
+         *     nullable: ``null`` writes inherit, so clearing a stored value is a write.
+         */
+        SpawnLaunchSettingPut: {
+            /** Effort */
+            effort: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /** Model */
+            model: ("fable" | "opus" | "sonnet" | "haiku") | null;
+        };
+        /**
+         * SpawnLaunchSettingRow
+         * @description One settable spawn type as coord resolves it.
+         */
+        SpawnLaunchSettingRow: {
+            /** Description */
+            description: string;
+            /** Effort */
+            effort: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /** Model */
+            model: ("fable" | "opus" | "sonnet" | "haiku") | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "stored" | "default";
+            /** Spawn Type */
+            spawn_type: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /**
+         * SpawnLaunchSettingsResponse
+         * @description Every settable spawn type, coord's two vocabularies, and edit rights.
+         */
+        SpawnLaunchSettingsResponse: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Effort Levels */
+            effort_levels: ("low" | "medium" | "high" | "xhigh" | "max")[];
+            /** Model Families */
+            model_families: ("fable" | "opus" | "sonnet" | "haiku")[];
+            /** Settings */
+            settings: components["schemas"]["SpawnLaunchSettingRow"][];
         };
         /**
          * StateAnnotation
@@ -91926,6 +92064,61 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_spawn_launch_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpawnLaunchSettingsResponse"];
+                };
+            };
+        };
+    };
+    api_v1_spawn_launch_settings_spawn_type_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpawnLaunchSettingPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpawnLaunchSettingRow"];
                 };
             };
             /** @description Validation Error */

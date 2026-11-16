@@ -13,7 +13,9 @@ import {
   cpuTempReading,
   formatPsi,
   formatSliceLimit,
+  isSliceKey,
   psiHasAnyFigure,
+  psiLineText,
   sliceTelemetryReading,
   AXIS_DIRECTION,
   pressureAxisIsSwap,
@@ -42,12 +44,15 @@ import {
   headroomTone,
   HEADROOM_LABEL,
   HEADROOM_MEANING,
+  historySwapRatio,
   hostIsBindingConstraint,
   pressureFormula,
   pressureLabel,
+  pressureLineName,
   rowHeadroom,
   rowShowsSwapAxis,
   safeRatio,
+  sparklinePoints,
   swapReading,
   threadHeadroom,
   summarizeFleetAdmission,
@@ -58,6 +63,7 @@ import type {
   EffectiveFloor,
   EffectivePressureFloor,
   HeadroomSource,
+  HistoryPoint,
   ResourceSampleRow,
 } from "./fleetResources";
 
@@ -404,6 +410,118 @@ describe("§C1 — the row says WHICH metric it is showing", () => {
     delete old.swap_ratio;
     expect(rowShowsSwapAxis(old)).toBe(false);
     expect(rowShowsSwapAxis(null)).toBe(false);
+  });
+});
+
+describe("the sparkline's swap line — coord's served history `swap_ratio`", () => {
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: every history point now carries `swap_ratio`.
+  const point = (
+    sampled_at: string,
+    pressure: number | null,
+    swap_ratio?: number | null
+  ): HistoryPoint => {
+    const p: HistoryPoint = {
+      sampled_at,
+      pressure,
+      disk_free_bytes: null,
+      disk_total_bytes: null,
+      build_slots_busy: null,
+      build_slots_total: null,
+      ci_jobs_running: null,
+    };
+    // `undefined` means the KEY is absent, as an older coord sends it.
+    if (swap_ratio !== undefined) p.swap_ratio = swap_ratio;
+    return p;
+  };
+
+  it("plots a served ratio, and nothing for null, absent or unreadable", () => {
+    expect(historySwapRatio(point("t", 0.8, 0.9999))).toBe(0.9999);
+    // 0 is a reading (an idle swap device), so it plots.
+    expect(historySwapRatio(point("t", 0.8, 0))).toBe(0);
+    expect(historySwapRatio(point("t", 0.8, null))).toBeNull();
+    const absent = point("t", 0.8);
+    expect("swap_ratio" in absent).toBe(false);
+    expect(historySwapRatio(absent)).toBeNull();
+    expect(historySwapRatio(null)).toBeNull();
+    for (const bad of [1.2, -0.1, NaN, Infinity, "0.9"]) {
+      expect(
+        historySwapRatio(point("t", 0.8, bad as unknown as number))
+      ).toBeNull();
+    }
+  });
+
+  it("gives a Linux host its swap trajectory beside commit (nilan, 2026-11-09)", () => {
+    const pts = sparklinePoints({
+      lane: "host",
+      points: [
+        point("2026-11-09T18:00:00Z", 0.8, 0.62),
+        point("2026-11-09T18:30:00Z", 0.815, 0.9999),
+      ],
+    });
+    expect(pts).toEqual([
+      { sampled_at: "2026-11-09T18:00:00Z", pressure: 0.8, swap: 0.62 },
+      { sampled_at: "2026-11-09T18:30:00Z", pressure: 0.815, swap: 0.9999 },
+    ]);
+  });
+
+  it("gives a Windows host (null) and an older coord (absent) no swap value, never 0", () => {
+    const windows = sparklinePoints({
+      lane: "host",
+      points: [point("a", 0.4, null), point("b", 0.5, null)],
+    });
+    expect(windows?.map((p) => p.swap)).toEqual([null, null]);
+    const older = sparklinePoints({
+      lane: "host",
+      points: [point("a", 0.4), point("b", 0.5)],
+    });
+    expect(older?.map((p) => p.swap)).toEqual([null, null]);
+  });
+
+  it("keeps a gap a gap: a missing swap reading inside a window stays null", () => {
+    const pts = sparklinePoints({
+      lane: "host",
+      points: [
+        point("a", 0.4, 0.7),
+        point("b", 0.4, null),
+        point("c", 0.4, 0.8),
+      ],
+    });
+    expect(pts?.map((p) => p.swap)).toEqual([0.7, null, 0.8]);
+  });
+
+  it("gives wsl and container lanes no second line: their pressure already IS swap", () => {
+    for (const lane of ["wsl", "container"]) {
+      const pts = sparklinePoints({
+        lane,
+        points: [point("a", 0.6, 0.6), point("b", 0.7, 0.7)],
+      });
+      expect(pts?.map((p) => p.pressure)).toEqual([0.6, 0.7]);
+      expect(pts?.map((p) => p.swap)).toEqual([null, null]);
+    }
+  });
+
+  it("has no points for a lane with no series", () => {
+    expect(sparklinePoints(undefined)).toBeUndefined();
+    expect(sparklinePoints(null)).toBeUndefined();
+  });
+
+  it("does not throw on a series that carries no points", () => {
+    // One malformed series must not take the whole strip's memo down.
+    const noPoints = { lane: "host" } as unknown as Parameters<
+      typeof sparklinePoints
+    >[0];
+    expect(sparklinePoints(noPoints)).toEqual([]);
+  });
+
+  it("names the lead line only for a basis it knows, never a guessed 'commit used'", () => {
+    expect(pressureLineName("commit")).toBe("commit used");
+    expect(pressureLineName("swap")).toBe("swap used");
+    expect(pressureLineName("threads")).toBe(pressureLabel("threads"));
+    // `pressureLabel` falls through to "commit used"; this must not.
+    expect(pressureLineName("gpu")).toBeUndefined();
+    expect(pressureLineName(null)).toBeUndefined();
+    expect(pressureLineName(undefined)).toBeUndefined();
   });
 });
 
@@ -1239,22 +1357,242 @@ describe("sliceTelemetryReading — unmeasured is a state, never zero", () => {
 });
 
 describe("sliceTelemetryReading — empty objects and casing", () => {
-  it("treats {} columns as unmeasured, not as 'nothing present'", () => {
-    expect(
-      sliceTelemetryReading({
-        cgroup_slices: {},
-        psi: {},
-        slice_source: "linux_cgroup_v2",
-      })
-    ).toEqual({ kind: "unmeasured" });
+  it("treats an unstamped {} as unmeasured, not as 'nothing present'", () => {
+    // Nothing says the tree was read: no linux_cgroup_v2 stamp beside it.
+    expect(sliceTelemetryReading({ cgroup_slices: {}, psi: {} })).toEqual({
+      kind: "unmeasured",
+    });
     expect(
       sliceTelemetryReading({ cgroup_slices: {}, psi: { system: {} } })
     ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("reads a {} map beside linux_cgroup_v2 as 'no watched slice present'", () => {
+    // The runner's own contract (fleet/slice_telemetry.rs collect_from): the
+    // unified hierarchy was read and none of the watched slices exists here.
+    const r = sliceTelemetryReading({
+      cgroup_slices: {},
+      psi: null,
+      slice_source: "linux_cgroup_v2",
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices).toEqual([]);
+    expect(r.slicesUnmeasured).toBe(false);
+    expect(psiHasAnyFigure(r.psiSystem)).toBe(false);
   });
 
   it("matches not_supported case-insensitively", () => {
     expect(sliceTelemetryReading({ slice_source: "Not_Supported" })).toEqual({
       kind: "not_supported",
     });
+  });
+});
+
+describe("sliceTelemetryReading — non-slice keys, per-slice PSI, full and avg60", () => {
+  const cpuAttribution = {
+    session_usec: 1_000,
+    ci_usec: 2_000,
+    unattributed_usec: 3_000,
+  };
+
+  it("only *.slice keys are slices", () => {
+    expect(isSliceKey("ci-runners.slice")).toBe(true);
+    expect(isSliceKey("cpu_attribution")).toBe(false);
+    expect(isSliceKey(".slice")).toBe(false);
+    expect(isSliceKey("ci-runners.slice.bak")).toBe(false);
+  });
+
+  it("never renders the runner's cpu_attribution key as a slice", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {
+        "ci-runners.slice": { memory_current: 5 },
+        cpu_attribution: cpuAttribution,
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices.map((s) => s.name)).toEqual(["ci-runners.slice"]);
+  });
+
+  it("a map holding only cpu_attribution beside linux_cgroup_v2 is 'no watched slice present'", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: { cpu_attribution: cpuAttribution },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices).toEqual([]);
+    expect(r.slicesUnmeasured).toBe(false);
+  });
+
+  it("a map holding only cpu_attribution with no source stamp is unmeasured", () => {
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: { cpu_attribution: cpuAttribution },
+      })
+    ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("reads full and avg60 beside some and avg10", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {},
+      psi: {
+        system: {
+          memory: {
+            some: { avg10: 1.5, avg60: 2.25 },
+            full: { avg10: 0.5, avg60: 0.75 },
+          },
+          io: { full: { avg60: 0 } },
+        },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.psiSystem.memorySomeAvg10).toBe(1.5);
+    expect(r.psiSystem.memorySomeAvg60).toBe(2.25);
+    expect(r.psiSystem.memoryFullAvg10).toBe(0.5);
+    expect(r.psiSystem.memoryFullAvg60).toBe(0.75);
+    expect(r.psiSystem.ioFullAvg60).toBe(0); // a real 0 stays 0
+    expect(r.psiSystem.ioFullAvg10).toBeNull(); // not sent stays null
+    expect(r.psiSystem.cpuSomeAvg60).toBeNull();
+  });
+
+  it("attaches psi.slices to its slice, and drops non-slice and empty blocks", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {
+        "ci-runners.slice": { memory_current: 5 },
+        "agent-builds.slice": { memory_current: 7 },
+      },
+      psi: {
+        slices: {
+          "ci-runners.slice": {
+            memory: { some: { avg10: 4, avg60: 3 }, full: { avg10: 1 } },
+          },
+          "agent-builds.slice": {},
+          cpu_attribution: { memory: { some: { avg10: 9 } } },
+        },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices.map((s) => s.name)).toEqual([
+      "agent-builds.slice",
+      "ci-runners.slice",
+    ]);
+    const [builds, ci] = r.slices;
+    expect(builds.psi).toBeNull();
+    expect(ci.psi?.memorySomeAvg10).toBe(4);
+    expect(ci.psi?.memorySomeAvg60).toBe(3);
+    expect(ci.psi?.memoryFullAvg10).toBe(1);
+    expect(ci.psi?.memoryFullAvg60).toBeNull();
+    // System PSI was not sent: every system figure is null, not 0.
+    expect(psiHasAnyFigure(r.psiSystem)).toBe(false);
+  });
+
+  it("per-slice PSI alone is a reading, not 'unmeasured'", () => {
+    const r = sliceTelemetryReading({
+      cgroup_slices: null,
+      psi: { slices: { "ci-runners.slice": { io: { some: { avg10: 2 } } } } },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slicesUnmeasured).toBe(true);
+    expect(r.slices).toHaveLength(1);
+    expect(r.slices[0].memoryReported).toBe(false);
+    expect(r.slices[0].memoryCurrent).toBeNull();
+    expect(r.slices[0].psi?.ioSomeAvg10).toBe(2);
+  });
+
+  it("a slice named only in psi.slices is listed with its memory unreported", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: { "ci-runners.slice": { memory_current: 5 } },
+      psi: {
+        slices: { "agent-builds.slice": { cpu: { some: { avg10: 1 } } } },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    const builds = r.slices.find((s) => s.name === "agent-builds.slice");
+    const ci = r.slices.find((s) => s.name === "ci-runners.slice");
+    expect(builds?.memoryReported).toBe(false);
+    expect(ci?.memoryReported).toBe(true);
+    expect(ci?.psi).toBeNull();
+  });
+
+  it("psiLineText prints some/full per resource for one window", () => {
+    const r = sliceTelemetryReading({
+      psi: {
+        system: {
+          memory: {
+            some: { avg10: 1.5, avg60: 2.25 },
+            full: { avg10: 0, avg60: 0.75 },
+          },
+          cpu: { some: { avg10: 3 } },
+        },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(psiLineText(r.psiSystem, "avg10")).toBe(
+      "mem 1.5%/0.0% · cpu 3.0%/— · io —/—"
+    );
+    expect(psiLineText(r.psiSystem, "avg60")).toBe(
+      "mem 2.3%/0.75% · cpu —/— · io —/—"
+    );
+    // System-wide: CPU prints `some` alone, since it has no `full` figure.
+    expect(psiLineText(r.psiSystem, "avg10", { systemWide: true })).toBe(
+      "mem 1.5%/0.0% · cpu 3.0% · io —/—"
+    );
+  });
+
+  it("drops the kernel's placeholder system CPU full, and keeps a slice's real one", () => {
+    // Kernel >= 5.13 prints `full avg10=0.00 ...` in /proc/pressure/cpu "for
+    // backward compatibility"; it is not a measurement.
+    const cpu = {
+      some: { avg10: 1.54, avg60: 1.79 },
+      full: { avg10: 0, avg60: 0 },
+    };
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: { "ci-runners.slice": { memory_current: 5 } },
+      psi: {
+        system: { cpu },
+        slices: { "ci-runners.slice": { cpu } },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.psiSystem.cpuSomeAvg10).toBe(1.54);
+    expect(r.psiSystem.cpuFullAvg10).toBeNull();
+    expect(r.psiSystem.cpuFullAvg60).toBeNull();
+    expect(r.slices[0].psi?.cpuFullAvg10).toBe(0); // a slice's real 0 stays 0
+    expect(r.slices[0].psi?.cpuFullAvg60).toBe(0);
+  });
+
+  it("only an entry carrying a memory key counts as a memory reading", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {
+        "a.slice": null,
+        "b.slice": {},
+        "c.slice": 7 as never,
+        "d.slice": { memory_current: 0 },
+        "e.slice": { events: { oom_kill: 1 } },
+      },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(
+      Object.fromEntries(r.slices.map((s) => [s.name, s.memoryReported]))
+    ).toEqual({
+      "a.slice": false,
+      "b.slice": false,
+      "c.slice": false,
+      "d.slice": true,
+      "e.slice": true,
+    });
+  });
+
+  it("formats a small real stall with two decimals, never as a rounded 0.0%", () => {
+    expect(formatPsi(0.04)).toBe("0.04%");
+    expect(formatPsi(0.5)).toBe("0.50%");
+    expect(formatPsi(0)).toBe("0.0%");
+    expect(formatPsi(1)).toBe("1.0%");
+    expect(formatPsi(12.5)).toBe("12.5%");
   });
 });

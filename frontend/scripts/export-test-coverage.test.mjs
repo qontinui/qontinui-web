@@ -3,13 +3,14 @@
 // every `covprod-*` dir must be gone once its file is processed, also when
 // processing throws.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const sandbox = mkdtempSync(join(tmpdir(), "covprod-test-sandbox-"));
 const savedTmp = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
 let withScratchDir;
+let sweepStaleScratchDirs;
 
 const leftovers = () => readdirSync(sandbox).filter((n) => n.startsWith("covprod-"));
 
@@ -17,7 +18,7 @@ describe("export-test-coverage withScratchDir", () => {
   beforeAll(async () => {
     // os.tmpdir() reads these on every call, so the helper's dirs land here.
     process.env.TMPDIR = process.env.TMP = process.env.TEMP = sandbox;
-    ({ withScratchDir } = await import("./export-test-coverage.mjs"));
+    ({ withScratchDir, sweepStaleScratchDirs } = await import("./export-test-coverage.mjs"));
   });
 
   afterAll(() => {
@@ -58,6 +59,24 @@ describe("export-test-coverage withScratchDir", () => {
 
   it("many runs leave nothing behind", () => {
     for (let i = 0; i < 25; i++) withScratchDir((dir) => writeFileSync(join(dir, "f"), "x"));
+    expect(leftovers()).toEqual([]);
+  });
+
+  it("the startup sweep removes only covprod- dirs older than the threshold", () => {
+    const old = join(sandbox, "covprod-killedrun");
+    const fresh = join(sandbox, "covprod-inflight");
+    const other = join(sandbox, "unrelated-old");
+    for (const d of [old, fresh, other]) mkdirSync(d);
+    writeFileSync(join(old, "junit.xml"), "<x/>");
+    const twoHoursAgo = (Date.now() - 2 * 60 * 60 * 1000) / 1000;
+    utimesSync(old, twoHoursAgo, twoHoursAgo);
+    utimesSync(other, twoHoursAgo, twoHoursAgo);
+    expect(sweepStaleScratchDirs()).toBe(1);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(other)).toBe(true);
+    rmSync(fresh, { recursive: true });
+    rmSync(other, { recursive: true });
     expect(leftovers()).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import { FleetResourceStrip } from "./FleetResourceStrip";
 import { commitEtaReading } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
+  HistorySeries,
   ResourceSampleRow,
   ResourceSamplesResponse,
 } from "./fleetResources";
@@ -1309,6 +1310,99 @@ describe("sparklines", () => {
     renderStrip({ latest: [sample()], history: [] });
     expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
   });
+
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: coord serves `swap_ratio` on every history point, and a
+  // host row draws it as a second, dashed line beside the commit line.
+  const swapSeries = (
+    lane: string,
+    swaps: (number | null | undefined)[],
+    pressures: (number | null)[] = swaps.map(() => 0.815)
+  ) => ({
+    device_id: DEV,
+    lane,
+    lane_instance: null,
+    pressure_basis: (lane === "host" ? "commit" : "swap") as "commit" | "swap",
+    points: swaps.map((swap_ratio, i) => {
+      const p: HistorySeries["points"][number] = {
+        sampled_at: `2026-11-09T18:${String(i * 10).padStart(2, "0")}:00Z`,
+        pressure: pressures[i],
+        disk_free_bytes: null,
+        disk_total_bytes: null,
+        build_slots_busy: null,
+        build_slots_total: null,
+        ci_jobs_running: null,
+      };
+      // `undefined` = the key is absent, as a coord older than the field sends.
+      if (swap_ratio !== undefined) p.swap_ratio = swap_ratio;
+      return p;
+    }),
+  });
+  const swapLine = () =>
+    screen
+      .getByTestId("fleet-resource-sparkline")
+      .getAttribute("data-swap-line");
+  const dashedCurves = (container: HTMLElement) =>
+    Array.from(
+      container.querySelectorAll("path.recharts-line-curve[stroke-dasharray]")
+    );
+
+  it("draws a Linux host's swap climb as a second line (nilan: swap 0.9999, commit 0.815)", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          swap_total_bytes: 51_565_817_856,
+          swap_used_bytes: 51_561_738_240,
+          swap_ratio: 0.9999,
+          pressure: { ratio: 0.815, basis: "commit" },
+        }),
+      ],
+      history: [swapSeries("host", [0.62, 0.91, 0.9999])],
+    });
+    expect(swapLine()).toBe("drawn");
+    expect(dashedCurves(container)).toHaveLength(1);
+    // Two lines need two names: the lead is named from the series' basis.
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-pressure-name")
+    ).toBe("commit used");
+  });
+
+  it("draws no swap line on a Windows host, which coord serves swap_ratio: null", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [null, null, null])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no swap line when coord's history predates the field (key absent), never a 0", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [undefined, undefined])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no second line on a wsl row: its lead line already IS swap", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          swap_ratio: 0.75,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [swapSeries("wsl", [0.7, 0.75], [0.7, 0.75])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
 });
 
 describe("§C3 — staleness applies to the WHOLE row, not just the lead column", () => {
@@ -1849,5 +1943,144 @@ describe("Slices / PSI column — unmeasured is explicit, never a fabricated zer
     expect(screen.getByTestId("fleet-resource-psi").textContent).toMatch(
       /io 1\.5%/
     );
+  });
+
+  it("never draws the runner's cpu_attribution key as a slice row", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_ },
+            cpu_attribution: { session_usec: 1, ci_usec: 2 },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toMatch(/^ci-runners:/);
+    expect(screen.getByTestId("fleet-resource-slices").textContent).not.toMatch(
+      /cpu_attribution/
+    );
+  });
+
+  it("reads an empty linux_cgroup_v2 map as 'no watched slice present', and absent PSI as not measured", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("measured");
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "no watched slice present"
+    );
+    const psi = screen.getByTestId("fleet-resource-psi");
+    expect(psi.getAttribute("data-state")).toBe("unmeasured");
+    expect(psi.textContent).toBe("system PSI: not measured");
+  });
+
+  it("renders PSI full beside some, per slice and system-wide, with avg60 in the tooltip", async () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_, memory_high: 8 * GIB_ },
+          },
+          psi: {
+            system: {
+              memory: {
+                some: { avg10: 1.5, avg60: 2.25 },
+                full: { avg10: 0.5, avg60: 0.75 },
+              },
+            },
+            slices: {
+              "ci-runners.slice": {
+                memory: {
+                  some: { avg10: 40, avg60: 35 },
+                  full: { avg10: 12.5, avg60: 10 },
+                },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const slicePsi = screen.getByTestId("fleet-resource-slice-psi");
+    expect(slicePsi.textContent).toBe(
+      "ci-runners PSI 10s some/full: mem 40.0%/12.5% · cpu —/— · io —/—"
+    );
+    const system = screen.getByTestId("fleet-resource-psi");
+    expect(system.textContent).toBe(
+      "system PSI 10s some/full: mem 1.5%/0.50% · cpu — · io —/—"
+    );
+    // The 60 s figures ride the tooltip, which mounts on hover.
+    await userEvent.hover(slicePsi);
+    const tips = await screen.findAllByText(
+      /ci-runners PSI 60s some\/full: mem 35\.0%\/10\.0%/
+    );
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it("never prints the kernel's placeholder system CPU full as a measured 0.0%", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: {
+            system: {
+              cpu: {
+                some: { avg10: 1.54, avg60: 1.79 },
+                full: { avg10: 0, avg60: 0 },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const system = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(system).toMatch(/cpu 1\.5% · /);
+    expect(system).not.toMatch(/cpu 1\.5%\//);
+  });
+
+  it("says 'memory not measured' for a slice with PSI but no memory reading, and draws no PSI line for a slice without one", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "agent-builds.slice": { memory_current: GIB_ },
+          },
+          psi: {
+            slices: {
+              "ci-runners.slice": { io: { some: { avg10: 2 } } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^agent-builds: 1\.0 GB/),
+      "ci-runners: memory not measured",
+    ]);
+    // Only ci-runners sent PSI, so exactly one per-slice PSI line.
+    const slicePsi = screen.getAllByTestId("fleet-resource-slice-psi");
+    expect(slicePsi).toHaveLength(1);
+    expect(slicePsi[0].textContent).toMatch(/^ci-runners PSI 10s/);
+    expect(slicePsi[0].textContent).toMatch(/io 2\.0%\/—/);
   });
 });

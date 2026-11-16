@@ -127,6 +127,7 @@ from app.api.v1.endpoints import (
     settings,
     skills,
     snapshots,
+    spawn_launch_settings,
     spawn_ledger,
     state_discovery,
     state_discovery_results,
@@ -254,6 +255,15 @@ api_router.include_router(internal.router, prefix="/internal", tags=["internal"]
 # Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
 api_router.include_router(
     repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
+# Spawn launch settings — the operator's model and effort per spawn type,
+# proxied to coord's `/coord/spawn-launch-settings`. Its own prefix, so the
+# frontend's `ACTIVE_TENANT_URL_PREFIXES` carries a line for it. Plan
+# `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+api_router.include_router(
+    spawn_launch_settings.router,
+    prefix="/spawn-launch-settings",
+    tags=["spawn-launch-settings"],
 )
 # Spawn ledger reads — every spawn coord was asked to place, where it went,
 # how long it waited and how it ended. Under `/operations` beside the reads the

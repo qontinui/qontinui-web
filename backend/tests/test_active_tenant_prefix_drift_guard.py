@@ -231,6 +231,10 @@ _FORWARDED_TO_COORD: dict[str, str] = {
         "reads it only for can_edit's _effective_tenant_roles (membership-"
         "matched); operations' _tenant_headers forwards it to coord"
     ),
+    "app.api.v1.endpoints.spawn_launch_settings": (
+        "reads it only for can_edit's _effective_tenant_roles (membership-"
+        "matched); operations' _tenant_headers forwards it to coord"
+    ),
     "app.api.v1.endpoints.prompt_injections": "_coord_headers forwards it to coord",
     "app.services.coord_device_resolve": (
         "CoordCaller carries it to coord's /coord/devices/resolve, which "
