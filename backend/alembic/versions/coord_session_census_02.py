@@ -1,7 +1,7 @@
 """coord.session_census placement columns — the runner page a session lives on
 
 Revision ID: coord_session_census_02
-Revises: coord_fleet_focus_01
+Revises: coord_subprojects_02_session_reported_index
 Create Date: 2026-11-16
 
 Phase 2 (qontinui-web half) of plan
@@ -88,7 +88,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_session_census_02"
-down_revision: str | Sequence[str] | None = "coord_fleet_focus_01"
+down_revision: str | Sequence[str] | None = "coord_subprojects_02_session_reported_index"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
