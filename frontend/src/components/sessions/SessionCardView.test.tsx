@@ -144,8 +144,11 @@ describe("SessionCardView machine row", () => {
         source: "coord_device",
       },
     });
-    expect(machineRow().textContent).not.toContain("unnamed machine");
-    expect(machineRow().textContent).toContain("nawa");
+    const text = machineRow().textContent ?? "";
+    expect(text).not.toContain("unnamed machine");
+    // Only the label fallback makes "nawa" the label; with `??` the label is
+    // blank and the hostname span would be the sole "nawa" — so pin the label.
+    expect(within(machineRow()).getByTitle("nawa").textContent).toBe("nawa");
   });
 
   it("names an unrecognised source and a null source honestly", () => {
