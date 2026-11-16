@@ -727,8 +727,8 @@ class TestTransportFailures:
         ]
         assert resp.json()["failed"] == 1
 
-    @pytest.mark.parametrize("status", [502, 503])
-    def test_gateway_502_503_without_a_coord_body_is_unknown(
+    @pytest.mark.parametrize("status", [501, 502, 503, 505, 520, 522, 524])
+    def test_gateway_5xx_without_a_coord_body_is_unknown(
         self, auth_client: TestClient, status: int
     ):
         stub = _CoordStub({DEVICE_A: [_mock_response(status, None, "Bad Gateway")]})
