@@ -205,6 +205,14 @@ import {
   SESSION_WORK_CLASS,
   SESSION_WORK_PALETTE,
 } from "@/components/sessions/sessionConsoleStatus";
+// The saved tab lists panel on `/sessions` — plan
+// `2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days`
+// Phase 3. A `*Status.ts` beside the sessions console's own.
+import {
+  SAVED_SESSION_FINISHED_ATTENTION_BY_KIND,
+  SAVED_SESSION_FINISHED_AUTHOR_GLYPH_KINDS,
+  SAVED_SESSION_FINISHED_CLASS,
+} from "@/components/sessions/savedSessionListStatus";
 // The agent-text-units console files its table in a `_lib/` module rather than
 // a `*Status.ts`, and was audited only beside itself (`unitRows.test.ts`)
 // until the source scan in `consoleSurfaces.test.ts` found it.
@@ -750,6 +758,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: SESSION_WORK_CLASS,
       authorGlyphKinds:
         SESSION_WORK_PALETTE.authorGlyphKinds as ReadonlySet<string>,
+    },
+  },
+  // A saved tab list's finished badge: the work axis above (its `finished`
+  // wears the same class) plus the `unknown` a snapshot can hold — amber BY
+  // FLOOR, since coord was read once, at capture, and that read can fail.
+  {
+    surface: "saved tab lists — finished (/sessions)",
+    module: "components/sessions/savedSessionListStatus.ts",
+    attentionByKind: SAVED_SESSION_FINISHED_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SAVED_SESSION_FINISHED_CLASS,
+      authorGlyphKinds:
+        SAVED_SESSION_FINISHED_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the computers console ----------------------------------------------

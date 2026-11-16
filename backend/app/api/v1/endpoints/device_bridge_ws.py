@@ -26,7 +26,10 @@ A mobile client reaches a **runner** it shares no LAN with.
   - ``/runner-proxy/{path}`` — see :func:`runner_proxy`. With an
     ``X-Qontinui-Device-Id`` header it relays HTTP-over-WebSocket through the
     runner's own outbound connection; without one it proxies to a co-located
-    runner on ``127.0.0.1``, for platform admins only.
+    runner on ``127.0.0.1``, for platform admins only. The relay itself is
+    ``app/services/runner_relay.py`` (:func:`~app.services.runner_relay.relay_http`),
+    which the saved-session-lists capture calls too; this file reads the
+    request into it and renders the typed outcome it returns.
 
   Registry: **``coord.devices.ws_session_id``**, which this file only ever
   READS (via ``app/services/coord_device.py`` → coord's
@@ -56,8 +59,8 @@ Consequences worth stating outright
   ``request_id``, so the relay has no silent arm left.
 * ``ws_connected_at`` vs ``last_seen_at`` in that body are **two different
   clocks** and are named separately on purpose — see
-  ``_relay_device_liveness``. ``ws_connected_at`` is the one that separates
-  "never registered" from "flapping right now".
+  ``runner_relay._device_liveness``. ``ws_connected_at`` is the one that
+  separates "never registered" from "flapping right now".
 * Those two keys are **absent, not null, when coord could not be read**.
   ``null`` means the column is NULL — the runner has never registered — so
   it is a claim a failed lookup is not entitled to make. Absent is the wire
@@ -69,22 +72,17 @@ Consequences worth stating outright
 """
 
 import asyncio
-import base64
-import binascii
 import json
-import re
-import time
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, NamedTuple
-from uuid import UUID, uuid4
+from typing import Annotated, assert_never
+from uuid import UUID
 
 import httpx
 import structlog
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
     Request,
     Response,
     WebSocket,
@@ -105,8 +103,20 @@ from app.core.refusal import (
     refusal_payload,
 )
 from app.models.user import User
-from app.services import coord_device
+from app.services import coord_device, runner_relay
 from app.services.device_bridge_service import DeviceBridgeService
+
+# Shared with the relay arm, which lives in ``app/services/runner_relay.py``:
+# the co-located hop drops the same ambient credentials and browser
+# provenance headers, and guards its path with the same SSRF check. Their
+# reasons are documented there.
+from app.services.runner_relay import (
+    AMBIENT_CREDENTIAL_REQUEST_HEADERS as _AMBIENT_CREDENTIAL_REQUEST_HEADERS,
+)
+from app.services.runner_relay import (
+    is_browser_provenance_header as _is_browser_provenance_header,
+)
+from app.services.runner_relay import relay_request_id, validate_proxy_path
 from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject, safe_close
 
 router = APIRouter()
@@ -126,88 +136,10 @@ def _now_iso() -> str:
 _RUNNER_PORT_MIN = 9876
 _RUNNER_PORT_MAX = 9899
 
-# Pattern for safe proxy path segments — allows alphanumeric, hyphens, underscores,
-# dots, and forward slashes only. Rejects characters that could rewrite the URL
-# (e.g., '@', ':', '?', '#') even if FastAPI strips some of them first.
-_SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9/_\-\.]*$")
-
-# Maximum request/response body size relayed over the WS bridge. Guards both
-# the inbound request body and the base64-decoded response body against
-# oversized payloads that would strain Redis pub/sub. 8 MiB.
-RELAY_MAX_BODY_BYTES = 8 * 1024 * 1024
-
 # Relay dispatch timeout bounds (milliseconds) for the remote-runner path.
 _RELAY_TIMEOUT_MS_MIN = 1000
 _RELAY_TIMEOUT_MS_MAX = 120000
 _RELAY_TIMEOUT_MS_DEFAULT = 30000
-
-# The end user's BROWSER provenance headers, dropped on BOTH runner hops below.
-#
-# The runner's loopback API classifies a caller by ``Origin`` and
-# ``Sec-Fetch-Site`` (``src-tauri/src/mcp/origin_guard.rs``, plan
-# ``2026-09-17-runner-loopback-api-accepts-any-origin``): absent both it is a
-# NON-browser caller and keeps full local trust; with a browser origin it is
-# admitted only to the routes that origin's class is allowlisted for. Every
-# request through this proxy is SERVER-mediated — this backend has already
-# authenticated the user and, on the relay arm, the runner's
-# ``relay_path_policy`` gates the path — so forwarding the page's
-# ``Origin: https://app.qontinui.io`` would make the runner refuse a proxied
-# mobile / digital-twin / co-pilot call as a Foreign browser request. The whole
-# Fetch Metadata family goes too — matched by its ``sec-fetch-`` PREFIX, so a
-# member browsers add later is stripped without an edit here: it describes the
-# browser's hop, not this one. This strip must be deployed BEFORE the runner
-# enforces its route allowlist (that plan's Phase 2 prerequisite).
-_BROWSER_PROVENANCE_REQUEST_HEADERS = frozenset({"origin"})
-_BROWSER_PROVENANCE_REQUEST_HEADER_PREFIX = "sec-fetch-"
-
-
-def _is_browser_provenance_header(name: str) -> bool:
-    """True for a request header that only a browser's own hop can carry."""
-    lowered = name.lower()
-    return lowered in _BROWSER_PROVENANCE_REQUEST_HEADERS or lowered.startswith(
-        _BROWSER_PROVENANCE_REQUEST_HEADER_PREFIX
-    )
-
-
-# Ambient credentials — every header by which a caller authenticates TO THIS
-# BACKEND. Neither runner-proxy arm (the relay nor the co-located legacy hop)
-# forwards any of them: the runner trusts its own channel, not the end user's
-# credentials, and a runner (or anything on its box reading its logs) must
-# never receive a replayable web credential.
-#   - ``authorization`` / ``proxy-authorization`` — the user's bearer.
-#   - ``cookie`` — the browser's session / refresh cookies (the frontend's
-#     httpClient sends ``credentials: "include"``).
-#   - ``x-csrf-token`` — the CSRF token paired with that session.
-#   - ``x-machine-key`` / ``x-device-machine-key`` — machine / device keys
-#     accepted by the devenv-agent and device endpoints.
-#   - ``x-coord-admin-secret`` — the coord admin shared secret.
-_AMBIENT_CREDENTIAL_REQUEST_HEADERS = frozenset(
-    {
-        "authorization",
-        "proxy-authorization",
-        "cookie",
-        "x-csrf-token",
-        "x-machine-key",
-        "x-device-machine-key",
-        "x-coord-admin-secret",
-    }
-)
-
-# Request headers never forwarded to the runner over the relay: hop-by-hop
-# (``host``, ``connection``, ``transfer-encoding``, ``content-length``) plus
-# every ambient credential above.
-#
-# Browser provenance headers are dropped as well, by
-# :func:`_is_browser_provenance_header` (above) at the filter site.
-_RELAY_EXCLUDED_REQUEST_HEADERS = (
-    frozenset({"host", "connection", "transfer-encoding", "content-length"})
-    | _AMBIENT_CREDENTIAL_REQUEST_HEADERS
-)
-
-# Hop-by-hop response headers stripped before returning the runner's reply.
-_RELAY_EXCLUDED_RESPONSE_HEADERS = frozenset(
-    {"transfer-encoding", "connection", "keep-alive", "content-length"}
-)
 
 # Timeout (seconds) for the co-located legacy proxy hop to 127.0.0.1:<port>.
 _LOCAL_PROXY_TIMEOUT_S = 30.0
@@ -271,12 +203,6 @@ def _validate_runner_port(port: int) -> None:
         )
 
 
-def _validate_proxy_path(path: str) -> None:
-    """Raise ValueError if path contains characters that could redirect the URL."""
-    if not _SAFE_PATH_RE.match(path):
-        raise ValueError(f"Proxy path contains disallowed characters: {path!r}")
-
-
 def _redis_unavailable_response() -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -285,22 +211,6 @@ def _redis_unavailable_response() -> JSONResponse:
         },
     )
 
-
-#: The ``next_action.target`` for a paired device whose runner has never
-#: opened the relay. ``Refusal::render`` reads: Set the "<target>" setting,
-#: then try again. "Web Integration" is the runner's own Settings section
-#: and toggle (``WebIntegrationSettings.tsx``); the relay starts at runner
-#: boot once it is on and the runner is signed in. The runner has no
-#: separate cloud-relay toggle any more.
-_RELAY_SETTING_TARGET = "Web Integration"
-
-#: The refusal sentence for the same case. The top-level ``detail`` keeps its
-#: prior value ("runner not connected") for older mobile builds.
-_NEVER_REGISTERED_SENTENCE = (
-    "this device is paired, but its runner has never connected to the cloud "
-    "relay: start the runner on that device, sign it in, and turn its cloud "
-    "relay on, then try again"
-)
 
 #: The header that selects the relay arm of :func:`runner_proxy`. It is also
 #: the ``next_action.target`` of the co-located arm's refusal, because adding
@@ -326,7 +236,7 @@ def _co_located_admin_only_refusal(
     ``request_id``. The body follows the relay arm's shape: ``detail``, the
     ``request_id`` and the typed ``refusal`` envelope.
     """
-    request_id = _relay_request_id(request)
+    request_id = relay_request_id(request)
     logger.warning(
         "runner_proxy_co_located_refused",
         user_id=user_id,
@@ -978,7 +888,7 @@ async def runner_proxy(
     # only safe characters so it cannot redirect the request to a different host.
     try:
         _validate_runner_port(runner_port)
-        _validate_proxy_path(path)
+        validate_proxy_path(path)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
@@ -1076,121 +986,6 @@ def _resolve_relay_timeout_s(request: Request) -> float:
     return ms / 1000.0
 
 
-def _relay_request_id(request: Request) -> str:
-    """The correlation id for this HTTP request.
-
-    ``RequestIDMiddleware`` (``app/middleware/request_id.py``, registered in
-    ``main.py``) already owns a per-request id: it honours an inbound
-    ``X-Request-ID``, binds it into the structlog contextvars every line of
-    the request inherits, stashes it on ``request.state.request_id``, and
-    echoes it back in the ``X-Request-ID`` response header.
-
-    Minting a *fresh* ``uuid4()`` here instead — as the relay's 503 arm first
-    did — breaks the very workflow the id exists for. The value in the body
-    would disagree with the ``X-Request-ID`` header on the same response, and
-    passing it as an explicit ``request_id=`` log kwarg *overrides* the
-    contextvar of the same name, so the one line naming the failure could no
-    longer be joined to ``request_started``/``request_completed`` for that
-    request. Grepping the id the client shows would return exactly one line
-    and nothing around it.
-
-    The fallback matters and is reached two ways: a ``Request`` built directly
-    in a unit test has no ``state`` attribute at all, and a real one that
-    somehow bypassed the middleware has a ``state`` with no ``request_id``.
-    Both must yield a usable id rather than an ``AttributeError`` — this runs
-    on an error path, where raising would replace a correct 404/503 with a
-    500.
-    """
-    state = getattr(request, "state", None)
-    request_id = getattr(state, "request_id", None)
-    return request_id if isinstance(request_id, str) and request_id else str(uuid4())
-
-
-class _DeviceLiveness(NamedTuple):
-    """The two liveness clocks, plus whether we actually learned them.
-
-    ``known`` is the field that keeps ``None`` from meaning two things at
-    once. A ``ws_connected_at`` of ``None`` is a real, useful fact — the
-    column is NULL, so the runner has *never* held a WS session — but the
-    coord read that sources it can also simply fail, and that yields ``None``
-    for a completely different reason. Collapsing the two would make the 503
-    body assert "never registered" whenever coord hiccupped, which is a
-    confident wrong answer in place of an honest unknown.
-    """
-
-    known: bool
-    ws_connected_at: str | None
-    last_seen_at: str | None
-
-
-async def _relay_device_liveness(
-    request: Request,
-    device_uuid: UUID,
-    user_id: str,
-) -> _DeviceLiveness:
-    """Best-effort liveness clocks for the not-connected 503.
-
-    Coord's ``GET /coord/devices/:id/routing`` deliberately returns only
-    ``{device_id, ws_session_id}``, so the timestamps come from the full-row
-    read (``GET /coord/devices/:id/owned``) instead. That read runs ONLY on
-    the 503 path, never on a healthy relay dispatch, and ONE read sources
-    both fields.
-
-    **Two clocks, deliberately both named.** ``ws_session_id`` has more than
-    one writer: a fresh registration sets it, and the heartbeat heal
-    (``devices_ws.py`` → ``device_crud.claim_ws_session``) can re-claim a
-    session without one. "Last registered" and "last healed" are therefore
-    different clocks, and the 503's whole purpose — telling "never
-    registered" apart from "flapping right now" — turns on which is read.
-
-    * ``ws_connected_at`` is the timestamp of the *current* WS claim however
-      it was obtained: both non-NULL writers set it alongside
-      ``ws_session_id``, and ``claim_ws_session`` deliberately copies it from
-      the connection row rather than stamping ``utc_now()``. This is the
-      flapping signal.
-    * ``last_seen_at`` is the general device heartbeat — a different fact,
-      and the one the 503 body already shipped with.
-
-    Returning both under their own names is what keeps either from being the
-    ambiguous "last seen" whose meaning shifts by code path — which is the
-    defect this 503 exists to diagnose, and one worth not reproducing in the
-    diagnosis.
-
-    **This function never raises.** A coord fault while decorating a 503 must
-    not convert a genuine "runner not connected" into a 502/504 — the 503 is
-    already the correct answer and the timestamps are a nicety. Any failure
-    yields ``known=False``, and the caller then OMITS both fields from the
-    body rather than sending ``null`` — because ``null`` is already spoken
-    for. It means the column is NULL, i.e. "never registered", which is
-    exactly the strong claim a failed lookup has no basis to make. Absent is
-    the wire spelling of "unknown"; ``null`` is the wire spelling of "never".
-    The unknown case is named on its own line,
-    ``runner_proxy_relay_liveness_lookup_failed``, which carries the same
-    request id via the middleware's contextvar.
-    """
-    try:
-        owned = await coord_device.get_owned_device(request, device_uuid, user_id)
-    except Exception:
-        logger.info(
-            "runner_proxy_relay_liveness_lookup_failed",
-            device_id=str(device_uuid),
-            exc_info=True,
-        )
-        return _DeviceLiveness(known=False, ws_connected_at=None, last_seen_at=None)
-
-    # coord serialises the row with ``to_jsonb``, so a timestamptz arrives as
-    # an ISO-8601 string. Anything else is not a timestamp we can promise.
-    def _iso(key: str) -> str | None:
-        value = owned.get(key)
-        return value if isinstance(value, str) else None
-
-    return _DeviceLiveness(
-        known=True,
-        ws_connected_at=_iso("ws_connected_at"),
-        last_seen_at=_iso("last_seen_at"),
-    )
-
-
 async def _runner_proxy_relay(
     request: Request,
     path: str,
@@ -1200,18 +995,15 @@ async def _runner_proxy_relay(
     """Relay an HTTP request to a remote runner over its outbound WS bridge.
 
     Reached from :func:`runner_proxy` when the ``X-Qontinui-Device-Id`` header
-    is present. The runner need not be co-located with this backend: the
-    request is published as an ``http_request`` envelope on the runner's Redis
-    command channel and the matching ``command_response`` is awaited, so the
-    relay works across horizontally-scaled backend replicas.
+    is present. The runner need not be co-located with this backend. The
+    relay itself is :func:`app.services.runner_relay.relay_http`: this
+    function reads the request into it, renders the typed outcome it returns,
+    and owns the two warning lines a device refusal emits here
+    (``runner_proxy_relay_device_not_owned``,
+    ``runner_proxy_relay_not_connected``), because those name this route's
+    path and method.
     """
-    # Lazy imports keep the module import graph light for the legacy path.
-    from app.services.runner import RunnerCommandTimeoutError
-    from app.services.runner_websocket_manager import (
-        get_runner_websocket_manager,
-    )
-
-    # 1. Validate + resolve the device (UUID, ownership, connected).
+    # 1. Validate the device id before anything is read or relayed.
     try:
         device_uuid = UUID(device_id_hdr)
     except (ValueError, AttributeError, TypeError):
@@ -1220,298 +1012,104 @@ async def _runner_proxy_relay(
             content={"detail": "X-Qontinui-Device-Id is not a valid UUID"},
         )
 
-    # Resolve the device routing over coord's HTTP boundary (Phase 3 of
-    # ``2026-05-30-web-coord-schema-boundary-decoupling.md``). Replaces the
-    # former direct ``SELECT device_id, ws_session_id FROM coord.devices
-    # WHERE device_id=:id AND user_id=:uid AND capability_user_paired`` —
-    # coord now owns that ownership-checked read behind
-    # ``GET /coord/devices/:id/routing`` (scoped by ``x-qontinui-user-id``).
-    # Coord's 404 (device not owned) maps to ``row is None``, the same
-    # signal the prior query carried. Coord transport faults surface as the
-    # 502/504 ``HTTPException`` from the client; any other unexpected error
-    # preserves the prior 500-on-lookup-error posture (a real fault, not a
-    # relay-connectivity problem).
-    try:
-        row = await coord_device.get_device_routing(
-            device_uuid,
-            bearer=coord_device.extract_bearer(request),
-            user_id=user_id,
-        )
-    except HTTPException:
-        # 502/504 transport mapping from the coord client — re-raise so
-        # FastAPI renders the gateway error verbatim.
-        raise
-    except Exception:
-        logger.exception(
-            "runner_proxy_relay_device_lookup_failed",
-            device_id=str(device_uuid),
-        )
-        refusal = build_refusal(
-            RefusalCode.internal_error,
-            NextActionKind.report_defect,
-            "device lookup failed",
-            discriminator="device_lookup_failed",
-            glossary_terms=[GlossaryTerm.device],
-        )
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "device lookup failed",
-                REFUSAL_KEY: refusal_payload(refusal),
-            },
-        )
+    # 2. Relay. Ownership, connectivity, the SSRF path guard, the body cap and
+    #    the header strip all happen inside, in that order. The body is passed
+    #    as its reader, so a request refused before the cap is never buffered.
+    outcome = await runner_relay.relay_http(
+        device_uuid,
+        user_id=user_id,
+        bearer=coord_device.extract_bearer(request),
+        method=request.method,
+        path=path,
+        query=request.url.query,
+        headers=request.headers.items(),
+        body=request.body,
+        timeout_s=_resolve_relay_timeout_s(request),
+        caller="runner_proxy",
+    )
 
-    if row is None:
-        # The relay's OTHER silent arm. Like the 503 below it returned with no
-        # log line at all, so a caller relaying against a device this user does
-        # not own — a stale device id on the phone, a re-paired runner — was
-        # indistinguishable server-side from a device that was never asked for.
-        # Logged at ``warning`` alongside the 503 so one grep finds both.
-        request_id = _relay_request_id(request)
+    # 3. Render the outcome.
+    match outcome:
+        case runner_relay.Reply():
+            return Response(
+                content=outcome.body,
+                status_code=outcome.status,
+                headers=outcome.headers,
+            )
+        case (
+            runner_relay.NotOwned()
+            | runner_relay.NotConnected()
+            | runner_relay.LookupFailed()
+        ):
+            request_id = relay_request_id(request)
+            _log_device_refusal(outcome, request, path, user_id, request_id)
+            return runner_relay.relay_refusal_response(outcome, request_id=request_id)
+        case runner_relay.InvalidRequest():
+            return JSONResponse(
+                status_code=outcome.status_code, content={"detail": outcome.detail}
+            )
+        case runner_relay.Timeout():
+            return JSONResponse(
+                status_code=504,
+                content={"detail": "runner did not respond in time"},
+            )
+        case runner_relay.UndecodableReply():
+            return JSONResponse(
+                status_code=502,
+                content={"detail": "runner returned an undecodable body"},
+            )
+        case runner_relay.ReplyTooLarge():
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "runner response exceeds relay size cap"},
+            )
+        case _:
+            assert_never(outcome)
+
+
+def _log_device_refusal(
+    outcome: runner_relay.DeviceRefusal,
+    request: Request,
+    path: str,
+    user_id: str,
+    request_id: str,
+) -> None:
+    """The relay's two device-refusal arms are never silent.
+
+    Each logs at ``warning`` with the ``request_id`` its body carries, so one
+    grep finds both and joins the line to the client's report. A device
+    lookup failure was already logged with its traceback where it happened
+    (``runner_proxy_relay_device_lookup_failed``, in the relay service).
+    """
+    if isinstance(outcome, runner_relay.NotOwned):
+        # The relay's OTHER silent arm, historically: a caller relaying against
+        # a device this user does not own — a stale device id on the phone, a
+        # re-paired runner — was indistinguishable server-side from a device
+        # that was never asked for.
         logger.warning(
             "runner_proxy_relay_device_not_owned",
-            device_id=str(device_uuid),
+            device_id=str(outcome.device_id),
             user_id=str(user_id),
             path=path,
             method=request.method,
             request_id=request_id,
         )
-        # A device this caller does not own becomes theirs by pairing it.
-        refusal = build_refusal(
-            RefusalCode.not_found,
-            NextActionKind.pair_device,
-            "device not found or not owned by caller",
-            discriminator="device_not_owned",
-            glossary_terms=[GlossaryTerm.device],
-        )
-        return JSONResponse(
-            status_code=404,
-            # Additive, exactly as on the 503: ``detail`` keeps its prior value.
-            content={
-                "detail": "device not found or not owned by caller",
-                "device_id": str(device_uuid),
-                "request_id": request_id,
-                REFUSAL_KEY: refusal_payload(refusal),
-            },
-        )
-    if row.get("ws_session_id") is None:  # ws_session_id IS NULL
+    elif isinstance(outcome, runner_relay.NotConnected):
         # This is the relay's single most common failure AND, historically,
         # its most silent one: it emitted no log line at all, so the
-        # commonest cloud-relay outage was invisible server-side, and the
-        # body carried nothing the client could turn into a diagnosis
-        # ("Couldn't reach the runner through the cloud relay" and nothing
-        # more). W-A/W-B of the mobile-cloud-relay remediation loop.
-        #
-        # The extra fields are ADDITIVE and optional — ``detail`` keeps its
-        # exact prior value so an older mobile build is unaffected.
-        request_id = _relay_request_id(request)
-        liveness = await _relay_device_liveness(request, device_uuid, user_id)
-        # Built ONCE and spread into both the body and the log line, so the two
-        # surfaces cannot drift about what was known.
-        #
-        # Present only when the coord read actually answered. A failed lookup
-        # leaves both keys off entirely rather than sending ``null``, because
-        # ``null`` already carries a strong meaning here — the column is NULL,
-        # so the runner has never registered — and a lookup that failed has no
-        # basis for that claim. See ``_DeviceLiveness``. On the log surface the
-        # stakes are the same: a ``ws_connected_at=None`` kwarg would make one
-        # query return the never-registered rows and the coord-outage rows
-        # together, which is the collapse this whole change removes.
-        liveness_fields: dict[str, object] = (
-            {
-                # The claim clock — how long ago the runner last held a WS
-                # session. This is what separates "never registered"
-                # (``null``) from "flapping right now" (seconds ago).
-                "ws_connected_at": liveness.ws_connected_at,
-                # The heartbeat clock. A different fact; see
-                # ``_relay_device_liveness``.
-                "last_seen_at": liveness.last_seen_at,
-            }
-            if liveness.known
-            else {}
-        )
-        # Both arms are reached only for a device row this caller OWNS, so the
-        # device is already paired; pairing it again is a finished step and
-        # cannot help. What differs is the runner on it:
-        #
-        # * never registered (``ws_connected_at`` is null): its runner has
-        #   never opened the relay WebSocket. Waiting will not change that.
-        #   Someone has to start the runner on that device, sign it in, and
-        #   turn its cloud relay on, so the next action is that setting, and
-        #   the sentence says the rest.
-        # * connected before: it is expected back, so the same request later
-        #   is the next step. An unknown liveness is not "never registered"
-        #   either. It takes the retry arm, which is right for every runner
-        #   seen before.
-        never_registered = liveness.known and liveness.ws_connected_at is None
-        if never_registered:
-            refusal = build_refusal(
-                RefusalCode.device_not_connected,
-                NextActionKind.set_setting,
-                _NEVER_REGISTERED_SENTENCE,
-                discriminator="runner_never_registered",
-                target=_RELAY_SETTING_TARGET,
-                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
-            )
-        else:
-            refusal = build_refusal(
-                RefusalCode.device_not_connected,
-                NextActionKind.retry_later,
-                "runner not connected",
-                discriminator="runner_not_connected",
-                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
-            )
-        content: dict[str, object] = {
-            "detail": "runner not connected",
-            "device_id": str(device_uuid),
-            "request_id": request_id,
-            **liveness_fields,
-            REFUSAL_KEY: refusal_payload(refusal),
-        }
+        # commonest cloud-relay outage was invisible server-side. W-A/W-B of
+        # the mobile-cloud-relay remediation loop. The liveness fields are the
+        # SAME value the 503 body spreads (``runner_relay.liveness_fields``),
+        # so the two surfaces cannot drift about what was known.
         logger.warning(
             "runner_proxy_relay_not_connected",
-            device_id=str(device_uuid),
+            device_id=str(outcome.device_id),
             user_id=str(user_id),
             path=path,
             method=request.method,
             request_id=request_id,
             # Names which population a row is in without the absence of the
             # two clocks having to be noticed.
-            liveness_known=liveness.known,
-            **liveness_fields,
+            liveness_known=outcome.liveness.known,
+            **runner_relay.liveness_fields(outcome.liveness),
         )
-        return JSONResponse(status_code=503, content=content)
-
-    # 2. Validate path with the existing SSRF guard.
-    try:
-        _validate_proxy_path(path)
-    except ValueError as exc:
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
-
-    # 3. Resolve the dispatch timeout.
-    timeout_s = _resolve_relay_timeout_s(request)
-
-    # 4. Read + size-cap the request body.
-    body = await request.body()
-    if len(body) > RELAY_MAX_BODY_BYTES:
-        return JSONResponse(
-            status_code=413,
-            content={"detail": "request body exceeds relay size cap"},
-        )
-
-    # 5. Build the filtered request headers (lowercased keys, drop hop-by-hop
-    #    + authorization — never forward the user's bearer to the runner).
-    fwd_headers = {
-        k.lower(): v
-        for k, v in request.headers.items()
-        if k.lower() not in _RELAY_EXCLUDED_REQUEST_HEADERS
-        and not _is_browser_provenance_header(k)
-    }
-
-    # 6. Build the http_request envelope (top-level type — see wire contract).
-    body_b64 = base64.b64encode(body).decode("ascii") if body else ""
-    envelope: dict[str, str | dict[str, str]] = {
-        "type": "http_request",
-        "method": request.method,
-        "path": path,
-        "query": request.url.query,
-        "headers": fwd_headers,
-        "body_b64": body_b64,
-    }
-
-    request_id = str(uuid4())
-    redis_client = await get_redis()
-    manager = await get_runner_websocket_manager(redis_client)
-
-    started = time.monotonic()
-    logger.info(
-        "runner_proxy_relay_dispatch",
-        device_id=str(device_uuid),
-        request_id=request_id,
-        method=request.method,
-        path=path,
-        timeout_s=timeout_s,
-        body_bytes=len(body),
-    )
-
-    # 7. Dispatch over the WS bridge and await the matching response.
-    #
-    # ``require_local_connection=False`` is what makes this relay work across
-    # horizontally-scaled replicas, and it also means ``dispatch_and_wait``
-    # cannot raise ``RunnerNotConnectedError`` here — the raise in
-    # ``app/services/runner/command_relay.py`` is gated on that same flag. So
-    # this function has exactly ONE 503 emitter: the ``ws_session_id IS NULL``
-    # branch above. Do not add an unreachable ``except`` arm back; a reader
-    # debugging a relay 503 must have one candidate cause, not two.
-    try:
-        reply = await manager.relay.dispatch_and_wait(
-            str(device_uuid),
-            envelope,
-            request_id=request_id,
-            timeout_s=timeout_s,
-            require_local_connection=False,
-        )
-    except RunnerCommandTimeoutError:
-        elapsed_ms = (time.monotonic() - started) * 1000.0
-        logger.error(
-            "runner_proxy_relay_timeout",
-            device_id=str(device_uuid),
-            request_id=request_id,
-            path=path,
-            elapsed_ms=round(elapsed_ms, 1),
-        )
-        return JSONResponse(
-            status_code=504,
-            content={"detail": "runner did not respond in time"},
-        )
-
-    # 8. Translate the command_response reply into a FastAPI Response.
-    status_code = reply.get("status", 200)
-    try:
-        status_code = int(status_code)
-    except (TypeError, ValueError):
-        status_code = 200
-
-    reply_body_b64 = reply.get("body_b64", "") or ""
-    try:
-        resp_content = base64.b64decode(reply_body_b64) if reply_body_b64 else b""
-    except (binascii.Error, ValueError):
-        logger.error(
-            "runner_proxy_relay_bad_response_b64",
-            device_id=str(device_uuid),
-            request_id=request_id,
-        )
-        return JSONResponse(
-            status_code=502,
-            content={"detail": "runner returned an undecodable body"},
-        )
-
-    if len(resp_content) > RELAY_MAX_BODY_BYTES:
-        return JSONResponse(
-            status_code=413,
-            content={"detail": "runner response exceeds relay size cap"},
-        )
-
-    reply_headers = reply.get("headers") or {}
-    resp_headers = {
-        k: v
-        for k, v in reply_headers.items()
-        if k.lower() not in _RELAY_EXCLUDED_RESPONSE_HEADERS
-    }
-
-    elapsed_ms = (time.monotonic() - started) * 1000.0
-    logger.info(
-        "runner_proxy_relay",
-        device_id=str(device_uuid),
-        request_id=request_id,
-        method=request.method,
-        path=path,
-        status=status_code,
-        elapsed_ms=round(elapsed_ms, 1),
-    )
-
-    return Response(
-        content=resp_content,
-        status_code=status_code,
-        headers=resp_headers,
-    )

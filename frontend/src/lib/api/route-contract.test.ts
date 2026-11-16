@@ -53,6 +53,12 @@ import {
   getStateScreenshots,
 } from "./integration-testing";
 import { loadSnapshotPaths } from "./route-walker";
+import {
+  deleteSavedSessionList,
+  getSavedSessionList,
+  listSavedSessionLists,
+  saveSessionList,
+} from "./savedSessionLists";
 
 /** Parsed once through the shared loader `route-walker.test.ts` also uses. */
 const SNAPSHOT_PATHS = loadSnapshotPaths();
@@ -61,7 +67,8 @@ const SNAPSHOT_PATHS = loadSnapshotPaths();
 const DISCOVERY_ID = "11111111-2222-3333-4444-555555555555";
 const RUN_ID = "run-abc123";
 const SCREENSHOT = "shot-001.png";
-const PARAM_VALUES = new Set([DISCOVERY_ID, RUN_ID, SCREENSHOT]);
+const SAVED_LIST_ID = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+const PARAM_VALUES = new Set([DISCOVERY_ID, RUN_ID, SCREENSHOT, SAVED_LIST_ID]);
 
 /**
  * The real `HttpClient` verb helpers (`put`, `post`, …) over a recording
@@ -163,5 +170,37 @@ describe("route contract: integration-testing", () => {
         generatePDFReport({ executionResult: {}, screenshotsDir: "/tmp/shots" })
       )
     );
+  });
+});
+
+describe("route contract: saved-session-lists", () => {
+  // The recording fetch answers every call `{}`, which the client rejects as
+  // a read that delivered no list. The (method, URL) under test was captured
+  // before that, so the rejection is swallowed here and the request is what
+  // gets checked. `deleteSavedSessionList` reads no body and resolves.
+  const settle = (p: Promise<unknown>) => p.catch(() => undefined);
+
+  it("listSavedSessionLists hits a served (method, path)", async () => {
+    expectServed(await captureOne(() => settle(listSavedSessionLists())));
+  });
+
+  it("getSavedSessionList hits a served (method, path)", async () => {
+    expectServed(
+      await captureOne(() => settle(getSavedSessionList(SAVED_LIST_ID)))
+    );
+  });
+
+  it("saveSessionList hits a served (method, path)", async () => {
+    const call = await captureOne(() =>
+      settle(saveSessionList({ device_id: DISCOVERY_ID, title: null }))
+    );
+    expect(call.method).toBe("POST");
+    expectServed(call);
+  });
+
+  it("deleteSavedSessionList hits a served (method, path)", async () => {
+    const call = await captureOne(() => deleteSavedSessionList(SAVED_LIST_ID));
+    expect(call.method).toBe("DELETE");
+    expectServed(call);
   });
 });

@@ -26,6 +26,7 @@ import pytest
 from starlette.datastructures import Headers
 
 from app.api.v1.endpoints import device_bridge_ws
+from app.services import runner_relay
 
 DEVICE_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "22222222-2222-2222-2222-222222222222"
@@ -201,14 +202,15 @@ async def test_local_proxy_hop_does_not_forward_ambient_credentials(monkeypatch)
         assert name.lower() not in names, name
         assert value not in {v for _, v in sent}, name
     assert ("content-type", "application/json") in sent
-    # One list for both arms.
+    # One list for both arms. The relay arm's exclusion set lives with the
+    # relay, in ``app/services/runner_relay.py``.
     assert (
         device_bridge_ws._AMBIENT_CREDENTIAL_REQUEST_HEADERS
         <= device_bridge_ws._LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
     )
     assert (
         device_bridge_ws._AMBIENT_CREDENTIAL_REQUEST_HEADERS
-        <= device_bridge_ws._RELAY_EXCLUDED_REQUEST_HEADERS
+        <= runner_relay.RELAY_EXCLUDED_REQUEST_HEADERS
     )
 
 
@@ -239,7 +241,7 @@ async def test_relay_frame_does_not_forward_browser_origin(monkeypatch):
     import app.services.runner_websocket_manager as mgr_mod
 
     monkeypatch.setattr(
-        device_bridge_ws, "get_redis", AsyncMock(return_value=MagicMock()), raising=True
+        runner_relay, "get_redis", AsyncMock(return_value=MagicMock()), raising=True
     )
     monkeypatch.setattr(
         mgr_mod,
