@@ -21,7 +21,7 @@ from typing import Any
 
 import structlog
 
-from app.core.log_sanitizer import sanitize_log_data
+from app.core.log_sanitizer import install_access_log_redaction, sanitize_log_data
 
 # Development log file location (for Claude Code access)
 DEV_LOG_DIR = Path(__file__).parent.parent.parent / "logs"
@@ -108,6 +108,11 @@ def configure_logging(environment: str = "development") -> None:
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+    # uvicorn's access log prints the full request target, so a signed URL's
+    # signature would land in it verbatim. uvicorn configures its loggers
+    # before importing the app, so a filter attached here persists.
+    install_access_log_redaction()
 
     # Clear existing handlers
     root_logger = logging.getLogger()

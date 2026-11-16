@@ -282,7 +282,11 @@ async def upload_session_video(
         )
         # Don't fail the upload if tracking fails
 
-    # Step 9: Generate presigned URL for access
+    # Step 9: Generate presigned URL for access. The upload and its row are
+    # already committed, so a presign failure must not turn into a 500: the
+    # client gets ``presigned_url: null`` and can fetch one later. No bare
+    # object address is handed out instead - nothing would serve it.
+    presigned_url: str | None
     try:
         presigned_url = object_storage.generate_presigned_url(
             s3_key, expiration=VIDEO_PRESIGNED_URL_EXPIRATION
@@ -293,13 +297,7 @@ async def upload_session_video(
             s3_key=s3_key,
             error=str(e),
         )
-        # Generate a fallback URL
-        from app.services.object_storage import S3Backend
-
-        if isinstance(object_storage.backend, S3Backend):
-            presigned_url = f"https://{object_storage.backend.bucket_name}.s3.{object_storage.backend.region}.amazonaws.com/{s3_key}"
-        else:
-            presigned_url = f"/uploads/{s3_key}"
+        presigned_url = None
 
     logger.info(
         "video_upload_complete",
