@@ -802,7 +802,12 @@ class CostCategory(_AuditMixin, Base):
     """A heading costs are grouped under on the Costs page — hardware, AI
     tools, legal and registration, whatever the project chooses. A category
     in use cannot be deleted (``RESTRICT``; the store refuses first with a
-    sentence), so no recorded cost silently loses its heading."""
+    sentence), so no recorded cost silently loses its heading.
+
+    A category may sit under another (``parent_id``, to any depth): "Computers"
+    with a subcategory per machine. The store keeps the tree acyclic and
+    inside one project; a category with subcategories cannot be deleted
+    (``RESTRICT``). Names stay unique per project across the whole tree."""
 
     __tablename__ = "cost_categories"
     __table_args__ = (
@@ -811,6 +816,15 @@ class CostCategory(_AuditMixin, Base):
             "tenant_id",
             text("lower(name)"),
             unique=True,
+        ),
+        Index(
+            "ix_overview_cost_categories_parent",
+            "parent_id",
+            postgresql_where=text("parent_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "parent_id IS NULL OR parent_id <> id",
+            name="ck_overview_cost_categories_not_own_parent",
         ),
         {"schema": _SCHEMA},
     )
@@ -823,6 +837,15 @@ class CostCategory(_AuditMixin, Base):
     )
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            f"{_SCHEMA}.cost_categories.id",
+            ondelete="RESTRICT",
+            name="fk_overview_cost_categories_parent",
+        ),
+        nullable=True,
+    )
     description: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
     )
