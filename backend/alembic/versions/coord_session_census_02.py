@@ -72,7 +72,10 @@ Idempotency: raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` /
 ``DROP COLUMN IF EXISTS`` — the house convention for ``coord.*`` column adds
 (``coord_wusod_01``). All five columns are added in ONE ``ALTER TABLE``, so the
 table's lock is taken once; a nullable column with no default is a catalog-only
-change, so the lock is held only for the catalog update. Every runner census post
+change. The lock is held until alembic's batch transaction commits
+(``alembic/env.py`` runs a whole ``upgrade`` in one transaction), so on its own
+this revision is brief, but it holds the lock behind any later revision in the
+same batch. Every runner census post
 rewrites this table, so the ALTER first sets ``SET LOCAL lock_timeout`` (the
 house style named in ``alembic/env.py``): a queued ACCESS EXCLUSIVE request
 behind a long reader would otherwise stall every census post and read behind
@@ -126,6 +129,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop the five placement columns. No index or constraint to reverse."""
+    # The same hot table as upgrade(): bound the lock wait the same way.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.execute(
         """
         ALTER TABLE coord.session_census

@@ -18,7 +18,8 @@ adds five nullable placement columns to ``coord.session_census``. Pins:
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable. A skip proves nothing: point it
-at a live instance with ``DATABASE_URL``.
+at a live instance with ``QONTINUI_TEST_PG_DSN`` (conftest overwrites
+``DATABASE_URL`` from it, so setting ``DATABASE_URL`` alone still skips).
 """
 
 from __future__ import annotations
@@ -258,7 +259,7 @@ def _assert_placement_present(engine: Engine) -> None:
 def _admin_url_or_skip() -> str:
     url = admin_database_url()
     if not can_connect(url):
-        pytest.skip(f"no reachable Postgres at {url}; set DATABASE_URL")
+        pytest.skip(f"no reachable Postgres at {url}; set QONTINUI_TEST_PG_DSN")
     return url
 
 
