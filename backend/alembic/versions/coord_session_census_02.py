@@ -22,9 +22,9 @@ runner a session is hosted:
 * ``page_window``        — the runner window the page is shown in (main or a
   popped-out window).
 
-coord's session identity card (``coord_resolve_session``,
-``GET /coord/agent-sessions/:id``) and the census read serve these as
-``runner_page``, so an agent on another machine can say "the session on page
+Plan Phase 3 (coord, not yet landed) is the first reader: coord's session
+identity card (``coord_resolve_session``, ``GET /coord/agent-sessions/:id``)
+and the census read will serve these as ``runner_page``, so an agent on another machine can say "the session on page
 <name>, machine <name>" instead of quoting a bare session UUID.
 
 Why the census, not a second store (D2)
@@ -50,10 +50,11 @@ Deploy order and the read (D3)
 
 alembic is the sole author of ``coord.*`` schema
 (``[policy: production-and-cost/alembic-sole-authorship]``), so this revision
-lands FIRST. coord reads these columns PER QUERY and degrades a missing column
-or relation (``pg_error::is_missing_schema_object``) to ``runner_page: null``
-with ``runner_page_unknown_reason: "columns_absent"``. There is no boot gate on
-them, so a coord build that lands ahead of this migration fails open.
+lands FIRST. The contract Phase 3 implements: coord reads these columns PER
+QUERY and degrades a missing column or relation
+(``pg_error::is_missing_schema_object``) to ``runner_page: null`` with
+``runner_page_unknown_reason: "columns_absent"``, with no boot gate on them, so
+a coord build that lands ahead of this migration fails open.
 
 The privacy rule
 ================
@@ -61,7 +62,7 @@ The privacy rule
 The census column list is a privacy contract (``coord_session_census_01``):
 NO transcript content, NO environment values, NO credentials. These columns
 keep it. ``page_name`` is operator-authored label text, not session content;
-coord normalizes it before storing (control characters and bidi overrides
+coord's Phase 3 ingest normalizes it before storing (control characters and bidi overrides
 stripped, trimmed, length-capped) and stores a name that looks secret-shaped as
 ``page_name = NULL, page_name_withheld = true`` — the value itself is never
 stored and never logged. The migration test pins the exact column set, so
@@ -71,7 +72,11 @@ Idempotency: raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` /
 ``DROP COLUMN IF EXISTS`` — the house convention for ``coord.*`` column adds
 (``coord_wusod_01``). All five columns are added in ONE ``ALTER TABLE``, so the
 table's lock is taken once; a nullable column with no default is a catalog-only
-change, so the lock is held only for the catalog update.
+change, so the lock is held only for the catalog update. Every runner census post
+rewrites this table, so the ALTER first sets ``SET LOCAL lock_timeout`` (the
+house style named in ``alembic/env.py``): a queued ACCESS EXCLUSIVE request
+behind a long reader would otherwise stall every census post and read behind
+it. A timeout fails the migration loudly instead, and it is safe to re-run.
 """
 
 from collections.abc import Sequence
@@ -89,6 +94,7 @@ def upgrade() -> None:
     """Add the five nullable placement columns. Idempotent."""
     # No CREATE SCHEMA: the table this ALTERs is coord_session_census_01's,
     # so the schema exists whenever this revision can run at all.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.execute(
         """
         ALTER TABLE coord.session_census

@@ -28,6 +28,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from sqlalchemy import text
@@ -36,14 +37,16 @@ from sqlalchemy.engine import Engine
 from tests._alembic_harness import (
     admin_database_url,
     alter_statement,
-    assert_nullable_add_only,
     backend_root,
+    backfill_statements,
     can_connect,
     column_comment,
     column_info,
     comment_body_from_source,
     declared_parent_revision_id,
+    drop_statements,
     ephemeral_database,
+    forbidden_add_clauses,
     load_revision_module,
     recorded_sql,
     run_alembic,
@@ -104,7 +107,7 @@ _SESSION = "c2a9e7d1-5f3b-4a8e-9d6c-1b4f7e2a8c05"
 _OBSERVED = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
 
 
-def _revision_module():
+def _revision_module() -> ModuleType:
     return load_revision_module(_revision_path(), f"_rev_{_REVISION_ID}")
 
 
@@ -117,7 +120,7 @@ def _expected_comment(column: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_revision_chains_after_census_01() -> None:
+def test_revision_ids_parse_consistently() -> None:
     module = _revision_module()
     assert module.revision == _REVISION_ID
     assert module.down_revision == _PARENT_REVISION_ID
@@ -134,10 +137,21 @@ def test_no_placement_column_is_content_or_credential_named() -> None:
 def test_upgrade_is_one_nullable_add_then_comments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Nullable, no DEFAULT / CHECK / constraint, no DROP, no backfill — static."""
-    assert_nullable_add_only(
-        recorded_sql(_revision_module(), "upgrade", monkeypatch), "coord", _TABLE
-    )
+    """Nullable, no DEFAULT / CHECK / constraint, no DROP, no backfill — static.
+
+    Composed by hand rather than through ``assert_nullable_add_only`` because
+    the revision also emits a lock bound, which that helper's shape check
+    refuses (its own docstring says to compose the parts in that case).
+    """
+    statements = recorded_sql(_revision_module(), "upgrade", monkeypatch)
+    assert statements[0].strip() == "SET LOCAL lock_timeout = '5s'", statements[0]
+    add = alter_statement(statements, "coord", _TABLE, "ADD")
+    found = forbidden_add_clauses(add)
+    assert not found, f"the ADD carries {found}; NULL is load-bearing"
+    assert not drop_statements(statements), drop_statements(statements)
+    assert not backfill_statements(statements), "the revision backfills"
+    others = [sql for sql in statements[1:] if sql is not add]
+    assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others), others
 
 
 def test_the_static_add_and_drop_cover_exactly_the_five_columns(
