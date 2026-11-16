@@ -38,6 +38,7 @@ import {
   historyEventWords,
   isRouteMissing,
   joinedViaWords,
+  memberViaPr,
   memberEmptyText,
   memberList,
   memberSessionKey,
@@ -496,6 +497,51 @@ describe("member sessions", () => {
       "a member gate's continuation"
     );
     expect(joinedViaWords("brand_new_way")).toBe("brand new way");
+    expect(joinedViaWords("anchor")).toBe(
+      "a continuation of a member's gate, PR or work unit"
+    );
+    expect(joinedViaWords("work_evidence")).toBe(
+      "evidence that its commits or worktree belong here"
+    );
+  });
+
+  it("reads the PR an anchor or work-evidence member joined through", () => {
+    expect(
+      memberViaPr({
+        joined_via: "anchor",
+        via_ref: "claim:pr:qontinui/qontinui-claude-config#1441",
+      })
+    ).toBe("qontinui/qontinui-claude-config#1441");
+    expect(
+      memberViaPr({
+        joined_via: "work_evidence",
+        via_ref: "qontinui/qontinui-web#12",
+      })
+    ).toBe("qontinui/qontinui-web#12");
+  });
+
+  it("names no PR for a unit, another claim kind, a bare repo, or another rule", () => {
+    const UNIT = "0a1b2c3d-0000-4000-8000-000000000001";
+    expect(memberViaPr({ joined_via: "work_evidence", via_ref: UNIT })).toBe(
+      null
+    );
+    expect(
+      memberViaPr({ joined_via: "anchor", via_ref: `unit:${UNIT}:Phase 2` })
+    ).toBe(null);
+    expect(
+      memberViaPr({ joined_via: "anchor", via_ref: "claim:branch:main" })
+    ).toBe(null);
+    expect(
+      memberViaPr({ joined_via: "anchor", via_ref: "claim:pr:qontinui-web#3" })
+    ).toBe(null);
+    expect(memberViaPr({ joined_via: "anchor", via_ref: null })).toBe(null);
+    // A gate continuation's via_ref is a gate id, linked by its own arm.
+    expect(
+      memberViaPr({
+        joined_via: "gate_continuation",
+        via_ref: "qontinui/qontinui-web#12",
+      })
+    ).toBe(null);
   });
 });
 

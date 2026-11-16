@@ -76,6 +76,7 @@ import {
   historyEventWords,
   gateVerdictWords,
   joinedViaWords,
+  memberViaPr,
   memberEmptyText,
   memberList,
   memberSessionKey,
@@ -783,6 +784,9 @@ function SessionRow({
 }) {
   const status = deriveMemberSessionStatus(member);
   const key = memberSessionKey(member);
+  // An anchor / work-evidence join through a PR links to it; any other
+  // via_ref (a unit id, a unit anchor) stays on the raw line only.
+  const viaPr = memberViaPr(member);
   // Words on the line; the ids are on the raw line (R8).
   const name =
     member.name ??
@@ -830,6 +834,13 @@ function SessionRow({
                     label: "its gate",
                   }}
                 />
+              </>
+            ) : null}
+            {viaPr ? (
+              <>
+                {" "}
+                —{" "}
+                <RefLink subjectRef={{ type: "pr", id: viaPr, label: viaPr }} />
               </>
             ) : null}
             .
