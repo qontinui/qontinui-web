@@ -100,8 +100,11 @@ import {
 import {
   CONTINUATION_STATUS_PALETTE,
   CONTINUATION_UNKNOWN_OUTCOME_KINDS,
+  deferralHistoryChip,
+  deferralProblemNote,
   deriveContinuationStatus,
   heldBySiblingHolders,
+  isClearanceHold,
   type ContinuationKind,
   type ContinuationStatus,
 } from "../continuationStatus";
@@ -401,15 +404,10 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
           // EVIDENCE, not a call to action, and R3 does not spend amber on
           // history.
           className="text-[11px] text-muted-foreground/70 tabular-nums"
-          title={
-            deferral.reason
-              ? `Dispatch was pushed back before this state; last reason: ${deferral.reason}`
-              : "Dispatch was pushed back before reaching this state"
-          }
+          title={deferralHistoryChip(deferral).title}
           data-testid="gates-continuation-deferral-chip"
         >
-          after {deferral.countKnown ? deferral.count : "?"} deferral
-          {deferral.countKnown && deferral.count === 1 ? "" : "s"}
+          {deferralHistoryChip(deferral).text}
         </span>
       )}
     </div>
@@ -426,6 +424,10 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
 function ContinuationProblem({ status }: { status: ContinuationStatus | null }) {
   if (!status || status.status.attention === "none") return null;
   const { status: s, deferral, outcomeDetail } = status;
+  const deferralNote = deferralProblemNote(
+    status,
+    deferral?.at ? formatRelative(deferral.at) : null
+  );
   const tone = s.attention === "author" ? "text-red-200" : "text-amber-200";
   return (
     <div className="space-y-1" data-testid="gates-continuation-problem">
@@ -438,17 +440,12 @@ function ContinuationProblem({ status }: { status: ContinuationStatus | null }) 
           Reported detail: “{outcomeDetail}”
         </p>
       )}
-      {deferral && (
-        <p className="text-[11px] text-muted-foreground">
-          Dispatch pushed back{" "}
-          {deferral.countKnown
-            ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
-            : "an unrecorded number of times"}
-          {deferral.reason ? `; last time ${deferral.reason}` : ""}
-          {deferral.at ? ` (last ${formatRelative(deferral.at)})` : ""}.
-          {deferral.countKnown
-            ? " The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused."
-            : " coord recorded a deferral but no count, so how many times is unknown."}
+      {deferralNote && (
+        <p
+          className="text-[11px] text-muted-foreground"
+          data-testid="gates-continuation-deferral-note"
+        >
+          {deferralNote}
         </p>
       )}
     </div>
@@ -459,7 +456,13 @@ function ContinuationProblem({ status }: { status: ContinuationStatus | null }) 
 function ContinuationTimeline({ gate }: { gate: GateOverviewRow }) {
   const stamps: [string, string | null][] = [
     ["dispatched", gate.continuation_dispatched_at],
-    ["last deferred", gate.continuation_deferred_at],
+    // coord's clearance hold shares the deferral columns; name it as a hold.
+    [
+      isClearanceHold(gate.continuation_deferred_reason)
+        ? "last held"
+        : "last deferred",
+      gate.continuation_deferred_at,
+    ],
     ["consumed", gate.continuation_consumed_at],
     ["cancelled", gate.continuation_cancelled_at],
     ["expired", gate.continuation_expired_at],
@@ -524,7 +527,9 @@ function matchesContinuationFilter(
         ? CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind)
         : false;
     case "deferred":
-      return status?.deferral != null;
+      // A runner's push-back only: coord's own clearance hold shares the
+      // deferral columns but is its own `held` kind (filterable by kind).
+      return status?.deferral != null && !status.deferral.hold;
     case "none":
       return status === null;
     default:
@@ -625,7 +630,7 @@ export function GatesTable({
       if (status.status.attention === "author") attention += 1;
       if (CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind))
         unknown += 1;
-      if (status.deferral) deferred += 1;
+      if (status.deferral && !status.deferral.hold) deferred += 1;
     }
     if (attention === 0 && unknown === 0 && deferred === 0) return [];
     return [

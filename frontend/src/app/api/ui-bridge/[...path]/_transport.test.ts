@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  HEALTHY_STREAM_MIN_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEATS_PER_TAB_PER_MIN,
   isSdkTransportRoute,
@@ -21,6 +22,7 @@ import {
   SDK_TRANSPORT_ROUTES,
   sdkTransportLane,
   SSE_RECONNECT_DELAY_MS,
+  STREAM_LEASE_MS,
   STREAM_OPENS_PER_TAB_PER_MIN,
 } from "./_transport";
 
@@ -71,7 +73,7 @@ describe("sdkTransportLane / isSdkTransportRoute", () => {
       }
     }
     const transportCells = Object.fromEntries(
-      Object.entries(cells).filter(([, lane]) => lane !== null),
+      Object.entries(cells).filter(([, lane]) => lane !== null)
     );
     expect(transportCells).toEqual(TRANSPORT);
     // Not vacuous: the grid really was crossed.
@@ -81,10 +83,9 @@ describe("sdkTransportLane / isSdkTransportRoute", () => {
   it("agrees with isSdkTransportRoute on every cell", () => {
     for (const path of PATHS) {
       for (const method of METHODS) {
-        expect(
-          isSdkTransportRoute(path, method),
-          `${method} ${path}`,
-        ).toBe(`${method} ${path}` in TRANSPORT);
+        expect(isSdkTransportRoute(path, method), `${method} ${path}`).toBe(
+          `${method} ${path}` in TRANSPORT
+        );
       }
     }
   });
@@ -126,6 +127,8 @@ describe("restated SDK cadences", () => {
   it("restates the SDK's values (checked against the installed SDK in route.real-sdk.test.ts)", () => {
     expect(HEARTBEAT_INTERVAL_MS).toBe(10000);
     expect(SSE_RECONNECT_DELAY_MS).toBe(10000);
+    expect(HEALTHY_STREAM_MIN_MS).toBe(10000);
+    expect(STREAM_LEASE_MS).toBe(50000);
     expect(RELAY_COMMAND_STREAM_HEARTBEAT_MS).toBe(15000);
     expect(RELAY_SNAPSHOTS_PER_STREAM_OPEN).toBe(2);
   });
@@ -137,5 +140,17 @@ describe("restated SDK cadences", () => {
     expect(HEARTBEATS_PER_TAB_PER_MIN).toBe(10);
     // 2 relay-originated snapshots x 6 opens
     expect(RELAY_RESULTS_PER_TAB_PER_MIN).toBe(12);
+  });
+
+  it("the per-tab stream bound covers lease-driven rotation", () => {
+    // A healthy tab rotates once per lease: 60 s / 50 s = 1.2 opens a minute.
+    expect(60000 / STREAM_LEASE_MS).toBeLessThanOrEqual(
+      STREAM_OPENS_PER_TAB_PER_MIN
+    );
+    // The client floors its own opens at HEALTHY_STREAM_MIN_MS apart, so no
+    // lease (however short the env makes it) can open faster than this.
+    expect(60000 / HEALTHY_STREAM_MIN_MS).toBeLessThanOrEqual(
+      STREAM_OPENS_PER_TAB_PER_MIN
+    );
   });
 });

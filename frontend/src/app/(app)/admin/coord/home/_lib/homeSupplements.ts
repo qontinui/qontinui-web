@@ -100,6 +100,11 @@ export function parseMachineHealth(
  * machine (silent past coord's timer) is not a degradation, and a placeholder
  * row is not a machine, so neither stands in the way — but neither reports either, so a
  * roster of only those is never calm.
+ *
+ * A `ci_unrefreshed` row deliberately does NOT make this false: coord's
+ * project state raises no degradation for it, so "nothing is degrading" still
+ * holds. It is not healthy either, so `machineHealthSentence` stops short of
+ * "all report healthy" and the reconcile line names it.
  */
 export function machinesAllHealthy(m: MachineHealthView): boolean {
   return (
@@ -196,6 +201,14 @@ export function machineHealthSentence(
   if (parts.length > 0) return withIncomplete(`${parts.join("; ")}.`);
   if (noLiveMachine(m.counts)) {
     return withIncomplete(noLiveMachineSentence(m.counts));
+  }
+  // A CI registration the registrar has not refreshed is not a degradation,
+  // but it is not healthy either, so "all report healthy" would be false. The
+  // reconcile line names those rows; this one only stops short of "all".
+  if (m.counts.ciUnrefreshed > 0) {
+    return withIncomplete(
+      `No machine is degrading; ${m.counts.healthy} of ${machines(live)} ${m.counts.healthy === 1 ? "reports" : "report"} healthy.`
+    );
   }
   return withIncomplete(
     live === 1

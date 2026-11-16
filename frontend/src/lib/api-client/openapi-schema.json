@@ -7679,6 +7679,76 @@
         "title": "CategoryRead",
         "type": "object"
       },
+      "CategoryTotal": {
+        "description": "All-time spend in one category and currency, on the same terms as\n:class:`CurrencyTotals` (recorded plus scheduled; a variable period still\nawaiting its amount is counted, never added).\n\n``own_*`` is the category's own costs; ``rolled_*`` adds every\nsubcategory below it, to any depth. Each cost counts once in its own\ncategory and once in each ancestor's ``rolled_*`` \u2014 so rolled figures are\nNOT additive across a parent and its children. The grand total is\n``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist\nfor a category with anything in its own subtree; ``category_id`` is\n``null`` for costs with no category.",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "own_awaiting_amount_count": {
+            "title": "Own Awaiting Amount Count",
+            "type": "integer"
+          },
+          "own_recorded_micros": {
+            "title": "Own Recorded Micros",
+            "type": "integer"
+          },
+          "own_scheduled_micros": {
+            "title": "Own Scheduled Micros",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "rolled_awaiting_amount_count": {
+            "title": "Rolled Awaiting Amount Count",
+            "type": "integer"
+          },
+          "rolled_recorded_micros": {
+            "title": "Rolled Recorded Micros",
+            "type": "integer"
+          },
+          "rolled_scheduled_micros": {
+            "title": "Rolled Scheduled Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category_id",
+          "parent_id",
+          "currency",
+          "own_recorded_micros",
+          "own_scheduled_micros",
+          "own_awaiting_amount_count",
+          "rolled_recorded_micros",
+          "rolled_scheduled_micros",
+          "rolled_awaiting_amount_count"
+        ],
+        "title": "CategoryTotal",
+        "type": "object"
+      },
       "ChangeLogEntry": {
         "properties": {
           "action": {
@@ -12277,6 +12347,18 @@
             "title": "Name",
             "type": "string"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "sort_order": {
             "default": 0,
             "maximum": 1000000.0,
@@ -12321,6 +12403,18 @@
             "title": "Name",
             "type": "string"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -12354,6 +12448,7 @@
           "updated_by",
           "id",
           "name",
+          "parent_id",
           "description",
           "sort_order"
         ],
@@ -12361,6 +12456,7 @@
         "type": "object"
       },
       "CostCategoryUpdate": {
+        "description": "Every field optional; ``null`` moves the category to the top level. A\ncategory cannot be moved under itself or one of its own subcategories\n(409 ``category_cycle``).",
         "properties": {
           "description": {
             "anyOf": [
@@ -12386,6 +12482,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "sort_order": {
             "anyOf": [
@@ -13088,6 +13196,13 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryTotal"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/CurrencyTotals"
@@ -13119,6 +13234,7 @@
           "today",
           "base_currency",
           "currencies",
+          "categories",
           "months",
           "periods",
           "awaiting_delivery_count",
@@ -54013,6 +54129,191 @@
           }
         },
         "title": "SnapshotRunUpdate",
+        "type": "object"
+      },
+      "SpawnLaunchSettingPut": {
+        "additionalProperties": false,
+        "description": "The full ``{model, effort}`` pair. Both keys are required and each is\nnullable: ``null`` writes inherit, so clearing a stored value is a write.",
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fable",
+                  "opus",
+                  "sonnet",
+                  "haiku"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "model",
+          "effort"
+        ],
+        "title": "SpawnLaunchSettingPut",
+        "type": "object"
+      },
+      "SpawnLaunchSettingRow": {
+        "description": "One settable spawn type as coord resolves it.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fable",
+                  "opus",
+                  "sonnet",
+                  "haiku"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "source": {
+            "enum": [
+              "stored",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "spawn_type": {
+            "title": "Spawn Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "spawn_type",
+          "description",
+          "model",
+          "effort",
+          "source"
+        ],
+        "title": "SpawnLaunchSettingRow",
+        "type": "object"
+      },
+      "SpawnLaunchSettingsResponse": {
+        "description": "Every settable spawn type, coord's two vocabularies, and edit rights.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "effort_levels": {
+            "items": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Effort Levels",
+            "type": "array"
+          },
+          "model_families": {
+            "items": {
+              "enum": [
+                "fable",
+                "opus",
+                "sonnet",
+                "haiku"
+              ],
+              "type": "string"
+            },
+            "title": "Model Families",
+            "type": "array"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/SpawnLaunchSettingRow"
+            },
+            "title": "Settings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "settings",
+          "model_families",
+          "effort_levels",
+          "can_edit"
+        ],
+        "title": "SpawnLaunchSettingsResponse",
         "type": "object"
       },
       "StateAnnotation": {
@@ -130853,6 +131154,92 @@
         "summary": "Get Snapshot Screenshots",
         "tags": [
           "snapshots"
+        ]
+      }
+    },
+    "/api/v1/spawn-launch-settings": {
+      "get": {
+        "description": "Every settable spawn type's model and effort for the effective tenant.",
+        "operationId": "api_v1_spawn_launch_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpawnLaunchSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn Launch Settings",
+        "tags": [
+          "spawn-launch-settings"
+        ]
+      }
+    },
+    "/api/v1/spawn-launch-settings/{spawn_type}": {
+      "put": {
+        "description": "Write one spawn type's model and effort; answer with coord's row.\n\nTenant-admin gated web-side; coord re-checks and its refusals (403, and the\n422 naming the settable types) pass through as coord sent them.",
+        "operationId": "api_v1_spawn_launch_settings_spawn_type_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "spawn_type",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "title": "Spawn Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpawnLaunchSettingPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpawnLaunchSettingRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Spawn Launch Setting",
+        "tags": [
+          "spawn-launch-settings"
         ]
       }
     },
