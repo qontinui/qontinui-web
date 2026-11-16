@@ -118,16 +118,61 @@ export interface AgentSessionsListResponse {
 /** `machine.environment` on a resolved card. */
 export interface SessionCardEnvironment {
   id: string;
-  name: string;
+  /** coord reads `devenv.environments.name` through a LEFT JOIN; may be null. */
+  name: string | null;
 }
 
-/** Devenv-twin machine bound to the session's coord device. */
+/**
+ * Which leg answered `machine` (plan
+ * `2026-11-16-runner-page-name-reaches-the-coord-session-identity-card`, D5):
+ * the devenv twin (`devenv.machines`, linkable) or coord's own device row
+ * (`coord.devices`, no devenv machine id, so nothing to link to).
+ */
+export type SessionCardMachineSource = "devenv" | "coord_device";
+
+/**
+ * The machine the session's coord device resolves to. `id` is the devenv
+ * machine id and is null on the `coord_device` arm. An older coord serves no
+ * `source` at all — absent is UNKNOWN, never assumed to be `devenv`.
+ */
 export interface SessionCardMachine {
-  id: string;
-  name: string;
+  id: string | null;
+  name: string | null;
   hostname: string | null;
   environment: SessionCardEnvironment | null;
+  source?: SessionCardMachineSource | string;
 }
+
+/** Why `machine` is null (D5). Absent on a coord predating the field. */
+export type SessionCardMachineUnknownReason =
+  | "device_id_absent"
+  | "no_device_row"
+  | "devenv_read_failed";
+
+/**
+ * The runner page (terminal tab) the session's pane sits on, from the
+ * runner's session census (D4). `name` is operator-authored text, already
+ * normalized by coord; `name_withheld` means coord's secret check withheld
+ * it. `fresh` is false when the census snapshot is older than its own
+ * freshness rule — the placement is then a last-known position, not current.
+ */
+export interface SessionCardRunnerPage {
+  page_id: string;
+  name: string | null;
+  name_withheld: boolean;
+  /** `"main"` or the pop-out window's label; null when not reported. */
+  window: string | null;
+  terminal_id: string | null;
+  observed_at: string;
+  fresh: boolean;
+}
+
+/** Why `runner_page` is null (D4). */
+export type SessionCardRunnerPageUnknownReason =
+  | "no_handle"
+  | "never_reported"
+  | "columns_absent"
+  | "read_failed";
 
 /** `working_on.session` — the live coord session snapshot, when any. */
 export interface SessionWorkingOnSession {
@@ -183,6 +228,17 @@ export interface SessionCard extends SessionAccountStamp {
   closed_at: string | null;
   status: AgentSessionStatus | string;
   machine: SessionCardMachine | null;
+  /** Set when `machine` is null; absent on an older coord (UNKNOWN). */
+  machine_unknown_reason?: SessionCardMachineUnknownReason | string | null;
+  /**
+   * Absent entirely on a coord that does not serve placement yet — that is
+   * UNKNOWN ("not served"), distinct from `null` + a reason.
+   */
+  runner_page?: SessionCardRunnerPage | null;
+  runner_page_unknown_reason?:
+    | SessionCardRunnerPageUnknownReason
+    | string
+    | null;
   summary: string | null;
   working_on: SessionWorkingOn | null;
 }
