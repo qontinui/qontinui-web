@@ -59,6 +59,12 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConsolidatedSessionDetail } from "@/components/sessions/ConsolidatedSessionDetail";
+import {
+  SUBPROJECT_CHIP_POLL_MS,
+  SubprojectChipCell,
+  useSubprojectsBySessions,
+} from "@/components/admin/coord/subprojects/SubprojectChip";
+import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { getSession } from "@/lib/api/operations/sessions";
 import {
   classifyAgentError,
@@ -156,6 +162,20 @@ export default function SessionKeyPage() {
     () => deriveKeyVerdict(key, agent, lifecycle),
     [key, agent, lifecycle]
   );
+
+  // Each matched session's subproject (plan
+  // 2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled
+  // Phase 6), looked up in one batch for every card on the page. A card's id
+  // is the Claude Code session id — the key a membership is recorded under.
+  const cardIds = useMemo(
+    () => (verdict.kind === "matches" ? verdict.cards.map((c) => c.id) : []),
+    [verdict]
+  );
+  const { chipOf: subprojectOf, recheck: recheckSubprojects } =
+    useSubprojectsBySessions(cardIds);
+  // This page has no list poll to piggyback on, so the lookup's slow poll is
+  // its own: it asks again only for an answer that has come due.
+  useVisiblePoll(recheckSubprojects, SUBPROJECT_CHIP_POLL_MS);
 
   if (!user) return null;
 
@@ -288,21 +308,28 @@ export default function SessionKeyPage() {
                   className="text-xs text-muted-foreground"
                   data-testid="sessions-detail-ambiguous-key"
                 >
-                  {verdict.cards.length} sessions match this key (newest
-                  first). Session names are not unique, so every match is
-                  rendered — picking one would show you a session you did not
-                  ask for.
+                  {verdict.cards.length} sessions match this key (newest first).
+                  Session names are not unique, so every match is rendered —
+                  picking one would show you a session you did not ask for.
                 </p>
               )}
 
               {verdict.cards.map((card) => (
-                <ConsolidatedSessionDetail
-                  key={card.id}
-                  card={card}
-                  sessionId={card.id}
-                  hostnameFor={hostnameFor}
-                  handoffTargets={handoffTargets}
-                />
+                <div key={card.id} className="space-y-1">
+                  <p
+                    className="m-0 text-xs text-muted-foreground"
+                    data-testid="sessions-detail-subproject"
+                  >
+                    Subproject:{" "}
+                    <SubprojectChipCell chip={subprojectOf(card.id)} />
+                  </p>
+                  <ConsolidatedSessionDetail
+                    card={card}
+                    sessionId={card.id}
+                    hostnameFor={hostnameFor}
+                    handoffTargets={handoffTargets}
+                  />
+                </div>
               ))}
 
               {verdict.cards.length === 0 && verdict.lifecycleOnlyId && (

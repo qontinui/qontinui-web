@@ -32,6 +32,7 @@ import {
   laneKey,
   laneMemoryUsed,
   emptyLanesText,
+  lanePressureName,
   lanePressureRatio,
   readGpus,
   readIssueText,
@@ -431,6 +432,7 @@ export function LaneTable({
                   <td className="py-1.5 pr-3">
                     <PressureSparkline
                       points={historyPoints(history?.get(key))}
+                      pressureName={lanePressureName(lane)}
                       tone={tone}
                       data-testid="coord-computer-lane-sparkline"
                       emptyTestId="coord-computer-lane-sparkline-empty"
