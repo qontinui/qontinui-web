@@ -196,7 +196,12 @@ jobs:
           PIP_CACHE_FLOOR_MB: '61440'
           PIP_CACHE_FLOOR_MIN_SIZE_MB: '1024'
         run: |
-          python -m venv "$RUNNER_TEMP/venv"
+          # --clear: a self-hosted runner does not always empty $RUNNER_TEMP, and a
+          # venv left there by an earlier job keeps ITS interpreter (measured: a
+          # Python 3.10 venv survived under setup-python 3.12, so every install read
+          # "already satisfied" and qontinui-schemas refused 3.10; web#2124 run
+          # 42324059633). Rebuild it from the interpreter this job set up.
+          python -m venv --clear "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
           # Hosted keeps ~/.cache/pip, which the actions/cache step below restores.
           if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
@@ -546,11 +551,15 @@ jobs:
 
     steps:
       # This job has no checkout, so on a persistent self-hosted runner nothing
-      # else ever cleans its workspace. Clear what an earlier run left there,
-      # and download into runner.temp, which the runner empties after every job.
+      # else ever cleans its workspace. Clear what an earlier run left there.
+      # runner.temp is NOT reliably emptied between jobs on a self-hosted runner
+      # (a stale venv survived there on web#2124, run 42324059633), so clear the
+      # artifacts download directory too before downloading into it.
       - name: Clean the workspace
         shell: bash
-        run: find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+          rm -rf "$RUNNER_TEMP/artifacts"
 
       - name: Download all artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

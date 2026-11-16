@@ -45,14 +45,18 @@ from sqlalchemy.engine import Engine
 
 from tests._alembic_harness import (
     admin_database_url,
+    alter_statement,
     backend_root,
+    backfill_statements,
     can_connect,
     column_comment,
     column_info,
     comment_body_from_source,
     declared_parent_revision_id,
     ephemeral_database,
+    forbidden_add_clauses,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -83,20 +87,6 @@ _BYTE_COLUMNS = ("runner_private_bytes", "runner_rss_bytes")
 # separate so the live assertion does not derive its expectation from the
 # thing under test.
 _PG_TYPE = {"BIGINT": "bigint", "TIMESTAMPTZ": "timestamp with time zone"}
-
-# Clauses that must appear nowhere in the ADD statement: each one either
-# fabricates a reading or puts a second door on an input coord validates
-# app-side. Matched on the statement's whole upper-cased text with whitespace
-# collapsed, so a clause on a continuation line, a NOT NULL split across lines,
-# or a table constraint added in the same ALTER, is caught.
-_FORBIDDEN_ADD_CLAUSES: tuple[str, ...] = (
-    "NOT NULL",
-    "DEFAULT",
-    "CHECK",
-    "CONSTRAINT",
-    "REFERENCES",
-    "UNIQUE",
-)
 
 # The plan's Evidence for nilan (device 4b426e2b-cc10-4870-80a5-524aaac70719),
 # 2026-11-11T12:31Z: VmRSS 68093452 kB, and its Phase 2 fixture of about
@@ -197,28 +187,11 @@ def test_the_revision_names_the_columns_coord_reads_from_its_list() -> None:
 
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    """Run ``upgrade`` or ``downgrade`` against a recording ``op`` stub."""
-    module = _revision_module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_revision_module(), step, monkeypatch)
 
 
 def _alter_statement(statements: list[str], verb: str) -> str:
-    """The ONE ``ALTER TABLE coord.device_resource_samples <verb> COLUMN``."""
-    head = re.compile(rf"^\s*ALTER TABLE {_SCHEMA}\.{_SAMPLE_TABLE}\s")
-    found = [
-        sql for sql in statements if head.match(sql) and f"{verb} COLUMN" in sql.upper()
-    ]
-    assert len(found) == 1, f"expected one {verb} statement, got {len(found)}"
-    return found[0]
+    return alter_statement(statements, _SCHEMA, _SAMPLE_TABLE, verb)
 
 
 def test_upgrade_adds_exactly_the_listed_columns(
@@ -262,24 +235,20 @@ def test_upgrade_never_drops_defaults_or_constrains(
 ) -> None:
     """No NOT NULL, DEFAULT or constraint in the ADD, no DROP, and no backfill.
 
-    The clause scan reads the WHOLE ADD statement with its whitespace
-    collapsed to single spaces. Reading only its ``ADD COLUMN`` lines let a
-    clause on a continuation line, or an ``ADD CONSTRAINT`` in the same ALTER,
-    pass; matching without collapsing let ``NOT NULL`` split across two lines
-    (or spaced twice, or by a tab) pass.
+    The clause scan reads the WHOLE ADD statement, whitespace-collapsed and
+    word-bounded (``_alembic_harness.forbidden_add_clauses``): reading only its
+    ``ADD COLUMN`` lines let a clause on a continuation line, or an
+    ``ADD CONSTRAINT`` in the same ALTER, pass; matching without collapsing let
+    ``NOT NULL`` split across two lines (or spaced twice, or by a tab) pass.
     """
     statements = _recorded_sql(monkeypatch, "upgrade")
     assert not re.search(r"\bDROP\b", "\n".join(statements))
-    add = " ".join(_alter_statement(statements, "ADD").upper().split())
-    for clause in _FORBIDDEN_ADD_CLAUSES:
-        assert clause not in add, (
-            f"the ADD statement carries {clause}; NULL is load-bearing "
-            "(UNKNOWN, never 0) and the range is validated app-side"
-        )
-    backfills = [
-        sql for sql in statements if re.match(r"\s*(UPDATE|INSERT)\b", sql, re.I)
-    ]
-    assert not backfills, (
+    found = forbidden_add_clauses(_alter_statement(statements, "ADD"))
+    assert not found, (
+        f"the ADD statement carries {found}; NULL is load-bearing "
+        "(UNKNOWN, never 0) and the range is validated app-side"
+    )
+    assert not backfill_statements(statements), (
         "the revision backfills; no historical reading exists, so rows written "
         "before it must keep NULL"
     )

@@ -75,6 +75,8 @@ class _Audit(BaseModel):
 class CostCategoryRead(_Audit):
     id: str
     name: str
+    #: The category this one sits under, or ``null`` for a top-level one.
+    parent_id: UUID | None
     description: str
     sort_order: int
 
@@ -83,6 +85,9 @@ class CostCategoryCreate(_WriteModel):
     #: Unique in the project, ignoring case: a second "Hardware" is a 409
     #: ``name_taken``.
     name: str = Field(min_length=1, max_length=MAX_NAME)
+    #: The category to sit under (any depth); ``null`` is top level. It must
+    #: be one of this project's.
+    parent_id: UUID | None = None
     description: str = Field(default="", max_length=MAX_NOTES)
     sort_order: int = Field(default=0, ge=-1_000_000, le=1_000_000)
 
@@ -93,7 +98,12 @@ class CostCategoryCreate(_WriteModel):
 
 
 class CostCategoryUpdate(_WriteModel):
+    """Every field optional; ``null`` moves the category to the top level. A
+    category cannot be moved under itself or one of its own subcategories
+    (409 ``category_cycle``)."""
+
     name: str | None = Field(default=None, min_length=1, max_length=MAX_NAME)
+    parent_id: UUID | None = None
     description: str | None = Field(default=None, max_length=MAX_NOTES)
     sort_order: int | None = Field(default=None, ge=-1_000_000, le=1_000_000)
 
@@ -374,6 +384,31 @@ class CurrencyTotals(BaseModel):
     awaiting_delivery_micros: int
 
 
+class CategoryTotal(BaseModel):
+    """All-time spend in one category and currency, on the same terms as
+    :class:`CurrencyTotals` (recorded plus scheduled; a variable period still
+    awaiting its amount is counted, never added).
+
+    ``own_*`` is the category's own costs; ``rolled_*`` adds every
+    subcategory below it, to any depth. Each cost counts once in its own
+    category and once in each ancestor's ``rolled_*`` — so rolled figures are
+    NOT additive across a parent and its children. The grand total is
+    ``CurrencyTotals``; or the sum of ``own_*`` over every row. Rows exist
+    for a category with anything in its own subtree; ``category_id`` is
+    ``null`` for costs with no category."""
+
+    category_id: UUID | None
+    #: ``null`` for a top-level category and for the uncategorised row.
+    parent_id: UUID | None
+    currency: str
+    own_recorded_micros: int
+    own_scheduled_micros: int
+    own_awaiting_amount_count: int
+    rolled_recorded_micros: int
+    rolled_scheduled_micros: int
+    rolled_awaiting_amount_count: int
+
+
 class MonthCategoryTotal(BaseModel):
     #: The first day of the calendar month.
     month: date
@@ -403,6 +438,8 @@ class CostSummary(BaseModel):
     #: The project's base currency (its settings), the default for new costs.
     base_currency: str
     currencies: list[CurrencyTotals]
+    #: Spend per category (own and rolled up the tree), per currency.
+    categories: list[CategoryTotal]
     months: list[MonthCategoryTotal]
     #: Newest first.
     periods: list[RecurringPeriod]

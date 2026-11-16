@@ -70,6 +70,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Spawn launch settings (model + effort per spawn type) — coord-scoped; the
+  // backend forwards the override so the operator edits the settings of the
+  // tenant they switched to (membership-validated coord-side). Plan
+  // `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+  "/api/v1/spawn-launch-settings",
   // Project Overview — the ONE thing that scopes it. Every `overview.*` row
   // is keyed on the active coord tenant, which the backend resolves from this
   // header alone (`get_overview_tenant_id` /
@@ -129,6 +134,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // project's queue under another project's name. Plan
   // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
   "/api/v1/taste/",
+  // The design reference library — `get_memory_tenant`'s operator arm for
+  // every read and write, and `require_coord_tenant_admin_target` for
+  // principle approval: every `design_refs.*` row is the selected project's,
+  // so without the header a multi-tenant operator would review (and confirm)
+  // the home project's corpus under another project's name. Plan
+  // 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query.
+  "/api/v1/design-refs/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
