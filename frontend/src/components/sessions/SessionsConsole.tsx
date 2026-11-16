@@ -57,6 +57,22 @@
  * "unknown" and "we did not look" are three different sentences and a bare
  * dash is only honest if the reader can find out which one it means.
  *
+ * ## The strip counts coord's answer; the facets narrow only the list
+ *
+ * Plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+ * Phases 2-3. The health strip, the stats and the answered tab's count are
+ * derived from `rows` — coord's answer to the status tab and the search, both
+ * SERVER filters — and the strip names that question in words
+ * (`deriveSessionsHealth`). The client facets narrow only the list, and say so
+ * in the scoped line beside them. Before the first answer every count is a
+ * dash under an amber "Reading sessions…"; while either half of the read
+ * stopped at its 500-row ceiling the counts are floors (`≥n`, one spelling),
+ * while either half's size is unknown they are dashes, and a line under the
+ * stats names the half and says which. `agent-only` is a set difference, so
+ * its bound follows WHICH half stopped (`agentOnlyStat`). A FAILED agent read
+ * is not a complete one: rows and machines are floors, and the join classes
+ * and the status counts are dashes that say the agent half did not answer.
+ *
  * ## Finding a session by name, id or commit trailer — and its account
  *
  * Plan `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`
@@ -102,25 +118,45 @@ import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
+  STATUSES_UNESTABLISHED,
+  agentOnlyStat,
   agentSessionId,
+  ceilingDisclosure,
   compareSessionRows,
+  countBasis,
   deriveSessionStatus,
   deriveSessionWorkStatus,
   deriveSessionsHealth,
+  fleetCount,
   hasAgentHalf,
   hasLifecycleHalf,
   isSessionFinished,
-  lastHeartbeatAt,
-  lifecycleState,
+  isSizeUnknown,
+  linkedCount,
+  statusCountBasis,
+  lifecycleOnlyCount,
   rowTimestamp,
+  sessionsCeiling,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
+  type CountCell,
+  type HalfExtent,
 } from "./sessionConsoleStatus";
 import {
   SessionRowExpansion,
   useSessionCoordination,
   type CoordinationReaders,
 } from "./SessionRowExpansion";
+import {
+  AccountValue,
+  Dash,
+  HeartbeatValue,
+  KindValue,
+  MachineValue,
+  accountState,
+  machineTitle,
+  type MachineLabel,
+} from "./SessionRowIdentity";
 import type { SessionRevalidationOptions } from "./liveRevalidation";
 import {
   ACCOUNT_FACET_UNKNOWN,
@@ -184,21 +220,10 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
  * Phase 3's `/admin/agent-sessions?live=true` → `/sessions?status=live` 308 is
  * what puts a value here today.
  */
-export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
+export function parseStatusTab(
+  raw: string | null | undefined
+): StatusTab | null {
   return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
-}
-
-/** The dash D2 requires, with the sentence that says WHICH unknown it is. */
-function Dash({ title }: { title: string }) {
-  return (
-    <span
-      className="text-muted-foreground/70 tabular-nums"
-      title={title}
-      data-testid="sessions-console-unknown"
-    >
-      –
-    </span>
-  );
 }
 
 export interface SessionsConsoleProps {
@@ -262,6 +287,14 @@ export function SessionsConsole({
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const [status, setStatus] = useState<StatusTab>(initialStatus ?? "all");
+  // The question `payload` ANSWERED — its tab and its search. The strip and
+  // the tab counts name this, not the controls: between a click and coord's
+  // answer the rows on screen still answer the previous question, and a strip
+  // keyed on the controls would put the new referent's words on the old rows.
+  const [answered, setAnswered] = useState<{
+    status: StatusTab;
+    query: string;
+  }>({ status: initialStatus ?? "all", query: "" });
   // Two query states, not one. `query` is what the operator is typing;
   // `appliedQuery` is what has been sent. `?q=` is a SERVER filter (coord runs
   // the full-text half), so binding the fetch to `query` directly would issue
@@ -325,6 +358,7 @@ export function SessionsConsole({
           signal,
         });
         setPayload(data);
+        setAnswered({ status, query: appliedQuery });
         setLoaded(true);
         setReadFailed(false);
         setError(null);
@@ -332,7 +366,9 @@ export function SessionsConsole({
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setReadFailed(true);
-        setError(err instanceof Error ? err.message : "failed to load sessions");
+        setError(
+          err instanceof Error ? err.message : "failed to load sessions"
+        );
       }
     },
     [doFetch, appliedQuery, status]
@@ -391,6 +427,16 @@ export function SessionsConsole({
 
   const rows = useMemo(() => payload?.sessions ?? [], [payload]);
   const agentHalfFailed = payload?.agent_half?.read === "failed";
+  // Each half's extent against its 500-row ceiling — complete, FULL (a
+  // floor), or of UNKNOWN size (no number at all) — and so how every fleet
+  // count may be stated (plan
+  // `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+  // Phase 3). A backend that reports no bound is read as complete: exact
+  // counts and no disclosure, the claim the page made before the field
+  // existed — kept for deploy skew only.
+  const ceiling = useMemo(() => sessionsCeiling(payload), [payload]);
+  const basis = countBasis(ceiling);
+  const disclosure = ceilingDisclosure(ceiling);
   // Sessions the server-side status/machine filter hid although their agent
   // half matched — the halves disagree. Counted so a narrowed tab never loses
   // a session silently (`withheld_by_filter` on the envelope).
@@ -434,9 +480,9 @@ export function SessionsConsole({
   );
   const machineOptions = useMemo(
     () =>
-      facetOptions(rows, (r) =>
-        r.device_id ? String(r.device_id) : null
-      ).map((o) => ({ ...o, label: machineLabel(o.value) ?? o.value })),
+      facetOptions(rows, (r) => (r.device_id ? String(r.device_id) : null)).map(
+        (o) => ({ ...o, label: machineLabel(o.value) ?? o.value })
+      ),
     [rows, machineLabel]
   );
 
@@ -481,11 +527,13 @@ export function SessionsConsole({
    * The work facet's vocabulary — AUTHORED (two members), not derived from the
    * rows, so `maxVisible` is omitted and both chips render even at count `0`.
    *
-   * Both counts are MEASURED over the rows already on the page, so R6's `0` is
-   * honest here — `–` would be the lie. What is deliberately NOT offered is a
-   * third "never reported" chip: `isSessionFinished` is total by design (see
-   * its doc), and splitting unknown out would put a chip on the page whose
-   * selection asserts something about rows nobody has heard from.
+   * Both counts are MEASURED over the rows already on the page once coord has
+   * answered, so R6's `0` is honest then — `–` would be the lie. Before the
+   * first answer nothing is on the page to count, and the `0` would be the lie
+   * instead, so both are `null` (`–`) until `loaded`. What is deliberately NOT
+   * offered is a third "never reported" chip: `isSessionFinished` is total by
+   * design (see its doc), and splitting unknown out would put a chip on the
+   * page whose selection asserts something about rows nobody has heard from.
    */
   const workOptions = useMemo<FilterChipOption<string>[]>(() => {
     let finished = 0;
@@ -494,19 +542,19 @@ export function SessionsConsole({
       {
         value: "finished",
         label: "finished",
-        count: finished,
+        count: loaded ? finished : null,
         title:
           "sessions that reported session_status=finished — the WORK axis. Orthogonal to live/stale/closed.",
       },
       {
         value: "unfinished",
         label: "unfinished",
-        count: rows.length - finished,
+        count: loaded ? rows.length - finished : null,
         title:
           "everything else — including sessions that have never reported a work status at all. Select this to HIDE finished sessions; a row we have heard nothing from stays visible, because absence is unknown, not a measured 'not finished'.",
       },
     ];
-  }, [rows]);
+  }, [rows, loaded]);
 
   const visible = useMemo(() => {
     const filtered = rows.filter((r) => {
@@ -539,58 +587,163 @@ export function SessionsConsole({
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
   }, [rows, kinds, providers, machines, work, accounts, accountCells, now]);
 
+  // The client facets holding a selection, in the order they render — what
+  // the scoped line names when they narrow the list below the strip.
+  const facetSelections: ReadonlyArray<[string, readonly string[]]> = [
+    ["kind", kinds],
+    ["provider", providers],
+    ["machine", machines],
+    ["work", work],
+    ["account", accounts],
+  ];
+  const narrowedBy = facetSelections
+    .filter(([, selected]) => selected.length > 0)
+    .map(([name]) => name);
+
+  // The strip answers for `rows` — coord's answer to the tab and the search —
+  // and NEVER for `visible`. The client facets narrow the list below it, not
+  // the fleet's numbers: deriving the strip from `visible` made one machine
+  // chip turn "31 rows across 3 machines" into "1 row across 1 machine" under
+  // a headline still saying "on the fleet". What the facets leave is the
+  // scoped line's job (`sessions-console-scope`).
   const health = useMemo(
     () =>
-      deriveSessionsHealth(visible, {
+      deriveSessionsHealth(rows, {
         readUnknown: unknown,
+        loaded,
         agentHalfFailed,
+        referent: {
+          status: answered.status === "all" ? null : answered.status,
+          query: answered.query,
+          // `?device=` is a SERVER filter too, fixed at mount: the strip
+          // names that machine rather than "the fleet".
+          machine: machineLabel(deviceRef.current),
+        },
+        ceiling,
+        // Matches the server filter hid because their halves disagree: an
+        // empty tab holding them is not a green, empty fleet.
+        withheld,
         options: { now },
       }),
-    [visible, unknown, agentHalfFailed, now]
+    [
+      rows,
+      unknown,
+      loaded,
+      agentHalfFailed,
+      answered,
+      machineLabel,
+      ceiling,
+      withheld,
+      now,
+    ]
   );
 
-  // ---- R6: counts are `null` while unknown, NEVER 0 ---------------------
+  // ---- R6: counts are `null` until coord has answered, NEVER 0 ----------
   //
-  // The status tabs are a SERVER filter, so only the active tab's count is
+  // Keyed on `loaded`, not on `unknown`: before the FIRST answer nothing is
+  // known either, and a `0` then is the `silent-empty-is-unknown` mistake with
+  // a number attached (`unknown` is the failed half of the same window). So
+  // every count slot is `–` until coord answers, keeping its own title; after
+  // that it reads its `CountCell` — exact; a floor (`≥n`, and a floor of zero
+  // as words where the slot has room, a bare `0` in a tab, titled either way);
+  // `–` over a half of unknown size.
+  const unread = (cell: CountCell): CountCell =>
+    loaded ? cell : { value: null, title: cell.title };
+  const fleet = (
+    n: number | null,
+    opts: { compact?: boolean; title?: string } = {}
+  ): CountCell =>
+    n === null
+      ? { value: null, title: opts.title }
+      : unread(fleetCount(n, basis, opts));
+
+  // The status tabs are a SERVER filter, so only the answered tab's count is
   // measured; the others have not been fetched and a `0` on them would be the
-  // `silent-empty-is-unknown` mistake with a number attached. `FilterTabs`
-  // renders `null` as `–`.
-  const tabs = STATUS_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    count: unknown || t.id !== status ? null : visible.length,
-    attention: t.id === status && (health.attention ?? 0) > 0,
-  }));
+  // same mistake. `FilterTabs` renders `null` as `–`. The answered tab shows
+  // coord's count for it (`rows`), never what the facets left — that is the
+  // scoped line's number — spelled like every other fleet count, in the
+  // slot's compact form: a floor of zero is a bare `0` whose title says what
+  // it counted.
+  const answeredCount = fleet(rows.length, { compact: true });
+  const tabs = STATUS_TABS.map((t) => {
+    const answeredTab = loaded && t.id === answered.status;
+    return {
+      id: t.id,
+      label: t.label,
+      count: answeredTab ? answeredCount.value : null,
+      title: answeredTab ? answeredCount.title : undefined,
+      attention: t.id === answered.status && (health.attention ?? 0) > 0,
+    };
+  });
+
+  // A set difference, so its bound follows WHICH half stopped — and a FAILED
+  // agent half establishes no class at all.
+  const agentOnly = agentOnlyStat(countClass(rows, "agent_only"), ceiling);
+  // A failed agent read establishes no row's status, so the strip's two
+  // status counts are `–` (`deriveSessionsHealth` returns them null) and say
+  // why.
+  const statusTitle = agentHalfFailed ? STATUSES_UNESTABLISHED : undefined;
+  // Each status count has its own basis: an unresolved row may hide either,
+  // a full lifecycle half may hide either, and only active can also be an
+  // agent-only session past a full agent half (`statusCountBasis`).
+  const unresolvedRows = countClass(rows, null);
+  const statusCount = (
+    n: number | null,
+    which: "attention" | "active"
+  ): CountCell =>
+    n === null
+      ? { value: null, title: statusTitle }
+      : unread(
+          fleetCount(n, statusCountBasis(ceiling, unresolvedRows, which), {
+            title: statusTitle,
+          })
+        );
+  const attentionCount = statusCount(health.attention, "attention");
+  const activeCount = statusCount(health.active, "active");
 
   const stats: Stat[] = [
-    { key: "rows", label: "rows ", value: unknown ? null : visible.length },
-    { key: "machines", label: "machines ", value: health.machines },
+    { key: "rows", label: "rows ", ...fleet(rows.length) },
+    { key: "machines", label: "machines ", ...fleet(health.machines) },
     {
       key: "linked",
       label: "linked ",
-      value: unknown ? null : countClass(visible, "linked"),
-      title: "coord.sessions row bridged to its coord.agent_sessions row",
+      ...unread(
+        linkedCount(
+          countClass(rows, "linked"),
+          ceiling,
+          "coord.sessions row bridged to its coord.agent_sessions row",
+          countClass(rows, null)
+        )
+      ),
     },
     {
       key: "lifecycle",
       label: "lifecycle-only ",
-      value: unknown ? null : countClass(visible, "lifecycle_only"),
-      title:
-        "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable",
+      ...unread(
+        lifecycleOnlyCount(
+          countClass(rows, "lifecycle_only"),
+          ceiling,
+          "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable"
+        )
+      ),
       tone: "muted",
     },
     {
       key: "agent",
       label: "agent-only ",
-      value: unknown ? null : countClass(visible, "agent_only"),
-      title:
-        "an allocated agent session no coord.sessions row bridges — heartbeat and state are unknown, not closed",
+      // NOT a fleet floor. The class is the agent rows read less those a
+      // lifecycle row READ bridges, so a full lifecycle half can only have
+      // made it too big (`≤n`), a full agent half too small (`≥n`), and both
+      // at once leaves a count of rows read that is neither.
+      ...unread(agentOnly),
       tone: "muted",
     },
     {
       key: "unresolved",
       label: "unresolved ",
-      value: unknown ? null : countClass(visible, null),
+      // Exact even over a capped read: it counts rows of THIS read whose other
+      // half did not answer, not a fleet total a larger read could only add to.
+      value: loaded ? countClass(rows, null) : null,
       title:
         "the read landed but the agent half did not answer for these rows — unknown, not zero",
       tone: (health.unknownJoin ?? 0) > 0 ? "warning" : "muted",
@@ -600,10 +753,16 @@ export function SessionsConsole({
   const badges: HealthBadge[] = [
     {
       key: "attention",
-      label: `needs a person ${health.attention ?? "–"}`,
+      label: `needs a person ${attentionCount.value ?? "–"}`,
+      title: attentionCount.title,
       tone: (health.attention ?? 0) > 0 ? "attention" : "muted",
     },
-    { key: "active", label: `active ${health.active ?? "–"}`, tone: "muted" },
+    {
+      key: "active",
+      label: `active ${activeCount.value ?? "–"}`,
+      title: activeCount.title,
+      tone: "muted",
+    },
     {
       key: "updated",
       label: `updated ${relativeTime(lastUpdated, { absent: "never", now })}`,
@@ -613,7 +772,14 @@ export function SessionsConsole({
   ];
 
   return (
-    <div className="space-y-3" data-ui-bridge-id="sessions.console">
+    // `@container` (inline-size containment) is what stops the console from
+    // widening to its longest row. It sits inside the page's Radix ScrollArea,
+    // whose `display: table` wrapper grows to the widest MIN-CONTENT child —
+    // and a row's min-content holds its whole unwrapped purpose label. A
+    // container's intrinsic width ignores its content, so the console takes
+    // its column's width and every `truncate` / `flex-wrap` inside engages.
+    // It is also the root the row's `@min-[…]` column thresholds query.
+    <div className="@container space-y-3" data-ui-bridge-id="sessions.console">
       <HealthStrip
         level={health.level}
         headline={health.headline}
@@ -629,10 +795,7 @@ export function SessionsConsole({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatCluster
-          stats={stats}
-          data-testid="sessions-console-stats"
-        />
+        <StatCluster stats={stats} data-testid="sessions-console-stats" />
         <Button
           size="sm"
           variant="ghost"
@@ -643,6 +806,23 @@ export function SessionsConsole({
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
+      {/* U4: the strip and the stats above count what coord SERVED, and each
+          half stops at a ceiling. Said in words, naming only the halves that
+          reached one — or whose size is unknown — so a sample is never
+          presented as the fleet. */}
+      {loaded && disclosure && (
+        <p
+          className="text-xs text-amber-300/90"
+          data-testid="sessions-console-truncated"
+          title={
+            isSizeUnknown(ceiling)
+              ? "A half whose size is unknown supports no number — not a total and not a floor — so the fleet counts above are dashes; the rows below are what did arrive."
+              : "Each half of this read stops at a ceiling and nothing past it was read, so the fleet counts above are floors, not totals — except agent-only, whose own title says which way it can be off."
+          }
+        >
+          {disclosure}
+        </p>
+      )}
 
       <FilterTabs
         tabs={tabs}
@@ -676,6 +856,10 @@ export function SessionsConsole({
         </p>
       )}
 
+      {/* `hideWhenEmpty` on the four facets whose options are DERIVED FROM THE
+          ROWS (kind, provider, machine, account): there an empty vocabulary
+          means no row carries the field, so the strip would be a lone `all`
+          chip that can narrow nothing. `work` is authored and always shown. */}
       <div className="flex flex-col gap-1">
         <FilterChips
           label="kind"
@@ -684,6 +868,7 @@ export function SessionsConsole({
           onToggle={(v) => setKinds(toggle(kinds, v))}
           onClear={() => setKinds([])}
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-kind"
         />
         <FilterChips
@@ -693,6 +878,7 @@ export function SessionsConsole({
           onToggle={(v) => setProviders(toggle(providers, v))}
           onClear={() => setProviders([])}
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-provider"
         />
         <FilterChips
@@ -704,6 +890,7 @@ export function SessionsConsole({
           // A server vocabulary with no ceiling this page controls — one chip
           // per machine on the fleet.
           maxVisible={6}
+          hideWhenEmpty
           testIdPrefix="sessions-console-machine"
         />
         <FilterChips
@@ -726,9 +913,23 @@ export function SessionsConsole({
           // A server vocabulary (one chip per Claude account home the fleet
           // reported), so capped like `machine`.
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-account"
           title="the Claude account each session ran on — coord's durable account stamp, read off the agent half"
         />
+        {/* What the facets left of coord's answer — beside the facets that
+            did it, so the strip above keeps the tab's numbers and this line
+            carries the narrowed count. Nothing when no facet narrows. */}
+        {loaded && narrowedBy.length > 0 && (
+          <p
+            className="text-[11px] text-muted-foreground"
+            data-testid="sessions-console-scope"
+          >
+            showing {visible.length} of {rows.length}{" "}
+            {rows.length === 1 ? "row" : "rows"} — filtered by{" "}
+            {joinNames(narrowedBy)}
+          </p>
+        )}
       </div>
 
       {withheld > 0 && visible.length > 0 && (
@@ -758,15 +959,15 @@ export function SessionsConsole({
             // `silent-empty-is-unknown` reading the rest of this page applies —
             // "nothing matched your filter" and "there are no sessions" are
             // different sentences and the operator has to be told which.
+            //
+            // The server half is the question the rows ANSWERED (`answered`),
+            // never the controls: between a tab click and coord's answer the
+            // rows still answer the previous question, and so must this — the
+            // same reading the strip and the tab counts take.
             filtered={
-              status !== "all" ||
-              appliedQuery !== "" ||
-              kinds.length +
-                providers.length +
-                machines.length +
-                work.length +
-                accounts.length >
-                0
+              answered.status !== "all" ||
+              answered.query !== "" ||
+              narrowedBy.length > 0
             }
           />
         }
@@ -778,6 +979,7 @@ export function SessionsConsole({
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
             machineLabel={machineLabel}
+            lifecycleHalf={ceiling.lifecycle}
             now={now}
             coordinationReaders={coordinationReaders}
             readOutput={readOutput}
@@ -801,6 +1003,7 @@ function SessionConsoleRow({
   onToggle,
   rowKey,
   machineLabel,
+  lifecycleHalf,
   now,
   coordinationReaders,
   readOutput,
@@ -813,7 +1016,9 @@ function SessionConsoleRow({
   expanded: boolean;
   onToggle: () => void;
   rowKey: string;
-  machineLabel: (deviceId: string | null | undefined) => string | null;
+  machineLabel: MachineLabel;
+  /** The lifecycle half's extent — what an `agent_only` row was compared against. */
+  lifecycleHalf: HalfExtent;
   now?: number;
   coordinationReaders?: CoordinationReaders;
   readOutput?: OutputReader;
@@ -826,12 +1031,8 @@ function SessionConsoleRow({
   // the ones coord served no `session_status` for, which get no marker at all
   // rather than a fabricated "unfinished" one.
   const workStatus = deriveSessionWorkStatus(row);
-  const machine = machineLabel(row.device_id);
-  const kind = row.session_kind ?? null;
   const purpose = sessionPurpose(row);
   const lineage = hasAgentHalf(row);
-  const beat = lastHeartbeatAt(row);
-  const state = lifecycleState(row);
   const timestamp = rowTimestamp(row);
   const agentId = agentSessionId(row);
 
@@ -870,59 +1071,57 @@ function SessionConsoleRow({
       onToggle={onToggle}
       data-testid="sessions-console-row"
       label={
+        // The optional columns answer to the CONSOLE's width, not the
+        // viewport's: beside the 256 px sidebar a 1280 px viewport leaves a
+        // 976 px (61rem) console, where `md:`–`xl:` switched all six on and
+        // the row outgrew its column. Budget, worst case from `lg` up: the
+        // row's fixed parts ≈ 719 px (chrome 26, gaps 60, identity ~76, two
+        // status badges ~170, reason ≤ 40ch ~305, time ~70, chevron 14) plus
+        // the purpose's 12rem floor, then each column adds its width and a
+        // 12 px gap — machine 66rem, account 78, kind 86, lineage 92,
+        // transcript 98, heartbeat 105. Heartbeat goes first (it repeats the
+        // time slot whenever a heartbeat exists) and machine last; none shows
+        // at 61rem, and the expansion names them all (`SessionRowIdentity`).
+        // The floor engages with the first column, so a row over budget clips
+        // its rightmost column — the next to drop — instead of the purpose,
+        // and below 66rem the purpose still truncates with an ellipsis.
         <span className="flex items-baseline gap-3 min-w-0">
-          <span className="truncate min-w-0 flex-1" title={purpose}>
+          <span
+            className="truncate min-w-0 @min-[66rem]:min-w-[12rem] flex-1"
+            title={purpose}
+            data-testid="sessions-console-row-purpose"
+          >
             {purpose}
           </span>
           {/* Machine is a COLUMN, not a grouping container (§4.1). */}
           <span
-            className="hidden md:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
-            title={row.device_id ? String(row.device_id) : "no device recorded"}
+            className="hidden @min-[66rem]:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
+            title={machineTitle(row)}
             data-testid="sessions-console-row-machine"
           >
-            {machine ?? <Dash title="coord recorded no device for this row" />}
+            <MachineValue row={row} machineLabel={machineLabel} />
           </span>
-          {/* The Claude account (plan 2026-10-19 Phase 3). Never blank: a
-              label, an UNKNOWN that names its reason, or — for a session with
-              no Claude session id at all — D2's not-applicable dash. The full
+          {/* The Claude account — never blank (`AccountValue`); the full
               sentence is always in the title. */}
           <span
-            className="hidden md:inline shrink-0 w-44 truncate text-xs"
+            className="hidden @min-[78rem]:inline shrink-0 w-44 truncate text-xs"
             title={account.title}
             data-testid="sessions-console-row-account"
-            data-account-state={
-              account.kind === "not-applicable" ? "not-applicable" : account.state
-            }
+            data-account-state={accountState(account)}
           >
-            {account.kind === "not-applicable" ? (
-              <Dash title={account.title} />
-            ) : account.state === "known" ? (
-              <span className="font-mono text-muted-foreground">
-                {account.label}
-              </span>
-            ) : (
-              <span className="text-amber-300/90">{account.label}</span>
-            )}
+            <AccountValue account={account} />
           </span>
           <span
-            className="hidden lg:inline shrink-0 w-28 truncate text-xs text-muted-foreground"
+            className="hidden @min-[86rem]:inline shrink-0 w-28 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-kind"
           >
-            {kind ?? (
-              <Dash
-                title={
-                  hasLifecycleHalf(row) === false
-                    ? "no coord.sessions row, so no session kind — unknown, not absent"
-                    : "coord served no session kind for this row"
-                }
-              />
-            )}
+            <KindValue row={row} />
           </span>
           {/* D2's cells. Each dash carries the sentence that says which
               unknown it is — "not applicable", "unknown" and "we did not look"
               are three different claims. */}
           <span
-            className="hidden lg:inline shrink-0 w-24 truncate text-xs text-muted-foreground"
+            className="hidden @min-[92rem]:inline shrink-0 w-24 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-lineage"
           >
             {lineage === true ? (
@@ -942,7 +1141,7 @@ function SessionConsoleRow({
               garbage-collected 7 days after a session ends and the cold object
               is the durable copy, and a row nobody probed has not answered. */}
           <span
-            className="hidden lg:inline shrink-0 w-20 truncate text-xs text-muted-foreground"
+            className="hidden @min-[98rem]:inline shrink-0 w-20 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-transcript"
           >
             {transcriptTier.unknown ? (
@@ -952,22 +1151,10 @@ function SessionConsoleRow({
             )}
           </span>
           <span
-            className="hidden xl:inline shrink-0 w-24 truncate text-xs text-muted-foreground tabular-nums"
+            className="hidden @min-[105rem]:inline shrink-0 w-24 truncate text-xs text-muted-foreground tabular-nums"
             data-testid="sessions-console-row-heartbeat"
           >
-            {state === null ? (
-              <Dash
-                title={
-                  hasLifecycleHalf(row) === false
-                    ? "no coord.sessions row — heartbeat and state are unknown for this row, NOT closed"
-                    : "the join half for this row is unresolved — unknown, not closed"
-                }
-              />
-            ) : beat === null ? (
-              <Dash title="active, but coord has recorded no heartbeat yet" />
-            ) : (
-              relativeTime(beat, { absent: "–", now })
-            )}
+            <HeartbeatValue row={row} now={now} />
           </span>
         </span>
       }
@@ -983,10 +1170,7 @@ function SessionConsoleRow({
           <StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />
           {workStatus && (
             <span data-testid="sessions-console-row-work">
-              <StatusBadge
-                status={workStatus}
-                palette={SESSION_WORK_PALETTE}
-              />
+              <StatusBadge status={workStatus} palette={SESSION_WORK_PALETTE} />
             </span>
           )}
         </span>
@@ -1003,9 +1187,14 @@ function SessionConsoleRow({
         />
       }
     >
-      {/* R5 / D3: the detail expands IN PLACE, sharing this row's border. */}
+      {/* R5 / D3: the detail expands IN PLACE, sharing this row's border.
+          It names every identity column a narrow console hides, so it gets
+          the same account cell and machine label the columns render. */}
       <SessionRowExpansion
         row={row}
+        account={account}
+        machineLabel={machineLabel}
+        lifecycleHalf={lifecycleHalf}
         coordination={coordination}
         stores={stores}
         now={now}
@@ -1021,6 +1210,13 @@ function SessionConsoleRow({
 /**
  * The honest empty state — it has to name WHICH question came back empty,
  * which is exactly why `RecordList` makes the caller supply it.
+ *
+ * It names it by its NARROWING and its next step, and nothing else: what
+ * coord's answer held is the strip's sentence, directly above ("No live
+ * sessions on the fleet", "0 sessions match “q”"). Saying it here too was the
+ * same fact in two places (`ux-priorities` `a-control-belongs-with-what-it-governs`,
+ * the duplication tell), so an unnarrowed empty list says only how a session
+ * gets here.
  */
 function EmptyState({
   unknown,
@@ -1053,17 +1249,18 @@ function EmptyState({
       className="py-10 text-center text-sm text-muted-foreground"
       data-testid="sessions-console-empty"
     >
-      <p className="font-medium">
-        {filtered ? "No sessions match this filter" : "No sessions on the fleet"}
-      </p>
+      {filtered && <p className="font-medium">No sessions match this filter</p>}
       <p className="text-xs mt-1 max-w-md mx-auto">
         {filtered
-          ? "coord answered — nothing matched. Clear a filter to widen the question."
+          ? "Clear a filter to widen the question."
           : "Start a session from any runner and it will surface here."}
       </p>
       {withheld > 0 && (
         <div className="mt-2 flex justify-center">
-          <WithheldNote count={withheld} testId="sessions-console-empty-withheld" />
+          <WithheldNote
+            count={withheld}
+            testId="sessions-console-empty-withheld"
+          />
         </div>
       )}
     </div>
@@ -1129,6 +1326,12 @@ function countClass(
   cls: ConsolidatedSessionRow["row_class"]
 ): number {
   return rows.filter((r) => (r.row_class ?? null) === (cls ?? null)).length;
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function toggle(selected: string[], value: string): string[] {

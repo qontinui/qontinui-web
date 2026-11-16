@@ -16538,7 +16538,7 @@ export interface paths {
          *
          *     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
          *
-         *     With ``shape=consolidated`` the envelope gains four fields and every
+         *     With ``shape=consolidated`` the envelope gains five fields and every
          *     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
          *
          *         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -16548,7 +16548,39 @@ export interface paths {
          *           "row_class_counts": {"linked": n, "lifecycle_only": n,
          *                                "agent_only": n, "unknown": n},
          *           "withheld_by_filter": n,
-         *           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+         *           "lifecycle_half": {"read": "ok", "bound": BoundedReadMeta},
+         *           "agent_half": {"read": "ok", "bound": BoundedReadMeta}
+         *                         | {"read": "failed", "detail": "..."} }
+         *
+         *     ``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every
+         *     key always present, ``null`` a value) describing the coord READ behind
+         *     that half — plan
+         *     `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+         *     Phase 3. Both reads stop at 500 rows: the lifecycle half at coord's own
+         *     ``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the
+         *     agent half at the 500 it asks ``/coord/agent-sessions`` for (the most
+         *     recently seen). ``bound`` comes in three arms:
+         *
+         *     * below its ceiling — ``bound_kind: "complete"`` with ``truncated:
+         *       false``: the half holds every row the read matched;
+         *     * a FULL half, ``shown >= limit`` — ``"unknown"`` with ``truncated`` and
+         *       ``total`` null: more rows may exist, and nothing coord sent says
+         *       whether they do, so a count over it is a floor;
+         *     * a 200 whose body carries no ``sessions`` list — ``"unknown"`` over
+         *       ``shown: 0``: nothing countable was served, so the half's SIZE is
+         *       unknown. ``shown < limit`` is what tells it from a full half, and no
+         *       count over it is a total or a floor — not even a floor of zero.
+         *
+         *     ``shown`` counts the rows coord SERVED, before this route's own
+         *     ``device`` / ``status`` / ``q`` narrowing, so it need not equal
+         *     ``count``. A failed agent read carries no ``bound`` — there is no page to
+         *     bound.
+         *
+         *     ``agent_only`` is a set difference against the lifecycle rows coord
+         *     served, so it is established only while ``lifecycle_half.bound.truncated``
+         *     is ``false``. Beyond the ceiling it means "no ``coord.sessions`` row among
+         *     the ones served" — one may exist past it — and the row keeps its real
+         *     agent half either way.
          *
          *     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
          *     hid although their agent half matched it — the two halves disagree (e.g.
