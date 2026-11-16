@@ -41,6 +41,7 @@ import { formatBytes } from "@/components/operations/fleetResources";
 import {
   DIVERGENCE_KIND_LABEL,
   SERVICE_KIND_LABEL,
+  ciRunnerAttributionText,
   ciRunnerStatusText,
   serviceObservedText,
   SERVICE_PALETTE,
@@ -318,23 +319,35 @@ function CiRunnerList({ runners }: { runners: CiRunnerWire[] }) {
   }
   return (
     <ul className="space-y-1" data-testid="coord-computer-ci-runners">
-      {runners.map((r, i) => (
-        <li
-          key={`${r.runner_name ?? "unnamed"}:${r.repo ?? ""}:${i}`}
-          className="flex items-center gap-3 px-3 py-2 text-sm rounded-md border border-border bg-card/30"
-          data-testid="coord-computer-ci-runner-row"
-        >
-          <span className="font-mono text-[11px]">
-            {r.runner_name ?? "unnamed runner"}
-          </span>
-          <span className="text-xs text-muted-foreground truncate">
-            {r.repo ?? "repo not reported"}
-          </span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {ciRunnerStatusText(r)}
-          </span>
-        </li>
-      ))}
+      {runners.map((r, i) => {
+        const attribution = ciRunnerAttributionText(r);
+        return (
+          <li
+            key={`${r.runner_name ?? "unnamed"}:${r.repo ?? ""}:${i}`}
+            className="flex items-center gap-3 px-3 py-2 text-sm rounded-md border border-border bg-card/30"
+            data-testid="coord-computer-ci-runner-row"
+          >
+            <span className="font-mono text-[11px]">
+              {r.runner_name ?? "unnamed runner"}
+            </span>
+            {attribution !== null && (
+              <span
+                className="text-[10px] text-muted-foreground/70 italic shrink-0"
+                title="Coord placed this runner here by its declared qontinui-host label only; no reported service unit was paired, so no divergence is computed for it."
+                data-testid="coord-computer-ci-runner-declared-host"
+              >
+                {attribution}
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground truncate">
+              {r.repo ?? "repo not reported"}
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {ciRunnerStatusText(r)}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -47,6 +47,7 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   computerFx,
+  DEVICE_ID,
   detailFx,
   DEVICE_ID,
   OTHER_COMPUTER_ID,
@@ -650,6 +651,60 @@ describe("/admin/coord/computers/[computerId]", () => {
       screen.getByTestId("coord-computer-ci-runners-unknown")
     ).toBeTruthy();
     expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
+  });
+
+  it("labels a declared-host CI runner, and only that one — runner_name and absent add nothing", async () => {
+    const base = {
+      device_id: DEVICE_ID,
+      host_key: "merytshost",
+      repo: "qontinui/qontinui-web",
+      ci_runner_status: "idle",
+      last_seen_at: null,
+      registrar_fresh: true,
+      service_active_state: null,
+    };
+    const runners = [
+      {
+        ...base,
+        hostname: "gh-runner-declared@qontinui/qontinui-web",
+        runner_name: "declared-1",
+        service_unit: null,
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-paired@qontinui/qontinui-web",
+        runner_name: "paired-1",
+        service_unit: "actions.runner.qontinui.paired-1.service",
+        service_active_state: "active",
+        attributed_by: "runner_name" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-older@qontinui/qontinui-web",
+        runner_name: "older-coord-1",
+        service_unit: null,
+      },
+    ];
+    const fx = detailFx();
+    httpGet.mockResolvedValue({
+      ...fx,
+      ci_runners: runners,
+      workloads: { ...fx.workloads, ci_runners: runners },
+    });
+    render(<CoordComputerDetailPage />);
+    const rows = await screen.findAllByTestId("coord-computer-ci-runner-row");
+    expect(rows).toHaveLength(3);
+    expect(
+      within(rows[0]).getByTestId("coord-computer-ci-runner-declared-host")
+        .textContent
+    ).toBe("placed on machine (declared host), unit unknown");
+    expect(
+      within(rows[1]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
+    expect(
+      within(rows[2]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
   });
 
   it("says 'no disagreement found' — never 'agree' — when the registrar read succeeded", async () => {

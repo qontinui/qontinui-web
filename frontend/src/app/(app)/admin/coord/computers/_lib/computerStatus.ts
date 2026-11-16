@@ -168,6 +168,25 @@ export interface CiRunnerWire {
   registrar_fresh: boolean;
   service_unit: string | null;
   service_active_state: string | null;
+  /**
+   * How coord placed this registrar row on the machine:
+   *
+   * - `"runner_name"` — paired with a systemd unit the computer itself
+   *   reported, by canonical runner name; `service_unit` is set and the row
+   *   takes part in divergence.
+   * - `"declared_host"` — placed only through the runner's declared
+   *   `qontinui-host-<h>` label. No reported unit was paired, so
+   *   `service_unit` is null and no divergence is computed for the row.
+   *
+   * Absent or `null` means coord did not say (a build predating the field):
+   * UNKNOWN, rendered as neither value.
+   *
+   * `AmbiguousCiRunnerWire` flattens this struct, so ambiguous (and
+   * unattributed) rows may carry the field too; those rows are attributed to
+   * no computer, and the page renders the field only for rows attributed to
+   * the computer it shows (`ciRunnerAttributionText`).
+   */
+  attributed_by?: "runner_name" | "declared_host" | null;
 }
 
 /** Coord's `EventRow`. */
@@ -1487,6 +1506,20 @@ export function eventSubject(e: ComputerEventWire): string | null {
 export function ciRunnerStatusText(r: CiRunnerWire): string {
   const status = r.ci_runner_status ?? "status unknown";
   return r.registrar_fresh ? status : `last known: ${status} (registrar stale)`;
+}
+
+/**
+ * The attribution note for a registrar row attributed to this computer, or
+ * `null` when there is nothing to add. Only `declared_host` earns a note: the
+ * row sits on this machine by its declared host label alone, with no reported
+ * unit paired, so neither its unit nor a divergence verdict is known.
+ * `runner_name` is the normal paired case (no note), and an absent or `null`
+ * field is UNKNOWN — it must not read as either value, so it adds nothing.
+ */
+export function ciRunnerAttributionText(r: CiRunnerWire): string | null {
+  return r.attributed_by === "declared_host"
+    ? "placed on machine (declared host), unit unknown"
+    : null;
 }
 
 /**

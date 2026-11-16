@@ -28,6 +28,7 @@ import {
   SERVICE_ATTENTION_BY_KIND,
   SERVICE_PALETTE,
   buildComputerRows,
+  ciRunnerAttributionText,
   ciRunnerStatusText,
   classifyComputersError,
   computerFreshness,
@@ -501,6 +502,44 @@ describe("ciRunnerStatusText", () => {
     expect(ciRunnerStatusText({ ...row, registrar_fresh: false })).toBe(
       "last known: idle (registrar stale)"
     );
+  });
+});
+
+describe("ciRunnerAttributionText", () => {
+  const row = {
+    device_id: "d",
+    hostname: "gh-runner-merytshost-1@qontinui/qontinui-web",
+    runner_name: "merytshost-1",
+    host_key: "merytshost-1",
+    repo: "qontinui/qontinui-web",
+    ci_runner_status: "idle",
+    last_seen_at: null,
+    registrar_fresh: true,
+    service_unit: null,
+    service_active_state: null,
+  };
+
+  it("notes a declared-host row as placed on the machine with its unit unknown", () => {
+    expect(
+      ciRunnerAttributionText({ ...row, attributed_by: "declared_host" })
+    ).toBe("placed on machine (declared host), unit unknown");
+  });
+
+  it("adds nothing for the normal runner-name pairing", () => {
+    expect(
+      ciRunnerAttributionText({
+        ...row,
+        service_unit: "actions.runner.qontinui.merytshost-1.service",
+        attributed_by: "runner_name",
+      })
+    ).toBeNull();
+  });
+
+  it("claims neither value when coord did not say (absent or null)", () => {
+    // An older coord omits the field: UNKNOWN, never read as declared_host
+    // even though `service_unit` is null exactly as on a declared-host row.
+    expect(ciRunnerAttributionText(row)).toBeNull();
+    expect(ciRunnerAttributionText({ ...row, attributed_by: null })).toBeNull();
   });
 });
 
