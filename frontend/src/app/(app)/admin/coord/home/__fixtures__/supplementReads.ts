@@ -1,10 +1,11 @@
 /**
  * The transport for `/admin/coord/home`'s page tests, with the reads the page
  * makes BESIDE coord's project state (`_hooks/useHomeSupplements.ts`) answered
- * on their own: coord's machine roster, and the Gates and Questions pages'
- * queue reads. Every other `httpClient.fetch` goes to the test's own mock, so
- * a test about the project state still sees only the project-state read
- * there.
+ * on their own: coord's machine roster, the Gates and Questions pages' queue
+ * reads, and the operator-only stalled-subproject count
+ * (`_components/StalledSubprojectsLine.tsx`). Every other `httpClient.fetch`
+ * goes to the test's own mock, so a test about the project state still sees
+ * only the project-state read there.
  *
  * By default the roster is one healthy machine and both queues are empty —
  * the calm control — so a test about the project state is not made amber by
@@ -26,6 +27,7 @@ import { vi } from "vitest";
 export const FLEET_HEALTH_ROUTE = "/fleet/health";
 export const QUESTIONS_ROUTE = "/agent-questions/pending";
 export const GATES_ROUTE = "/admin-dev/overview";
+export const SUBPROJECTS_ROUTE = "/subprojects";
 
 /**
  * A roster of machines in the given states (absent = no health state), with
@@ -58,6 +60,16 @@ export const EMPTY_GATES = () => ({
   rollouts: { auto_merge: { enabled: [], disabled: [] }, features: [] },
 });
 
+/** coord's subproject list answering "none stalled" — the calm control. */
+export const NO_STALLED_SUBPROJECTS = () => ({
+  items: [],
+  next_cursor: null,
+  truncated: false,
+  total: 0,
+  unattached_units: { count: 0, by_class: {} },
+  generated_at: new Date().toISOString(),
+});
+
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200 });
 
@@ -67,6 +79,10 @@ export const fleetHealth = vi.fn(async () => CALM_ROSTER() as unknown);
 export const pendingQuestions = vi.fn(async () => EMPTY_QUESTIONS() as unknown);
 /** `GET /admin-dev/overview` (`httpClient.get`); resolves to the overview. */
 export const gatesOverview = vi.fn(async () => EMPTY_GATES() as unknown);
+/** `/subprojects?headline=stalled`; resolves to the list's body. */
+export const stalledSubprojects = vi.fn(
+  async () => NO_STALLED_SUBPROJECTS() as unknown
+);
 
 /** Put every supplement back to the calm default. */
 export function resetSupplements() {
@@ -76,6 +92,8 @@ export function resetSupplements() {
   pendingQuestions.mockImplementation(async () => EMPTY_QUESTIONS());
   gatesOverview.mockReset();
   gatesOverview.mockImplementation(async () => EMPTY_GATES());
+  stalledSubprojects.mockReset();
+  stalledSubprojects.mockImplementation(async () => NO_STALLED_SUBPROJECTS());
 }
 
 /** `httpClient` for the page: supplements here, everything else to `rest`. */
@@ -87,6 +105,9 @@ export function homeTransport(rest: (...args: unknown[]) => Promise<Response>) {
       if (path.endsWith(FLEET_HEALTH_ROUTE)) return json(await fleetHealth());
       if (path.endsWith(QUESTIONS_ROUTE)) {
         return json(await pendingQuestions());
+      }
+      if (path.endsWith(SUBPROJECTS_ROUTE)) {
+        return json(await stalledSubprojects());
       }
       return rest(...args);
     },

@@ -331,14 +331,45 @@ class TestUsersPutWriter:
         assert detail["coord_status"] == coord_status
         assert "update" not in users_ctx.applied
 
-    def test_coord_timeout_fails_the_deactivation(self, users_ctx):
-        instance = _coord_client(post_error=httpx.ReadTimeout("slow"))
+    @pytest.mark.parametrize(
+        "post_error",
+        [httpx.ReadTimeout("slow"), httpx.ReadError("reset")],
+        ids=["timeout", "answer_lost"],
+    )
+    def test_an_unanswered_disable_is_an_unknown_outcome_not_a_refusal(
+        self, users_ctx, post_error
+    ):
+        """The disable was SENT and its answer never arrived: coord may have
+        applied it. The failure says so and says to re-read first — never
+        "NOT applied", which would invite a blind retry and misstate the
+        principal's coord access. The local flip still never ran."""
+        instance = _coord_client(post_error=post_error)
+        with _patch_httpx() as MockClient:
+            _configure_mock_client(MockClient, instance)
+            resp = _put(users_ctx.client, {"is_active": False})
+
+        assert resp.status_code == 504
+        detail = resp.json()["detail"]
+        assert detail["error"] == "coord_operator_disable_failed"
+        assert detail["coord_status"] == 504
+        assert "coord may have applied the disable" in detail["message"]
+        assert "re-read" in detail["message"]
+        assert "NOT applied" not in detail["message"]
+        assert "update" not in users_ctx.applied
+
+    def test_a_timed_out_lookup_still_applied_nothing(self, users_ctx):
+        """The operator lookup is a READ: when it times out nothing was
+        written, so "NOT applied" is the truth there."""
+        instance = _coord_client(list_error=httpx.ReadTimeout("slow"))
         with _patch_httpx() as MockClient:
             _configure_mock_client(MockClient, instance)
             resp = _put(users_ctx.client, {"is_active": False})
 
         assert resp.status_code == 502
-        assert resp.json()["detail"]["coord_status"] == 504
+        detail = resp.json()["detail"]
+        assert detail["error"] == "coord_operator_lookup_failed"
+        assert "NOT applied" in detail["message"]
+        instance.post.assert_not_called()
         assert "update" not in users_ctx.applied
 
     def test_coord_unreachable_fails_the_deactivation(self, users_ctx):
@@ -646,6 +677,67 @@ class TestUserManagerUpdate:
 
         assert excinfo.value.status_code == 502
         assert excinfo.value.detail["error"] == "coord_operator_enable_failed"
+        # web persisted FIRST: the message says what actually stands — never
+        # "NOT applied", which is false for a reactivation.
+        message = excinfo.value.detail["message"]
+        assert "active in qontinui-web but still disabled in coord" in message
+        assert "retry the enable" in message
+        assert "NOT applied" not in message
+        user_db.update.assert_awaited_once()
+
+    async def test_an_unanswered_enable_says_web_is_active_and_coord_unknown(self):
+        """The enable was SENT and its answer was lost: the user is active in
+        qontinui-web, and coord may or may not have enabled them."""
+        from fastapi import HTTPException
+
+        from app.schemas.user import UserUpdate
+
+        manager, user_db = _manager_and_db()
+        target = _make_user(is_active=False)
+        instance = _coord_client(post_error=httpx.ReadError("reset"))
+
+        with _patch_httpx() as MockClient:
+            _configure_mock_client(MockClient, instance)
+            with pytest.raises(HTTPException) as excinfo:
+                await manager.update(
+                    UserUpdate(is_active=True),
+                    target,
+                    safe=False,
+                    request=_request_with_bearer(),
+                )
+
+        assert excinfo.value.status_code == 504
+        message = excinfo.value.detail["message"]
+        assert "the user is active in qontinui-web" in message
+        assert "coord may have applied the enable" in message
+        assert "re-read" in message
+        user_db.update.assert_awaited_once()
+
+    async def test_a_failed_lookup_on_reactivation_says_web_is_active(self):
+        """The lookup runs AFTER the reactivation persisted, so its failure
+        leaves the user active in web and disabled in coord."""
+        from fastapi import HTTPException
+
+        from app.schemas.user import UserUpdate
+
+        manager, user_db = _manager_and_db()
+        target = _make_user(is_active=False)
+        instance = _coord_client(list_error=httpx.ConnectError("refused"))
+
+        with _patch_httpx() as MockClient:
+            _configure_mock_client(MockClient, instance)
+            with pytest.raises(HTTPException) as excinfo:
+                await manager.update(
+                    UserUpdate(is_active=True),
+                    target,
+                    safe=False,
+                    request=_request_with_bearer(),
+                )
+
+        assert excinfo.value.status_code == 502
+        assert excinfo.value.detail["error"] == "coord_operator_lookup_failed"
+        assert "retry the enable" in excinfo.value.detail["message"]
+        instance.post.assert_not_called()
         user_db.update.assert_awaited_once()
 
     async def test_patch_without_is_active_makes_no_coord_call(self):
