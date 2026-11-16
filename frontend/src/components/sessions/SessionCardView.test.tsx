@@ -106,6 +106,7 @@ describe("SessionCardView machine row", () => {
     renderCard({ machine: null, machine_unknown_reason: null });
     const text = machineRow().textContent ?? "";
     expect(text).toContain("machine unknown");
+    expect(text).not.toContain("machine unknown:");
     expect(text).not.toContain("reason not served");
   });
 
@@ -126,8 +127,65 @@ describe("SessionCardView machine row", () => {
         source: "coord_device",
       },
     });
-    expect(machineRow().textContent).toContain("nawa");
+    const text = machineRow().textContent ?? "";
+    expect(text).not.toContain("unnamed machine");
+    // The label IS the hostname, so the separate hostname span is not drawn.
+    expect(text.match(/nawa/g)).toHaveLength(1);
     expect(within(machineRow()).queryByRole("link")).toBeNull();
+  });
+
+  it("treats an empty machine name like a missing one", () => {
+    renderCard({
+      machine: {
+        id: null,
+        name: "",
+        hostname: "nawa",
+        environment: null,
+        source: "coord_device",
+      },
+    });
+    expect(machineRow().textContent).not.toContain("unnamed machine");
+    expect(machineRow().textContent).toContain("nawa");
+  });
+
+  it("names an unrecognised source and a null source honestly", () => {
+    renderCard({
+      machine: {
+        id: null,
+        name: "nawa",
+        hostname: null,
+        environment: { id: "env-9", name: null },
+        source: "future_source",
+      },
+    });
+    const text = machineRow().textContent ?? "";
+    expect(text).toContain("via future_source");
+    // A null environment name falls back to its id.
+    expect(text).toContain("env-9");
+  });
+
+  it("says 'source unknown' for a served null source, never 'via null'", () => {
+    renderCard({
+      machine: {
+        id: null,
+        name: "nawa",
+        hostname: null,
+        environment: null,
+        source: null as unknown as string,
+      },
+    });
+    const text = machineRow().textContent ?? "";
+    expect(text).toContain("source unknown");
+    expect(text).not.toContain("via null");
+  });
+
+  it("names device_id_absent when the session has no device", () => {
+    renderCard({
+      device_id: null,
+      machine: null,
+      machine_unknown_reason: "device_id_absent",
+    });
+    expect(machineRow().textContent).toContain("machine unknown: no device id");
   });
 });
 
@@ -270,5 +328,20 @@ describe("SessionCardView runner-page row", () => {
     const text = pageRow().textContent ?? "";
     expect(text).not.toContain("never");
     expect(text).toContain("observed at an unknown time");
+  });
+
+  it("renders 'unnamed' for an empty page name, never a blank span", () => {
+    renderCard({
+      runner_page: {
+        page_id: "page-7",
+        name: "",
+        name_withheld: false,
+        window: "main",
+        terminal_id: null,
+        observed_at: new Date().toISOString(),
+        fresh: true,
+      },
+    });
+    expect(pageRow().textContent).toContain("unnamed");
   });
 });
