@@ -69,7 +69,8 @@ jobs:
     # p50 7.10 / p90 7.41 / max 7.73 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 20
     name: Lint and TypeScript check
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-4g"]' || '"ubuntu-latest"') }}
     env:
       # vitest defaults to nproc - 1 workers: 3 on the hosted 4-core VM, 127 on
       # a nawa runner. Pin the hosted value on both lanes.
@@ -228,7 +229,8 @@ jobs:
     # two things the deployment depends on — the overlay resolves, and the
     # marker the deployment serves is valid JSON naming that same pin.
     name: Vercel install script (composed deploy path)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-4g"]' || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout qontinui-web
@@ -338,7 +340,8 @@ jobs:
     #
     # See frontend/docs/composed-cloud-build.md.
     name: Composed cloud build (with @qontinui/cloud-control)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-16g"]' || '"ubuntu-latest"') }}
     env:
       # As in `lint` above: vitest would otherwise start nproc - 1 workers
       # (127 on a nawa runner). Pin the hosted value on both lanes.
