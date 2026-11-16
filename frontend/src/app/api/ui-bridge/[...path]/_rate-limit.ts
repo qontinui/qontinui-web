@@ -81,6 +81,7 @@
 import IORedis, { type Redis } from "ioredis";
 
 import { createLogger } from "@/lib/logger";
+import { safeRedisErrorText } from "@/lib/ui-bridge/redis-redact";
 
 import {
   HEARTBEATS_PER_TAB_PER_MIN,
@@ -189,13 +190,15 @@ function getClient(): Redis | null {
     c.on("error", (err: Error) => {
       // Don't log on every retry — ioredis emits these in storms. One
       // line at warn-level is enough for an operator to notice.
-      log.warn("redis_error_failing_open", { error: err.message });
+      log.warn("redis_error_failing_open", {
+        error: safeRedisErrorText(err, [url]),
+      });
     });
     client = c;
     return c;
   } catch (err) {
     log.warn("redis_init_failed_failing_open", {
-      error: err instanceof Error ? err.message : String(err),
+      error: safeRedisErrorText(err, [url]),
     });
     client = null;
     return null;
@@ -245,7 +248,11 @@ function secondsUntilNextWindow(now: number = Date.now()): number {
   return Math.max(1, Math.ceil((windowEnd - now) / 1000));
 }
 
-function keyFor(userId: string, kind: RateLimitKind, windowIdx: number): string {
+function keyFor(
+  userId: string,
+  kind: RateLimitKind,
+  windowIdx: number
+): string {
   // Short lane prefixes keep the Redis bill predictable.
   return `bridge:rl:${LANES[kind].keyPrefix}:${userId}:${windowIdx}`;
 }
@@ -313,7 +320,7 @@ function logExpireFailed(
   }
   lastExpireFailLogWindow = windowIdx;
   log.warn("rate_limit_expire_failed", {
-    error: err instanceof Error ? err.message : String(err),
+    error: safeRedisErrorText(err, [resolveUrl()]),
     kind,
     status: status ?? "unknown",
   });
@@ -339,7 +346,7 @@ function logFailingOpen(
   err: unknown,
   kind: RateLimitKind,
   now: number,
-  status: string | undefined,
+  status: string | undefined
 ): void {
   const windowIdx = currentWindowIndex(now);
   if (windowIdx === lastFailOpenLogWindow) {
@@ -347,7 +354,7 @@ function logFailingOpen(
   }
   lastFailOpenLogWindow = windowIdx;
   log.warn("rate_limit_redis_op_failed_failing_open", {
-    error: err instanceof Error ? err.message : String(err),
+    error: safeRedisErrorText(err, [resolveUrl()]),
     kind,
     status: status ?? "unknown",
   });
@@ -363,7 +370,7 @@ function logFailingOpen(
 export async function checkRateLimit(
   userId: string,
   kind: RateLimitKind,
-  now: number = Date.now(),
+  now: number = Date.now()
 ): Promise<RateLimitResult> {
   const limit = LANES[kind].limit;
   const retryAfterSec = secondsUntilNextWindow(now);
@@ -421,7 +428,7 @@ export async function checkRateLimit(
  * `unknown` — never a number that would read as headroom.
  */
 export function rateLimitHeaders(
-  result: RateLimitResult,
+  result: RateLimitResult
 ): Record<string, string> {
   return {
     "X-RateLimit-Lane": result.kind,
@@ -440,7 +447,7 @@ export function rateLimitHeaders(
  */
 export function withRateLimitHeaders(
   response: Response,
-  result: RateLimitResult,
+  result: RateLimitResult
 ): Response {
   const budget = Object.entries(rateLimitHeaders(result));
   try {
@@ -483,7 +490,7 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
         "Retry-After": String(result.retryAfterSec),
         ...rateLimitHeaders(result),
       },
-    },
+    }
   );
 }
 
@@ -501,7 +508,7 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
  */
 export function logLaneRefused(
   result: RateLimitResult,
-  principalKind: "user" | "device" | null,
+  principalKind: "user" | "device" | null
 ): void {
   const overflow = result.count - result.limit;
   if (overflow < 1 || (overflow & (overflow - 1)) !== 0) {

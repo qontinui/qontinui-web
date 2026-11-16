@@ -81,12 +81,36 @@ export function isSdkTransportRoute(path: string, method: string): boolean {
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /**
- * ui-bridge `packages/ui-bridge/src/relay/relay-client.ts`
- * `SSE_RECONNECT_DELAY_MS`: a refused or dropped command stream is reopened
- * after this delay (`scheduleReconnect`); a healthy stream opens once. Two
- * other paths reopen it AT ONCE (see `STREAM_OPENS_PER_TAB_PER_MIN`).
+ * ui-bridge `packages/ui-bridge/src/relay/stream-lifecycle.ts`
+ * `SSE_RECONNECT_DELAY_MS` (module-private; it moved out of `relay-client.ts`
+ * in 0.50.0, first published as 0.51.0, with no change of value): a refused open, or a stream that ended
+ * before it was healthy, is reopened after this delay. Two other paths reopen
+ * it AT ONCE (see `STREAM_OPENS_PER_TAB_PER_MIN`).
  */
 export const SSE_RECONNECT_DELAY_MS = 10_000;
+
+/**
+ * ui-bridge `packages/ui-bridge/src/relay/stream-lifecycle.ts`
+ * `HEALTHY_STREAM_MIN_MS` (re-exported by `relay-client.ts`): how long a
+ * stream must live after `connected` to count as healthy. A healthy stream
+ * that ends is reopened at once, and it is the floor between the opens the
+ * client makes on its own — the reopen after an end, and the replacement a
+ * `rotate` frame asks for each come at least this long after the previous
+ * open.
+ */
+export const HEALTHY_STREAM_MIN_MS = 10_000;
+
+/**
+ * ui-bridge `packages/ui-bridge/src/server/stream-lease.ts`
+ * `STREAM_LEASE_MS`: the relay's default lease on a stream whose client
+ * declared `caps=rotate` (every 0.51+ client does). At the lease the relay
+ * sends a `{"type":"rotate"}` frame; the client opens its next stream and the
+ * relay ends the old one once that replacement registers (make-before-break).
+ * So a healthy tab opens one stream per lease. qontinui-web's
+ * `lib/ui-bridge/relay.ts` sets no `streamLeaseMs`; `UI_BRIDGE_STREAM_LEASE_MS`
+ * overrides it per deployment, floored at 15 s by the SDK.
+ */
+export const STREAM_LEASE_MS = 50_000;
 
 /**
  * ui-bridge `packages/ui-bridge/src/server/nextjs.ts`
@@ -117,6 +141,13 @@ const MINUTE_MS = 60_000;
 
 /**
  * Stream opens per live tab per minute: a failing stream's reconnect cadence.
+ *
+ * Lease-driven rotation stays inside it. A healthy tab opens one stream per
+ * `STREAM_LEASE_MS` (60 000 / 50 000 = 1.2 opens a minute), and the client
+ * floors each rotation and each reopen after an end at `HEALTHY_STREAM_MIN_MS`
+ * after the previous open, so even an env-shortened lease (floored at 15 s by
+ * the SDK) cannot push those opens past 60 000 / `HEALTHY_STREAM_MIN_MS` = 6 —
+ * the same 6 the reconnect delay gives, because both are 10 s.
  *
  * Two paths in `relay-client.ts` reopen a stream AT ONCE, and the envelope
  * deliberately does not absorb either (an envelope sized to absorb a defect

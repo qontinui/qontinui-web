@@ -66,6 +66,7 @@ describe("CostsPage and the base-currency control", () => {
       periods: [],
       today: "2026-11-02",
       currencies: [],
+      categories: [],
       months: [],
     });
   });

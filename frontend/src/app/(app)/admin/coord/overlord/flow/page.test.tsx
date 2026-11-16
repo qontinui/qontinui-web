@@ -83,10 +83,10 @@ describe("/admin/coord/overlord/flow", () => {
     );
     expect(
       screen.getByTestId("overlord-flow-ttc-absent-unproven")
-    ).toHaveTextContent("gone across a rebuild2");
+    ).toHaveTextContent("gone across a restart2");
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-unproven")
-    ).toHaveTextContent("gone across a rebuild2");
+    ).toHaveTextContent("gone across a restart2");
 
     // Nudge rates with their counts and the unmeasured remainder.
     expect(
@@ -224,7 +224,7 @@ describe("/admin/coord/overlord/flow", () => {
     await waitFor(() => expect(counts).toHaveTextContent("of nudged2/10"));
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-unproven")
-    ).not.toHaveTextContent(/rebuild\d/);
+    ).not.toHaveTextContent(/restart\d/);
   });
 
   it("renders a 503 schema_migration_pending as UNKNOWN everywhere", async () => {
