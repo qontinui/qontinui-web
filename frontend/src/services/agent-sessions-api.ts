@@ -229,7 +229,11 @@ export interface SessionCard extends SessionAccountStamp {
   closed_at: string | null;
   status: AgentSessionStatus | string;
   machine: SessionCardMachine | null;
-  /** Set when `machine` is null; absent on an older coord (UNKNOWN). */
+  /**
+   * Non-null whenever `machine` is null, and also `devenv_read_failed` BESIDE
+   * a `coord_device` machine when coord's devenv read failed (so a failed read
+   * never reads as "no enrollment"). Absent on an older coord (UNKNOWN).
+   */
   machine_unknown_reason?:
     | SessionCardMachineUnknownReason
     | (string & {})

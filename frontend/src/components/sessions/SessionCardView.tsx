@@ -256,13 +256,19 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
             on {machineLabel(card.machine)}
           </span>
           {page.fresh !== true && page.fresh !== false ? (
-            <span
-              className="text-xs text-muted-foreground"
-              title={absoluteTime(page.observed_at)}
-            >
-              freshness unknown, observed{" "}
-              {relativeTime(page.observed_at, { absent: "at an unknown time" })}
-            </span>
+            <>
+              {/* Unknown freshness is at least as loud as stale (style guide R3). */}
+              <Badge variant="warning">freshness unknown</Badge>
+              <span
+                className="text-xs text-muted-foreground"
+                title={absoluteTime(page.observed_at)}
+              >
+                observed{" "}
+                {relativeTime(page.observed_at, {
+                  absent: "at an unknown time",
+                })}
+              </span>
+            </>
           ) : page.fresh ? (
             <span
               className="text-xs text-muted-foreground"
