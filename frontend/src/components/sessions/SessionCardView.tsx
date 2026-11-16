@@ -142,14 +142,14 @@ function MachineRow({ card }: { card: SessionCard }) {
           {machine.id ? (
             <Link
               href="/environments/machines"
-              className="font-medium text-primary hover:underline break-all"
+              className="font-medium text-primary hover:underline [overflow-wrap:anywhere]"
               title={machineLabel(machine)}
             >
               {machineLabel(machine)}
             </Link>
           ) : (
             <span
-              className="font-medium break-all"
+              className="font-medium [overflow-wrap:anywhere]"
               title={machineLabel(machine)}
             >
               {machineLabel(machine)}
@@ -171,6 +171,13 @@ function MachineRow({ card }: { card: SessionCard }) {
           <span className="text-xs text-muted-foreground">
             {machineSourceText(machine.source)}
           </span>
+          {/* coord's fallback answered, but its devenv read failed: say so,
+              so a failed read never reads as "no devenv enrollment". */}
+          {card.machine_unknown_reason && (
+            <span className="text-xs text-muted-foreground">
+              ({reasonText(card.machine_unknown_reason)})
+            </span>
+          )}
         </>
       ) : (
         <>
@@ -209,9 +216,11 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
         </span>
       ) : page === null ? (
         <span className="text-xs text-muted-foreground">
-          {card.runner_page_unknown_reason
-            ? `Runner page: unknown (${reasonText(card.runner_page_unknown_reason)})`
-            : "Runner page: unknown"}
+          {card.runner_page_unknown_reason === undefined
+            ? "Runner page: unknown (reason not served)"
+            : card.runner_page_unknown_reason
+              ? `Runner page: unknown (${reasonText(card.runner_page_unknown_reason)})`
+              : "Runner page: unknown"}
         </span>
       ) : (
         <>
@@ -221,7 +230,10 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
               name withheld
             </span>
           ) : page.name ? (
-            <span className="font-medium break-all" title={page.name}>
+            <span
+              className="font-medium [overflow-wrap:anywhere]"
+              title={page.name}
+            >
               {page.name}
             </span>
           ) : (
@@ -238,12 +250,20 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
             page {page.page_id}
           </span>
           <span className="text-xs text-muted-foreground break-all">
-            window {page.window ?? "unknown"}
+            window {page.window || "unknown"}
           </span>
           <span className="text-xs text-muted-foreground break-all">
             on {machineLabel(card.machine)}
           </span>
-          {page.fresh ? (
+          {page.fresh !== true && page.fresh !== false ? (
+            <span
+              className="text-xs text-muted-foreground"
+              title={absoluteTime(page.observed_at)}
+            >
+              freshness unknown, observed{" "}
+              {relativeTime(page.observed_at, { absent: "at an unknown time" })}
+            </span>
+          ) : page.fresh ? (
             <span
               className="text-xs text-muted-foreground"
               title={absoluteTime(page.observed_at)}

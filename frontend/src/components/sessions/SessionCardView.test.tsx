@@ -171,7 +171,7 @@ describe("SessionCardView machine row", () => {
         name: "nawa",
         hostname: null,
         environment: null,
-        source: null as unknown as string,
+        source: null,
       },
     });
     const text = machineRow().textContent ?? "";
@@ -235,6 +235,7 @@ describe("SessionCardView runner-page row", () => {
     const text = pageRow().textContent ?? "";
     expect(text).toContain("stale");
     expect(text).toContain("last observed");
+    expect(text).toMatch(/last observed \d+d ago/);
     expect(text).toContain("window popout-2");
   });
 
@@ -343,5 +344,61 @@ describe("SessionCardView runner-page row", () => {
       },
     });
     expect(pageRow().textContent).toContain("unnamed");
+  });
+
+  it("renders an empty window as unknown, never a blank", () => {
+    renderCard({
+      runner_page: {
+        page_id: "page-7",
+        name: "Reviews",
+        name_withheld: false,
+        window: "",
+        terminal_id: null,
+        observed_at: new Date().toISOString(),
+        fresh: true,
+      },
+    });
+    expect(pageRow().textContent).toContain("window unknown");
+  });
+
+  it("says freshness is unknown when `fresh` is missing, never 'stale'", () => {
+    renderCard({
+      runner_page: {
+        page_id: "page-7",
+        name: "Reviews",
+        name_withheld: false,
+        window: "main",
+        terminal_id: null,
+        observed_at: new Date().toISOString(),
+      } as unknown as NonNullable<SessionCard["runner_page"]>,
+    });
+    const text = pageRow().textContent ?? "";
+    expect(text).toContain("freshness unknown");
+    expect(text).not.toContain("stale");
+  });
+
+  it("says the reason is not served when runner_page is null and the reason field absent", () => {
+    renderCard({ runner_page: null });
+    expect(pageRow().textContent).toContain(
+      "Runner page: unknown (reason not served)"
+    );
+  });
+});
+
+describe("SessionCardView machine row beside a failed devenv read", () => {
+  it("keeps the coord_device machine and names the failed devenv read", () => {
+    renderCard({
+      machine: {
+        id: null,
+        name: "nawa",
+        hostname: null,
+        environment: null,
+        source: "coord_device",
+      },
+      machine_unknown_reason: "devenv_read_failed",
+    });
+    const text = machineRow().textContent ?? "";
+    expect(text).toContain("via coord device");
+    expect(text).toContain("devenv read failed");
   });
 });
