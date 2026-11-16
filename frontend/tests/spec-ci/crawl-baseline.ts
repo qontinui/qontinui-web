@@ -279,7 +279,13 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "tolerating the 5xx.",
   },
   "/admin/coord/spawns": {
-    serverPatterns: ["/api/v1/agent-registry/admin/"],
+    serverPatterns: [
+      "/api/v1/agent-registry/admin/",
+      // The Model & effort by spawn type panel (plan 2026-11-15-operator-
+      // sets-spawn-model-and-effort-per-spawn-type): a pure coord proxy
+      // whose GET resolves the tenant via coord, so it 502s with no coord.
+      "/api/v1/spawn-launch-settings",
+    ],
     // Status-scoped: a missing coord gives 502 (connect error) or 504
     // (timeout); a 500 from the handler itself still gates.
     serverStatuses: [502, 504],
@@ -297,7 +303,10 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "/admin/ segment, so the per-user registry routes stay gated. Strictly " +
       "stronger follow-up: a hermetic coord stub serving /admin/coord/me and " +
       "/coord/agent-registry, which would retire this entry and the " +
-      "agent-registry one.",
+      "agent-registry one. The same holds for GET /api/v1/spawn-launch-" +
+      "settings (the Model & effort by spawn type panel): it resolves the " +
+      "tenant through coord and proxies coord's /coord/spawn-launch-settings, " +
+      "so it 502s here, and the panel renders UNKNOWN, never Inherit.",
   },
   "/admin/coord/gates": {
     serverPatterns: ["/api/v1/admin-dev/overview"],

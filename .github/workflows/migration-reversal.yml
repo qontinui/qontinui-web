@@ -1315,10 +1315,15 @@ jobs:
         # Only apt reaches the network. The suite is `<VERSION_CODENAME>-pgdg`,
         # read from /etc/os-release. The step first looks for a live entry
         # for it, judged per entry -- per line in the one-line format, per
-        # stanza in deb822 -- never per file: an uncommented entry that names
-        # apt.postgresql.org (deb822: in its URIs; one-line: anywhere in the
-        # line), which lists that suite and, in deb822, is
-        # not disabled by any value apt reads as false. Such an entry, deb or
+        # stanza in deb822 (split by empty lines only, as apt splits them) --
+        # never per file: an uncommented entry with a URI whose HOST is
+        # apt.postgresql.org (deb822: `URIs:`; one-line: the word after
+        # `deb`/`deb-src` and any `[options]`, so a `signed-by=` path or a
+        # mirror path naming the host does not count, nor does a line opening
+        # with any other word), whose suite field lists that suite and which,
+        # in deb822, is not disabled by any value apt reads as false. The
+        # parse rules are listed, as measured against apt, beside the awk
+        # below. Such an entry, deb or
         # deb-src, is used as configured, because a second entry for the same
         # URI and suite with another Signed-By breaks every `apt-get update`
         # (a deb-src-only one then reports no candidate, not a mirror stall).
@@ -1370,30 +1375,62 @@ jobs:
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             [ -r "$f" ] || continue
             case "$f" in *.sources) deb822=1 ;; *) deb822=0 ;; esac
-            # One entry per line (one-line format) or per stanza (deb822,
-            # paragraphs split by blank lines; a line opening with blank space
-            # continues the field above it). An entry is live when its URI
-            # names apt.postgresql.org, it lists the suite, and (deb822) its
-            # `Enabled:` is not one of apt's false values. deb-src counts too:
-            # apt keeps one Signed-By per URI and suite across deb and deb-src.
+            # One entry per line (one-line format) or per stanza (deb822).
+            # These follow apt's own parsers, measured against apt 3.0.3:
+            #   * one-line: `deb|deb-src [options] URI suite components`; any
+            #     other first word is not an entry, and `#` starts a comment
+            #     only outside `[options]` (a `signed-by=` path may hold one).
+            #   * a line's trailing CR is dropped first, as apt drops it, so a
+            #     CRLF file's empty line still ends a stanza;
+            #   * deb822: stanzas are split by EMPTY lines only -- a line of
+            #     blank space continues the field above it, so apt merges the
+            #     stanzas around it, a later field replacing an earlier one.
+            #     Only a line opening with `#` is a comment; a `#` inside a
+            #     field value is part of the value (apt reads every word of
+            #     `Suites: a # b` as a suite).
+            # An entry is live when a URI's host is apt.postgresql.org, its
+            # suite field lists the suite, and (deb822) its `Enabled:` is not
+            # one of apt's false values. deb-src counts too: apt keeps one
+            # Signed-By per URI and suite across deb and deb-src.
             if awk -v suite="${codename}-pgdg" -v deb822="$deb822" '
               function flush() { if (uri && hit && !off) found = 1; uri = hit = off = 0; field = "" }
-              deb822 && /^[[:space:]]*$/ { flush(); next }
-              {
-                line = $0; sub(/#.*/, "", line); value = line
-                if (deb822 && line ~ /^[^[:space:]]/) {
-                  if (!index(line, ":")) next
-                  field = tolower(substr(line, 1, index(line, ":") - 1))
-                  value = substr(line, index(line, ":") + 1)
+              function pgdg(u) { return u ~ /^[[:alnum:]+.-]+:\/\/([^\/@]*@)?apt\.postgresql\.org(:[0-9]*)?(\/|$)/ }
+              { sub(/\r$/, "") }
+              deb822 && /^$/ { flush(); next }
+              deb822 && /^#/ { next }
+              deb822 {
+                value = $0
+                if ($0 ~ /^[^[:space:]]/) {
+                  if (!index($0, ":")) next
+                  field = tolower(substr($0, 1, index($0, ":") - 1))
+                  value = substr($0, index($0, ":") + 1)
+                  if (field == "uris") uri = 0
+                  if (field == "suites") hit = 0
+                  if (field == "enabled") off = 0
                 }
-                if (!deb822 || field == "uris") if (index(value, "apt.postgresql.org")) uri = 1
-                if (!deb822 || field == "suites") {
-                  n = split(value, w, /[[:space:]]+/)
-                  for (i = 1; i <= n; i++) if (w[i] == suite) hit = 1
+                n = split(value, w, /[[:space:]]+/)
+                for (i = 1; i <= n; i++) {
+                  if (field == "uris" && pgdg(w[i])) uri = 1
+                  if (field == "suites" && w[i] == suite) hit = 1
                 }
-                if (deb822 && field == "enabled") {
+                if (field == "enabled") {
                   v = tolower(value); gsub(/[[:space:]]/, "", v)
                   if (v ~ /^(no|false|off|without|disable|0)$/) off = 1
+                }
+              }
+              !deb822 {
+                line = ""; inb = 0
+                for (k = 1; k <= length($0); k++) {
+                  c = substr($0, k, 1)
+                  if (c == "[") inb = 1; else if (c == "]") inb = 0; else if (c == "#" && !inb) break
+                  line = line c
+                }
+                n = split(line, w, /[[:space:]]+/); i = (w[1] == "") ? 2 : 1
+                if (w[i] == "deb" || w[i] == "deb-src") {
+                  i++
+                  if (substr(w[i], 1, 1) == "[") { while (i <= n && w[i] !~ /\]$/) i++; i++ }
+                  if (pgdg(w[i])) uri = 1
+                  if (w[i + 1] == suite) hit = 1
                 }
               }
               !deb822 { flush() }
