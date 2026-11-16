@@ -575,20 +575,37 @@ def test_delete_not_deleted_row_in_non_member_project_names_no_tenant():
     assert "Ask that project's operator" in detail["message"]
 
 
-@pytest.mark.parametrize("method", ["PUT", "DELETE"])
 @pytest.mark.parametrize(
-    ("raised", "status", "detail_name"),
+    ("method", "raised", "status", "detail_name"),
     [
-        (httpx.ConnectError("refused"), 502, "COORD_UNREACHABLE_DETAIL"),
-        (httpx.ReadTimeout("slow"), 504, "COORD_TIMEOUT_DETAIL"),
+        *[
+            pytest.param(method, raised, status, name, id=f"{method}-{label}")
+            for method in ("PUT", "DELETE")
+            for raised, status, name, label in (
+                (
+                    httpx.ConnectError("refused"),
+                    502,
+                    "COORD_UNREACHABLE_DETAIL",
+                    "connect",
+                ),
+                (httpx.ReadTimeout("slow"), 504, "COORD_TIMEOUT_DETAIL", "timeout"),
+            )
+        ],
+        # A transport failure AFTER the PUT was sent: the proxy's 504
+        # ``answer_lost`` — coord may have applied the designation, so the
+        # refusal's next action is a re-read. (``_proxy_coord_delete`` does
+        # not map a ReadError yet: ``test_coord_proxy_contract.py``'s
+        # ``_DELETE_FAMILY``.)
+        pytest.param("PUT", httpx.ReadError("reset"), 504, None, id="PUT-answer_lost"),
     ],
 )
 def test_proxy_transport_failures_pass_through_unchanged(
-    method: str, raised: Exception, status: int, detail_name: str
+    method: str, raised: Exception, status: int, detail_name: str | None
 ):
-    """The proxy helpers' own unreachable/timeout 5xx are web's text, not
-    coord's, so the 5xx scrub keeps them verbatim — matched on the constants
-    ``operations`` exports and raises, not on a copy of the literal."""
+    """The proxy helpers' own transport refusals are web's text, not coord's,
+    so the 5xx scrub passes them through verbatim — never rewording a lost
+    answer into "coord failed ... Retry". Matched on what ``operations``
+    exports and raises, not on a copy of the literal."""
     from app.api.v1.endpoints import operations
 
     session = _FakeSession(device=_device())
@@ -600,6 +617,12 @@ def test_proxy_transport_failures_pass_through_unchanged(
         json={"auto_fresh": True} if method == "PUT" else None,
     )
 
+    expected = (
+        getattr(operations, detail_name)
+        if detail_name is not None
+        else operations._coord_answer_lost_in_transit(httpx.ReadError("reset")).detail
+    )
     assert response.status_code == status, response.text
-    assert response.json()["detail"] == getattr(operations, detail_name)
+    assert response.json()["detail"] == expected
+    assert "coord failed to change the designation" not in response.text
     assert session.writes == []

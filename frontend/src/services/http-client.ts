@@ -70,6 +70,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Spawn launch settings (model + effort per spawn type) — coord-scoped; the
+  // backend forwards the override so the operator edits the settings of the
+  // tenant they switched to (membership-validated coord-side). Plan
+  // `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+  "/api/v1/spawn-launch-settings",
   // Project Overview — the ONE thing that scopes it. Every `overview.*` row
   // is keyed on the active coord tenant, which the backend resolves from this
   // header alone (`get_overview_tenant_id` /
@@ -129,6 +134,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // project's queue under another project's name. Plan
   // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
   "/api/v1/taste/",
+  // The design reference library — `get_memory_tenant`'s operator arm for
+  // every read and write, and `require_coord_tenant_admin_target` for
+  // principle approval: every `design_refs.*` row is the selected project's,
+  // so without the header a multi-tenant operator would review (and confirm)
+  // the home project's corpus under another project's name. Plan
+  // 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query.
+  "/api/v1/design-refs/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -209,6 +221,36 @@ export function pinActiveTenant(
   return tenant === null
     ? { maxRetries: 0 }
     : { headers: { [ACTIVE_TENANT_HEADER]: tenant } };
+}
+
+/**
+ * Which project to send a request in, pinned for every attempt — see
+ * {@link pinActiveTenant}. Omitted, the request goes in whatever project is
+ * stored when each attempt is made, which is right for an ordinary read and
+ * wrong for a read or write a caller will attribute to a specific project.
+ */
+export interface TenantPin {
+  tenant: string | null;
+}
+
+/**
+ * A {@link TenantPin} that NAMES a project — the only kind that holds a
+ * request to one. A `null` tenant does not: there is no header to set for it,
+ * so the client fills in the project stored when each attempt is made (another
+ * tab's, once it has switched), and `pinActiveTenant(null)` also gives up the
+ * request's retries. A caller that must keep a request in its page's project
+ * pins with one of these, and refuses at call time while it has none.
+ */
+export type ProjectPin = TenantPin & { tenant: string };
+
+/**
+ * The request options that send a request in `pin`'s project on every
+ * attempt ({@link pinActiveTenant}), or none when there is no pin.
+ */
+export function pinned(
+  pin: TenantPin | undefined
+): Pick<HttpOptions, "headers" | "maxRetries"> {
+  return pin ? pinActiveTenant(pin.tenant) : {};
 }
 
 function isActiveTenantScopedUrl(url: string): boolean {

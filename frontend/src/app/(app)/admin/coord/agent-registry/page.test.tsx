@@ -86,6 +86,17 @@ describe("/admin/coord/agent-registry", () => {
     expect(within(rowEl).getByText("policy required")).toBeInTheDocument();
   });
 
+  it("links to the per-spawn-type model & effort panel", async () => {
+    render(<CoordAgentRegistryPage />);
+    await screen.findByTestId("agent-registry-row-code-reviewer");
+    const note = screen.getByTestId(
+      "coord-agent-registry-launch-settings-link"
+    );
+    expect(
+      within(note).getByRole("link", { name: "Model & effort by spawn type" })
+    ).toHaveAttribute("href", "/admin/coord/spawns#spawn-launch-settings");
+  });
+
   it("renders the override count on every row", async () => {
     listAdminAgentRegistry.mockResolvedValue([
       row({ pref_count: 4, pref_differs_from_default_count: 3 }),
