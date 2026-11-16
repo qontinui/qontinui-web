@@ -454,6 +454,108 @@ def column_comment(
         ).scalar_one_or_none()
 
 
+# --------------------------------------------------------------------------
+# Index readers, for revisions that build an index CONCURRENTLY
+#
+# A killed CONCURRENTLY build leaves an INVALID index that ``IF NOT EXISTS``
+# keeps. So a test of such a revision checks validity and the key and predicate
+# as Postgres renders them, and tells a REINDEX (same oid, new storage file)
+# from a rebuild (new oid) and from no work at all. Older suites keep private
+# single-index copies of these. New tests use these instead.
+# --------------------------------------------------------------------------
+
+
+def index_state(
+    engine: Engine, index_name: str, schema: str = "coord"
+) -> tuple[bool, bool, str]:
+    """``(indisvalid, indisunique, predicate)``, predicate ``""`` when none.
+
+    Raises when the index does not exist.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT i.indisvalid, i.indisunique,
+                       pg_get_expr(i.indpred, i.indrelid)
+                  FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = :schema AND c.relname = :idx
+                """
+            ),
+            {"schema": schema, "idx": index_name},
+        ).one()
+    return bool(row[0]), bool(row[1]), str(row[2] or "")
+
+
+def index_definition(engine: Engine, index_name: str, schema: str = "coord") -> str:
+    """``pg_get_indexdef`` for the index: its key as Postgres renders it."""
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                text("SELECT pg_get_indexdef(CAST(:q AS regclass))"),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def index_oid(engine: Engine, index_name: str, schema: str = "coord") -> int:
+    """The index's oid. A drop and re-create changes it; a REINDEX keeps it."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text("SELECT CAST(:q AS regclass)::oid"),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def index_filenode(engine: Engine, index_name: str, schema: str = "coord") -> int:
+    """The index's storage file. A REINDEX gives it a new one under the same oid."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT relfilenode FROM pg_class WHERE oid = CAST(:q AS regclass)"
+                ),
+                {"q": f"{schema}.{index_name}"},
+            ).scalar_one()
+        )
+
+
+def is_superuser(engine: Engine) -> bool:
+    """Whether the connected role may write ``pg_index``, as
+    :func:`invalidate_index` needs."""
+    with engine.connect() as conn:
+        return (
+            conn.execute(text("SELECT current_setting('is_superuser')")).scalar()
+            == "on"
+        )
+
+
+def invalidate_index(engine: Engine, index_name: str, schema: str = "coord") -> None:
+    """Mark the index INVALID, the state a killed CONCURRENTLY build leaves.
+
+    Writes ``pg_index``, so the role must be a superuser (:func:`is_superuser`).
+    """
+    with engine.begin() as conn:
+        updated = conn.execute(
+            text(
+                """
+                UPDATE pg_index i
+                   SET indisvalid = false
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE c.oid = i.indexrelid
+                   AND n.nspname = :schema AND c.relname = :idx
+                """
+            ),
+            {"schema": schema, "idx": index_name},
+        ).rowcount
+    assert updated == 1, f"expected to invalidate exactly {schema}.{index_name}"
+
+
 def load_revision_module(path: Path, module_name: str) -> ModuleType:
     """Import a revision file directly, so its functions can be re-invoked.
 

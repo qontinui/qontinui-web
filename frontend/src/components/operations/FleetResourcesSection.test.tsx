@@ -7,7 +7,8 @@
  * mocked so no network is involved.
  *
  * Plan: `2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan`
- * Phase 2.
+ * Phase 2, and its follow-up: the same host's swap TRAJECTORY on the row's
+ * sparkline.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -57,8 +58,33 @@ const nilanHost = {
   headroom_source: { basis: "swap", volume: null, free_bytes: null },
 } as unknown as ResourceSampleRow;
 
+// A fixture shaped like nilan's climb, with ILLUSTRATIVE values (these are not
+// readings: finding 3544f066 records that this route served no swap for that
+// window), in the wire form coord serves since qontinui-coord#4202. Commit is
+// nearly flat while swap climbs to exhaustion.
+const nilanHistory = {
+  device_id: DEV,
+  lane: "host",
+  lane_instance: null,
+  pressure_basis: "commit",
+  points: [
+    ["2026-11-09T18:00:00Z", 0.8, 0.62],
+    ["2026-11-09T18:15:00Z", 0.81, 0.91],
+    ["2026-11-09T18:30:00Z", 0.815, 0.9999],
+  ].map(([sampled_at, pressure, swap_ratio]) => ({
+    sampled_at,
+    pressure,
+    swap_ratio,
+    disk_free_bytes: null,
+    disk_total_bytes: null,
+    build_slots_busy: null,
+    build_slots_total: null,
+    ci_jobs_running: null,
+  })),
+};
+
 const resources: UseFleetResourceSamplesResult = {
-  data: { latest: [nilanHost], history: [] } as never,
+  data: { latest: [nilanHost], history: [nilanHistory] } as never,
   loading: false,
   error: null,
   fetchedAtMs: Date.now(),
@@ -90,5 +116,21 @@ describe("FleetResourcesSection — a Linux host's swap reaches the Dev Ops page
     expect(
       within(row).getByTestId("fleet-resource-headroom-source")
     ).toHaveTextContent("set by swap");
+  });
+
+  it("draws the host's swap climb as a second sparkline line beside commit", () => {
+    // Plan Phase 2 follow-up: the sparkline used to plot only `pressure`
+    // (commit on a host), so this trajectory never showed.
+    render(
+      <FleetResourcesSection
+        devices={[{ device_id: DEV, hostname: "nilan" }]}
+      />
+    );
+    const row = screen.getByTestId("fleet-resource-row");
+    const chart = within(row).getByTestId("fleet-resource-sparkline");
+    expect(chart.getAttribute("data-swap-line")).toBe("drawn");
+    expect(
+      chart.querySelectorAll("path.recharts-line-curve[stroke-dasharray]")
+    ).toHaveLength(1);
   });
 });

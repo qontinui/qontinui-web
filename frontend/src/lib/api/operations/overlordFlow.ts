@@ -46,7 +46,7 @@ export interface FlowTimeToClose {
   median_secs: number | null;
   p90_secs: number | null;
   closed_by: Partial<Record<FlowClosedBy, number>>;
-  /** Went missing across a runner build change: not in `count`. */
+  /** Went missing across a runner restart (a build change, or the same build restarted) or an unknown runner: not in `count`. */
   absent_unproven: number;
   /**
    * When cut, the sessions that FIRST STOPPED most recently (not those closed
@@ -64,7 +64,7 @@ export interface FlowNudge {
   progress_rate: number | null;
   /** `finished / (nudged - finish_unproven)`; `null` when that is `0 / 0`. */
   finish_rate: number | null;
-  /** Went missing across a runner build change: not in `finish_rate`. */
+  /** Went missing across a runner restart (a build change, or the same build restarted) or an unknown runner: not in `finish_rate`. */
   finish_unproven: number;
   /** Nudges whose following rows all carried `progress_since_nudge = null`. */
   unmeasured_progress: number;
