@@ -24,6 +24,7 @@ import {
   GATE_AUTHOR_GLYPH_KINDS,
   GATE_KIND_CLASS,
   isSweepOverdue,
+  gateVerdictGroupOf,
   isTerminalGateVerdict,
   snoozeState,
   type GateKind,
@@ -80,9 +81,9 @@ describe("the readings the palette audit cannot make", () => {
   it("does NOT let staleness overwrite a terminal verdict", () => {
     // A gate that already failed has nothing left to re-evaluate, so `stale`
     // on it is bookkeeping. Letting it win would relabel a failure.
-    expect(deriveGateStatus(gate({ verdict: "failed", stale: true })).kind).toBe(
-      "failed"
-    );
+    expect(
+      deriveGateStatus(gate({ verdict: "failed", stale: true })).kind
+    ).toBe("failed");
     expect(
       deriveGateStatus(gate({ verdict: "cleared", stale: true })).kind
     ).toBe("cleared");
@@ -158,12 +159,56 @@ describe("verdict normalisation", () => {
     for (const v of ["pass", "passed", "cleared", "ready", "OK"]) {
       expect(deriveGateStatus(gate({ verdict: v })).kind).toBe("cleared");
     }
-    for (const v of ["fail", "failed", "error", "veto", "rejected"]) {
+    for (const v of [
+      "fail",
+      "failed",
+      "error",
+      "veto",
+      "rejected",
+      "misconfigured",
+    ]) {
       expect(deriveGateStatus(gate({ verdict: v })).kind).toBe("failed");
     }
     for (const v of ["evaluating", "running"]) {
       expect(deriveGateStatus(gate({ verdict: v })).kind).toBe("evaluating");
     }
+  });
+
+  it("reads every one of coord's five verdicts, misconfigured as a terminal failure", () => {
+    expect(
+      ["open", "cleared", "failed", "misconfigured", "withdrawn"].map((v) => [
+        v,
+        gateVerdictGroupOf(v),
+        isTerminalGateVerdict(v),
+      ])
+    ).toEqual([
+      ["open", "pending", false],
+      ["cleared", "cleared", true],
+      ["failed", "failed", true],
+      ["misconfigured", "failed", true],
+      ["withdrawn", "withdrawn", true],
+    ]);
+    expect(gateVerdictGroupOf("quorum_split")).toBeNull();
+  });
+
+  it("reads a padded verdict the same way everywhere, and checks staleness only for an open gate", () => {
+    // Trimmed like the group reading, so the row and the terminal test agree.
+    expect(deriveGateStatus(gate({ verdict: " Cleared " })).kind).toBe(
+      "cleared"
+    );
+    expect(isTerminalGateVerdict(" Cleared ")).toBe(true);
+    // A terminal verdict is never stale; an open one the sweep has stopped
+    // re-evaluating is; an unreadable one is too — the sweep is the fact.
+    const overdue = { stale: true };
+    expect(
+      deriveGateStatus(gate({ verdict: "misconfigured", ...overdue })).kind
+    ).toBe("failed");
+    expect(deriveGateStatus(gate({ verdict: "open", ...overdue })).kind).toBe(
+      "stale"
+    );
+    expect(
+      deriveGateStatus(gate({ verdict: "quorum_split", ...overdue })).kind
+    ).toBe("stale");
   });
 
   it("names the terminal set the same way the derivation does", () => {
@@ -175,8 +220,9 @@ describe("verdict normalisation", () => {
 
   it("passes coord's verdict_reason through as the row's reason", () => {
     expect(
-      deriveGateStatus(gate({ verdict: "failed", verdict_reason: "2 of 3 checks red" }))
-        .reason
+      deriveGateStatus(
+        gate({ verdict: "failed", verdict_reason: "2 of 3 checks red" })
+      ).reason
     ).toBe("2 of 3 checks red");
   });
 });
