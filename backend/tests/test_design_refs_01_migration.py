@@ -6,8 +6,8 @@ thing worth checking is that it builds what the models declare:
 
 1. Upgrade from the parent builds the ``design_refs`` tables, the split
    trigger and the seeded vocabularies equal to the model constants; upgrading
-   on to ``design_refs_split_intake_01`` (the split is assigned at intake)
-   leaves exactly the models' columns and nullability, exactly their CHECK and
+   on through ``design_refs_split_intake_01`` (the split is assigned at
+   intake) to ``design_refs_jobs_01`` (``capture_job.browser``) leaves exactly the models' columns and nullability, exactly their CHECK and
    UNIQUE constraints by name, and every declared index.
 2. The split trigger refuses a change of an assigned split and allows the
    first assignment.
@@ -38,6 +38,10 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "design_refs_01"
 _SPLIT_REVISION_ID = "design_refs_split_intake_01"
+# ``design_refs_jobs_01`` is the design_refs head: it chains off the alembic head
+# main carried when it was re-pointed, not off ``design_refs_01``.
+_JOBS_REVISION_ID = "design_refs_jobs_01"
+_JOBS_PARENT_REVISION_ID = "coord_policy_outcome_counts_02"
 _PARENT_REVISION_ID = "coord_subprojects_01"
 
 pytestmark = pytest.mark.skipif(
@@ -168,7 +172,7 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
                     {"id": site_id},
                 )
 
-        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
+        run_alembic(cwd, url, "upgrade", _JOBS_REVISION_ID)
         live = _columns(engine)
         declared = {
             model.__table__.name: {
@@ -199,7 +203,7 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
                 == 0
             )
 
-        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
+        run_alembic(cwd, url, "upgrade", _JOBS_REVISION_ID)
         assert _columns(engine) == declared
 
 
@@ -333,3 +337,40 @@ def test_split_intake_backfills_unsplit_sites_and_reverses() -> None:
         again = _splits(engine)
         assert again[("private", held)] == "holdout"
         assert again[("private", kept)] == "reference"
+
+
+def test_jobs_01_adds_the_browser_column_to_existing_rows() -> None:
+    """``design_refs_jobs_01`` backfills ``browser = 'launched'``, refuses any
+    other value, and downgrades cleanly back to its parent revision."""
+    cwd = backend_root()
+    with ephemeral_database(admin_database_url(), "design_refs_jobs_01") as (
+        engine,
+        url,
+    ):
+        run_alembic(cwd, url, "upgrade", _JOBS_PARENT_REVISION_ID)
+        insert = text(
+            """
+            INSERT INTO design_refs.capture_job
+                (tenant_id, url, domain, scope_kind, source, submitter_kind, state)
+            VALUES (gen_random_uuid(), 'https://a.example', 'a.example',
+                    'page', 'cli', 'operator', 'queued')
+            """
+        )
+        with engine.begin() as conn:
+            conn.execute(insert)
+
+        run_alembic(cwd, url, "upgrade", _JOBS_REVISION_ID)
+        with engine.connect() as conn:
+            assert conn.execute(
+                text("SELECT browser FROM design_refs.capture_job")
+            ).scalars().all() == ["launched"]
+        with pytest.raises(DBAPIError, match="ck_capture_job_browser"):
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE design_refs.capture_job SET browser = 'x'"))
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE design_refs.capture_job SET browser = 'attached'")
+            )
+
+        run_alembic(cwd, url, "downgrade", _JOBS_PARENT_REVISION_ID)
+        assert "browser" not in _columns(engine)["capture_job"]

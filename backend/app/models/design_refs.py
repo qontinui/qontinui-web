@@ -92,6 +92,7 @@ EVIDENCE_KINDS: Final[tuple[str, ...]] = ("perception_rating", "comparison")
 ASSET_CLASSES: Final[tuple[str, ...]] = ("image", "svg", "icon", "font", "text")
 JOB_SCOPES: Final[tuple[str, ...]] = ("page", "crawl", "flow")
 JOB_SOURCES: Final[tuple[str, ...]] = ("operator", "cli", "mcp", "discovery")
+JOB_BROWSERS: Final[tuple[str, ...]] = ("launched", "attached")
 JOB_STATES: Final[tuple[str, ...]] = (
     "proposed",
     "rejected",
@@ -638,6 +639,7 @@ class CaptureJob(Base):
         _check_in("scope_kind", JOB_SCOPES, "ck_capture_job_scope_kind"),
         _check_in("source", JOB_SOURCES, "ck_capture_job_source"),
         _check_in("state", JOB_STATES, "ck_capture_job_state"),
+        _check_in("browser", JOB_BROWSERS, "ck_capture_job_browser"),
         _check_in_nullable("derived_tier", TIERS, "ck_capture_job_derived_tier"),
         CheckConstraint(
             "(scope_kind = 'crawl') = (crawl_depth IS NOT NULL)",
@@ -675,6 +677,14 @@ class CaptureJob(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     state: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: ``launched`` (the worker's own browser) or ``attached`` (CDP into the
+    #: operator's Chrome, for sites a headless browser cannot get into).
+    browser: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="launched",
+        server_default=text("'launched'"),
+    )
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: The worker's lease: a ``running`` job whose lease has passed is
     #: claimable again, so a dead worker's job is re-queued.
