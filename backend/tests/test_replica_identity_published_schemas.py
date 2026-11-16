@@ -4,7 +4,7 @@ Plan ``2026-10-15-coord-and-web-data-move-off-aws-by-logical-replication``
 replicates production with a schema publication (D1)::
 
     FOR TABLES IN SCHEMA coord, coord_parts, agent, project, devenv, auth,
-                         overview, web, cloud,
+                         overview, web, cloud, design_refs,
         TABLE public.alembic_version
 
 A schema publication picks up a table the moment it is created, and once a
@@ -66,6 +66,9 @@ PUBLISHED_SCHEMAS: tuple[str, ...] = (
     "overview",
     "web",
     "cloud",
+    # The design reference library (revision ``design_refs_01``): every table
+    # has a primary key so the schema can join the publication at cutover.
+    "design_refs",
 )
 
 #: The plan's D1 publication scope, single tables outside those schemas.
