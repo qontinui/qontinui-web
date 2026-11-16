@@ -48,7 +48,7 @@ import {
   formatAge,
   formatBytes,
   formatPercent,
-  pressureLabel,
+  pressureLineName,
   sparklinePoints,
   type SparklinePoint,
 } from "@/components/operations/fleetResources";
@@ -1042,13 +1042,11 @@ export function historyPoints(
 /**
  * The lead sparkline line's tooltip name, from the lane rollup's basis
  * ("commit used"). `undefined` keeps the sparkline's own default when coord
- * sent no basis or one this build does not know.
+ * sent no basis or one this build does not know. The rule is the strip's
+ * (`pressureLineName`), so the two pages cannot name one line differently.
  */
 export function lanePressureName(lane: ComputerLaneWire): string | undefined {
-  const basis = lane.pressure?.basis;
-  return basis === "commit" || basis === "swap" || basis === "threads"
-    ? pressureLabel(basis)
-    : undefined;
+  return pressureLineName(lane.pressure?.basis);
 }
 
 /** A lane's operator name: `host`, or `wsl (Ubuntu)` for an instance. */

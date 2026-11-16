@@ -141,6 +141,7 @@ import {
   pressureAxisLabel,
   pressureFormula,
   pressureLabel,
+  pressureLineName,
   rowAnchor,
   rowHeadroom,
   rowShowsSwapAxis,
@@ -1723,9 +1724,7 @@ export function FleetResourceStrip({
     for (const s of data?.history ?? []) {
       m.set(rowAnchor(s), {
         points: sparklinePoints(s),
-        pressureName: s.pressure_basis
-          ? pressureLabel(s.pressure_basis)
-          : undefined,
+        pressureName: pressureLineName(s.pressure_basis),
       });
     }
     return m;

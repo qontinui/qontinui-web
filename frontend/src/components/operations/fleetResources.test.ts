@@ -48,6 +48,7 @@ import {
   hostIsBindingConstraint,
   pressureFormula,
   pressureLabel,
+  pressureLineName,
   rowHeadroom,
   rowShowsSwapAxis,
   safeRatio,
@@ -503,6 +504,24 @@ describe("the sparkline's swap line — coord's served history `swap_ratio`", ()
   it("has no points for a lane with no series", () => {
     expect(sparklinePoints(undefined)).toBeUndefined();
     expect(sparklinePoints(null)).toBeUndefined();
+  });
+
+  it("does not throw on a series that carries no points", () => {
+    // One malformed series must not take the whole strip's memo down.
+    const noPoints = { lane: "host" } as unknown as Parameters<
+      typeof sparklinePoints
+    >[0];
+    expect(sparklinePoints(noPoints)).toEqual([]);
+  });
+
+  it("names the lead line only for a basis it knows, never a guessed 'commit used'", () => {
+    expect(pressureLineName("commit")).toBe("commit used");
+    expect(pressureLineName("swap")).toBe("swap used");
+    expect(pressureLineName("threads")).toBe(pressureLabel("threads"));
+    // `pressureLabel` falls through to "commit used"; this must not.
+    expect(pressureLineName("gpu")).toBeUndefined();
+    expect(pressureLineName(null)).toBeUndefined();
+    expect(pressureLineName(undefined)).toBeUndefined();
   });
 });
 
