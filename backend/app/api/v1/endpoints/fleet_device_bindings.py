@@ -37,7 +37,7 @@ Per-id outcomes — every requested id gets exactly one:
 * ``unknown`` — the request may have reached coord and coord may have acted,
   but its answer did not arrive intact: a read/write timeout, a transport error
   after the request was sent (``ReadError``, ``RemoteProtocolError``, …), the
-  batch's wall budget expiring mid-call, a gateway 504, a 502/503 whose body is
+  batch's wall budget expiring mid-call, a gateway 504, any other 5xx whose body is
   not a coord JSON object (a gateway's answer, not coord's), any coord 500 (coord
   also answers ``500 db_error`` when the delete's COMMIT failed, so the
   binding's state is not knowable from the answer), or a 2xx whose body is not
@@ -127,9 +127,11 @@ _CALLER_REFUSAL_STATUSES = frozenset({401, 403})
 #: coord sent. Never 401: the web client replays a POST after a 401 refresh.
 _ABORT_STATUS = 403
 
-#: Statuses a gateway in front of coord also answers with. Without coord's JSON
-#: object body they are the gateway's, so the outcome is UNKNOWN, not a refusal.
-_GATEWAY_STATUSES = frozenset({502, 503})
+#: 5xx statuses with their own branch in `_classify_response` (both UNKNOWN).
+#: Every OTHER 5xx (502, 503, and any an edge proxy invents, such as 520-524)
+#: without coord's JSON object body is a gateway's answer, so the outcome is
+#: UNKNOWN, not a refusal: the request may have reached coord.
+_OWN_BRANCH_5XX = frozenset({500, 504})
 
 UnbindOutcome = Literal[
     "unbound", "already_absent", "unknown", "failed", "not_attempted"
@@ -249,7 +251,7 @@ def _classify_response(
         )
     detail = _coord_error_detail(resp)
     is_coord_body = isinstance(detail, dict) and isinstance(detail.get("error"), str)
-    if status in _GATEWAY_STATUSES and not is_coord_body:
+    if 500 <= status < 600 and status not in _OWN_BRANCH_5XX and not is_coord_body:
         # A gateway in front of coord answered, not coord: every structured
         # error coord returns carries a string `error` key, so anything else
         # (text, or a gateway's own JSON such as {"message": ...}) is not
