@@ -778,6 +778,8 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/helper-tasks",
     "https://api.test/api/v1/devices/pair-codes",
     "https://api.test/api/v1/agent-registry",
+    "https://api.test/api/v1/spawn-launch-settings",
+    "https://api.test/api/v1/spawn-launch-settings/post_merge",
     // Found by the backend drift guard
     // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
     // the caller's tenant, so a missing entry serves the home project.

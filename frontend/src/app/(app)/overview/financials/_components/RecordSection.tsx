@@ -80,6 +80,15 @@ export interface RecordSectionProps<
   /** Called after any write landed, so derived figures can be re-read. */
   onWritten: () => void;
   uiBridgeId: string;
+  /**
+   * The order records are shown in before the reader sorts a column. Given the
+   * records and the batches added in this view (most recent first), so a new
+   * record can be kept where the reader will see it. Omit to keep the order
+   * the records arrived in.
+   */
+  arrange?: (records: Rec[], pinned: readonly string[][]) => Rec[];
+  /** Open the add row at the top of the table, under the add buttons. */
+  newRowFirst?: boolean;
 }
 
 export function RecordSection<Rec extends Audited, Row extends { id: string }>({
@@ -101,9 +110,17 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   replace,
   onWritten,
   uiBridgeId,
+  arrange,
+  newRowFirst,
 }: RecordSectionProps<Rec, Row>) {
   const descriptor = useResourceDescriptor(resource);
-  const rows = useMemo(() => records.map(toRow), [records, toRow]);
+  // Records added in this view, one batch per add or paste, newest first.
+  const [pinned, setPinned] = useState<string[][]>([]);
+  const arranged = useMemo(
+    () => (arrange ? arrange(records, pinned) : records),
+    [arrange, records, pinned]
+  );
+  const rows = useMemo(() => arranged.map(toRow), [arranged, toRow]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   // Every overtaken write of one save, shown one at a time so none is lost.
@@ -151,6 +168,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
     setBusy(true);
     const failures: string[] = [];
     let wrote = false;
+    const created: string[] = [];
     for (const row of plan.creates) {
       const body = toBody(bodyOf(row, writable) as Partial<Row>, "create");
       if (typeof body === "string") {
@@ -158,10 +176,13 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
         continue;
       }
       const result = await create(body, { source });
-      if (result.ok) wrote = true;
-      else if ("error" in result)
+      if (result.ok) {
+        wrote = true;
+        created.push(result.item.id);
+      } else if ("error" in result)
         failures.push(`${label(row)}: ${result.error}`);
     }
+    if (created.length > 0) setPinned((all) => [created, ...all]);
     for (const { row, patch } of plan.updates) {
       const record = recordOf(row.id);
       if (!record) continue;
@@ -207,6 +228,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
         uiBridgeId={`${uiBridgeId}.table`}
+        newRowFirst={newRowFirst}
       />
       {errors.length > 0 && (
         <ul

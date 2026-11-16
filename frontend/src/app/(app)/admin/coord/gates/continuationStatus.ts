@@ -181,6 +181,7 @@ export type ContinuationKind =
   | "armed"
   | "inert"
   | "held_by_sibling"
+  | "held"
   | "dispatched"
   | "dispatch_stalled"
   | "deferred"
@@ -205,6 +206,7 @@ export type ContinuationKind =
  * | `armed` | `none` | A continuation is attached and will fire when the anchor clears. The normal, healthy resting state of an open gate. |
  * | `inert` | `none` | Attached, but coord's own `continuation_will_dispatch` says clearing dispatches nothing (a `notify_only` payload). Correct behaviour, not a lost dispatch — so calm, and visibly different from `armed` so nobody reads a safety net that is not there. |
  * | `held_by_sibling` | `waiting` | The gate CLEARED, but coord's all-gates-cleared fanout is holding the continuation until the open same-class gates on its anchor leave `open` — coord names them in `dispatch_held_by`. Waiting on nameable gates, not lost; reading it as `armed` ("will fire when the anchor clears") would describe a clearance that already happened. A held `notify_only` row is the same kind (coord reads it `held_by_sibling` too); its reason says nothing will dispatch even then. |
+ * | `held` | `waiting` | The gate CLEARED and coord's clearance fanout ran, but it found no eligible device (or the agent registry vetoed the spawn) and stamped a `coord_hold.<code>` reason instead of dispatching. Waiting on a nameable condition — a device coming online, a lane reopening, the registry re-enabling the agent — which coord's hold re-drive re-checks; not lost, but not `armed` either, which would describe a clearance that already happened. |
  * | `dispatched` | `none` | coord emitted it and a runner has not yet acked. In flight; nobody is blocked. |
  * | `dispatch_stalled` | `author` | Emitted, unconsumed past {@link DISPATCH_STALE_MS}, and NO deferral explains it. Nothing retries it into existence; a human decides. |
  * | `deferred` | `waiting` | A runner saw it and pushed back with a stated reason (thread pressure, a cap, a duplicate anchor). The row stays pending and re-deliverable — this is exactly amber's promise. |
@@ -233,6 +235,7 @@ export const CONTINUATION_ATTENTION_BY_KIND: Record<
   armed: "none",
   inert: "none",
   held_by_sibling: "waiting",
+  held: "waiting",
   dispatched: "none",
   dispatch_stalled: "author",
   deferred: "waiting",
@@ -261,6 +264,7 @@ export const CONTINUATION_KIND_CLASS: Record<ContinuationKind, string> = {
   armed: INERT,
   inert: NOT_IN_PLAY,
   held_by_sibling: WAITING_AMBER,
+  held: WAITING_AMBER,
   dispatched: IN_MOTION_BLUE,
   dispatch_stalled: AUTHOR_RED,
   deferred: WAITING_AMBER,
@@ -325,6 +329,61 @@ function gib(bytes: string | undefined): string {
 }
 
 /**
+ * coord's reserved namespace for a clearance hold (`CLEARANCE_HOLD_PREFIX`,
+ * qontinui-coord `gates.rs`). Matched exactly as coord writes it.
+ */
+export const CLEARANCE_HOLD_PREFIX = "coord_hold.";
+
+/** coord's cap on a hold reason (`CLEARANCE_HOLD_REASON_MAX`, `gates.rs`). */
+const CLEARANCE_HOLD_REASON_MAX = 200;
+
+/** Is this `continuation_deferred_reason` one of coord's clearance holds? */
+export function isClearanceHold(reason: string | null | undefined): boolean {
+  return Boolean(reason?.trim().startsWith(CLEARANCE_HOLD_PREFIX));
+}
+
+/** The prose for a hold code (the reason with `coord_hold.` stripped). */
+function humanizeHoldCode(code: string): string {
+  switch (code) {
+    case "device_drained":
+      return "a device resolved, but its agent lane is closed (drained) or could not be read";
+    case "pin_stale":
+      return "the pinned device is offline (or not bound to this tenant) and no other eligible device resolved";
+    case "pin_drained":
+      return "the pinned device is drained and no other eligible device resolved";
+    case "lane_closed":
+      return "the pinned device's dispatch role closes its agent lane and no other eligible device resolved";
+    case "lane_unknown":
+      return "the pinned device's agent lane could not be read and no other eligible device resolved";
+    case "device_state_unreadable":
+      return "coord could not read this tenant's device state";
+    case "no_device_online":
+      return "no device in this tenant is online";
+    case "no_eligible_device":
+      return "devices are online, but every one is lane-closed or otherwise excluded";
+  }
+  const caps = /^no_capable_device:(.*)$/.exec(code);
+  if (caps) {
+    const list = (caps[1] ?? "")
+      .split("|")
+      .map((c) => c.trim())
+      .filter((c) => c !== "");
+    if (list.length === 0) return "no online device advertises the required capabilities";
+    if (list.length === 1) return `no online device advertises ${list[0]}`;
+    return `no online device advertises all of ${list.join(", ")}`;
+  }
+  const veto = /^registry_veto:(.*)$/.exec(code);
+  if (veto) {
+    const disposition = (veto[1] ?? "").trim();
+    return disposition
+      ? `the agent registry vetoed the spawn (${disposition})`
+      : "the agent registry vetoed the spawn";
+  }
+  // A code this build has no reading for: still a hold, named as coord wrote it.
+  return code || "(no code)";
+}
+
+/**
  * The COMPLETE `continuation_deferred_reason` vocabulary, transcribed from its
  * producer's own table (`post_continuation_deferred`, qontinui-runner
  * `agent_runtime.rs`):
@@ -355,12 +414,62 @@ function gib(bytes: string | undefined): string {
  * falls through to the verbatim arm below — correctly, since it is already
  * plain English.
  *
+ * ## coord's own clearance holds (`coord_hold.<code>`)
+ *
+ * coord ALSO writes this column itself, for a different event: a gate that
+ * cleared and whose clearance fanout found no eligible device for the
+ * continuation (`clearance_hold_reason`, qontinui-coord `gates.rs`), or whose
+ * spawn the agent registry vetoed (`registry_veto_hold_reason`, same file).
+ * The row is never dispatched — the runner never saw it — so these are HOLDS,
+ * not deferrals, and {@link deriveContinuationStatus} renders them as the
+ * `held` kind. coord reserves the prefix: its `continuation-deferred` route
+ * refuses a runner reason beginning `coord_hold.`, so every such reason is
+ * coord's. The closed set its classifier writes, in its precedence order:
+ *
+ * | reason | meaning |
+ * |---|---|
+ * | `coord_hold.device_drained` | a device resolved, but its agent lane is closed or unreadable |
+ * | `coord_hold.pin_stale` | the pinned device is offline (or not this tenant's), and nothing else resolved |
+ * | `coord_hold.pin_drained` | the pinned device is drained, and nothing else resolved |
+ * | `coord_hold.lane_closed` | the pinned device's dispatch role closes its agent lane, and nothing else resolved |
+ * | `coord_hold.lane_unknown` | the pinned device's agent lane could not be read, and nothing else resolved |
+ * | `coord_hold.device_state_unreadable` | coord could not read the tenant's device census at all |
+ * | `coord_hold.no_device_online` | no device in the tenant is online |
+ * | `coord_hold.no_capable_device:<cap\|cap>` | devices are online, none advertises every required capability (`\|`-joined, since tokens carry their own `:`) |
+ * | `coord_hold.no_eligible_device` | online (and capable) devices exist, but every one is lane-closed or otherwise excluded |
+ * | `coord_hold.registry_veto:<disposition>` | the agent registry vetoed the spawn (plan Phase 2b) |
+ *
+ * A `coord_hold.` code this build does not know renders `held: <code>` — still
+ * named as a hold, never verbatim-as-a-deferral and never blank. coord caps a
+ * hold reason at 200 characters, so a long capability list may arrive cut.
+ *
+ * `count` is the row's `continuation_deferred_count`, which for a hold counts
+ * how many times coord has stamped it. It is appended to a hold as `(×N)`, and
+ * is ignored for every runner reason (whose count the badge label carries).
+ *
  * Unrecognised input is returned VERBATIM, never blanked and never guessed at:
  * an unreadable reason the operator can still read beats a confident wrong one.
  */
-export function humanizeDeferralReason(raw: string | null | undefined): string | null {
+export function humanizeDeferralReason(
+  raw: string | null | undefined,
+  count?: number | null
+): string | null {
   const reason = raw?.trim();
   if (!reason) return null;
+
+  if (isClearanceHold(reason)) {
+    const times =
+      typeof count === "number" && Number.isFinite(count) && count > 0
+        ? ` (×${count})`
+        : "";
+    // coord cuts a hold reason at CLEARANCE_HOLD_REASON_MAX (200) characters,
+    // so one AT the cap may have lost the tail of its capability list.
+    const cut =
+      [...reason].length >= CLEARANCE_HOLD_REASON_MAX
+        ? ` (coord caps a hold reason at ${CLEARANCE_HOLD_REASON_MAX} characters, so this may be cut short)`
+        : "";
+    return `held: ${humanizeHoldCode(reason.slice(CLEARANCE_HOLD_PREFIX.length))}${cut}${times}`;
+  }
 
   const thread = /^thread_pressure:([^:]+):(\d+)_over_(\d+)$/.exec(reason);
   if (thread) {
@@ -424,6 +533,12 @@ export interface ContinuationDeferral {
   at: string | null;
   /** `count >= DEFERRAL_STUCK_COUNT` — the retry promise is not being kept. */
   stuck: boolean;
+  /**
+   * The reason is coord's own clearance hold (`coord_hold.…`), not a runner
+   * pushing back a dispatch. The same three columns carry both, so a caller
+   * counting "a runner deferred this" must exclude these.
+   */
+  hold: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -487,9 +602,10 @@ export interface ContinuationStatus {
    * exactly one hole while looking complete.
    *
    * The invariant is STRUCTURAL, not conventional. Every deferral reading is
-   * built by {@link deferralReading}, which is module-level and therefore
-   * cannot see the `wrap` closure that stamps this field; the single call site
-   * spells `wrap(deferralReading(…), true)`. So a reading added to that helper
+   * built by {@link deferralReading} — or, for coord's own clearance hold, by
+   * {@link holdReading} — both module-level and therefore unable to see the
+   * `wrap` closure that stamps this field; each has a single call site
+   * spelled `wrap(…Reading(…), true)`. So a reading added to that helper
    * enrols itself, and one added anywhere else cannot claim the flag by
    * accident. While the block lived inline beside `wrap`, this paragraph
    * claimed the same thing and was simply wrong — a new arm could have called
@@ -531,11 +647,83 @@ function readDeferral(g: ContinuationStatusInput): ContinuationDeferral | null {
     // null/zero collapse this module refuses everywhere else. A real zero is a
     // measurement; the early return above is what handles its absence.
     countKnown,
-    reason: humanizeDeferralReason(g.continuation_deferred_reason),
+    reason: humanizeDeferralReason(
+      g.continuation_deferred_reason,
+      countKnown ? count : null
+    ),
     rawReason: g.continuation_deferred_reason?.trim() || null,
     at: g.continuation_deferred_at ?? null,
     stuck: countKnown && count >= DEFERRAL_STUCK_COUNT,
+    hold: isClearanceHold(g.continuation_deferred_reason),
   };
+}
+
+/** `N time(s)`, or the honest phrase when coord sent no usable count. */
+function timesPhrase(d: ContinuationDeferral): string {
+  return d.countKnown
+    ? `${d.count} time${d.count === 1 ? "" : "s"}`
+    : "an unrecorded number of times";
+}
+
+/**
+ * The muted history chip for a deferral the row has MOVED PAST (the caller
+ * shows it only when `deferralRendered` is false). A coord clearance hold is
+ * worded as a hold: no runner saw the row, so "pushed back" would be false.
+ * The obvious case is an expired held row — coord's hold TTL expiry keeps
+ * the `coord_hold.` reason on it.
+ */
+export function deferralHistoryChip(d: ContinuationDeferral): {
+  text: string;
+  title: string;
+} {
+  const n = d.countKnown ? String(d.count) : "?";
+  const plural = d.countKnown && d.count === 1 ? "" : "s";
+  if (d.hold) {
+    return {
+      text: `after ${n} hold${plural}`,
+      title: `coord stamped a hold on this continuation ${timesPhrase(d)} (at clearance and on each re-drive pass)${
+        d.reason ? `; last: ${d.reason}` : ""
+      }`,
+    };
+  }
+  return {
+    text: `after ${n} deferral${plural}`,
+    title: d.reason
+      ? `Dispatch was pushed back before this state; last reason: ${d.reason}`
+      : "Dispatch was pushed back before reaching this state",
+  };
+}
+
+/**
+ * The deferral sentence for the row's problem panel, or `null` when there is
+ * nothing to add. `lastRelative` is the caller's rendering of `deferral.at`.
+ *
+ * A `held` row gets `null`: its badge reason already names the hold, its
+ * reason and its count. Any other row whose deferral is a hold (an expired
+ * held row) is worded as coord's hold — never as a runner's hourly stamp,
+ * which is what makes a runner deferral count a floor on hours of refusal and
+ * is false for a hold.
+ */
+export function deferralProblemNote(
+  s: ContinuationStatus,
+  lastRelative: string | null
+): string | null {
+  const d = s.deferral;
+  if (!d) return null;
+  const when = lastRelative ? ` (last ${lastRelative})` : "";
+  if (d.hold) {
+    if (s.status.kind === "held") return null;
+    return `coord stamped a hold on this continuation ${timesPhrase(d)} (at clearance and on each re-drive pass) before this state, finding no device it could dispatch to or a registry veto${
+      d.reason ? `; last: ${d.reason}` : ""
+    }${when}. The count is coord's own hold stamps, not a measure of time.`;
+  }
+  return `Dispatch pushed back ${timesPhrase(d)}${
+    d.reason ? `; last time ${d.reason}` : ""
+  }${when}.${
+    d.countKnown
+      ? " The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused."
+      : " coord recorded a deferral but no count, so how many times is unknown."
+  }`;
 }
 
 /** `deferred ×58`, or `deferred ×?` when the count column gave us nothing. */
@@ -559,10 +747,11 @@ function deferralLabel(d: ContinuationDeferral): string {
  * ## Whose dispatch is the deferral about?
  *
  * coord's `stamp_continuation_dispatched` (`gates.rs`) re-stamps
- * `continuation_dispatched_at` and NULLs the two expiry columns, and touches
- * NONE of the three deferral columns — and nothing else in coord resets them
- * either (no `continuation_deferred_at = NULL` / `_count = 0` writer exists).
- * Its own doc says the stamp goes "precisely to gates whose anchor can still be
+ * `continuation_dispatched_at`, NULLs the two expiry columns and resets
+ * `continuation_deferred_count` to 0. It NULLs `continuation_deferred_at` /
+ * `_reason` only when the reason is a `coord_hold.` hold, and leaves a RUNNER
+ * deferral's time and reason in place. So a re-dispatched row can still carry
+ * a previous cycle's runner deferral stamps (with a count of 0). Its own doc says the stamp goes "precisely to gates whose anchor can still be
  * re-cleared", so a re-dispatch carrying a previous cycle's deferral stamps is a
  * DESIGNED path. Such a deferral says nothing about the dispatch now in flight,
  * so this returns `null` and the caller judges on the dispatch age instead —
@@ -657,6 +846,41 @@ function deferralReading(
   );
 }
 
+/**
+ * The `held` reading, or `null` when the row carries no clearance hold.
+ *
+ * Reached only for an undispatched, unconsumed, uncancelled, unexpired row
+ * (step 5), which is the only kind coord stamps a hold on: its
+ * `CLEARANCE_HOLD_STAMP_SQL` guards `dispatched_at`, `cancelled_at` and
+ * `expired_at IS NULL`, and its dispatch stamp clears a `coord_hold.` reason.
+ * A runner deferral cannot reach here at all — coord accepts one only on a
+ * dispatched row — so on an undispatched row the deferral columns are a hold
+ * or nothing.
+ *
+ * Module-level for the same reason as {@link deferralReading}: its one call
+ * site is `wrap(holdReading(…), true)`, because the badge IS the deferral
+ * columns' content and a "pushed back before this state" chip beside it would
+ * state the same fact twice.
+ */
+function holdReading(
+  deferral: ContinuationDeferral | null,
+  action: string | undefined
+): RowStatus<ContinuationKind> | null {
+  if (!deferral || !isClearanceHold(deferral.rawReason)) return null;
+  const veto = deferral.rawReason?.startsWith(`${CLEARANCE_HOLD_PREFIX}registry_veto:`);
+  const what = veto
+    ? "the agent registry vetoed its spawn"
+    : "coord found no eligible device to run it on";
+  const times = deferral.countKnown
+    ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
+    : "an unrecorded number of times";
+  return status(
+    "held",
+    `held ×${deferral.countKnown ? deferral.count : "?"}`,
+    `this gate cleared, but its continuation${action ? ` (${action})` : ""} was not dispatched: ${what}, so coord is holding it — ${deferral.reason}. coord has stamped this hold ${times}; its hold re-drive retries a held continuation (where COORD_CONTINUATION_HOLD_REDRIVE is live) until a 7-day TTL, after which the row reads expired`
+  );
+}
+
 function status(
   kind: ContinuationKind,
   label: string,
@@ -728,8 +952,10 @@ export function heldBySiblingHolders(
  *    why — but a deferral OLDER than the dispatch belongs to a previous cycle
  *    (coord re-stamps `dispatched_at` and never clears the deferral columns),
  *    so it is reported as history and the dispatch age decides the state.
- * 5. attached but nothing dispatched → `inert` when coord says clearing
- *    dispatches nothing, else `armed`.
+ * 5. attached but nothing dispatched → `held` when coord stamped a
+ *    `coord_hold.` reason (the gate cleared and the fanout found no eligible
+ *    device, or the registry vetoed the spawn), else `inert` when coord says
+ *    clearing dispatches nothing, else `armed`.
  *
  * `now` is injectable for deterministic tests; defaults to `Date.now()`.
  */
@@ -958,7 +1184,11 @@ export function deriveContinuationStatus(
     );
   }
 
-  // 5 — attached, nothing in flight yet.
+  // 5 — attached, nothing in flight yet. A clearance HOLD first: the gate has
+  // already cleared, so "will fire when this gate's anchor clears" would be
+  // false about it.
+  const fromHold = holdReading(deferral, g.continuation_action?.trim() || undefined);
+  if (fromHold) return wrap(fromHold, true);
   if (g.continuation_will_dispatch === false) {
     const action = g.continuation_action?.trim();
     return wrap(
