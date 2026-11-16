@@ -140,7 +140,7 @@ export interface SessionCardMachine {
   name: string | null;
   hostname: string | null;
   environment: SessionCardEnvironment | null;
-  source?: SessionCardMachineSource | (string & {});
+  source?: SessionCardMachineSource | (string & {}) | null;
 }
 
 /** Why `machine` is null (D5). Absent on a coord predating the field. */
