@@ -51,7 +51,14 @@
  * that tick would show nothing new.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   createReadSequence,
   useRetainedValue,
@@ -398,13 +405,20 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
   /** Open is read per headline once coord refused `exclude_headline`. */
   const openPerHeadline = useRef(false);
 
-  // Read by ref, so the poll is not rebuilt on every tab click.
+  // Read by ref, so the poll is not rebuilt on every tab click. Mirrored in a
+  // LAYOUT effect, which runs inside the commit. A passive `useEffect` runs
+  // some time after the rows (or a new tab) are already on screen, and a Load
+  // more clicked in that window read the PREVIOUS value: null before the first
+  // page, so the click silently did nothing; an older page's cursors after
+  // one; the tab just left after a tab click. Do not move these back to
+  // `useEffect` — jsdom tests run inside act(), which flushes passive effects
+  // at once, so the window shows up only as a flake under load.
   const tabRef = useRef(tab);
   const rowsRef = useRef<RowsValue | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     tabRef.current = tab;
   }, [tab]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     rowsRef.current = rowsAxis.value;
   }, [rowsAxis.value]);
 
