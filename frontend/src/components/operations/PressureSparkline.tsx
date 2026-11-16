@@ -89,9 +89,6 @@ function hasSegment(
   return points.some((p, i) => i > 0 && reading(points[i - 1]) && reading(p));
 }
 
-/** The lead line's rule: a trend needs two readings. */
-const MIN_USABLE_POINTS = 2;
-
 const SPARK_STROKE: Record<RowTone, string> = {
   ok: "var(--chart-2, #22c55e)",
   warn: "#eab308",
@@ -139,14 +136,18 @@ export function PressureSparkline({
       })),
     [rawPoints]
   );
-  const usablePressure = points.filter(
-    (p) => p.pressure != null && Number.isFinite(p.t)
-  ).length;
+  // One rule for both lines: a line COUNTS toward drawing the chart only when
+  // it has a visible segment, i.e. two ADJACENT readings. The swap line is
+  // also mounted only then. The lead line stays mounted whenever the chart is
+  // drawn, so its isolated readings still show in the tooltip.
+  const drawsPressure = hasSegment(
+    points.map((p) => ({ t: p.t, v: p.pressure }))
+  );
   const drawsSwap = hasSegment(points.map((p) => ({ t: p.t, v: p.swap })));
 
   // Either line is a trend. A Linux host whose commit reading dropped out
   // while its swap kept reporting still has a trajectory to show.
-  if (usablePressure < MIN_USABLE_POINTS && !drawsSwap) {
+  if (!drawsPressure && !drawsSwap) {
     return (
       <span
         className="text-[11px] text-muted-foreground italic"
