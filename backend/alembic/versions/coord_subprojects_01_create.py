@@ -221,14 +221,14 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "coord_test_result_runs_01"`` -- ``main``'s single alembic
-head, measured 2026-11-08 with ``scripts/ci/count_alembic_heads.py``
-(``HEAD_COUNT=1``) at ``origin/main`` ``f438238a9``. A re-point is three
+``down_revision = "overlord_05_label_question_id"`` -- ``main``'s single alembic
+head, measured 2026-11-16 with ``scripts/ci/count_alembic_heads.py``
+(``HEAD_COUNT=1``) at ``origin/main`` ``1cfe92b36``. A re-point is three
 coupled edits: ``down_revision``, the ``Revises:`` line below, and
 ``_PARENT_REVISION_ID`` in ``tests/test_coord_subprojects_01_migration.py``.
 
 Revision ID: coord_subprojects_01
-Revises: coord_test_result_runs_01
+Revises: overlord_05_label_question_id
 Create Date: 2026-11-08
 
 """
@@ -239,7 +239,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_subprojects_01"
-down_revision: str | None = "coord_test_result_runs_01"
+down_revision: str | None = "overlord_05_label_question_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
