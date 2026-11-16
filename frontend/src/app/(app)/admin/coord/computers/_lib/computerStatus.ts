@@ -48,6 +48,9 @@ import {
   formatAge,
   formatBytes,
   formatPercent,
+  pressureLabel,
+  sparklinePoints,
+  type SparklinePoint,
 } from "@/components/operations/fleetResources";
 
 // ---------------------------------------------------------------------------
@@ -1014,16 +1017,38 @@ export function laneDiskUsed(lane: ComputerLaneWire): number | null {
   return total !== null && free !== null ? Math.max(0, total - free) : null;
 }
 
-/** Sparkline points for a lane's history. A missing ratio stays `null` — a gap, not a zero. */
+/**
+ * Sparkline points for a lane's history. A missing ratio stays `null`: a gap,
+ * not a zero.
+ *
+ * The second (swap) line follows the Dev Ops strip's rule
+ * (`sparklinePoints`): coord's `swap_ratio` on a `host` lane only, where it is
+ * an instrument separate from the commit `pressure`. On this route coord
+ * computes it with `computers::swap_ratio`. On a host lane that gives the same
+ * value as the strip's `served_swap_ratio`: `null` for a Windows host
+ * (no `swap_*`), a swapless box, and a missing reading.
+ */
 export function historyPoints(
   series: LaneHistoryWire | undefined
-): { sampled_at: string; pressure: number | null }[] {
+): SparklinePoint[] {
   // A history point's `pressure` is the bare NUMBER ratio (coord's
   // `HistoryPoint`), unlike the lane rollup's object.
-  return (series?.points ?? []).map((p) => ({
-    sampled_at: p.sampled_at,
+  return (sparklinePoints(series) ?? []).map((p) => ({
+    ...p,
     pressure: num(p.pressure),
   }));
+}
+
+/**
+ * The lead sparkline line's tooltip name, from the lane rollup's basis
+ * ("commit used"). `undefined` keeps the sparkline's own default when coord
+ * sent no basis or one this build does not know.
+ */
+export function lanePressureName(lane: ComputerLaneWire): string | undefined {
+  const basis = lane.pressure?.basis;
+  return basis === "commit" || basis === "swap" || basis === "threads"
+    ? pressureLabel(basis)
+    : undefined;
 }
 
 /** A lane's operator name: `host`, or `wsl (Ubuntu)` for an instance. */
