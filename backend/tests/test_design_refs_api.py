@@ -1578,6 +1578,102 @@ class TestJobsAndCuration:
             and resp.json()["error"] == "reproduction_is_private"
         )
 
+    async def test_a_submitted_list_creates_one_job_per_url(self, a: Harness) -> None:
+        a.as_("operator")
+        await a.ok(
+            "POST",
+            "/takedown",
+            json={"domain": "gone.example", "reason": "request"},
+        )
+        batch = await a.ok(
+            "POST",
+            "/capture-jobs/batch",
+            json={
+                "urls": [
+                    "https://one.example/a",
+                    "  https://two.example  ",
+                    "https://one.example/a",
+                    "",
+                    "https://gone.example/x",
+                ],
+                "notes": "from the list",
+                "browser": "attached",
+            },
+        )
+        assert [j["url"] for j in batch["created"]] == [
+            "https://one.example/a",
+            "https://two.example",
+        ]
+        assert all(
+            j["state"] == "queued"
+            and j["browser"] == "attached"
+            and j["notes"] == "from the list"
+            and j["derived_tier"] is None  # the backend never derives a tier
+            for j in batch["created"]
+        )
+        assert [(r["url"], r["error"]) for r in batch["refused"]] == [
+            ("https://gone.example/x", "do_not_capture")
+        ]
+        listed = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
+        assert {j["url"] for j in listed} == {j["url"] for j in batch["created"]}
+        a.as_("device")
+        assert (
+            await a.post(
+                "/capture-jobs/batch",
+                {"urls": ["https://x.example"], "source": "operator"},
+            )
+        ).status_code == 422
+
+    async def test_the_worker_precheck_complete_and_operator_retry(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://w.example", "source": "cli"}
+        )
+        assert job["browser"] == "launched"
+        claimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        assert claimed["id"] == job["id"]
+        # The worker's precheck step writes the derived tier and its reason.
+        prechecked = await a.ok(
+            "PATCH",
+            f"/capture-jobs/{job['id']}",
+            json={"derived_tier": "private", "tier_reason": {"robots": "unreachable"}},
+        )
+        assert prechecked["derived_tier"] == "private"
+        assert prechecked["tier_reason"] == {"robots": "unreachable"}
+        # A queued job is not completable; a failed one needs its reason.
+        assert (
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "failed"})
+        ).status_code == 422
+        failed = await a.ok(
+            "POST",
+            f"/capture-jobs/{job['id']}/complete",
+            json={"outcome": "failed", "error": "blocked by a bot challenge"},
+        )
+        assert failed["state"] == "failed" and failed["claimed_until"] is None
+        assert (
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        ).status_code == 409
+        # Retry is the operator's: a device is refused.
+        assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 403
+        a.as_("operator")
+        retried = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/retry", json={"browser": "attached"}
+        )
+        assert retried["state"] == "queued" and retried["browser"] == "attached"
+        assert retried["error"] is None and retried["derived_tier"] is None
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert {(c["field"], c["to_value"]) for c in log} >= {
+            ("state", "queued"),
+            ("browser", "attached"),
+        }
+        # Only a failed job is retried.
+        assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 409
+
     async def test_curation_is_operator_only_and_logged(self, a: Harness) -> None:
         site = await reference_site(a)
         page = await a.page(site.id, title="Old")
