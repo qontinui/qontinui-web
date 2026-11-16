@@ -1,5 +1,6 @@
 "use client";
 
+import type { SendTimePinOptions } from "../../_shared/useSendTimePin";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 import {
   isPolicyUpstreamLevel,
@@ -42,14 +43,19 @@ import {
  * about coord writing a body into this tenant from another tenant's
  * publication. An authority setting coord cannot read is not permission to do
  * that.
+ *
+ * `resolvePin` pins the read and the write to the project it names, asked as
+ * each is sent — the prompt-documents page passes the project its list shows.
  */
-export function usePolicyUpstreamPolicy() {
-  // Read, write and read-back — with the refresh-vs-write race guard — are
-  // the shared tenant-band dial's; this hook adds only the domain's level
-  // vocabulary below.
+export function usePolicyUpstreamPolicy(options: SendTimePinOptions = {}) {
+  // Read, write and read-back — with the refresh-vs-write race guard and the
+  // send-time pin — are the shared tenant-band dial's; this hook adds only the
+  // domain's level vocabulary below.
   const dial = useTenantFleetPolicyDial<PolicyUpstreamLevel>(
     POLICY_UPSTREAM_DOMAIN,
-    "upstream policy updates"
+    "upstream policy updates",
+    "devices",
+    options
   );
   const { policy } = dial;
 

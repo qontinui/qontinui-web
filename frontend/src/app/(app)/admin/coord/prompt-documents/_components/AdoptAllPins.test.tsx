@@ -11,8 +11,9 @@
  * - the status read (its refusal is stamped and latched);
  * - the publish-all dry run and armed run, and the publish-mode PATCH (each
  *   can latch the same refusal);
- * - the re-ask and the list re-read at open (the page's own list reads are
- *   not pinned: they go in the stored project, as before this change);
+ * - the re-ask and the list re-read at open (the page's mount read alone is
+ *   not pinned: it goes out before the page's project is known, in the
+ *   stored project);
  * - every adopt POST, and the post-run list re-read;
  * - the status read RE-TAKEN, and the rows re-read, once the provider
  *   reconciles the page's project (pinned to that project, even when another
