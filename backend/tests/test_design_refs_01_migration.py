@@ -35,7 +35,8 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_REVISION_ID = "design_refs_01"
+_REVISION_ID = "design_refs_jobs_01"
+_BASE_REVISION_ID = "design_refs_01"
 _PARENT_REVISION_ID = "coord_subprojects_01"
 
 pytestmark = pytest.mark.skipif(
@@ -197,3 +198,40 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
 
         run_alembic(cwd, url, "upgrade", _REVISION_ID)
         assert _columns(engine) == declared
+
+
+def test_jobs_01_adds_the_browser_column_to_existing_rows() -> None:
+    """``design_refs_jobs_01`` backfills ``browser = 'launched'``, refuses any
+    other value, and downgrades cleanly back to ``design_refs_01``."""
+    cwd = backend_root()
+    with ephemeral_database(admin_database_url(), "design_refs_jobs_01") as (
+        engine,
+        url,
+    ):
+        run_alembic(cwd, url, "upgrade", _BASE_REVISION_ID)
+        insert = text(
+            """
+            INSERT INTO design_refs.capture_job
+                (tenant_id, url, domain, scope_kind, source, submitter_kind, state)
+            VALUES (gen_random_uuid(), 'https://a.example', 'a.example',
+                    'page', 'cli', 'operator', 'queued')
+            """
+        )
+        with engine.begin() as conn:
+            conn.execute(insert)
+
+        run_alembic(cwd, url, "upgrade", _REVISION_ID)
+        with engine.connect() as conn:
+            assert conn.execute(
+                text("SELECT browser FROM design_refs.capture_job")
+            ).scalars().all() == ["launched"]
+        with pytest.raises(DBAPIError, match="ck_capture_job_browser"):
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE design_refs.capture_job SET browser = 'x'"))
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE design_refs.capture_job SET browser = 'attached'")
+            )
+
+        run_alembic(cwd, url, "downgrade", _BASE_REVISION_ID)
+        assert "browser" not in _columns(engine)["capture_job"]

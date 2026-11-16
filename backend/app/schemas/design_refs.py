@@ -40,6 +40,7 @@ EvidenceRole = Literal["supports", "counterexample"]
 EvidenceKind = Literal["perception_rating", "comparison"]
 AssetClass = Literal["image", "svg", "icon", "font", "text"]
 JobScope = Literal["page", "crawl", "flow"]
+JobBrowser = Literal["launched", "attached"]
 JobSource = Literal["operator", "cli", "mcp", "discovery"]
 JobState = Literal[
     "proposed", "rejected", "queued", "running", "done", "failed", "cancelled"
@@ -489,6 +490,7 @@ class CaptureJobCreate(_Strict):
     notes: str | None = None
     source: JobSource = "operator"
     is_reproduction: bool = False
+    browser: JobBrowser = "launched"
 
     @model_validator(mode="after")
     def _scope_whole(self) -> CaptureJobCreate:
@@ -509,6 +511,51 @@ class CaptureJobUpdate(_Strict):
     lease_seconds: int | None = Field(default=None, ge=10, le=3600)
 
 
+class CaptureJobBatchCreate(_Strict):
+    """One job per URL: a pasted list. Scope, notes and flags are shared."""
+
+    urls: list[str] = Field(min_length=1, max_length=200)
+    scope_kind: JobScope = "page"
+    crawl_depth: int | None = Field(default=None, ge=1, le=10)
+    flow_goal: str | None = None
+    notes: str | None = None
+    source: JobSource = "operator"
+    is_reproduction: bool = False
+    browser: JobBrowser = "launched"
+
+    @model_validator(mode="after")
+    def _scope_whole(self) -> CaptureJobBatchCreate:
+        if (self.scope_kind == "crawl") != (self.crawl_depth is not None):
+            raise ValueError("crawl_depth is sent exactly when scope_kind is crawl")
+        if (self.scope_kind == "flow") != (self.flow_goal is not None):
+            raise ValueError("flow_goal is sent exactly when scope_kind is flow")
+        return self
+
+
+class CaptureJobBatchRefused(_Out):
+    url: str
+    error: str
+    message: str
+
+
+class CaptureJobRetry(_Strict):
+    #: Re-queue as ``attached`` for a site a launched capture could not read.
+    browser: JobBrowser | None = None
+
+
+class CaptureJobComplete(_Strict):
+    """The worker's end of a job. ``failed`` carries the reason."""
+
+    outcome: Literal["done", "failed"]
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _reason(self) -> CaptureJobComplete:
+        if self.outcome == "failed" and not self.error:
+            raise ValueError("a failed job carries its error")
+        return self
+
+
 class CaptureJobClaim(_Strict):
     worker: str = Field(min_length=1, max_length=200)
     lease_seconds: int = Field(default=600, ge=10, le=3600)
@@ -527,6 +574,7 @@ class CaptureJobOut(_Out):
     submitter_id: str | None
     is_reproduction: bool
     state: JobState
+    browser: JobBrowser
     claimed_by: str | None
     claimed_until: datetime | None
     derived_tier: Tier | None
@@ -534,6 +582,11 @@ class CaptureJobOut(_Out):
     error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class CaptureJobBatchOut(_Out):
+    created: list[CaptureJobOut]
+    refused: list[CaptureJobBatchRefused]
 
 
 # ═════════════════════════════ search ═════════════════════════════
