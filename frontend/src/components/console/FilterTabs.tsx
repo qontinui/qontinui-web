@@ -28,6 +28,14 @@
  * so a caller expresses "unknown" by passing `null`/`undefined`, which is what
  * an unfetched value already is.
  *
+ * **A count that is not CURRENT says so** (`countNote`): a number kept from
+ * the last good read across a failed one is still real, but it is not this
+ * poll's, and a bare number cannot tell the two apart. With a note, a number
+ * carries a visible `*`; the note is the COUNT's hover title, and it is part
+ * of the tab's accessible name as screen-reader text — said once. (A title on
+ * the tab itself would be announced again as its description.) A dash with a
+ * note says WHY it is a dash the same way.
+ *
  * **Navigation-only by construction.** A filter tab narrows a VIEW (§3.3: a
  * control that changes a write target is deliberately a different control),
  * so the tabs and the query input carry `NAVIGATION_ONLY_PROPS` and stay live
@@ -46,6 +54,13 @@ export interface FilterTab<Id extends string> {
    * renders `–`. Pass `0` only when you actually looked.
    */
   count?: number | null;
+  /**
+   * Why the count is not a CURRENT number — kept from the last good read, a
+   * read that failed, an answer that did not take it — or `null`/absent for a
+   * current one. Rendered as a `*` beside a number, as the count's hover
+   * title, and once in the tab's accessible name.
+   */
+  countNote?: string | null;
   /**
    * Render the count in the attention hue. Reserve it for a count of rows that
    * genuinely need a human (R3) — a red number nobody must act on is the same
@@ -87,9 +102,7 @@ export function FilterTabs<Id extends string>({
   className,
 }: FilterTabsProps<Id>) {
   return (
-    <div
-      className={className ?? "flex items-center gap-1.5 flex-wrap"}
-    >
+    <div className={className ?? "flex items-center gap-1.5 flex-wrap"}>
       {tabs.map((tab) => (
         <Button
           {...NAVIGATION_ONLY_PROPS}
@@ -97,6 +110,7 @@ export function FilterTabs<Id extends string>({
           size="sm"
           variant={active === tab.id ? "secondary" : "ghost"}
           onClick={() => onChange(tab.id)}
+          data-count-note={tab.countNote ? "" : undefined}
           data-testid={
             tab.testId ??
             (testIdPrefix ? `${testIdPrefix}-${tab.id}` : undefined)
@@ -107,9 +121,16 @@ export function FilterTabs<Id extends string>({
             className={`font-mono text-[11px] ${
               tab.attention ? "text-red-300" : "text-muted-foreground"
             }`}
+            title={tab.countNote ?? undefined}
           >
             {renderCount(tab.count)}
+            {tab.countNote && tab.count != null ? (
+              <span aria-hidden="true">*</span>
+            ) : null}
           </span>
+          {tab.countNote ? (
+            <span className="sr-only"> ({tab.countNote})</span>
+          ) : null}
         </Button>
       ))}
       {onQueryChange && (

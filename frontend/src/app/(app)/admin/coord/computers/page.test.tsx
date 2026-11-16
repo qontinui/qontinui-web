@@ -48,6 +48,7 @@ vi.mock("@/services/service-factory", () => ({
 import {
   computerFx,
   detailFx,
+  DEVICE_ID,
   OTHER_COMPUTER_ID,
   laneFx,
   listFx,
@@ -479,6 +480,74 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.getByTestId("coord-computer-lane-pressure").textContent).toBe(
       "13% · ok"
     );
+  });
+
+  it("draws a host lane's swap climb as the sparkline's second line, and none on a wsl lane", async () => {
+    // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+    // Phase 2 follow-up: this page draws the Dev Ops strip's sparkline and
+    // gets its second (swap) line by the same rule (`sparklinePoints`).
+    const point = (
+      sampled_at: string,
+      pressure: number,
+      swap_ratio: number | null
+    ) => ({
+      sampled_at,
+      load_1m: null,
+      load_5m: null,
+      load_15m: null,
+      mem_available_bytes: null,
+      swap_ratio,
+      pressure,
+      psi_memory_some_avg60: null,
+      psi_cpu_some_avg60: null,
+      psi_io_some_avg60: null,
+    });
+    const climb = [
+      point("2026-11-09T18:00:00Z", 0.8, 0.62),
+      point("2026-11-09T18:15:00Z", 0.81, 0.91),
+      point("2026-11-09T18:30:00Z", 0.815, 0.9999),
+    ];
+    httpGet.mockResolvedValue(
+      detailFx({
+        lanes: [
+          laneFx({ pressure: { ratio: 0.815, basis: "commit" } }),
+          laneFx({ lane: "wsl", lane_instance: "Ubuntu" }),
+        ],
+        history: [
+          {
+            device_id: DEVICE_ID,
+            lane: "host",
+            lane_instance: null,
+            points: climb,
+          },
+          {
+            device_id: DEVICE_ID,
+            lane: "wsl",
+            lane_instance: "Ubuntu",
+            points: climb,
+          },
+        ],
+      })
+    );
+    render(<CoordComputerDetailPage />);
+    const rows = await screen.findAllByTestId("coord-computer-lane-row");
+    const chart = (lane: string) => {
+      const row = rows.find((r) => r.getAttribute("data-lane") === lane);
+      return within(row as HTMLElement).getByTestId(
+        "coord-computer-lane-sparkline"
+      );
+    };
+    expect(chart("host").getAttribute("data-swap-line")).toBe("drawn");
+    expect(
+      chart("host").querySelectorAll(
+        "path.recharts-line-curve[stroke-dasharray]"
+      )
+    ).toHaveLength(1);
+    expect(chart("host").getAttribute("data-pressure-name")).toBe(
+      "commit used"
+    );
+    // A wsl lane's lead line already IS swap, so it gets no second one.
+    expect(chart("wsl").getAttribute("data-swap-line")).toBe("absent");
   });
 
   it("renders all-lanes-silent as samples stale with the newest age, never an empty table", async () => {

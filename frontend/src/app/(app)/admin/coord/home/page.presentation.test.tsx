@@ -110,6 +110,10 @@ import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
 } from "@/components/admin/coord/coordHomeStatus";
 import { HOME_REFRESH_ACTION, HOME_REFRESH_ID } from "./_components/HomeLens";
+import {
+  resetSupplements,
+  stalledSubprojects,
+} from "./__fixtures__/supplementReads";
 
 /**
  * The transport `fetchProjectState` reads through. Every answer is a FRESH
@@ -192,6 +196,7 @@ const PRESENTED = REGIONS.filter((r) => r !== "correct");
 
 function resetEnvironment() {
   httpFetch.mockReset();
+  resetSupplements();
   sessionMachineAliases.reset();
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -280,6 +285,19 @@ function noChangeGroup(text: string): HTMLElement {
 
 describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
   beforeEach(resetEnvironment);
+
+  it("never READS the operator-only stalled-subprojects count, let alone shows it", async () => {
+    await renderPresenting(fullBody());
+    // The page has settled (its project state landed); the line's read would
+    // have gone out on mount with the others.
+    await waitFor(() =>
+      expect(screen.queryByTestId("coord-home.unread")).not.toBeInTheDocument()
+    );
+    expect(stalledSubprojects).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId("coord-home.stalled-subprojects")
+    ).not.toBeInTheDocument();
+  });
 
   it("over every carrier: no write control, no cost, no identity, every caption — behind every disclosure", async () => {
     const view = await renderPresenting(fullBody());

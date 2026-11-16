@@ -12,7 +12,10 @@ per write, and the served ``can_edit``. What this module adds:
 * **History is not deleted out from under a heading.** A category in use, or
   a recurring cost with recorded periods, is refused deletion with a 409
   saying what to do instead (move the costs; give the recurring cost an end
-  date).
+  date). So is a category with subcategories (move or remove them first).
+* **Categories form a tree.** ``parent_id`` names a category of THIS project;
+  a category is never moved under itself or one of its own descendants
+  (409 ``category_cycle``). Names stay unique per project across the tree.
 * **One entry per recurring period**, and only on one of its due dates.
 * ``GET /costs/summary`` — the totals, the month-by-category table and every
   period that has fallen due, computed by :mod:`app.services.overview_costs`.
@@ -81,6 +84,7 @@ def category_read(row: CostCategory) -> CostCategoryRead:
     return CostCategoryRead(
         **_audit(row),
         name=row.name,
+        parent_id=row.parent_id,
         description=row.description,
         sort_order=row.sort_order,
     )
@@ -306,9 +310,60 @@ class CostCategoryStore(_Store[CostCategory]):
         ).scalars()
         return ListResult(items=[category_read(r) for r in rows])
 
+    async def _check_parent(
+        self, ctx: StoreContext, parent_id: UUID, row: CostCategory | None
+    ) -> None:
+        """``parent_id`` must be one of this project's categories and, on an
+        update, must not be the category itself or anything below it."""
+        tenant = ctx.access.tenant_id
+        # Serialise parent changes within the project: the ancestor walk below
+        # reads rows nobody has locked, so two concurrent moves (A under B,
+        # B under A) could otherwise both pass and commit a cycle.
+        await ctx.db.execute(
+            select(
+                func.pg_advisory_xact_lock(func.hashtext(f"cost_categories:{tenant}"))
+            )
+        )
+        # One read of the project's tree: it is small, and walking up from
+        # the parent in memory avoids a query per level.
+        parents: dict[UUID, UUID | None] = dict(
+            (
+                await ctx.db.execute(
+                    select(CostCategory.id, CostCategory.parent_id).where(
+                        CostCategory.tenant_id == tenant
+                    )
+                )
+            )
+            .tuples()
+            .all()
+        )
+        if parent_id not in parents:
+            raise StoreRefused(
+                422,
+                "category_not_found",
+                "A category's parent must be one of this project's categories.",
+            )
+        if row is None:
+            return
+        seen: set[UUID] = set()
+        node: UUID | None = parent_id
+        while node is not None and node not in seen:
+            if node == row.id:
+                raise StoreRefused(
+                    409,
+                    "category_cycle",
+                    f"“{row.name}” cannot be placed under itself or one of its "
+                    "own subcategories.",
+                )
+            seen.add(node)
+            node = parents.get(node)
+
     async def _check(
         self, ctx: StoreContext, values: dict[str, Any], row: CostCategory | None
     ) -> None:
+        parent_id = values.get("parent_id")
+        if parent_id is not None and (row is None or parent_id != row.parent_id):
+            await self._check_parent(ctx, parent_id, row)
         stmt = select(CostCategory.id).where(
             CostCategory.tenant_id == ctx.access.tenant_id,
             func.lower(CostCategory.name) == values["name"].lower(),
@@ -324,6 +379,19 @@ class CostCategoryStore(_Store[CostCategory]):
 
     async def _before_delete(self, ctx: StoreContext, row: CostCategory) -> None:
         tenant = ctx.access.tenant_id
+        children = await _count(
+            ctx.db,
+            CostCategory.tenant_id == tenant,
+            CostCategory.parent_id == row.id,
+        )
+        if children:
+            raise StoreRefused(
+                409,
+                "category_has_subcategories",
+                f"“{row.name}” has {children} subcategor"
+                f"{'y' if children == 1 else 'ies'}. Move or remove "
+                f"{'it' if children == 1 else 'them'} first.",
+            )
         used = await _count(
             ctx.db, CostEntry.tenant_id == tenant, CostEntry.category_id == row.id
         ) + await _count(
@@ -606,6 +674,11 @@ async def read_cost_summary(
             select(RecurringCost).where(RecurringCost.tenant_id == access.tenant_id)
         )
     ).scalars()
+    categories = (
+        await db.execute(
+            select(CostCategory).where(CostCategory.tenant_id == access.tenant_id)
+        )
+    ).scalars()
     settings = await overview_settings.get_settings(db, tenant_id=access.tenant_id)
     if settings is None:
         settings = overview_settings.default_settings_row(access.tenant_id)
@@ -613,6 +686,7 @@ async def read_cost_summary(
         summarize(
             entries,
             recurring,
+            categories=categories,
             today=_now().date(),
             base_currency=settings.base_currency,
         )

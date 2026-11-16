@@ -48,6 +48,55 @@ export interface SpawnsRoutes {
   putNextStep: (body: unknown) => Answer;
   /** `PATCH /operations/pr-merge/settings`. */
   patchMerge: (body: unknown) => Answer;
+  /** `GET /spawn-launch-settings`. */
+  launchSettings: () => Answer;
+  /** `PUT /spawn-launch-settings/{spawn_type}`. */
+  putLaunchSetting: (spawnType: string, body: unknown) => Answer;
+}
+
+/** `GET /spawn-launch-settings`: one stored row, one default row. */
+export function launchSettingsBody(): unknown {
+  return {
+    settings: [
+      {
+        spawn_type: "post_merge",
+        description: "Follow-up sessions spawned after a pull request merges.",
+        model: "sonnet",
+        effort: null,
+        source: "stored",
+        updated_by: "operator@example.test",
+        updated_at: "2026-11-15T10:00:00Z",
+      },
+      {
+        spawn_type: "vet_plan",
+        description: "Sessions that vet a plan.",
+        model: null,
+        effort: null,
+        source: "default",
+        updated_by: null,
+        updated_at: null,
+      },
+    ],
+    model_families: ["fable", "opus", "sonnet", "haiku"],
+    effort_levels: ["low", "medium", "high", "xhigh", "max"],
+    can_edit: true,
+  };
+}
+
+/** Coord's answer to a launch-setting PUT: the written pair, stored. */
+export function launchSettingRow(
+  spawnType: string,
+  body: Record<string, unknown> | undefined
+): unknown {
+  return {
+    spawn_type: spawnType,
+    description: "",
+    model: body?.model ?? null,
+    effort: body?.effort ?? null,
+    source: "stored",
+    updated_by: "operator@example.test",
+    updated_at: "2026-11-15T11:00:00Z",
+  };
 }
 
 export const ROLES_KNOWN = {
@@ -89,6 +138,10 @@ export function defaultSpawnsRoutes(): SpawnsRoutes {
     putRegistry: () => ({ body: {} }),
     putNextStep: () => ({ body: nextStepBody() }),
     patchMerge: () => ({ body: mergeSettingsBody() }),
+    launchSettings: () => ({ body: launchSettingsBody() }),
+    putLaunchSetting: (spawnType, body) => ({
+      body: launchSettingRow(spawnType, body as Record<string, unknown>),
+    }),
   };
 }
 
@@ -158,6 +211,13 @@ export function answerSpawnsRequest(
     answer = routes.scope(queryParam(url, "repo"));
   else if (op?.startsWith("/continuation-delivery-mode"))
     answer = routes.delivery(queryParam(url, "repo"));
+  else if (url.startsWith("/api/v1/spawn-launch-settings/") && method === "PUT")
+    answer = routes.putLaunchSetting(
+      decodeURIComponent(url.split("/").pop() ?? ""),
+      parseBody(init)
+    );
+  else if (url === "/api/v1/spawn-launch-settings")
+    answer = routes.launchSettings();
   else if (op?.startsWith("/session-runs/concurrency"))
     answer = routes.concurrency(url);
   else throw new Error(`unexpected fetch ${method} ${url}`);

@@ -322,7 +322,7 @@ export interface FlowView {
     p90Secs: Metric;
     byTriage: number | undefined;
     byAbsent: number | undefined;
-    /** Missing across a runner build change: not in `count`. */
+    /** Missing across a runner restart (a build change, or the same build restarted) or an unknown runner: not in `count`. */
     absentUnproven: number | undefined;
   };
   nudge: {
@@ -331,7 +331,7 @@ export interface FlowView {
     finished: number | undefined;
     progressRate: Metric;
     finishRate: Metric;
-    /** Went missing across a runner build change: not in `finishRate`. */
+    /** Went missing across a runner restart (a build change, or the same build restarted) or an unknown runner: not in `finishRate`. */
     finishUnproven: number | undefined;
     unmeasured: number | undefined;
     pending: number | undefined;
@@ -820,7 +820,7 @@ export function metricValue(
  * is `null` when no nudge had a progress measurement, however many were sent,
  * and a delivered nudge coord has not seen an effect of yet is `pending`, which
  * `nudged` excludes. `finish_rate` can be `null` over sent nudges too, when none
- * has a known outcome (a session lost across a runner rebuild).
+ * has a known outcome (a session lost across a runner restart).
  */
 export function nudgeNoDataWhy(
   nudge: Pick<FlowView["nudge"], "nudged" | "pending">,

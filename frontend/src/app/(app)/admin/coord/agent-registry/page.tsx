@@ -39,6 +39,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,9 @@ import {
 import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import { createReadSequence } from "@/components/console";
 import { RepoFollowupDialsPanel } from "./_components/RepoFollowupDialsPanel";
+
+/** The spawns page's per-spawn-type model & effort panel. */
+const SPAWN_LAUNCH_SETTINGS_HREF = "/admin/coord/spawns#spawn-launch-settings";
 
 // R3 — the colour families, IMPORTED. They used to be re-declared here,
 // exemplar (`components/operations/MergePipeline.tsx`) so a second surface
@@ -442,6 +446,24 @@ export default function CoordAgentRegistryPage() {
       data-testid="coord-agent-registry-page"
     >
       <HealthStrip rows={rows} loaded={loaded && !loadError} />
+
+      {/* The model and effort a SPAWNED session launches at are set per spawn
+          type, not per agent row (plan
+          2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type). */}
+      <p
+        className="text-xs text-muted-foreground m-0"
+        data-testid="coord-agent-registry-launch-settings-link"
+      >
+        The model and reasoning effort of spawned sessions are set per spawn
+        type:{" "}
+        <Link
+          href={SPAWN_LAUNCH_SETTINGS_HREF}
+          className="font-medium underline underline-offset-2 hover:no-underline"
+        >
+          Model &amp; effort by spawn type
+        </Link>
+        .
+      </p>
 
       {loaded && loadError && (
         <div

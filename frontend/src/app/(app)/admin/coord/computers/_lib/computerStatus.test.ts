@@ -45,6 +45,7 @@ import {
   isSchemaPendingBody,
   laneFreshness,
   laneKey,
+  lanePressureName,
   normalizeComputer,
   readIssueHeadline,
   readGpus,
@@ -242,6 +243,63 @@ describe("history — coord's HistoryPoint.pressure is a NUMBER, keyed by device
     expect(
       byLane.get(laneKey({ ...detail.lanes[0], device_id: "other-device" }))
     ).toBeUndefined();
+  });
+
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: the computer page draws the strip's sparkline, so it
+  // gets the strip's second (swap) line by the strip's rule.
+  const swapPoint = (
+    sampled_at: string,
+    pressure: number | null,
+    swap_ratio: number | null
+  ) => ({
+    sampled_at,
+    load_1m: null,
+    load_5m: null,
+    load_15m: null,
+    mem_available_bytes: null,
+    swap_ratio,
+    pressure,
+    psi_memory_some_avg60: null,
+    psi_cpu_some_avg60: null,
+    psi_io_some_avg60: null,
+  });
+
+  it("carries a host lane's swap_ratio as the swap line, and null as a gap, never 0", () => {
+    const pts = historyPoints({
+      device_id: "d",
+      lane: "host",
+      lane_instance: null,
+      points: [
+        swapPoint("2026-11-09T18:00:00Z", 0.8, 0.62),
+        swapPoint("2026-11-09T18:15:00Z", 0.81, null),
+        swapPoint("2026-11-09T18:30:00Z", 0.815, 0.9999),
+      ],
+    });
+    expect(pts.map((p) => p.swap)).toEqual([0.62, null, 0.9999]);
+    expect(pts.map((p) => p.pressure)).toEqual([0.8, 0.81, 0.815]);
+  });
+
+  it("gives a wsl lane no swap line: its pressure already IS swap", () => {
+    const pts = historyPoints({
+      device_id: "d",
+      lane: "wsl",
+      lane_instance: "Ubuntu",
+      points: [swapPoint("a", 0.6, 0.6), swapPoint("b", 0.7, 0.7)],
+    });
+    expect(pts.map((p) => p.swap)).toEqual([null, null]);
+  });
+
+  it("names the lead line from the lane's basis, and falls back on an unknown one", () => {
+    const lane = (basis: string | null) =>
+      ({
+        ...detailFx({}, NOW).lanes[0],
+        pressure: basis === null ? null : { ratio: 0.5, basis },
+      }) as Parameters<typeof lanePressureName>[0];
+    expect(lanePressureName(lane("commit"))).toBe("commit used");
+    expect(lanePressureName(lane("swap"))).toBe("swap used");
+    expect(lanePressureName(lane("bogus"))).toBeUndefined();
+    expect(lanePressureName(lane(null))).toBeUndefined();
   });
 });
 
