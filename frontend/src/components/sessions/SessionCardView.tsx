@@ -161,16 +161,18 @@ function MachineRow({ card }: { card: SessionCard }) {
               {machine.environment.name ?? machine.environment.id}
             </Badge>
           )}
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {machineSourceText(machine.source)}
           </span>
         </>
       ) : (
         <>
           <span className="text-xs text-muted-foreground">
-            {card.machine_unknown_reason
-              ? `machine unknown: ${reasonText(card.machine_unknown_reason)}`
-              : "machine unknown"}
+            {card.machine_unknown_reason === undefined
+              ? "machine unknown (reason not served)"
+              : card.machine_unknown_reason
+                ? `machine unknown: ${reasonText(card.machine_unknown_reason)}`
+                : "machine unknown"}
           </span>
           {card.device_id && (
             <span
@@ -236,19 +238,23 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
           </span>
           {page.fresh ? (
             <span
-              className="text-[10px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
               title={page.observed_at}
             >
-              observed {relativeTime(page.observed_at)}
+              observed{" "}
+              {relativeTime(page.observed_at, { absent: "at an unknown time" })}
             </span>
           ) : (
             <>
               <Badge variant="warning">stale</Badge>
               <span
-                className="text-[10px] text-muted-foreground"
+                className="text-xs text-muted-foreground"
                 title={page.observed_at}
               >
-                last observed {relativeTime(page.observed_at)}
+                last observed{" "}
+                {relativeTime(page.observed_at, {
+                  absent: "at an unknown time",
+                })}
               </span>
             </>
           )}
