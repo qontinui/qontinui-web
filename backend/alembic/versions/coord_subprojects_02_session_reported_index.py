@@ -1,7 +1,7 @@
 """coord.agent_logs: partial index for the subprojects pruned-harness walk
 
 Revision ID: coord_subprojects_02_session_reported_index
-Revises: design_refs_01
+Revises: coord_fleet_focus_01
 Create Date: 2026-11-16
 
 Finding ``98e40c0e`` (N3) asked for the plan cost of qontinui-coord
@@ -38,7 +38,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_subprojects_02_session_reported_index"
-down_revision = "design_refs_01"
+down_revision = "coord_fleet_focus_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
