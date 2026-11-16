@@ -199,4 +199,55 @@ describe("RecordTable", () => {
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  describe("order and where a new row opens", () => {
+    const bodyRows = () =>
+      screen
+        .getAllByRole("row")
+        .slice(1)
+        .map((r) => r.textContent ?? "");
+
+    it("shows rows in the order given until a column is sorted", () => {
+      show();
+      expect(bodyRows()[0]).toContain("Delivery lead");
+      fireEvent.click(screen.getByRole("button", { name: /^Code/ }));
+      expect(bodyRows()[0]).toContain("Backend");
+      fireEvent.click(screen.getByRole("button", { name: /^Code/ }));
+      expect(bodyRows()[0]).toContain("Delivery lead");
+    });
+
+    it("opens the add row last by default and first with newRowFirst", () => {
+      const { unmount } = render(
+        <RecordTable
+          table={ESTIMATE_ROLES}
+          rows={rows}
+          onChange={vi.fn()}
+          canEdit
+          rowSchema={ROLE_SCHEMA}
+          uiBridgeId="t.default"
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Add a role" }));
+      let all = screen.getAllByRole("row");
+      expect(
+        within(all[all.length - 1] as HTMLElement).getByLabelText("Code")
+      ).toBeTruthy();
+      unmount();
+
+      render(
+        <RecordTable
+          table={ESTIMATE_ROLES}
+          rows={rows}
+          onChange={vi.fn()}
+          canEdit
+          rowSchema={ROLE_SCHEMA}
+          uiBridgeId="t.first"
+          newRowFirst
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Add a role" }));
+      all = screen.getAllByRole("row");
+      expect(within(all[1] as HTMLElement).getByLabelText("Code")).toBeTruthy();
+    });
+  });
 });

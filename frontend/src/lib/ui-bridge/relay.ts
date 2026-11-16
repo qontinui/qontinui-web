@@ -29,6 +29,13 @@ import {
 // resolves. Exported so tree-shaking can never drop the import.
 import IORedis from "ioredis";
 export const __ioredisTraceAnchor: unknown = IORedis;
+import {
+  redisHostOnly,
+  safeRedisErrorText,
+} from "@/lib/ui-bridge/redis-redact";
+
+// Re-exported so existing importers of the host-only helper keep working.
+export { redisHostOnly };
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 import {
   resolveEndpoint,
@@ -82,20 +89,6 @@ export function getRelayBusStatus(): RelayBusStatus {
   return relayBusStatus;
 }
 
-/**
- * Extract HOST[:port] from a redis connection string for structured logging.
- * Credentials (`user:pass@`) and path/query are dropped — we never log secrets.
- * Falls back to a constant marker if the URL is unparseable.
- */
-function redisHostOnly(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.host || "<unknown-host>";
-  } catch {
-    return "<unparseable-url>";
-  }
-}
-
 // Cross-instance relay bus (P0a). On Vercel serverless each request can hit a
 // different lambda instance, so a tab's SSE stream (held on instance A) is
 // invisible to a `/control/*` command POST that lands on instance B — commands
@@ -109,27 +102,29 @@ function redisHostOnly(url: string): string {
 const relayRedisUrl = process.env.UI_BRIDGE_RELAY_REDIS_URL;
 const requireRedis = process.env.UI_BRIDGE_RELAY_REQUIRE_REDIS === "1";
 
-const relayBus = await createRedisRelayBus(relayRedisUrl).catch((e: unknown) => {
-  // A Redis URL was configured (createRedisRelayBus only attempts a connection
-  // when `url` is non-empty) but init threw → degraded. Record the flag,
-  // warn with the HOST ONLY (never creds / full URL), and optionally fail fast.
-  relayBusStatus = "in-memory-degraded";
-  const host = relayRedisUrl ? redisHostOnly(relayRedisUrl) : "<unset>";
-  console.warn(
-    `[ui-bridge] Redis relay bus init FAILED (host=${host}); cross-instance ` +
-      `routing is DISABLED — relay degraded to single-process in-memory. ` +
-      `On serverless this can cause control commands to return 200 but never ` +
-      `reach the tab. Set UI_BRIDGE_RELAY_REQUIRE_REDIS=1 to fail fast instead.`,
-    e instanceof Error ? e.message : e,
-  );
-  if (requireRedis) {
-    throw new Error(
-      `[ui-bridge] UI_BRIDGE_RELAY_REQUIRE_REDIS=1 but Redis relay bus init ` +
-        `failed (host=${host}); refusing to boot in degraded in-memory mode.`,
+const relayBus = await createRedisRelayBus(relayRedisUrl).catch(
+  (e: unknown) => {
+    // A Redis URL was configured (createRedisRelayBus only attempts a connection
+    // when `url` is non-empty) but init threw → degraded. Record the flag,
+    // warn with the HOST ONLY (never creds / full URL), and optionally fail fast.
+    relayBusStatus = "in-memory-degraded";
+    const host = relayRedisUrl ? redisHostOnly(relayRedisUrl) : "<unset>";
+    console.warn(
+      `[ui-bridge] Redis relay bus init FAILED (host=${host}); cross-instance ` +
+        `routing is DISABLED — relay degraded to single-process in-memory. ` +
+        `On serverless this can cause control commands to return 200 but never ` +
+        `reach the tab. Set UI_BRIDGE_RELAY_REQUIRE_REDIS=1 to fail fast instead.`,
+      safeRedisErrorText(e, [relayRedisUrl])
     );
+    if (requireRedis) {
+      throw new Error(
+        `[ui-bridge] UI_BRIDGE_RELAY_REQUIRE_REDIS=1 but Redis relay bus init ` +
+          `failed (host=${host}); refusing to boot in degraded in-memory mode.`
+      );
+    }
+    return null;
   }
-  return null;
-});
+);
 
 // Reflect the successful-init / unset cases (the catch above already set
 // "in-memory-degraded" on failure). A non-null bus means Redis is live; a null

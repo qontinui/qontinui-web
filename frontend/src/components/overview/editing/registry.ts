@@ -27,6 +27,10 @@ interface BaseField<Row> {
   label: string;
   /** An empty value is refused rather than stored as nothing. */
   required?: boolean;
+  /** How many levels a row sits below the top of a tree, for a table whose
+   *  rows are a hierarchy shown in tree order. The cell is shown indented
+   *  by it; editing and sorting are unaffected. */
+  indent?: (row: Row) => number;
 }
 
 /**
