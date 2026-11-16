@@ -71,7 +71,7 @@ from tests._alembic_harness import (
 # cannot silently change what this test walks. MUST equal the revision's own
 # down_revision (the first test enforces it); re-point BOTH together.
 _REVISION_ID = "lacap_01"
-_PARENT_REVISION_ID = "coord_agent_questions_ref_observed_01"
+_PARENT_REVISION_ID = "coord_subprojects_01"
 _REVISION_FILENAME = "lacap_01_launch_capacity_columns.py"
 
 _TABLE = "device_resource_samples"

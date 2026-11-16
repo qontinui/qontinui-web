@@ -1,7 +1,7 @@
 """coord launch capacity: the runner's own launch verdict on the sample row, and the retire-hold index
 
 Revision ID: lacap_01
-Revises: coord_agent_questions_ref_observed_01
+Revises: coord_subprojects_01
 Create Date: 2026-11-14
 
 Phase 1 of plan
@@ -188,12 +188,12 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "lacap_01"
-down_revision: str | Sequence[str] | None = "coord_agent_questions_ref_observed_01"
+down_revision: str | Sequence[str] | None = "coord_subprojects_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # down_revision is the single alembic head of origin/main at authoring time
-# (web 14b36aa79). If `alembic-heads-pr` reports HEAD_COUNT=2 after another
+# (web e78a2455b). If `alembic-heads-pr` reports HEAD_COUNT=2 after another
 # revision lands first, re-point this line, the `Revises:` line above and
 # `_PARENT_REVISION_ID` in
 # tests/test_lacap_01_launch_capacity_columns_migration.py together.
@@ -386,7 +386,7 @@ def downgrade() -> None:
     ``IF EXISTS``. Re-running the upgrade does NOT rebuild the index, because
     the database is still stamped ``lacap_01`` and the upgrade is a no-op. To
     restore the index instead, run ``alembic stamp
-    coord_agent_questions_ref_observed_01`` and then ``alembic upgrade
+    coord_subprojects_01`` and then ``alembic upgrade
     lacap_01``.
     """
     with op.get_context().autocommit_block():
