@@ -297,8 +297,19 @@ export interface CgroupSliceEntry {
   } | null;
 }
 
-/** coord's `cgroup_slices` column, keyed by slice name. */
-export type CgroupSlices = Record<string, CgroupSliceEntry | null>;
+/**
+ * coord's `cgroup_slices` column, keyed by slice name — plus keys that are NOT
+ * slices: the runner adds `cpu_attribution` (the host's session / CI CPU split,
+ * qontinui-runner `fleet/slice_telemetry/cpu.rs`) beside the slices, and a
+ * per-slice `cpu` object inside each entry. Only `*.slice` keys are slices
+ * (`isSliceKey`); the CPU keys belong to plan
+ * `2026-11-05-one-free-resource-model-places-sessions-builds-and-ci` and are
+ * not read here.
+ */
+export type CgroupSlices = Record<
+  string,
+  CgroupSliceEntry | Record<string, unknown> | null
+>;
 
 /** Newest sample for one `(device_id, lane, lane_instance)` anchor. */
 export interface ResourceSampleRow {
@@ -332,7 +343,11 @@ export interface ResourceSampleRow {
    * key the publisher could not measure is absent, never `0`.
    *
    * `null` / absent key = **unmeasured** (older publisher, or a coord that
-   * predates the column) — never `{}`, never zero. Read through
+   * predates the column), never zero. A map that names no slice (empty, or
+   * holding only the non-slice `cpu_attribution`) beside `slice_source:
+   * "linux_cgroup_v2"` is a measurement, not an absence: the tree was read
+   * and none of the watched slices exists (qontinui-runner
+   * `fleet/slice_telemetry.rs` `collect_from`). Read through
    * `sliceTelemetryReading`, not directly.
    */
   cgroup_slices?: CgroupSlices | null;
@@ -526,10 +541,11 @@ export interface ResourceSampleRow {
   pressure: LanePressure | null;
   /**
    * **SERVER-computed**: this lane's OWN swap ratio, `swap_used / swap_total`
-   * (coord's `device_resource_samples::swap_ratio`). Coord serves a number
-   * exactly when it GRADES the lane's swap axis (`swap_axis_graded`), so one
-   * predicate decides both the grade and whether this strip prints a swap
-   * figure. The strip derives no swap ratio of its own from `swap_*_bytes`.
+   * (coord's `device_resource_samples::served_swap_ratio`). Coord serves a
+   * number only where the lane HAS a gradable swap axis (`swap_axis_graded`),
+   * the predicate its verdict uses too. It does not wait for a configured swap
+   * threshold, so a figure may print on a lane no floor is grading. The strip
+   * derives no swap ratio of its own from `swap_*_bytes`.
    *
    * It matters on the `host` lane, whose lead `pressure` is commit on every OS
    * because coord never RANKS a host on swap. A Linux host's swap device is an
@@ -540,7 +556,10 @@ export interface ResourceSampleRow {
    * (never 0). That covers a Windows `host`: its publishers omit `swap_*`
    * because swap there is derived from the same commit counters, which would
    * be one instrument printed twice. It also covers a swapless box and a lane
-   * whose reading is missing. Absent = a coord that predates the field,
+   * whose reading is missing (`swap_total` published, `swap_used` absent). On a
+   * Linux `host` that last case grades the swap axis `unknown` while this field
+   * reads the same `null` as Windows; the wire does not yet separate them, so
+   * `null` is never evidence that swap is healthy. Absent = a coord that predates the field,
    * rendered "swap not reported". See `swapReading`.
    */
   swap_ratio?: number | null;
@@ -853,9 +872,11 @@ export function pressureFormula(basis: PressureBasis): string {
  * What a row can say about its OWN swap device. Four states with four causes,
  * the same split `headroomReport` and `describeFloor` make:
  *
- * * `value` — coord served a ratio in [0, 1], so it grades this lane's swap.
+ * * `value` — coord served a ratio in [0, 1]: the lane has a swap axis and
+ *   this is its reading.
  * * `none` — coord served `null` and has no swap ratio for this lane. On a
- *   `host` row that is the Windows contract or a swapless box. On Windows,
+ *   `host` row that is the Windows contract, a swapless box, or (rarely) a
+ *   Linux host that published `swap_total` without `swap_used`. On Windows,
  *   sysinfo derives swap algebraically from the same commit counters
  *   (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
  *   figure beside the commit figure would read as corroboration from two
@@ -1463,6 +1484,10 @@ export interface FleetDeviceRef {
   device_id: string;
   hostname?: string;
   state?: string;
+  /** Coord's raw CI-runner status; `not_listed` names a registration GitHub stopped listing. */
+  ci_runner_status?: string | null;
+  /** Coord's `last_seen_at`; a `ci_unrefreshed` row is aged from it. */
+  last_seen_at?: string | null;
 }
 
 /** One rendered line of the strip. */
@@ -1491,6 +1516,10 @@ export interface MachineGroup {
   hostname?: string;
   displayName: string;
   state?: string;
+  /** Carried from the device so the badge can say `not_listed` (`deviceRowStateLabel`). */
+  ci_runner_status?: string | null;
+  /** Carried from the device so a `ci_unrefreshed` badge can carry its age. */
+  last_seen_at?: string | null;
   rows: StripRow[];
 }
 
@@ -1573,6 +1602,12 @@ export function buildMachineGroups(
       ...(device.hostname ? { hostname: device.hostname } : {}),
       displayName,
       state: device.state,
+      ...(device.ci_runner_status !== undefined
+        ? { ci_runner_status: device.ci_runner_status }
+        : {}),
+      ...(device.last_seen_at !== undefined
+        ? { last_seen_at: device.last_seen_at }
+        : {}),
       rows,
     });
   }
@@ -1977,12 +2012,17 @@ export function cpuTempReading(
 // Cgroup-slice memory + PSI (coord plan
 // `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role` Phase 0b)
 //
-// DISPLAY ONLY: coord grades these on its own `s10` axis of
-// `device_resource_headroom_breach`; nothing here feeds pressure, saturation or
-// headroom. The one rule this module owns is the unmeasured rule: a NULL / absent
-// column, a key the publisher could not read, and `slice_source:
-// "not_supported"` are each rendered as an explicit "not measured" state, and
-// NEVER as 0 — a stall of 0.0% and a stall nobody read are different facts.
+// DISPLAY ONLY: coord grades these on its own `s11` axis of
+// `device_resource_headroom_breach` (`Axis::S11`, graded by coord's
+// `resource_headroom_slice`; `s10` is the host commit time-to-floor axis, not
+// the slices). Nothing here feeds pressure, saturation or headroom. The one rule
+// this module owns is the unmeasured rule: a NULL / absent column, a key the
+// publisher could not read, and `slice_source: "not_supported"` are each
+// rendered as an explicit "not measured" state, and NEVER as 0 — a stall of
+// 0.0% and a stall nobody read are different facts. Conversely, a
+// `cgroup_slices` map that names no slice (empty, or holding only the
+// non-slice `cpu_attribution`) beside `slice_source: "linux_cgroup_v2"` is a
+// reading that no watched slice exists, not an unmeasured one.
 // ---------------------------------------------------------------------------
 
 /** A number that is finite, else null. Strings (incl. `"max"`) are NOT numbers here. */
@@ -2005,6 +2045,13 @@ function sliceLimit(v: unknown): SliceLimit {
 /** One slice's reading; every figure is `null` when the publisher did not read it. */
 export interface SliceMemoryReading {
   name: string;
+  /**
+   * False when no memory reading was sent for the slice: it is named only in
+   * `psi.slices`, or its `cgroup_slices` entry is null, not an object, or
+   * carries none of the memory keys. Its memory figures below are then all
+   * null and render as "memory not measured", not as a row of dashes.
+   */
+  memoryReported: boolean;
   memoryCurrent: number | null;
   memoryHigh: SliceLimit;
   memoryMax: SliceLimit;
@@ -2012,9 +2059,14 @@ export interface SliceMemoryReading {
   eventsHigh: number | null;
   eventsMax: number | null;
   oomKill: number | null;
+  /**
+   * The slice's own PSI (`psi.slices.<slice>`: its `memory.pressure`,
+   * `cpu.pressure` and `io.pressure`); null when no figure was sent for it.
+   */
+  psi: PsiFigures | null;
 }
 
-/** The six PSI averages for one block, each null when not measured. */
+/** The PSI averages coord carries, each null when not measured. */
 export interface PsiFigures {
   memorySomeAvg10: number | null;
   memoryFullAvg10: number | null;
@@ -2022,30 +2074,70 @@ export interface PsiFigures {
   cpuFullAvg10: number | null;
   ioSomeAvg10: number | null;
   ioFullAvg10: number | null;
+  memorySomeAvg60: number | null;
+  memoryFullAvg60: number | null;
+  cpuSomeAvg60: number | null;
+  cpuFullAvg60: number | null;
+  ioSomeAvg60: number | null;
+  ioFullAvg60: number | null;
 }
+
+/** The averaging window of a PSI figure. */
+export type PsiWindow = "avg10" | "avg60";
 
 /** True when `f` carries at least one measured figure. */
 export function psiHasAnyFigure(f: PsiFigures): boolean {
   return Object.values(f).some((v) => v != null);
 }
 
-function readPsiBlock(b: PsiBlock | null | undefined): PsiFigures {
-  const g = (r: PsiResource | null | undefined, half: "some" | "full") =>
-    finiteOrNull(r?.[half]?.avg10);
+/**
+ * Read one PSI block. `systemWide` drops the CPU `full` pair: the kernel
+ * defines CPU `full` only for a cgroup, and since 5.13 prints a placeholder
+ * `full ... avg10=0.00` line in `/proc/pressure/cpu` "for backward
+ * compatibility" (Documentation/accounting/psi.rst). Shown, that placeholder
+ * would read as a measured 0.0%. A slice's own `cpu.pressure` `full` is real
+ * and is kept.
+ */
+function readPsiBlock(
+  b: PsiBlock | null | undefined,
+  { systemWide = false }: { systemWide?: boolean } = {}
+): PsiFigures {
+  const g = (
+    r: PsiResource | null | undefined,
+    half: "some" | "full",
+    w: PsiWindow
+  ) => finiteOrNull(r?.[half]?.[w]);
+  const cpuFull = (w: PsiWindow) => (systemWide ? null : g(b?.cpu, "full", w));
   return {
-    memorySomeAvg10: g(b?.memory, "some"),
-    memoryFullAvg10: g(b?.memory, "full"),
-    cpuSomeAvg10: g(b?.cpu, "some"),
-    cpuFullAvg10: g(b?.cpu, "full"),
-    ioSomeAvg10: g(b?.io, "some"),
-    ioFullAvg10: g(b?.io, "full"),
+    memorySomeAvg10: g(b?.memory, "some", "avg10"),
+    memoryFullAvg10: g(b?.memory, "full", "avg10"),
+    cpuSomeAvg10: g(b?.cpu, "some", "avg10"),
+    cpuFullAvg10: cpuFull("avg10"),
+    ioSomeAvg10: g(b?.io, "some", "avg10"),
+    ioFullAvg10: g(b?.io, "full", "avg10"),
+    memorySomeAvg60: g(b?.memory, "some", "avg60"),
+    memoryFullAvg60: g(b?.memory, "full", "avg60"),
+    cpuSomeAvg60: g(b?.cpu, "some", "avg60"),
+    cpuFullAvg60: cpuFull("avg60"),
+    ioSomeAvg60: g(b?.io, "some", "avg60"),
+    ioFullAvg60: g(b?.io, "full", "avg60"),
   };
+}
+
+/**
+ * A `cgroup_slices` / `psi.slices` key that names a slice. A systemd slice
+ * unit always ends in `.slice` (`ci-runners.slice`, `agent-builds.slice`,
+ * `qontinui-runner.slice`); a key that does not — the runner's
+ * `cpu_attribution` today — is not a slice and must not render as one.
+ */
+export function isSliceKey(key: string): boolean {
+  return key.endsWith(".slice") && key.length > ".slice".length;
 }
 
 export type SliceTelemetryReading =
   /** `slice_source: "not_supported"` — the publisher's OS has no cgroup v2. */
   | { kind: "not_supported" }
-  /** Neither column carries a usable object: older publisher / never read. */
+  /** Neither column carries a usable reading: older publisher / never read. */
   | { kind: "unmeasured" }
   | {
       kind: "measured";
@@ -2053,9 +2145,17 @@ export type SliceTelemetryReading =
       slices: SliceMemoryReading[];
       /** System-wide PSI; every figure null when `psi.system` was not sent. */
       psiSystem: PsiFigures;
-      /** `cgroup_slices` itself was null/absent although PSI was sent. */
+      /** `cgroup_slices` carried no reading although PSI was sent. */
       slicesUnmeasured: boolean;
     };
+
+/** The `cgroup_slices` entry keys that carry a memory reading. */
+const MEMORY_KEYS = [
+  "memory_current",
+  "memory_high",
+  "memory_max",
+  "events",
+] as const;
 
 /**
  * Decide the slice-telemetry cell for one sample.
@@ -2063,49 +2163,76 @@ export type SliceTelemetryReading =
  * - `slice_source === "not_supported"` wins: it is the publisher saying the
  *   NULLs beside it mean *not applicable on this OS*, which is a different
  *   statement from *unread*.
- * - both columns null / absent / non-object → `unmeasured`.
- * - otherwise `measured`, with every figure that was not sent carried as
- *   `null` (the renderer prints it as "—", never `0`).
+ * - `cgroup_slices` is a reading when it names at least one slice, OR when
+ *   it is an object beside `slice_source: "linux_cgroup_v2"`. The runner
+ *   documents a map with no watched slice in it as a real answer — "the
+ *   unified hierarchy was read and none of the watched slices exists here"
+ *   (qontinui-runner `fleet/slice_telemetry.rs` `collect_from`) — and from its
+ *   second sample on such a map can still hold `cpu_attribution`. Without the
+ *   `linux_cgroup_v2` stamp nothing says the tree was read, so an empty map is
+ *   unmeasured.
+ * - `psi` is a reading when it carries at least one figure, system-wide or for
+ *   a slice.
+ * - neither → `unmeasured`; otherwise `measured`, with every figure that was
+ *   not sent carried as `null` (the renderer prints it as "—", never `0`).
  */
 export function sliceTelemetryReading(
   s: Pick<ResourceSampleRow, "cgroup_slices" | "psi" | "slice_source">
 ): SliceTelemetryReading {
-  if (
-    typeof s.slice_source === "string" &&
-    s.slice_source.trim().toLowerCase() === "not_supported"
-  ) {
+  const source =
+    typeof s.slice_source === "string"
+      ? s.slice_source.trim().toLowerCase()
+      : null;
+  if (source === "not_supported") {
     return { kind: "not_supported" };
   }
   const isObj = (v: unknown): v is Record<string, unknown> =>
     typeof v === "object" && v !== null && !Array.isArray(v);
-  // An EMPTY object is "nothing was read", not "read and found nothing": coord
-  // documents these columns as NULL when unmeasured and never `{}`, so an
-  // empty map or a PSI block with no figure is treated as not sent.
+
+  const cgRaw = isObj(s.cgroup_slices) ? s.cgroup_slices : null;
+  const cgNames = cgRaw ? Object.keys(cgRaw).filter(isSliceKey) : [];
   const cg =
-    isObj(s.cgroup_slices) && Object.keys(s.cgroup_slices).length > 0
-      ? s.cgroup_slices
+    cgRaw && (cgNames.length > 0 || source === "linux_cgroup_v2")
+      ? cgRaw
       : null;
+
   const psiRaw = isObj(s.psi) ? s.psi : null;
   const psiSystem = readPsiBlock(
-    psiRaw ? ((psiRaw as SlicePsi).system ?? null) : null
+    psiRaw && isObj(psiRaw.system) ? (psiRaw.system as PsiBlock) : null,
+    { systemWide: true }
   );
-  const psi = psiRaw && psiHasAnyFigure(psiSystem) ? psiRaw : null;
-  if (!cg && !psi) return { kind: "unmeasured" };
+  const psiSlicesRaw =
+    psiRaw && isObj(psiRaw.slices)
+      ? (psiRaw.slices as Record<string, unknown>)
+      : null;
+  const slicePsi = new Map<string, PsiFigures>();
+  for (const name of Object.keys(psiSlicesRaw ?? {}).filter(isSliceKey)) {
+    const block = psiSlicesRaw?.[name];
+    const figures = readPsiBlock(isObj(block) ? (block as PsiBlock) : null);
+    if (psiHasAnyFigure(figures)) slicePsi.set(name, figures);
+  }
+  const psiMeasured = psiHasAnyFigure(psiSystem) || slicePsi.size > 0;
+  if (!cg && !psiMeasured) return { kind: "unmeasured" };
 
-  const slices: SliceMemoryReading[] = Object.keys(cg ?? {})
-    .sort()
-    .map((name) => {
-      const e = (cg?.[name] ?? null) as CgroupSliceEntry | null;
-      return {
-        name,
-        memoryCurrent: finiteOrNull(e?.memory_current),
-        memoryHigh: sliceLimit(e?.memory_high),
-        memoryMax: sliceLimit(e?.memory_max),
-        eventsHigh: finiteOrNull(e?.events?.high),
-        eventsMax: finiteOrNull(e?.events?.max),
-        oomKill: finiteOrNull(e?.events?.oom_kill),
-      };
-    });
+  const memoryNames = cg ? cgNames : [];
+  const names = Array.from(
+    new Set([...memoryNames, ...slicePsi.keys()])
+  ).sort();
+  const slices: SliceMemoryReading[] = names.map((name) => {
+    const raw = memoryNames.includes(name) ? cg?.[name] : null;
+    const e = (isObj(raw) ? raw : null) as CgroupSliceEntry | null;
+    return {
+      name,
+      memoryReported: e != null && MEMORY_KEYS.some((k) => Object.hasOwn(e, k)),
+      memoryCurrent: finiteOrNull(e?.memory_current),
+      memoryHigh: sliceLimit(e?.memory_high),
+      memoryMax: sliceLimit(e?.memory_max),
+      eventsHigh: finiteOrNull(e?.events?.high),
+      eventsMax: finiteOrNull(e?.events?.max),
+      oomKill: finiteOrNull(e?.events?.oom_kill),
+      psi: slicePsi.get(name) ?? null,
+    };
+  });
   return {
     kind: "measured",
     slices,
@@ -2114,9 +2241,42 @@ export function sliceTelemetryReading(
   };
 }
 
-/** `12.5%` for a PSI figure, `—` when not measured. A real 0 prints `0.0%`. */
+/**
+ * One PSI block as text, `some/full` per resource, for one window:
+ * `mem 1.5%/0.50% · cpu 3.0%/— · io —/—`. A figure the publisher did not send
+ * prints `—`; a real 0 prints `0.0%`. `systemWide` prints CPU as `some` alone,
+ * because system-wide CPU has no `full` figure (see `readPsiBlock`).
+ */
+export function psiLineText(
+  f: PsiFigures,
+  w: PsiWindow,
+  { systemWide = false }: { systemWide?: boolean } = {}
+): string {
+  const pair = (some: number | null, full: number | null) =>
+    `${formatPsi(some)}/${formatPsi(full)}`;
+  const ten = w === "avg10";
+  const cpu = systemWide
+    ? formatPsi(ten ? f.cpuSomeAvg10 : f.cpuSomeAvg60)
+    : ten
+      ? pair(f.cpuSomeAvg10, f.cpuFullAvg10)
+      : pair(f.cpuSomeAvg60, f.cpuFullAvg60);
+  const mem = ten
+    ? pair(f.memorySomeAvg10, f.memoryFullAvg10)
+    : pair(f.memorySomeAvg60, f.memoryFullAvg60);
+  const io = ten
+    ? pair(f.ioSomeAvg10, f.ioFullAvg10)
+    : pair(f.ioSomeAvg60, f.ioFullAvg60);
+  return `mem ${mem} · cpu ${cpu} · io ${io}`;
+}
+
+/**
+ * A PSI figure as text: `12.5%`, or `—` when not measured. A real 0 prints
+ * `0.0%`. A figure between 0 and 1 keeps two decimals (`0.04%`), so a small
+ * real stall — typical of `full` — does not round to a 0.0% that reads as none.
+ */
 export function formatPsi(v: number | null | undefined): string {
-  return v == null || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}%`;
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${v > 0 && v < 1 ? v.toFixed(2) : v.toFixed(1)}%`;
 }
 
 /** A slice limit as text: `8.0 GB`, `no limit`, or `—` (not measured). */

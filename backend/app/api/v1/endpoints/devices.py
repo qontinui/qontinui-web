@@ -23,6 +23,7 @@ The schemas-crate ``Runner*`` types continue to back the response
 payload until Phase 7 renames them to ``Device*``.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -784,6 +785,9 @@ PAIR_CLI_5XX_ADVICE = "Retry; if it persists, check coord."
 # A 5xx ``hint`` is relayed only when it is one of these, so no free text from
 # a 5xx body (which can carry SQL or pool context) reaches a client.
 _COORD_STATIC_5XX_HINTS = frozenset({"restart pairing"})
+
+#: The shape of a coord refusal code, as opposed to a sentence or a proxy's body.
+_COORD_REFUSAL_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 
 def _coord_refusal_detail(resp: Any, *, server_error_advice: str) -> dict[str, Any]:
@@ -2275,22 +2279,44 @@ async def exchange_device_machine_credential(
         ) from exc
 
     if coord_status not in (200, 201):
+        refusal = coord_body if isinstance(coord_body, dict) else {}
+        # service-mint answers `{"error": <code>}`, `{"error": <sentence>}` or
+        # `{error, code, ...}`, and `_post` wraps a non-JSON body as
+        # `{"error": <its text>}`, so only a code-shaped value is a code.
+        coord_code = next(
+            (
+                value
+                for value in (refusal.get("code"), refusal.get("error"))
+                if isinstance(value, str) and _COORD_REFUSAL_CODE.fullmatch(value)
+            ),
+            None,
+        )
         logger.warning(
             "device_machine_credential_exchange_coord_rejected",
             device_id=str(device_id),
             status=coord_status,
+            coord_code=coord_code,
         )
-        # Propagate a coord client error (4xx) verbatim; treat everything
-        # else (5xx / transport) as a bad-gateway upstream failure.
+        # Propagate a coord client error (4xx) with its status and its reason;
+        # treat everything else (5xx / transport) as a bad-gateway upstream
+        # failure. `code` stays web's own, so a client keyed on it keeps working,
+        # and the `coord_*` fields say which refusal it was: `owner_not_member`
+        # means a tenant admin has to restore the owner's membership.
         if 400 <= coord_status < 500:
-            raise HTTPException(
-                status_code=coord_status,
-                detail={
-                    "error": "coord_mint_rejected",
-                    "code": "coord_mint_rejected",
-                    "message": "Coord rejected the device-token mint.",
-                },
-            )
+            detail: dict[str, Any] = {
+                "error": "coord_mint_rejected",
+                "code": "coord_mint_rejected",
+                "message": "Coord rejected the device-token mint.",
+            }
+            if coord_code:
+                detail["coord_code"] = coord_code
+            coord_reason = refusal.get("reason")
+            if isinstance(coord_reason, str) and coord_reason:
+                detail["coord_reason"] = coord_reason
+            coord_message = refusal.get("message")
+            if isinstance(coord_message, str) and coord_message:
+                detail["message"] = coord_message
+            raise HTTPException(status_code=coord_status, detail=detail)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"coord_status": coord_status},
