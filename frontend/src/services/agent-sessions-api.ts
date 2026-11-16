@@ -140,7 +140,7 @@ export interface SessionCardMachine {
   name: string | null;
   hostname: string | null;
   environment: SessionCardEnvironment | null;
-  source?: SessionCardMachineSource | string;
+  source?: SessionCardMachineSource | (string & {});
 }
 
 /** Why `machine` is null (D5). Absent on a coord predating the field. */
@@ -230,7 +230,10 @@ export interface SessionCard extends SessionAccountStamp {
   status: AgentSessionStatus | string;
   machine: SessionCardMachine | null;
   /** Set when `machine` is null; absent on an older coord (UNKNOWN). */
-  machine_unknown_reason?: SessionCardMachineUnknownReason | string | null;
+  machine_unknown_reason?:
+    | SessionCardMachineUnknownReason
+    | (string & {})
+    | null;
   /**
    * Absent entirely on a coord that does not serve placement yet — that is
    * UNKNOWN ("not served"), distinct from `null` + a reason.
@@ -238,7 +241,7 @@ export interface SessionCard extends SessionAccountStamp {
   runner_page?: SessionCardRunnerPage | null;
   runner_page_unknown_reason?:
     | SessionCardRunnerPageUnknownReason
-    | string
+    | (string & {})
     | null;
   summary: string | null;
   working_on: SessionWorkingOn | null;

@@ -93,11 +93,41 @@ describe("SessionCardView machine row", () => {
     );
   });
 
-  it("renders 'machine unknown' when machine and reason are both absent", () => {
+  it("says the reason is not served when machine and reason are both absent", () => {
     renderCard({ machine: null });
-    expect(machineRow().textContent).toContain("machine unknown");
+    expect(machineRow().textContent).toContain(
+      "machine unknown (reason not served)"
+    );
     // The device id is still shown so the operator has a referent.
     expect(machineRow().textContent).toContain(BASE.device_id as string);
+  });
+
+  it("renders a bare 'machine unknown' for an explicit null reason", () => {
+    renderCard({ machine: null, machine_unknown_reason: null });
+    const text = machineRow().textContent ?? "";
+    expect(text).toContain("machine unknown");
+    expect(text).not.toContain("reason not served");
+  });
+
+  it("shows an unrecognised reason verbatim rather than dropping it", () => {
+    renderCard({ machine: null, machine_unknown_reason: "brand_new_reason" });
+    expect(machineRow().textContent).toContain(
+      "machine unknown: brand new reason"
+    );
+  });
+
+  it("falls back to the hostname when a coord_device machine has no name", () => {
+    renderCard({
+      machine: {
+        id: null,
+        name: null,
+        hostname: "nawa",
+        environment: null,
+        source: "coord_device",
+      },
+    });
+    expect(machineRow().textContent).toContain("nawa");
+    expect(within(machineRow()).queryByRole("link")).toBeNull();
   });
 });
 
@@ -217,5 +247,28 @@ describe("SessionCardView runner-page row", () => {
     expect(pageRow().textContent).toContain(
       "Runner page: unknown (not served)"
     );
+  });
+  it("renders a bare unknown when runner_page is null with no reason", () => {
+    renderCard({ runner_page: null, runner_page_unknown_reason: null });
+    const text = pageRow().textContent ?? "";
+    expect(text).toContain("Runner page: unknown");
+    expect(text).not.toContain("not served");
+  });
+
+  it("never says 'observed never' for an unparseable observed_at", () => {
+    renderCard({
+      runner_page: {
+        page_id: "page-7",
+        name: "Reviews",
+        name_withheld: false,
+        window: "main",
+        terminal_id: null,
+        observed_at: "not-a-time",
+        fresh: true,
+      },
+    });
+    const text = pageRow().textContent ?? "";
+    expect(text).not.toContain("never");
+    expect(text).toContain("observed at an unknown time");
   });
 });
