@@ -1523,6 +1523,45 @@ export function ciRunnerAttributionText(r: CiRunnerWire): string | null {
 }
 
 /**
+ * How many of this computer's registrar rows coord placed by declared host
+ * alone. Those rows paired no reported unit, so coord computes no divergence
+ * for them. Only an explicit `"declared_host"` counts: an absent or `null`
+ * `attributed_by` is UNKNOWN and is not counted as either value. A `null`
+ * list (the registrar read failed) counts 0; the page renders the divergence
+ * section UNKNOWN then anyway.
+ */
+export function declaredHostRunnerCount(
+  runners: readonly CiRunnerWire[] | null
+): number {
+  return (runners ?? []).filter((r) => r.attributed_by === "declared_host")
+    .length;
+}
+
+/**
+ * The note that `n` declared-host rows were left out of the divergence
+ * comparison, or `null` when `n` is 0 (every attributed row was eligible).
+ */
+export function divergenceNotComparedText(n: number): string | null {
+  if (n <= 0) return null;
+  return n === 1
+    ? "1 CI runner placed by declared host is not compared."
+    : `${n} CI runners placed by declared host are not compared.`;
+}
+
+/**
+ * The divergence section's empty-list message. With no declared-host rows it
+ * is today's text unchanged. With some, it narrows "no disagreement" to the
+ * rows that were paired with a unit and says how many were not compared, so
+ * an empty list does not read as agreement for rows coord never checked.
+ */
+export function divergenceNoneText(declaredHostCount: number): string {
+  const notCompared = divergenceNotComparedText(declaredHostCount);
+  return notCompared === null
+    ? "No disagreement found among fresh registrar rows."
+    : `No disagreement found among fresh registrar rows paired with a unit. ${notCompared}`;
+}
+
+/**
  * The computers claiming an ambiguous runner, by name. A claimant not in this
  * read's list (a computer outside the page's view) is named by its id prefix
  * rather than dropped — every claimant is part of the answer.

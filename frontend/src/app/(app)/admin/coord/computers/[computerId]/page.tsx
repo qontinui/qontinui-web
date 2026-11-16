@@ -43,6 +43,9 @@ import {
   SERVICE_KIND_LABEL,
   ciRunnerAttributionText,
   ciRunnerStatusText,
+  declaredHostRunnerCount,
+  divergenceNoneText,
+  divergenceNotComparedText,
   serviceObservedText,
   SERVICE_PALETTE,
   computerFreshness,
@@ -362,38 +365,56 @@ function RegistrarUnknown({ what, testId }: { what: string; testId: string }) {
   );
 }
 
-function DivergenceList({ entries }: { entries: DivergenceWire[] }) {
+function DivergenceList({
+  entries,
+  declaredHostCount,
+}: {
+  entries: DivergenceWire[];
+  /** Registrar rows placed by declared host alone — coord compares none of them. */
+  declaredHostCount: number;
+}) {
   if (entries.length === 0) {
     return (
       <p
         className="text-sm text-muted-foreground"
         data-testid="coord-computer-divergence-none"
       >
-        No disagreement found among fresh registrar rows.
+        {divergenceNoneText(declaredHostCount)}
       </p>
     );
   }
+  const notCompared = divergenceNotComparedText(declaredHostCount);
   return (
-    <ul className="space-y-1" data-testid="coord-computer-divergence">
-      {entries.map((entry) => (
-        <li
-          key={`${entry.unit}:${entry.registrar_device_id}`}
-          className={`px-3 py-2 text-xs rounded-md border border-border bg-card/30 ${rowAccentClass({ attention: "waiting" })}`}
-          data-testid="coord-computer-divergence-row"
+    <>
+      {notCompared !== null && (
+        <p
+          className="text-xs text-muted-foreground italic m-0"
+          data-testid="coord-computer-divergence-not-compared"
         >
-          <span className="font-mono">{entry.runner_name}</span>
-          <span className="text-muted-foreground" title={entry.kind}>
-            {" — "}
-            {DIVERGENCE_KIND_LABEL[entry.kind] ?? entry.kind}
-          </span>
-          <span className="block text-muted-foreground">
-            unit {entry.unit}: reported{" "}
-            {entry.reported_active_state ?? "unknown"}, registrar{" "}
-            {entry.registrar_status ?? "unknown"}
-          </span>
-        </li>
-      ))}
-    </ul>
+          {notCompared}
+        </p>
+      )}
+      <ul className="space-y-1" data-testid="coord-computer-divergence">
+        {entries.map((entry) => (
+          <li
+            key={`${entry.unit}:${entry.registrar_device_id}`}
+            className={`px-3 py-2 text-xs rounded-md border border-border bg-card/30 ${rowAccentClass({ attention: "waiting" })}`}
+            data-testid="coord-computer-divergence-row"
+          >
+            <span className="font-mono">{entry.runner_name}</span>
+            <span className="text-muted-foreground" title={entry.kind}>
+              {" — "}
+              {DIVERGENCE_KIND_LABEL[entry.kind] ?? entry.kind}
+            </span>
+            <span className="block text-muted-foreground">
+              unit {entry.unit}: reported{" "}
+              {entry.reported_active_state ?? "unknown"}, registrar{" "}
+              {entry.registrar_status ?? "unknown"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -452,6 +473,11 @@ export default function CoordComputerDetailPage() {
     return list === null ? null : orderEvents(list);
   }, [detail?.events]);
   const divergence = listOrNull(detail?.divergence);
+  // Divergence is computed over the rows attributed to this computer
+  // (`ci_runners`); the declared-host ones among them are not compared.
+  const declaredHostCount = declaredHostRunnerCount(
+    listOrNull(detail?.ci_runners)
+  );
   const history = useMemo(() => historyByLane(detail), [detail]);
   const health = useMemo(
     () =>
@@ -704,7 +730,10 @@ export default function CoordComputerDetailPage() {
                 testId="coord-computer-divergence-unknown"
               />
             ) : (
-              <DivergenceList entries={divergence} />
+              <DivergenceList
+                entries={divergence}
+                declaredHostCount={declaredHostCount}
+              />
             )}
           </Section>
 

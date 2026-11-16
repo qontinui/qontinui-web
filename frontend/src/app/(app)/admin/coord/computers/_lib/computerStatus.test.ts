@@ -31,6 +31,9 @@ import {
   ciRunnerAttributionText,
   ciRunnerStatusText,
   classifyComputersError,
+  declaredHostRunnerCount,
+  divergenceNoneText,
+  divergenceNotComparedText,
   computerFreshness,
   computerStatus,
   deriveComputerDetailHealth,
@@ -540,6 +543,60 @@ describe("ciRunnerAttributionText", () => {
     // even though `service_unit` is null exactly as on a declared-host row.
     expect(ciRunnerAttributionText(row)).toBeNull();
     expect(ciRunnerAttributionText({ ...row, attributed_by: null })).toBeNull();
+  });
+});
+
+describe("divergence wording with declared-host rows", () => {
+  const row = {
+    device_id: "d",
+    hostname: "gh-runner-merytshost-1@qontinui/qontinui-web",
+    runner_name: "merytshost-1",
+    host_key: "merytshost-1",
+    repo: "qontinui/qontinui-web",
+    ci_runner_status: "idle",
+    last_seen_at: null,
+    registrar_fresh: true,
+    service_unit: null,
+    service_active_state: null,
+  };
+
+  it("counts only explicit declared_host rows — absent, null and runner_name are not", () => {
+    expect(
+      declaredHostRunnerCount([
+        { ...row, attributed_by: "declared_host" },
+        { ...row, attributed_by: "declared_host" },
+        { ...row, attributed_by: "runner_name" },
+        { ...row, attributed_by: null },
+        row,
+      ])
+    ).toBe(2);
+    expect(declaredHostRunnerCount([])).toBe(0);
+    expect(declaredHostRunnerCount(null)).toBe(0);
+  });
+
+  it("keeps today's empty-list text exactly when no row was placed by declared host", () => {
+    expect(divergenceNoneText(0)).toBe(
+      "No disagreement found among fresh registrar rows."
+    );
+    expect(divergenceNotComparedText(0)).toBeNull();
+  });
+
+  it("narrows the empty-list text and counts one uncompared runner in the singular", () => {
+    expect(divergenceNotComparedText(1)).toBe(
+      "1 CI runner placed by declared host is not compared."
+    );
+    expect(divergenceNoneText(1)).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 1 CI runner placed by declared host is not compared."
+    );
+  });
+
+  it("counts several uncompared runners in the plural", () => {
+    expect(divergenceNotComparedText(3)).toBe(
+      "3 CI runners placed by declared host are not compared."
+    );
+    expect(divergenceNoneText(3)).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners placed by declared host are not compared."
+    );
   });
 });
 
