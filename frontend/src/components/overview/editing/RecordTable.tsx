@@ -56,6 +56,7 @@ export function RecordTable<Row extends object>({
   onEditingChange,
   onPasteTextChange,
   uiBridgeId,
+  newRowFirst = false,
 }: {
   table: TableDeclaration<Row>;
   rows: Row[];
@@ -70,6 +71,9 @@ export function RecordTable<Row extends object>({
   /** Told whether the paste dialog holds uncommitted text. */
   onPasteTextChange?: (hasText: boolean) => void;
   uiBridgeId: string;
+  /** Open the add row at the top of the body, directly under the add
+   *  buttons, instead of at the bottom. */
+  newRowFirst?: boolean;
 }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [removing, setRemoving] = useState<number | null>(null);
@@ -267,6 +271,7 @@ export function RecordTable<Row extends object>({
             </tr>
           </thead>
           <tbody>
+            {newRowFirst && editing?.at === "new" && renderEditor(editing)}
             {rows.length === 0 && !editRow("new") && (
               <tr>
                 <td
@@ -381,7 +386,7 @@ export function RecordTable<Row extends object>({
                 </tr>
               );
             })}
-            {editing?.at === "new" && renderEditor(editing)}
+            {!newRowFirst && editing?.at === "new" && renderEditor(editing)}
           </tbody>
         </table>
       </div>

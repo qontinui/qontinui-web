@@ -42,6 +42,7 @@ import {
   ENTRY_WRITABLE,
   RECURRING_WRITABLE,
   STARTER_CATEGORIES,
+  arrangeEntries,
   categoryAndDescendants,
   categoryKey,
   categoryRowProblem,
@@ -437,6 +438,8 @@ export default function CostsPage() {
             replace={entries.replace}
             onWritten={refresh}
             uiBridgeId="overview.costs.entries"
+            arrange={arrangeEntries}
+            newRowFirst
           />
         </div>
       </Section>
