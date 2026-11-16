@@ -247,7 +247,7 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
             className="font-mono text-xs text-muted-foreground break-all"
             title={page.page_id}
           >
-            page {page.page_id}
+            page {page.page_id || "unknown"}
           </span>
           <span className="text-xs text-muted-foreground break-all">
             window {page.window || "unknown"}
