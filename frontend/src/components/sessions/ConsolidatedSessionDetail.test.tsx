@@ -383,6 +383,7 @@ describe("the identity card's machine and runner page reach the consolidated pag
     });
     const machine = await screen.findByTestId("session-card-machine");
     expect(machine.textContent).toContain("nawa");
+    expect(machine.textContent).not.toContain("unnamed machine");
     expect(machine.textContent).toContain("via coord device");
     expect(machine.querySelector("a")).toBeNull();
     expect(

@@ -36,6 +36,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { relativeTime } from "@/components/operations/utils";
+import { absoluteTime } from "@/components/console/time";
 import { LiveTailPane } from "./LiveTailPane";
 import { ResumePanel } from "./ResumePanel";
 import { TranscriptPane } from "./TranscriptPane";
@@ -104,9 +105,11 @@ function reasonText(reason: string): string {
   }
 }
 
-function machineSourceText(source: string | undefined): string {
+function machineSourceText(source: string | null | undefined): string {
   switch (source) {
+    case null:
     case undefined:
+    case "":
       return "source unknown";
     case "devenv":
       return "via devenv";
@@ -120,7 +123,8 @@ function machineSourceText(source: string | undefined): string {
 /** The machine's identifying text: name, else hostname, else stated unknown. */
 function machineLabel(machine: SessionCard["machine"]): string {
   if (!machine) return "unknown machine";
-  return machine.name ?? machine.hostname ?? "unnamed machine";
+  // `||`, not `??`: an empty string is as unidentifying as a null.
+  return machine.name || machine.hostname || "unnamed machine";
 }
 
 function MachineRow({ card }: { card: SessionCard }) {
@@ -157,8 +161,11 @@ function MachineRow({ card }: { card: SessionCard }) {
             </span>
           )}
           {machine.environment && (
-            <Badge variant="outline">
-              {machine.environment.name ?? machine.environment.id}
+            <Badge
+              variant="outline"
+              title={machine.environment.name || machine.environment.id}
+            >
+              {machine.environment.name || machine.environment.id}
             </Badge>
           )}
           <span className="text-xs text-muted-foreground">
@@ -213,7 +220,7 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
             <span className="text-xs italic text-muted-foreground">
               name withheld
             </span>
-          ) : page.name !== null ? (
+          ) : page.name ? (
             <span className="font-medium break-all" title={page.name}>
               {page.name}
             </span>
@@ -239,7 +246,7 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
           {page.fresh ? (
             <span
               className="text-xs text-muted-foreground"
-              title={page.observed_at}
+              title={absoluteTime(page.observed_at)}
             >
               observed{" "}
               {relativeTime(page.observed_at, { absent: "at an unknown time" })}
@@ -249,7 +256,7 @@ function RunnerPageRow({ card }: { card: SessionCard }) {
               <Badge variant="warning">stale</Badge>
               <span
                 className="text-xs text-muted-foreground"
-                title={page.observed_at}
+                title={absoluteTime(page.observed_at)}
               >
                 last observed{" "}
                 {relativeTime(page.observed_at, {
