@@ -164,7 +164,11 @@ def test_the_static_add_and_drop_cover_exactly_the_five_columns(
             recorded_sql(module, "upgrade", monkeypatch), "coord", _TABLE, "ADD"
         ).split()
     )
-    drops = " ".join("\n".join(recorded_sql(module, "downgrade", monkeypatch)).split())
+    down_statements = recorded_sql(module, "downgrade", monkeypatch)
+    assert down_statements[0].strip() == "SET LOCAL lock_timeout = '5s'", (
+        "downgrade() drops columns on the same hot table: bound its lock wait too"
+    )
+    drops = " ".join("\n".join(down_statements).split())
     assert f"ALTER TABLE {_QUALIFIED}" in drops, (
         "downgrade() must ALTER the qualified table; an unqualified name would "
         "hit whatever `search_path` happens to be"
