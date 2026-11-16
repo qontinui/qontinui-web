@@ -701,6 +701,22 @@ export interface HistoryPoint {
   sampled_at: string;
   /** The server's pressure ratio at this instant; null = no opinion. */
   pressure: number | null;
+  /**
+   * **SERVER-computed**: coord's `served_swap_ratio` at this instant. It is
+   * the same function, and the same `null` cases, as the latest row's
+   * `ResourceSampleRow.swap_ratio` (a Windows host, a swapless box, a missing
+   * reading).
+   *
+   * It is here so a Linux host's swap TRAJECTORY can be drawn. `pressure`
+   * cannot carry it: on every host `pressure` is the commit basis
+   * (`MemAvailable / MemTotal` on Linux), never swap. On 2026-11-09 nilan
+   * climbed to swap 0.9999 while the only line on its sparkline read commit
+   * 0.815.
+   *
+   * `null` and absent (a coord that predates the field) both draw NO swap
+   * point, never a 0. See `historySwapRatio`.
+   */
+  swap_ratio?: number | null;
   disk_free_bytes: number | null;
   disk_total_bytes: number | null;
   build_slots_busy: number | null;
@@ -940,6 +956,68 @@ export function rowShowsSwapAxis(
 ): boolean {
   if (!row) return false;
   return row.lane !== "host" || swapReading(row).kind === "value";
+}
+
+/**
+ * One history point's swap ratio as a value to PLOT, or `null` for no point.
+ *
+ * Only `swapReading`'s `value` state plots. `none` (coord served `null`),
+ * `unreported` (the key is absent: a coord older than the history field) and
+ * `unreadable` all give `null`, which the sparkline draws as a gap. None of
+ * them may become a 0: a 0 would draw a swap device nobody measured as an idle
+ * one.
+ */
+export function historySwapRatio(
+  point: Pick<HistoryPoint, "swap_ratio"> | null | undefined
+): number | null {
+  const r = swapReading(point);
+  return r.kind === "value" ? r.ratio : null;
+}
+
+/**
+ * A sparkline point: the lead `pressure` line and the second `swap` line.
+ * It matches `PressureSparkline`'s `PressurePoint` structurally.
+ */
+export interface SparklinePoint {
+  sampled_at: string;
+  pressure: number | null;
+  /** `null` = no swap point at this instant. */
+  swap: number | null;
+}
+
+/**
+ * The points a lane's sparkline draws. The second line is the served swap
+ * ratio, and only on a `host` lane:
+ *
+ * * `host`: `pressure` is the commit basis on every OS. On a Linux host the
+ *   swap device is a second, independent instrument, so it gets its own line.
+ *   A Windows host is served `swap_ratio: null` on every point and gets none,
+ *   because its swap is derived from the commit counters, so a swap line would
+ *   show the same instrument twice.
+ * * `wsl` / `container`: no second line. Their `pressure` already IS swap
+ *   (coord ranks them on it), so a swap line would duplicate the lead line.
+ *
+ * This is the same rule `rowShowsSwapAxis` applies to the row's figures, but
+ * per point.
+ */
+export function sparklinePoints(
+  series:
+    | (Pick<HistorySeries, "lane"> & {
+        points: readonly Pick<
+          HistoryPoint,
+          "sampled_at" | "pressure" | "swap_ratio"
+        >[];
+      })
+    | null
+    | undefined
+): SparklinePoint[] | undefined {
+  if (!series) return undefined;
+  const isHost = series.lane === "host";
+  return series.points.map((p) => ({
+    sampled_at: p.sampled_at,
+    pressure: p.pressure,
+    swap: isHost ? historySwapRatio(p) : null,
+  }));
 }
 
 /**

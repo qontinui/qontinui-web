@@ -148,6 +148,7 @@ import {
   SATURATION_REPORT_MEANING,
   saturationSourceLabel,
   showsTopConsumer,
+  sparklinePoints,
   STALE_AFTER_SECS,
   swapReading,
   threadHeadroom,
@@ -157,10 +158,10 @@ import type {
   FleetDeviceRef,
   FloorDetail,
   Headroom,
-  HistorySeries,
   PsiFigures,
   ResourceSampleRow,
   RowTone,
+  SparklinePoint,
   StripRow,
   SwapReading,
 } from "./fleetResources";
@@ -1711,10 +1712,21 @@ export function FleetResourceStrip({
     () => buildMachineGroups(devices, latest, sinceFetchSecs),
     [devices, latest, sinceFetchSecs]
   );
-  const historyByAnchor = useMemo(() => {
-    const m = new Map<string, HistorySeries>();
+  // Built once per response, not per render: the sparkline memoizes on its
+  // `points` identity. The second (swap) line is `sparklinePoints`' decision:
+  // a host lane only, from coord's served `swap_ratio`.
+  const sparklineByAnchor = useMemo(() => {
+    const m = new Map<
+      string,
+      { points: SparklinePoint[] | undefined; pressureName: string | undefined }
+    >();
     for (const s of data?.history ?? []) {
-      m.set(rowAnchor(s), s);
+      m.set(rowAnchor(s), {
+        points: sparklinePoints(s),
+        pressureName: s.pressure_basis
+          ? pressureLabel(s.pressure_basis)
+          : undefined,
+      });
     }
     return m;
   }, [data?.history]);
@@ -2065,7 +2077,10 @@ export function FleetResourceStrip({
                             </span>
                           ) : (
                             <PressureSparkline
-                              points={historyByAnchor.get(row.key)?.points}
+                              points={sparklineByAnchor.get(row.key)?.points}
+                              pressureName={
+                                sparklineByAnchor.get(row.key)?.pressureName
+                              }
                               tone={tone}
                             />
                           )}

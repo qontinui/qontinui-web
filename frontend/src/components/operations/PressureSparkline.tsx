@@ -27,6 +27,19 @@
  * Null points are gaps (`connectNulls={false}`): a period where the server
  * had no pressure opinion must not be drawn as a straight line between two
  * readings that never met.
+ *
+ * **A second, DASHED line is the lane's own swap ratio**, drawn only when the
+ * caller supplies `swap` values (`sparklinePoints` does so on a `host` lane,
+ * from coord's served `swap_ratio`). A host's lead `pressure` is commit on
+ * every OS. A Linux host's swap device is a separate instrument, and commit
+ * cannot show it filling up: on 2026-11-09 nilan reached swap 0.9999 while
+ * this chart's only line read commit 0.815. Plan
+ * `2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan`
+ * Phase 2 follow-up. A `swap` that is `null` or absent is a gap. A series with
+ * no two usable swap points draws no swap line at all, never a flat 0.
+ * The swap line takes the row's tone like the lead line. It is told apart by
+ * its dash and its tooltip name, so the chart adds no new colour (style guide
+ * §6.4).
  */
 
 import { useMemo } from "react";
@@ -43,7 +56,21 @@ import { formatPercent, type RowTone } from "./fleetResources";
 export interface PressurePoint {
   sampled_at: string;
   pressure: number | null;
+  /**
+   * The lane's own swap ratio then, as the second line. `null` or absent = no
+   * swap point (a gap, never 0). Only the caller knows whether this lane HAS
+   * a separate swap instrument (`sparklinePoints`).
+   */
+  swap?: number | null;
 }
+
+/** A value the chart may plot: a finite number, else no point. */
+function plottable(v: number | null | undefined): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** A trend needs two readings, whichever line they are on. */
+const MIN_USABLE_POINTS = 2;
 
 const SPARK_STROKE: Record<RowTone, string> = {
   ok: "var(--chart-2, #22c55e)",
@@ -58,13 +85,24 @@ export interface PressureSparklineProps {
   /** Defaults keep the Dev Ops strip's frozen testids. */
   "data-testid"?: string;
   emptyTestId?: string;
+  /**
+   * The lead line's name in the tooltip. It defaults to "pressure". With a
+   * swap line beside it, the caller should name the basis ("commit used"),
+   * because a tooltip listing two unnamed percentages cannot say which is
+   * which.
+   */
+  pressureName?: string;
 }
+
+/** The swap line's tooltip name, in the strip's own words (`pressureLabel`). */
+export const SWAP_LINE_NAME = "swap used";
 
 export function PressureSparkline({
   points: rawPoints,
   tone,
   "data-testid": testId = "fleet-resource-sparkline",
   emptyTestId = "fleet-resource-sparkline-empty",
+  pressureName = "pressure",
 }: PressureSparklineProps) {
   // Time is the X value, not the array index. With index spacing a three-hour
   // publisher outage would draw as one 30-second-wide step between adjacent
@@ -77,14 +115,21 @@ export function PressureSparkline({
       (rawPoints ?? []).map((p) => ({
         t: Date.parse(p.sampled_at),
         pressure: p.pressure,
+        swap: plottable(p.swap),
       })),
     [rawPoints]
   );
-  const usable = points.filter(
+  const usablePressure = points.filter(
     (p) => p.pressure != null && Number.isFinite(p.t)
   ).length;
+  const usableSwap = points.filter(
+    (p) => p.swap != null && Number.isFinite(p.t)
+  ).length;
+  const drawsSwap = usableSwap >= MIN_USABLE_POINTS;
 
-  if (usable < 2) {
+  // Either line is a trend. A Linux host whose commit reading dropped out
+  // while its swap kept reporting still has a trajectory to show.
+  if (usablePressure < MIN_USABLE_POINTS && !drawsSwap) {
     return (
       <span
         className="text-[11px] text-muted-foreground italic"
@@ -96,7 +141,11 @@ export function PressureSparkline({
   }
 
   return (
-    <div data-testid={testId} className="inline-block">
+    <div
+      data-testid={testId}
+      data-swap-line={drawsSwap ? "drawn" : "absent"}
+      className="inline-block"
+    >
       <LineChart
         width={120}
         height={28}
@@ -137,12 +186,26 @@ export function PressureSparkline({
         <Line
           type="monotone"
           dataKey="pressure"
+          name={pressureName}
           stroke={SPARK_STROKE[tone]}
           strokeWidth={1.5}
           dot={false}
           connectNulls={false}
           isAnimationActive={false}
         />
+        {drawsSwap && (
+          <Line
+            type="monotone"
+            dataKey="swap"
+            name={SWAP_LINE_NAME}
+            stroke={SPARK_STROKE[tone]}
+            strokeWidth={1.25}
+            strokeDasharray="3 2"
+            dot={false}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        )}
       </LineChart>
     </div>
   );

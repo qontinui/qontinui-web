@@ -18,6 +18,7 @@ import { FleetResourceStrip } from "./FleetResourceStrip";
 import { commitEtaReading } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
+  HistorySeries,
   ResourceSampleRow,
   ResourceSamplesResponse,
 } from "./fleetResources";
@@ -1308,6 +1309,93 @@ describe("sparklines", () => {
   it("says 'no history' rather than drawing a chart from one point", () => {
     renderStrip({ latest: [sample()], history: [] });
     expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
+  });
+
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: coord serves `swap_ratio` on every history point, and a
+  // host row draws it as a second, dashed line beside the commit line.
+  const swapSeries = (
+    lane: string,
+    swaps: (number | null | undefined)[],
+    pressures: (number | null)[] = swaps.map(() => 0.815)
+  ) => ({
+    device_id: DEV,
+    lane,
+    lane_instance: null,
+    pressure_basis: (lane === "host" ? "commit" : "swap") as "commit" | "swap",
+    points: swaps.map((swap_ratio, i) => {
+      const p: HistorySeries["points"][number] = {
+        sampled_at: `2026-11-09T18:${String(i * 10).padStart(2, "0")}:00Z`,
+        pressure: pressures[i],
+        disk_free_bytes: null,
+        disk_total_bytes: null,
+        build_slots_busy: null,
+        build_slots_total: null,
+        ci_jobs_running: null,
+      };
+      // `undefined` = the key is absent, as a coord older than the field sends.
+      if (swap_ratio !== undefined) p.swap_ratio = swap_ratio;
+      return p;
+    }),
+  });
+  const swapLine = () =>
+    screen
+      .getByTestId("fleet-resource-sparkline")
+      .getAttribute("data-swap-line");
+  const dashedCurves = (container: HTMLElement) =>
+    Array.from(
+      container.querySelectorAll("path.recharts-line-curve[stroke-dasharray]")
+    );
+
+  it("draws a Linux host's swap climb as a second line (nilan: swap 0.9999, commit 0.815)", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          swap_total_bytes: 51_565_817_856,
+          swap_used_bytes: 51_561_738_240,
+          swap_ratio: 0.9999,
+          pressure: { ratio: 0.815, basis: "commit" },
+        }),
+      ],
+      history: [swapSeries("host", [0.62, 0.91, 0.9999])],
+    });
+    expect(swapLine()).toBe("drawn");
+    expect(dashedCurves(container)).toHaveLength(1);
+  });
+
+  it("draws no swap line on a Windows host, which coord serves swap_ratio: null", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [null, null, null])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no swap line when coord's history predates the field (key absent), never a 0", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [undefined, undefined])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no second line on a wsl row: its lead line already IS swap", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          swap_ratio: 0.75,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [swapSeries("wsl", [0.7, 0.75], [0.7, 0.75])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
   });
 });
 
