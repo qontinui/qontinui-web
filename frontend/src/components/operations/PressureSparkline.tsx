@@ -35,8 +35,9 @@
  * cannot show it filling up: on 2026-11-09 nilan reached swap 0.9999 while
  * this chart's only line read commit 0.815. Plan
  * `2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan`
- * Phase 2 follow-up. A `swap` that is `null` or absent is a gap. A series with
- * no two usable swap points draws no swap line at all, never a flat 0.
+ * Phase 2 follow-up. A `swap` that is `null`, absent or outside [0, 1] is a
+ * gap. A series with no two ADJACENT swap readings draws no swap line at all,
+ * never a flat 0.
  * The swap line takes the row's tone like the lead line. It is told apart by
  * its dash and its tooltip name, so the chart adds no new colour (style guide
  * §6.4).
@@ -50,7 +51,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatPercent, type RowTone } from "./fleetResources";
+import { formatPercent, pressureLabel, type RowTone } from "./fleetResources";
 
 /** One point: an instant and the server's pressure ratio then (null = no opinion). */
 export interface PressurePoint {
@@ -64,12 +65,31 @@ export interface PressurePoint {
   swap?: number | null;
 }
 
-/** A value the chart may plot: a finite number, else no point. */
+/**
+ * A swap value the chart may plot: a finite ratio in [0, 1], else no point.
+ * The range check keeps the pinned Y domain pinned: recharts widens a numeric
+ * domain to fit data outside it, which would silently rescale the lead line.
+ */
 function plottable(v: number | null | undefined): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
+    ? v
+    : null;
 }
 
-/** A trend needs two readings, whichever line they are on. */
+/**
+ * Whether a line has anything VISIBLE to draw. Dots are off and nulls are gaps,
+ * so only two ADJACENT readings make a segment. `[0.7, null, 0.8]` has two
+ * readings and draws nothing.
+ */
+function hasSegment(
+  points: readonly { t: number; v: number | null }[]
+): boolean {
+  const reading = (p: { t: number; v: number | null } | undefined) =>
+    p !== undefined && p.v != null && Number.isFinite(p.t);
+  return points.some((p, i) => i > 0 && reading(points[i - 1]) && reading(p));
+}
+
+/** The lead line's rule: a trend needs two readings. */
 const MIN_USABLE_POINTS = 2;
 
 const SPARK_STROKE: Record<RowTone, string> = {
@@ -94,8 +114,8 @@ export interface PressureSparklineProps {
   pressureName?: string;
 }
 
-/** The swap line's tooltip name, in the strip's own words (`pressureLabel`). */
-export const SWAP_LINE_NAME = "swap used";
+/** The swap line's tooltip name, in the strip's own words. */
+export const SWAP_LINE_NAME = pressureLabel("swap");
 
 export function PressureSparkline({
   points: rawPoints,
@@ -122,10 +142,7 @@ export function PressureSparkline({
   const usablePressure = points.filter(
     (p) => p.pressure != null && Number.isFinite(p.t)
   ).length;
-  const usableSwap = points.filter(
-    (p) => p.swap != null && Number.isFinite(p.t)
-  ).length;
-  const drawsSwap = usableSwap >= MIN_USABLE_POINTS;
+  const drawsSwap = hasSegment(points.map((p) => ({ t: p.t, v: p.swap })));
 
   // Either line is a trend. A Linux host whose commit reading dropped out
   // while its swap kept reporting still has a trajectory to show.
@@ -144,6 +161,7 @@ export function PressureSparkline({
     <div
       data-testid={testId}
       data-swap-line={drawsSwap ? "drawn" : "absent"}
+      data-pressure-name={pressureName}
       className="inline-block"
     >
       <LineChart

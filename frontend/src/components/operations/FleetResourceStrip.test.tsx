@@ -1361,6 +1361,12 @@ describe("sparklines", () => {
     });
     expect(swapLine()).toBe("drawn");
     expect(dashedCurves(container)).toHaveLength(1);
+    // Two lines need two names: the lead is named from the series' basis.
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-pressure-name")
+    ).toBe("commit used");
   });
 
   it("draws no swap line on a Windows host, which coord serves swap_ratio: null", () => {

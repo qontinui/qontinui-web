@@ -863,6 +863,21 @@ export function pressureLabel(basis: PressureBasis): string {
 }
 
 /**
+ * The lead sparkline line's tooltip name ("commit used"), or `undefined` for a
+ * basis this build does not know, so the sparkline keeps its neutral default.
+ *
+ * It is separate from `pressureLabel`, which falls through to "commit used"
+ * for any basis it does not recognise. Under a newer coord, that fallthrough
+ * would give a line coord measured on something else a confident wrong name.
+ * Both pages that draw the sparkline use this function.
+ */
+export function pressureLineName(basis: unknown): string | undefined {
+  return basis === "commit" || basis === "swap" || basis === "threads"
+    ? pressureLabel(basis)
+    : undefined;
+}
+
+/**
  * The formula, spelled out. §C1 requires the row to say WHICH metric it is
  * showing: the lead column means `swap_used/swap_total` on `wsl`/`container`
  * and `1 − commit_available/commit_total` on `host`, and a strip that hides
@@ -1013,7 +1028,9 @@ export function sparklinePoints(
 ): SparklinePoint[] | undefined {
   if (!series) return undefined;
   const isHost = series.lane === "host";
-  return series.points.map((p) => ({
+  // `?? []`: coord always serializes `points`, but one malformed series must
+  // not throw inside the strip's memo and take every machine's row with it.
+  return (series.points ?? []).map((p) => ({
     sampled_at: p.sampled_at,
     pressure: p.pressure,
     swap: isHost ? historySwapRatio(p) : null,

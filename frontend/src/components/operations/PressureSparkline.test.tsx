@@ -15,7 +15,12 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
-import { PressureSparkline, type PressurePoint } from "./PressureSparkline";
+import {
+  PressureSparkline,
+  SWAP_LINE_NAME,
+  type PressurePoint,
+} from "./PressureSparkline";
+import { pressureLabel } from "./fleetResources";
 
 afterEach(cleanup);
 
@@ -168,5 +173,99 @@ describe("PressureSparkline — the swap line", () => {
     );
     expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
     expect(screen.queryByTestId("fleet-resource-sparkline")).toBeNull();
+  });
+
+  it("says 'no history' for two swap readings that are not adjacent: nothing visible to draw", () => {
+    // Dots are off and nulls are gaps, so [0.7, null, 0.8] is two lone points
+    // and draws no segment. Saying "drawn" over an empty box would be a lie.
+    render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: null, swap: 0.7 },
+          { sampled_at: T1, pressure: null, swap: null },
+          { sampled_at: T2, pressure: null, swap: 0.8 },
+        ]}
+        tone="ok"
+      />
+    );
+    expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
+  });
+
+  it("draws a missing swap reading as a gap, never a line across it", () => {
+    // connectNulls={false}: two readings that never met are two segments.
+    const { container } = render(
+      <PressureSparkline
+        points={[
+          { sampled_at: "2026-11-09T18:00:00Z", pressure: 0.8, swap: 0.7 },
+          { sampled_at: "2026-11-09T18:05:00Z", pressure: 0.8, swap: 0.75 },
+          { sampled_at: "2026-11-09T18:10:00Z", pressure: 0.8, swap: null },
+          { sampled_at: "2026-11-09T18:15:00Z", pressure: 0.8, swap: 0.8 },
+          { sampled_at: "2026-11-09T18:20:00Z", pressure: 0.8, swap: 0.85 },
+        ]}
+        tone="ok"
+      />
+    );
+    const [swap] = dashed(container);
+    expect(swap).toBeTruthy();
+    const subpaths = (swap.getAttribute("d") ?? "").match(/M/g) ?? [];
+    expect(subpaths).toHaveLength(2);
+    // The lead line has no gap, so it is one subpath.
+    const lead = curves(container).find((p) => p !== swap);
+    expect((lead?.getAttribute("d") ?? "").match(/M/g)).toHaveLength(1);
+  });
+
+  it("never plots a swap value outside [0, 1], which would rescale the pinned axis", () => {
+    render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.4, swap: 1.2 },
+          { sampled_at: T1, pressure: 0.5, swap: -0.1 },
+        ]}
+        tone="ok"
+      />
+    );
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-swap-line")
+    ).toBe("absent");
+  });
+});
+
+describe("PressureSparkline — line names", () => {
+  it("names the lead line from the caller, and the swap line in the strip's words", () => {
+    render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.8, swap: 0.62 },
+          { sampled_at: T1, pressure: 0.815, swap: 0.9999 },
+        ]}
+        tone="ok"
+        pressureName="commit used"
+      />
+    );
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-pressure-name")
+    ).toBe("commit used");
+    expect(SWAP_LINE_NAME).toBe(pressureLabel("swap"));
+  });
+
+  it("keeps the neutral default name when the caller names nothing", () => {
+    render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.4 },
+          { sampled_at: T1, pressure: 0.5 },
+        ]}
+        tone="ok"
+      />
+    );
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-pressure-name")
+    ).toBe("pressure");
   });
 });
