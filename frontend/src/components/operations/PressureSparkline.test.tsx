@@ -13,7 +13,13 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 
 import {
   PressureSparkline,
@@ -33,6 +39,26 @@ function curves(container: HTMLElement): SVGPathElement[] {
   return Array.from(
     container.querySelectorAll<SVGPathElement>("path.recharts-line-curve")
   );
+}
+
+/**
+ * Hover the chart and return the tooltip's item names, as recharts lists them
+ * (sorted by name by default, not by `<Line>` order).
+ */
+async function hoverNames(container: HTMLElement): Promise<string[]> {
+  const wrapper = container.querySelector(".recharts-wrapper");
+  const surface = container.querySelector(".recharts-surface");
+  if (!wrapper || !surface) throw new Error("no chart rendered");
+  await act(async () => {
+    fireEvent.mouseEnter(wrapper, { clientX: 60, clientY: 14 });
+    fireEvent.mouseMove(wrapper, { clientX: 60, clientY: 14 });
+    fireEvent.mouseMove(surface, { clientX: 60, clientY: 14 });
+    // recharts commits the active tooltip on a later tick.
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  return Array.from(
+    container.querySelectorAll(".recharts-tooltip-item-name")
+  ).map((n) => n.textContent ?? "");
 }
 
 function dashed(container: HTMLElement): SVGPathElement[] {
@@ -232,7 +258,53 @@ describe("PressureSparkline — the swap line", () => {
   });
 });
 
+describe("PressureSparkline — the lead line follows the same segment rule", () => {
+  it("says 'no history' for two lead readings that are not adjacent", () => {
+    render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.5 },
+          { sampled_at: T1, pressure: null },
+          { sampled_at: T2, pressure: 0.6 },
+        ]}
+        tone="ok"
+      />
+    );
+    expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
+  });
+});
+
 describe("PressureSparkline — line names", () => {
+  it("names both lines in the tooltip: the lead from the caller, swap in the strip's words", async () => {
+    const { container } = render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.8, swap: 0.62 },
+          { sampled_at: T1, pressure: 0.81, swap: 0.91 },
+          { sampled_at: T2, pressure: 0.815, swap: 0.9999 },
+        ]}
+        tone="ok"
+        pressureName="commit used"
+      />
+    );
+    expect(await hoverNames(container)).toEqual(["commit used", "swap used"]);
+  });
+
+  it("lists no swap entry in the tooltip of a host with no swap line", async () => {
+    const { container } = render(
+      <PressureSparkline
+        points={[
+          { sampled_at: T0, pressure: 0.4, swap: null },
+          { sampled_at: T1, pressure: 0.5, swap: null },
+          { sampled_at: T2, pressure: 0.6, swap: null },
+        ]}
+        tone="ok"
+        pressureName="commit used"
+      />
+    );
+    expect(await hoverNames(container)).toEqual(["commit used"]);
+  });
+
   it("names the lead line from the caller, and the swap line in the strip's words", () => {
     render(
       <PressureSparkline

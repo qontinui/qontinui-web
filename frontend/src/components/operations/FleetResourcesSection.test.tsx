@@ -58,9 +58,10 @@ const nilanHost = {
   headroom_source: { basis: "swap", volume: null, free_bytes: null },
 } as unknown as ResourceSampleRow;
 
-// The same host's last half hour as coord serves it since qontinui-coord#4202:
-// commit nearly flat, swap climbing to exhaustion (finding 3544f066: the
-// 18:30Z climb was not readable from this route before).
+// A fixture shaped like nilan's climb, with ILLUSTRATIVE values (these are not
+// readings: finding 3544f066 records that this route served no swap for that
+// window), in the wire form coord serves since qontinui-coord#4202. Commit is
+// nearly flat while swap climbs to exhaustion.
 const nilanHistory = {
   device_id: DEV,
   lane: "host",
