@@ -102,6 +102,12 @@ import {
   type RoleWriteRefusal,
 } from "./fleetDispatchRoles";
 import {
+  DetachedRemovalAcks,
+  RemoveMachineButton,
+  RemoveMachineFromTenantDialog,
+  useRemoveMachineFromTenant,
+} from "./RemoveMachineFromTenantDialog";
+import {
   putDispatchRole,
   useFleetDispatchRoles,
 } from "./useFleetDispatchRoles";
@@ -339,7 +345,11 @@ const ROLES_NOTE_WITHHELD =
   "Coord added a note about this list, withheld in presentation mode.";
 
 export function FleetRolesSection() {
-  const { read, asOfMs, refresh } = useFleetDispatchRoles();
+  const { read, asOfMs, refresh, latestRead } = useFleetDispatchRoles();
+  // "Remove from this tenant…" (plan 2026-11-15-stale-ci-hosts-…): its state
+  // lives here, not in the row, so its answer survives the row leaving.
+  const readNow = useCallback(() => latestRead?.() ?? null, [latestRead]);
+  const removal = useRemoveMachineFromTenant(refresh, readNow);
   const { presenting } = usePresentationMode();
   const machineName = useMachineAliaser();
   const rowKey = useRowKey();
@@ -691,6 +701,21 @@ export function FleetRolesSection() {
                       <CoordAdminOnly fallback={<ReadOnlyNotice />}>
                         <div className="space-y-1.5">
                           <RoleButtons m={m} onPick={pickFor(m)} />
+                          {/* Removing this tenant's binding (plan
+                              2026-11-15-stale-ci-hosts-…); an assigned-but-
+                              unregistered machine has no rows to remove. */}
+                          {m.deviceIds.length > 0 && read.state === "known" && (
+                            <RemoveMachineButton
+                              machine={m}
+                              machines={read.machines}
+                              roster={{
+                                rosterTruncated: read.rosterTruncated,
+                                omitted: read.omitted,
+                                unidentifiable: read.unidentifiable,
+                              }}
+                              controller={removal}
+                            />
+                          )}
                           {m.role === null && m.suggestion && (
                             <Button
                               size="sm"
@@ -846,6 +871,8 @@ export function FleetRolesSection() {
                 whose role must be set there.
               </p>
             </div>
+            <DetachedRemovalAcks controller={removal} />
+            <RemoveMachineFromTenantDialog controller={removal} />
           </CoordAdminOnly>
 
           <Dialog
