@@ -335,6 +335,24 @@ def test_the_fetch_lever_can_only_lower_the_bound(tmp_path: Path, lever: str) ->
 
 
 @requires_bash_git
+@pytest.mark.parametrize("lever", ["5", "1", "20", "007"])
+def test_a_valid_fetch_lever_lowers_the_bound(tmp_path: Path, lever: str) -> None:
+    """A lever in 1..20 is the fetch bound the wrapper hands the helper."""
+    clone, sha = _shallow_clean_pr(tmp_path)
+    stub = stub_git(tmp_path, "exit 128")
+    proc = _run(
+        tmp_path,
+        clone,
+        sha,
+        path_prefix=stub,
+        env_override={"HARNESS_GUARD_FETCH_BOUND_SECS": lever},
+    )
+    _withheld(proc, "could not be fetched (git fetch exited 128")
+    expected = f"is the {int(lever, 10)}s bound"
+    assert expected in proc.stdout, repr(proc.stdout)
+
+
+@requires_bash_git
 def test_an_absent_guard_helper_is_unknown_and_withholds(tmp_path: Path) -> None:
     """The wrapper alone, without harness-diff-guard.sh beside it.
 

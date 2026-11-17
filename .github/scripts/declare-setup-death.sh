@@ -293,7 +293,9 @@ parse_rows() {
 GUARD="UNKNOWN"
 GUARD_REASON=""
 # Beside THIS copy of the script, never through GITHUB_WORKSPACE: each copy
-# runs with the helper from its own tree.
+# runs with the helper from its own tree. The path is not symlink-resolved, so
+# a caller run through a symlink finds no helper and reads UNKNOWN (fail-closed;
+# every workflow runs `bash .github/scripts/<script>` directly).
 GUARD_HELPER="$(dirname -- "${BASH_SOURCE[0]}")/harness-diff-guard.sh"
 readonly GUARD_HELPER
 GUARD_HELPER_LOADED=0
