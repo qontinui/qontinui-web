@@ -388,7 +388,7 @@ jobs:
             Run ruff (linting)|${{ steps.ruff_check.outcome }}|${{ steps.ruff_check.conclusion }}
             Run ruff format (formatting)|${{ steps.ruff_format.outcome }}|${{ steps.ruff_format.conclusion }}
             Run mypy (type checking)|${{ steps.mypy.outcome }}|${{ steps.mypy.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1438,7 +1438,7 @@ jobs:
             Collect the test suite|${{ steps.collect.outcome }}|${{ steps.collect.conclusion }}
             Select this shard's test files|${{ steps.select_shard.outcome }}|${{ steps.select_shard.conclusion }}
             Run tests with coverage|${{ steps.pytest.outcome }}|${{ steps.pytest.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1583,11 +1583,11 @@ jobs:
         id: safety_install
         env:
           PYTHONSAFEPATH: '1'
-          # A PR's own backend/poetry.toml with `[virtualenvs] create = false`
-          # makes `poetry env info --executable` print nothing and exit 1, which
-          # would kill this SETUP row for a reason the PR caused. The
-          # environment variable outranks the project file (measured, Poetry 2.5.1).
-          POETRY_VIRTUALENVS_CREATE: 'true'
+        # This row still reads the PR's backend/poetry.toml through poetry
+        # (`create = false` empties `poetry env info -e`; `no-pip = true`
+        # leaves the venv without pip), so every backend-ci carrier's
+        # HARNESS_PATHS_RE lists ^backend/poetry\.toml$: a PR that edits it
+        # is never declared not a verdict.
         run: |
           "$(poetry env info --executable)" -P -m pip install safety
 
@@ -1619,7 +1619,7 @@ jobs:
           VERDICT_STEPS: |
             Run Trivy vulnerability scanner|${{ steps.trivy_scan.outcome }}|${{ steps.trivy_scan.conclusion }}
             Run safety check (dependency vulnerabilities)|${{ steps.safety_check.outcome }}|${{ steps.safety_check.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1808,7 +1808,7 @@ jobs:
           # with scripts/ci first on sys.path, so a module a PR adds there
           # runs inside it. A PR touching any of it gets no title (rule 5,
           # the harness-diff guard).
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$|^scripts/ci/'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then

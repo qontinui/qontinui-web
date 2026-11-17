@@ -878,6 +878,10 @@ FRONTEND_LOCKFILE_CARRIERS = frozenset(
 #: which ignores the file. A PR adding one can cause the death it would excuse.
 RUST_TOOLCHAIN_CARRIERS = frozenset({"style-gate.yml"})
 
+# backend-ci's `Install safety` resolves its interpreter through poetry, which
+# reads the PR's own backend/poetry.toml (`create = false`, `no-pip = true`).
+POETRY_TOML_CARRIERS = frozenset({"backend-ci.yml"})
+
 
 def _harness_literal(workflow: str) -> str:
     """The plan's pattern: own workflow file, local actions, the declarer.
@@ -893,6 +897,8 @@ def _harness_literal(workflow: str) -> str:
         pattern += "|^frontend/package(-lock)?\\.json$"
     if workflow in RUST_TOOLCHAIN_CARRIERS:
         pattern += "|^rust-toolchain(\\.toml)?$"
+    if workflow in POETRY_TOML_CARRIERS:
+        pattern += "|^backend/poetry\\.toml$"
     return pattern
 
 
@@ -2064,7 +2070,36 @@ def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id
     )
 
 
-def test_install_safety_forces_a_poetry_virtualenv():
-    """A PR's backend/poetry.toml `create = false` would empty `poetry env info -e`."""
-    step = _steps_by_id(_job("backend-ci.yml", "security-scan"))["safety_install"][1]
-    assert step["env"]["POETRY_VIRTUALENVS_CREATE"] == "true"
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern, against a PR that adds only backend/poetry.toml."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={"backend/poetry.toml": "[virtualenvs]\ncreate = false\n"},
+    )
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in POETRY_TOML_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
+        assert "('backend/poetry.toml')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
+
+
+def test_the_poetry_installer_table_is_every_carrier_that_installs_poetry():
+    """POETRY_INSTALLER_STEPS is the census, not a sample."""
+    installs = {
+        (workflow, job_id)
+        for workflow, job_id in CARRIERS
+        if "poetry_install" in _steps_by_id(_job(workflow, job_id))
+    }
+    assert installs == set(POETRY_INSTALLER_STEPS)
