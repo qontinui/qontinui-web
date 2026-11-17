@@ -728,7 +728,7 @@ export const STILL_LISTED_HOME_TENANT_TEXT =
 export function unsentRowsListedText(n: number): string {
   return `Still listed under ${n} device row${
     n === 1 ? "" : "s"
-  } this removal did not include (registered after the dialog opened) — open it again to remove ${
+  } this removal did not include — open it again to remove ${
     n === 1 ? "it" : "them"
   }.`;
 }

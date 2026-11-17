@@ -362,7 +362,7 @@ export function useRemoveMachineFromTenant(
           : [];
       const stillListedAfter = listedSent.length > 0;
       // The re-read may list this machine under rows the snapshot never held
-      // (registered after the dialog opened): those were not sent, so the
+      // (a registration it did not include): those were not sent, so the
       // machine is not gone whatever this removal's counts say.
       const snapshot = new Set(m.deviceIds.map((id) => id.toLowerCase()));
       const listedUnsent =
@@ -382,7 +382,8 @@ export function useRemoveMachineFromTenant(
       // Still listed after a removal that answered for its ids — removed,
       // already absent, or with the pointer unreported — is worth saying.
       const homeTenant =
-        stillListedAfter && s.alreadyAbsent + s.pointerUnknown + s.removed > 0;
+        stillListedAfter &&
+        s.alreadyAbsent + s.pointerUnknown + s.removed + s.removedEarlier > 0;
       const listedNote = homeTenant
         ? `${summarySentence} ${
             onlyLag ? STILL_LISTED_LAG_TEXT : STILL_LISTED_HOME_TENANT_TEXT
