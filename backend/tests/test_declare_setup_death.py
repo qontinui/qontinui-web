@@ -2180,6 +2180,29 @@ def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id
     )
 
 
+def test_every_poetry_installer_pipe_in_any_workflow_fails_on_a_download_outage():
+    """Keyed on the pipe itself, not the `poetry_install` step id, and over every
+    workflow, carrier or not: an unguarded pipe reads green on a dead download."""
+    pipes = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_id, job in (_workflow(path.name).get("jobs") or {}).items():
+            for step in job.get("steps") or []:
+                lines = str(step.get("run") or "").splitlines()
+                for i, line in enumerate(lines):
+                    if "install.python-poetry.org" not in line:
+                        continue
+                    where = f"{path.name}:{job_id}:{step.get('name')}"
+                    pipes.append(where)
+                    assert any(
+                        prior.strip() == "set -o pipefail" for prior in lines[:i]
+                    ), f"{where}: pipefail must precede the installer pipe"
+                    assert "curl -fsSL https://install.python-poetry.org" in line, (
+                        f"{where}: curl must fail on an HTTP error (-f)"
+                    )
+    # The census must reach at least every carrier's installer.
+    assert len(pipes) >= len(POETRY_INSTALLER_STEPS), pipes
+
+
 def test_backend_ci_harness_is_the_lint_jobs_own_pattern():
     """`_pr_env`'s default harness is the pattern the lint carrier really runs."""
     step = _declarer(_job("backend-ci.yml", "lint"))
