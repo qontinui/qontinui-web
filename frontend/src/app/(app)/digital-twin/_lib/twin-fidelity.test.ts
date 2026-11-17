@@ -1,16 +1,84 @@
 import { describe, expect, it } from "vitest";
 
-import { formatAge, httpStatusOf, readFidelity } from "./twin-fidelity";
+import * as twinFidelity from "./twin-fidelity";
+import {
+  fidelityReadAt,
+  formatAge,
+  readFidelity,
+  reportAgeText,
+} from "./twin-fidelity";
 import type { RawVerdictResponse } from "./types";
 
 const idle = { isLoading: false, isError: false, error: null };
 
-describe("httpStatusOf", () => {
-  it("reads the status the http client's error message carries", () => {
-    expect(httpStatusOf(new Error("GET /x failed: 404 - nope"))).toBe(404);
-    expect(httpStatusOf(new Error("GET /x failed: 403 - {}"))).toBe(403);
-    expect(httpStatusOf(new Error("network down"))).toBeNull();
-    expect(httpStatusOf("not an error")).toBeNull();
+describe("the status a failed read carries", () => {
+  it("is read by the console's one anchored reader, not a copy of its own", () => {
+    expect("httpStatusOf" in twinFidelity).toBe(false);
+  });
+
+  it("reads 403 and 404 from the client's status field", () => {
+    const failing = (message: string) =>
+      readFidelity(
+        {
+          data: undefined,
+          isLoading: false,
+          isError: true,
+          error: new Error(message),
+        },
+        0
+      );
+    expect(failing("GET /x failed: 403 - {}")).toEqual({ kind: "internal" });
+    expect(failing("GET /x failed: 404 - nope").kind).toBe("unknown");
+  });
+
+  it("never reads a status out of text that is not the client's status field", () => {
+    // Not an httpClient rejection: no verb, no URL. An unanchored reader took
+    // the 403 and showed the calm Qontinui-internal notice for an unknown
+    // failure.
+    const read = readFidelity(
+      {
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: new Error("proxy failed: 403 - upstream refused"),
+      },
+      0
+    );
+    expect(read).toEqual({
+      kind: "unknown",
+      reason: "the twin-fidelity read failed",
+    });
+  });
+});
+
+describe("fidelityReadAt", () => {
+  it("takes a report's ages at its read when one has landed", () => {
+    expect(fidelityReadAt({ dataUpdatedAt: 1_000 }, 9_000)).toBe(1_000);
+  });
+
+  it("falls back to now while no read has landed", () => {
+    expect(fidelityReadAt({ dataUpdatedAt: 0 }, 9_000)).toBe(9_000);
+    expect(fidelityReadAt({}, 9_000)).toBe(9_000);
+  });
+});
+
+describe("reportAgeText", () => {
+  it("words a served age as of its read and names coord as its source", () => {
+    expect(reportAgeText({ ageSeconds: 120, ageSource: "served" })).toBe(
+      "report 2m old as of its read (age served by coord)"
+    );
+  });
+
+  it("words a computed age as of its read and names computed_at as its source", () => {
+    expect(reportAgeText({ ageSeconds: 90, ageSource: "computed_at" })).toBe(
+      "report 2m old as of its read (from its computed_at)"
+    );
+  });
+
+  it("says UNKNOWN for an age the body did not carry", () => {
+    expect(reportAgeText({ ageSeconds: null, ageSource: null })).toBe(
+      "report age UNKNOWN"
+    );
   });
 });
 
@@ -82,6 +150,7 @@ describe("readFidelity", () => {
     );
     if (read.kind !== "report") throw new Error(`read ${read.kind}`);
     expect(read.report.ageSeconds).toBe(90);
+    expect(read.report.ageSource).toBe("computed_at");
     expect(read.report.observabilityRate).toBe(1);
     // A field coord does not serve is UNKNOWN, not 0.
     expect(read.report.staleEvidenceViolations).toBeNull();

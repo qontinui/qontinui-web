@@ -358,6 +358,29 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
   };
 }
 
+/**
+ * A lane's `effective` state in fixed words while presenting. Coord's closed set
+ * today; a value this console does not name is its raw token, so it reads as
+ * not recognised rather than being shown with its underscores spaced.
+ */
+export function presentedLaneState(effective: string | null): string {
+  switch (effective) {
+    case null:
+      return "unknown";
+    case "open":
+    case "unknown":
+      return effective;
+    case "closed_by_role":
+      return "closed by role";
+    case "closed_by_drain":
+      return "closed by drain";
+    case "not_registered":
+      return "not registered";
+    default:
+      return "not recognised";
+  }
+}
+
 /** The role column's words. Unassigned names what it BEHAVES as (§D5). */
 export function describeRole(m: RoleMachine): string {
   if (m.unrecognisedRole !== null)
@@ -518,14 +541,18 @@ export function describeRoleWriteError(
       ? parsed.detail
       : null);
   // Coord puts its prose in `detail` (a string inside the refusal object).
-  // The deployed web error handler splices a dict refusal to the TOP level and
-  // fills `message` with the dict's Python repr when it has no `message` of
-  // its own (`middleware/error_handler.py`), so `message` is used only when it
-  // is not that repr.
+  // The deployed web error handler splices a dict refusal to the TOP level and,
+  // when it has no `message` of its own, fills `message` with the dict's
+  // `error` — the code itself (`_detail_message` in
+  // `middleware/error_handler.py`; an older handler put the dict's Python repr
+  // there). So `message` is coord's prose only when it is neither the code
+  // nor a repr; otherwise the code would be printed twice.
   const message = inner ? str(inner.message) : null;
   const coordMsg = inner
     ? (str(inner.detail) ??
-      (message && !message.trimStart().startsWith("{") ? message : null))
+      (message && message !== code && !message.trimStart().startsWith("{")
+        ? message
+        : null))
     : null;
 
   if (code === "last_open_lane") {

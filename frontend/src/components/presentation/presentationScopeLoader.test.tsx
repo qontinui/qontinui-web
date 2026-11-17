@@ -7,6 +7,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PresentationScopeRecord } from "@/lib/api/presentationScope";
+import { BackendError } from "@/lib/errors/backend-error-message";
 import { ACTIVE_TENANT_STORAGE_KEY } from "@/services/http-client";
 
 vi.mock("next/navigation", () => ({
@@ -219,6 +220,47 @@ describe("the store", () => {
     expect(r.store.getSnapshot().state.status).toBe("error");
   });
 
+  it("keeps the backend's answer behind a failure until a read answers", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    const refused = new BackendError(
+      { kind: "unstructured", sentence: "Not allowed" },
+      403
+    );
+    r.calls[0].reject(refused);
+    await flush();
+    expect(r.store.getSnapshot().failure).toBe("Not allowed");
+    expect(r.store.getSnapshot().failureError).toBe(refused);
+    r.clock.t += 15_000;
+    r.store.ensureFresh();
+    // The retry has learned nothing yet, so the answer stands with the failure.
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(r.store.getSnapshot().failureError).toBe(refused);
+    r.calls[1].resolve(record());
+    await flush();
+    expect(r.store.getSnapshot().failureError).toBeNull();
+  });
+
+  it("holds no answer for a failure that was not one", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(new Error("Network error"));
+    await flush();
+    expect(r.store.getSnapshot().failure).toBe("Network error");
+    expect(r.store.getSnapshot().failureError).toBeNull();
+  });
+
+  it("drops the answer when a save's answer is held in its place", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(
+      new BackendError({ kind: "unstructured", sentence: "Not allowed" }, 403)
+    );
+    await flush();
+    expect(r.store.accept(record(), r.store.currentSelection())).toBe(true);
+    expect(r.store.getSnapshot().failureError).toBeNull();
+  });
+
   it("a failure stands while its retry is in flight, until a read answers", async () => {
     const r = rig();
     r.store.ensureFresh();
@@ -259,6 +301,19 @@ describe("the store", () => {
     r.store.ensureFresh();
     expect(r.load).toHaveBeenCalledTimes(2);
     expect(r.store.getSnapshot().state.status).toBe("error");
+  });
+
+  it("does not carry one project's backend answer over to another", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(
+      new BackendError({ kind: "unstructured", sentence: "Not allowed" }, 403)
+    );
+    await flush();
+    r.selection.value = "project-b";
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(r.store.getSnapshot().failureError).toBeNull();
   });
 
   it("does not carry one project's failure over to another", async () => {

@@ -48,6 +48,14 @@ const components: Components = {
       </a>
     );
   },
+  // A table wider than the page scrolls by itself, leaving the text around it
+  // at the page's width. Delivery plans are mostly tables, and many columns
+  // don't fit a phone.
+  table: ({ node: _node, ...rest }) => (
+    <div className="overflow-x-auto">
+      <table {...rest} />
+    </div>
+  ),
   img: ({ src, alt }) => {
     const href = typeof src === "string" ? src : undefined;
     // react-markdown's URL filter has already emptied unsafe sources

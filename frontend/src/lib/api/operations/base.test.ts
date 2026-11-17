@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { describeCoordPollError } from "@/components/operations/coordPollError";
 import {
+  ANSWER_UNREADABLE_REASON,
+  outcomeUnknownReason,
+} from "@/components/admin/coord/writeOutcome";
+import { UnreadableAnswerError } from "@/services/http-client";
+import {
   backendError,
   backendErrorMessage,
 } from "@/lib/errors/backend-error-message";
@@ -83,6 +88,28 @@ describe("readJson", () => {
   it("rejects an unparseable 2xx by default", async () => {
     const res = new Response("not json", { status: 200 });
     await expect(readJson(res, REQUEST)).rejects.toBeInstanceOf(SyntaxError);
+  });
+
+  it("names a 2xx whose body broke off mid-read as an answer that came back", async () => {
+    const res = {
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new TypeError("terminated")),
+    } as unknown as Response;
+    const err = await rejection(readJson(res, REQUEST));
+    expect(err).toBeInstanceOf(UnreadableAnswerError);
+    expect(err.message).toBe("terminated");
+    expect(outcomeUnknownReason(err)).toBe(ANSWER_UNREADABLE_REASON);
+  });
+
+  it("hands a caller's own abort back as it came", async () => {
+    const abort = new DOMException("The operation was aborted.", "AbortError");
+    const res = {
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(abort),
+    } as unknown as Response;
+    await expect(readJson(res, REQUEST)).rejects.toBe(abort);
   });
 
   it("resolves null for an unparseable 2xx when asked to", async () => {

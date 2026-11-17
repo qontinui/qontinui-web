@@ -178,19 +178,47 @@ export interface RepoDialReading {
   scopeError: string | null;
   /** A scope write landed but its read-back failed: UNKNOWN whatever is retained. */
   scopeReadbackError: string | null;
+  /**
+   * A scope write's answer left its outcome open (`isWriteFailureUnknown`):
+   * the reason, UNKNOWN whatever is retained until a read issued after it
+   * delivers. Never "the write failed".
+   */
+  scopeOutcomeUnknown: string | null;
   delivery: ContinuationDeliveryModeView | null;
   deliveryError: string | null;
   deliveryReadbackError: string | null;
+  /** As {@link RepoDialReading.scopeOutcomeUnknown}, for the delivery mode. */
+  deliveryOutcomeUnknown: string | null;
 }
 
 export const EMPTY_READING: RepoDialReading = {
   scope: null,
   scopeError: null,
   scopeReadbackError: null,
+  scopeOutcomeUnknown: null,
   delivery: null,
   deliveryError: null,
   deliveryReadbackError: null,
+  deliveryOutcomeUnknown: null,
 };
+
+/**
+ * Why a write left a dial UNKNOWN, in the words its status line uses, or
+ * `null` when no write did: a read-back that failed after the write landed,
+ * or an answer that left whether it landed open.
+ */
+export function writeUnknownReason(
+  readbackError: string | null,
+  outcomeUnknown: string | null
+): string | null {
+  if (readbackError) {
+    return `written, but reading it back failed (${readbackError}) — refresh to re-check`;
+  }
+  if (outcomeUnknown) {
+    return `whether the last change was applied is unknown (${outcomeUnknown}) — re-reading what coord holds`;
+  }
+  return null;
+}
 
 /**
  * The scope a reading may be COUNTED as — the same unknown rule as
@@ -201,7 +229,9 @@ export const EMPTY_READING: RepoDialReading = {
 export function knownScope(
   reading: RepoDialReading | undefined
 ): PostMergeFollowupScopeView | null {
-  if (!reading || reading.scopeReadbackError) return null;
+  if (!reading || reading.scopeReadbackError || reading.scopeOutcomeUnknown) {
+    return null;
+  }
   return reading.scope;
 }
 
@@ -351,13 +381,21 @@ export function readErrorText(message: string): string {
  */
 export function scopeStatus(
   view: PostMergeFollowupScopeView | null,
-  opts: { error?: string | null; readbackError?: string | null } = {}
+  opts: {
+    error?: string | null;
+    readbackError?: string | null;
+    outcomeUnknown?: string | null;
+  } = {}
 ): RowStatus<FollowupScopeKind> {
-  if (opts.readbackError) {
+  const writeUnknown = writeUnknownReason(
+    opts.readbackError ?? null,
+    opts.outcomeUnknown ?? null
+  );
+  if (writeUnknown !== null) {
     return {
       kind: "unknown",
       label: UNKNOWN_DASH,
-      reason: `written, but reading it back failed (${opts.readbackError}) — refresh to re-check`,
+      reason: writeUnknown,
       attention: FOLLOWUP_SCOPE_ATTENTION_BY_KIND.unknown,
     };
   }

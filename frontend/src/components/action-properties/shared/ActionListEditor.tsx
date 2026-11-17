@@ -25,7 +25,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource, useDropZone } from "@qontinui/ui-bridge";
+import { useDragSource, useDropZone } from "@qontinui/ui-bridge/react";
 
 export interface ActionListEditorProps {
   /** Current list of action IDs */

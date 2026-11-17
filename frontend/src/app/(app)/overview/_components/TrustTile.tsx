@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { useVerificationMetrics } from "@/components/admin/coord/useVerificationMetrics";
 import {
   deriveTrustView,
+  deriveVerifierAgreement,
   refutedUnitsInWindow,
 } from "@/components/admin/coord/verificationMetrics";
 import { TrustPanel, type RefutedList } from "./TrustPanel";
@@ -30,6 +31,10 @@ export function TrustTile({
     tenantError
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
+  const agreement = useMemo(
+    () => deriveVerifierAgreement(read, "tile"),
+    [read]
+  );
 
   const windowFrom =
     view.state === "populated" || view.state === "no_verifications"
@@ -58,7 +63,7 @@ export function TrustTile({
       >
         Can I trust &lsquo;done&rsquo;?
       </h2>
-      <TrustPanel view={view} refuted={list} />
+      <TrustPanel view={view} refuted={list} agreement={agreement} />
     </section>
   );
 }

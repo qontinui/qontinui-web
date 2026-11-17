@@ -51,11 +51,12 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
   },
   "coordination-overview.degrading": {
     title: "What is degrading",
-    // Each row's time is the onset coord OBSERVED; its detail says whether
-    // an agent response is bound (`remediationPhrase`).
+    // Each row's time is the onset coord OBSERVED; its collapsed line and the
+    // tally under the list say whether an agent response is bound
+    // (`remediationShort`, `remediationTallySentence`).
     // The machine line counts the roster the Dev Ops badge counts
     // (`MachineHealthLine`, `homeSupplements.ts`).
-    oneLiner: copy`Infrastructure problems open now, each dated by when the ${term("coord", "coordination service")} first observed it, and how many machines are not healthy.`,
+    oneLiner: copy`Infrastructure problems open now, each dated by when the ${term("coord", "coordination service")} first observed it and whether an agent response is bound to it or it waits on someone, and how many machines are not healthy.`,
     // The per-area freshness lines under the list (`planeFreshnessPhrase`).
     whyItMatters:
       "Under the list, each area shows whether its watchers are running on time, so a quiet list can be told apart from a blind one.",
@@ -65,13 +66,15 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     // One row per repository coord groups the units under (plus the units
     // that name none), its summary the four classes `groupSummary` prints.
     oneLiner: copy`Every repository's ${term("work_unit", "work units")} counted by state (shipped, in flight, waiting, or without a recorded change), with the current initiative below.`,
-    // A repo row's detail lists the units of its two named classes
-    // (`NamedUnits`), each with its age (`namedUnitAgePhrase`). While
+    // The no-recorded-change units are listed, per repository, under the
+    // list and visible without a click (`NamedNoChangeBlock`); a repo row's
+    // detail lists its waiting units (`NamedUnits`), each with its age
+    // (`namedUnitAgePhrase`). While
     // presenting a unit's title shows only when every repository it may
     // belong to is first-party (`namedUnitRepos`); coord groups units under
     // bare repository names today, so most read as their descriptor. A count
     // coord did not serve is a dash.
-    whyItMatters: copy`The units with no recorded change are listed one click down, each with how long it has gone without one, so slow work is visible rather than lost in a total; a unit is named only where it can be attributed to the ${term("tenant", "tenant")}'s own repositories, and a count that was not read shows as ${term("unknown")}, never as zero.`,
+    whyItMatters: copy`The units with no recorded change are listed under the repository list, each with how long it has gone without one, so slow work is visible rather than lost in a total; a unit is named only where it can be attributed to the ${term("tenant", "tenant")}'s own repositories, and a count that was not read shows as ${term("unknown")}, never as zero.`,
   },
   "coordination-overview.correct": {
     title: "Is the verified work correct?",
@@ -87,10 +90,12 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     title: "What this view does not know",
     // Coord's `does_not_know` list: each source, its state, its read time
     // (a watcher's last successful run) and its freshness bound.
-    // `DoesNotKnowSection`: the unread sources listed, the read ones behind
-    // one disclosure; while presenting, sources not built yet are counted on
-    // one line rather than listed.
-    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view, with the ones it did read one click down.`,
+    // `DoesNotKnowSection`: the unread sources listed, then the areas it read
+    // whose faults reach this view slower than the fault-to-visibility
+    // target (`detection_bound:<plane>` rows, listed in the open), the other
+    // read ones behind one disclosure; while presenting, sources not built
+    // yet are counted on one line rather than listed.
+    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view and the areas whose faults reach this view slower than the fault-to-visibility target, with the other sources it read one click down.`,
     whyItMatters:
       "A view that names what it could not read is one whose calm parts can be trusted: a source that was not read stays on this list, marked as not read, instead of being dropped.",
   },

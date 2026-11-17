@@ -2,31 +2,32 @@
  * /admin/coord/spawns — rendered.
  *
  * Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
- * Phase 5. Every route the page reads answers `{status, body}` here, so the
- * failure arms run through the real client, `classifySpawnError` and the
- * hook's rejected-read branches. What is pinned, and why each would go red:
+ * Phase 5, and the UX pass that moved the per-request list and the per-device
+ * placement to the investigation view (`requests/page.test.tsx` pins those).
+ * Every route the page reads answers `{status, body}` here, so the failure arms
+ * run through the real client, `classifySpawnError` and the hook's
+ * rejected-read branches. What is pinned, and why each would go red:
  *
  * 1. **Real data renders**: the strip's figures with their window and as-of
- *    time, one line per device with its name and dispatch role, one row per
- *    request with its device, wait and outcome, and the expanded row's
- *    timeline from `GET /spawns/{id}`.
- * 2. **A request waiting from before the window is listed** — read oldest
- *    first, in the Queued tab, red once it has waited a day, and the strip
- *    goes red with it.
- * 3. **`{available: false}` is "spawn ledger not deployed yet"** on the strip,
- *    the list and the chart — never an empty ledger.
+ *    time, and the requests and their placement as COUNTS that link to the
+ *    investigation view — no row, tab or per-device line on this page.
+ * 2. **A request waiting from before the window is counted as queued**, and
+ *    the strip goes red once it has waited a day.
+ * 3. **A ledger coord does not serve is said ONCE**: `{available: false}` and
+ *    the `no_such_route` 404 stand one notice in the strip's place, naming
+ *    every section that rests on the ledger, and none of those renders — no
+ *    strip, banner, count, chart, Last spawned or in-flight column. A read
+ *    that FAILED collapses nothing.
  * 4. **A null share renders UNKNOWN**, never `0%`.
- * 5. **A backfilled row is marked "history partial"**, and only that row.
+ * 5. **Backfilled rows are counted on the strip.**
  * 6. **An empty window is a measured empty**, with counts of `0`.
- * 7. **The failure arms**: a 403 from the admin gate clears the rows and says
- *    who may read; coord's `no_such_route` 404 says coord does not serve the
- *    ledger yet; a 502 after a good read keeps the rows and says the refresh
- *    failed; a window list that fails while the waiting read answers leaves
- *    the window's tabs at a dash with an UNKNOWN sentence, never "none"; a
- *    detail `spawn_not_found` says there is no such request.
- * 8. **Switching the window** re-reads stats and list for the new window; a
- *    **filter tab** has its own empty sentence; a **truncated list** draws a
- *    partial chart and a coverage line with its as-of.
+ * 7. **The failure arms**: a 403 clears the counts and says who may read; a
+ *    `no_such_route` 404 is said once, as in 3; a 502 after
+ *    a good read keeps the counts and says the refresh failed; a window list
+ *    that fails leaves its counts at a dash, never 0.
+ * 8. **Controls**: a refresh says when it re-read; switching the window
+ *    re-reads stats and list; a truncated list draws a partial chart and says
+ *    the counts cover the rows loaded.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +37,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -47,58 +47,26 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }));
 
-interface Answer {
-  status?: number;
-  body: unknown;
-}
-
 /** What each route answers; a test overrides the ones it is about. */
-const routes: {
-  stats: (url: string) => Answer;
-  list: (url: string) => Answer;
-  pending: (url: string) => Answer;
-  detail: (id: string) => Answer;
-  fleet: () => Answer;
-  roles: () => Answer;
-} = {
-  stats: () => ({ body: {} }),
-  list: () => ({ body: {} }),
-  pending: () => ({ body: {} }),
-  detail: () => ({ body: {} }),
-  fleet: () => ({ body: { devices: [] } }),
-  roles: () => ({ body: { state: "known", machines: [] } }),
-};
+let routes: SpawnsRoutes = defaultSpawnsRoutes();
 const calls: string[] = [];
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    fetch: async (url: string) => {
+    fetch: async (url: string, init?: RequestInit) => {
       calls.push(url);
-      let answer: Answer;
-      if (url.startsWith("/api/v1/operations/spawns/stats"))
-        answer = routes.stats(url);
-      else if (url.startsWith("/api/v1/operations/spawns?"))
-        answer = url.includes("state=")
-          ? routes.pending(url)
-          : routes.list(url);
-      else if (url.startsWith("/api/v1/operations/spawns/"))
-        answer = routes.detail(decodeURIComponent(url.split("/").pop() ?? ""));
-      else if (url.startsWith("/api/v1/operations/fleet/health"))
-        answer = routes.fleet();
-      else if (url.startsWith("/api/v1/operations/fleet/dispatch-roles"))
-        answer = routes.roles();
-      else throw new Error(`unexpected fetch ${url}`);
-      return new Response(JSON.stringify(answer.body), {
-        status: answer.status ?? 200,
-      });
+      return answerSpawnsRequest(routes, url, init);
     },
   },
 }));
 
 import {
-  DEVICE_A,
+  answerSpawnsRequest,
+  defaultSpawnsRoutes,
+  type SpawnsRoutes,
+} from "./__fixtures__/spawnsRoutes";
+import {
   DEVICE_B,
-  ROSTER,
   SCHEMA_MISSING,
   detailFx,
   eventFx,
@@ -106,6 +74,9 @@ import {
   rowFx,
   statsFx,
 } from "./__fixtures__/coordSpawns";
+import { UNKNOWN_AMBER } from "@/components/console";
+import { LEDGER_DEPENDENTS } from "./_components/LedgerUnservedNotice";
+import { IN_FLIGHT_UNKNOWN } from "./_lib/machineStatus";
 import CoordSpawnsPage from "./page";
 
 /** Let every read in flight — including the poll's second, dependent step — land. */
@@ -120,6 +91,23 @@ async function renderPage() {
   await settle();
 }
 
+/**
+ * The label beside a summary count: the `Count`'s last child span, read on
+ * its own so the assertion pins the copy, not how the value and label sit
+ * together in the markup.
+ */
+function labelOf(id: string): string | null {
+  const count = screen.getByTestId(`coord-spawns-count-${id}`);
+  return count.lastElementChild?.textContent ?? null;
+}
+
+/** A summary count as rendered: its number, or `unknown` for a dash. */
+function countOf(id: string): string | null {
+  return screen
+    .getByTestId(`coord-spawns-count-${id}`)
+    .getAttribute("data-count");
+}
+
 async function refresh() {
   await act(async () => {
     fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
@@ -127,36 +115,13 @@ async function refresh() {
   await settle();
 }
 
-const ROLES_KNOWN = {
-  state: "known",
-  machines: [
-    {
-      device_id: DEVICE_A,
-      name: "msi-wsl",
-      role: { dispatch_role: "workhorse" },
-      registration: "registered",
-    },
-    {
-      device_id: DEVICE_B,
-      name: "spaceship",
-      role: { dispatch_role: "bench" },
-      registration: "registered",
-    },
-  ],
-};
-
 beforeEach(() => {
   calls.length = 0;
-  routes.fleet = () => ({ body: ROSTER });
-  routes.roles = () => ({ body: ROLES_KNOWN });
-  routes.detail = () => ({ body: {} });
-  routes.stats = () => ({ body: statsFx() });
-  routes.list = () => ({ body: listFx([]) });
-  routes.pending = () => ({ body: listFx([]) });
+  routes = defaultSpawnsRoutes();
 });
 
 describe("/admin/coord/spawns — the ledger as coord serves it", () => {
-  it("renders real data: the strip, the per-device lines, the rows and a timeline", async () => {
+  it("renders real data: the strip, the counts that link to the requests, and the launcher", async () => {
     const started = rowFx({ wait_seconds: 12 });
     const queued = rowFx({
       state: "queued",
@@ -170,21 +135,6 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     });
     routes.list = () => ({ body: listFx([started, queued]) });
     routes.pending = () => ({ body: listFx([queued]) });
-    routes.detail = (id) => ({
-      body: detailFx(id === started.id ? started : queued, [
-        eventFx({ kind: "requested" }),
-        eventFx({
-          kind: "placed",
-          device_id: DEVICE_A,
-          at: "2026-10-21T11:00:01Z",
-        }),
-        eventFx({
-          kind: "spawned",
-          device_id: DEVICE_A,
-          at: "2026-10-21T11:00:12Z",
-        }),
-      ]),
-    });
     await renderPage();
 
     const strip = screen.getByTestId("coord-spawns-health");
@@ -206,63 +156,31 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
       "queued now 2"
     );
 
-    const devices = screen.getAllByTestId("coord-spawns-device");
-    expect(devices[0]!.textContent).toContain("msi-wsl · Workhorse");
-    expect(devices[0]!.textContent).toContain("30 placed");
-    expect(devices[1]!.textContent).toContain("spaceship · Bench");
-    expect(devices[1]!.textContent).toContain("p50 unknown");
+    // The requests and their placement are counts here; the list is the
+    // investigation view's, one link away.
+    expect(countOf("all")).toBe("2");
+    expect(countOf("queued")).toBe("1");
+    expect(countOf("failed")).toBe("0");
+    expect(countOf("finished")).toBe("1");
+    expect(countOf("placed")).toBe("38");
+    expect(countOf("devices")).toBe("2");
     expect(
-      screen.getByTestId("coord-spawns-reserve-note").textContent
-    ).toContain("reserve and ceilings: not served yet");
-
-    const rows = screen.getAllByTestId("coord-spawn-row");
-    expect(rows).toHaveLength(2);
-    const startedRow = rows.find((r) =>
-      within(r)
-        .getByTestId("coord-spawn-devices")
-        .textContent?.includes("started on")
-    )!;
+      screen.getByTestId("coord-spawns-requests-link").getAttribute("href")
+    ).toBe("/admin/coord/spawns/requests?window=7d");
     expect(
-      within(startedRow)
-        .getByTestId("coord-spawn-status")
-        .getAttribute("data-status")
-    ).toBe("work_completed");
-    expect(
-      within(startedRow).getByTestId("coord-spawn-devices").textContent
-    ).toContain("started on msi-wsl");
-    expect(within(startedRow).getByTestId("coord-spawn-wait").textContent).toBe(
-      "started after 12 s"
-    );
-
-    expect(screen.getByTestId("coord-spawns-filter-all").textContent).toBe(
-      "All2"
-    );
-    expect(screen.getByTestId("coord-spawns-filter-queued").textContent).toBe(
-      "Queued1"
-    );
-    expect(screen.getByTestId("coord-spawns-filter-finished").textContent).toBe(
-      "Finished1"
-    );
-
-    await act(async () => {
-      fireEvent.click(within(startedRow).getByRole("button"));
-    });
-    await settle();
-    const events = screen.getAllByTestId("coord-spawn-event");
-    expect(events.map((e) => e.getAttribute("data-event-kind"))).toEqual([
-      "requested",
-      "placed",
-      "spawned",
-    ]);
-    expect(events[1]!.textContent).toContain("msi-wsl");
-    expect(calls).toContain(`/api/v1/operations/spawns/${started.id}`);
+      screen.getByTestId("coord-spawns-placement-link").getAttribute("href")
+    ).toBe("/admin/coord/spawns/requests?window=7d#placement");
+    // No per-request row, filter tab or per-device line on this page.
+    expect(screen.queryAllByTestId("coord-spawn-row")).toHaveLength(0);
+    expect(screen.queryByTestId("coord-spawns-filter-all")).toBeNull();
+    expect(screen.queryAllByTestId("coord-spawns-device")).toHaveLength(0);
 
     const launch = screen.getByTestId("coord-spawns-launch-link");
     expect(launch.getAttribute("href")).toBe("/admin/coord/spawn");
     expect(launch.textContent).toContain("Launch session");
   });
 
-  it("lists a request waiting from before the window in the Queued tab, red past a day", async () => {
+  it("counts a request waiting from before the window as queued, and the strip goes red past a day", async () => {
     const old = rowFx({
       state: "deferred",
       deferrals: 43,
@@ -282,47 +200,66 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     expect(pendingCall).toContain("state=queued%2Cdispatched%2Cdeferred");
     expect(pendingCall).toContain("order=asc");
     expect(pendingCall).not.toContain("since=");
-    expect(screen.getByTestId("coord-spawns-coverage").textContent).toContain(
-      "Plus the 1 oldest of 340 requests still waiting"
-    );
 
     // The strip is never calmer than a row beneath it.
     const strip = screen.getByTestId("coord-spawns-health");
     expect(strip.getAttribute("data-health-level")).toBe("red");
     expect(strip.textContent).toContain("1 spawn stuck for 3 d");
-
-    fireEvent.click(screen.getByTestId("coord-spawns-filter-queued"));
-    const row = screen.getByTestId("coord-spawn-row");
-    const badge = within(row).getByTestId("coord-spawn-status");
-    expect(badge.getAttribute("data-status")).toBe("waiting_stuck");
-    expect(within(row).getByRole("button").getAttribute("data-attention")).toBe(
-      "author"
-    );
+    expect(countOf("queued")).toBe("1");
   });
 
-  it("says the spawn ledger is not deployed yet when coord answers available:false", async () => {
+  it("says once that the ledger is not deployed, and collapses every section that rests on it", async () => {
     routes.list = () => ({ body: SCHEMA_MISSING });
     routes.pending = () => ({ body: SCHEMA_MISSING });
     routes.stats = () => ({ body: SCHEMA_MISSING });
     await renderPage();
 
-    const strip = screen.getByTestId("coord-spawns-health");
-    expect(strip.textContent).toContain("Spawn ledger not deployed yet");
-    expect(strip.getAttribute("data-health-level")).toBe("amber");
-    const banner = screen.getByTestId("coord-spawns-unknown-banner");
-    expect(banner.getAttribute("data-issue")).toBe("ledger_not_deployed");
-    expect(banner.textContent).toContain("unknown, not empty");
-    expect(screen.getByTestId("coord-spawns-list-unknown")).toBeTruthy();
-    expect(screen.queryByTestId("coord-spawns-list-empty")).toBeNull();
-    expect(screen.getByTestId("coord-spawns-devices-unknown")).toBeTruthy();
-    expect(screen.getByTestId("coord-spawns-rate-chart-unknown")).toBeTruthy();
-    // No count was read, so every tab is a dash — never 0.
-    expect(screen.getByTestId("coord-spawns-filter-all").textContent).toBe(
-      "All–"
+    const notice = screen.getByTestId("coord-spawns-ledger-unserved");
+    expect(notice.getAttribute("data-issue")).toBe("ledger_not_deployed");
+    expect(notice.textContent).toContain("Spawn ledger not deployed yet");
+    expect(notice.textContent).toContain("unknown, not empty");
+    expect(
+      screen.getByTestId("coord-spawns-ledger-dependents").textContent
+    ).toBe(
+      `Until it is, this page does not show ${LEDGER_DEPENDENTS.join("; ")}. What is in flight on each machine against its ceiling is not shown either: ${IN_FLIGHT_UNKNOWN.operator}`
     );
-    expect(screen.getByTestId("coord-spawns-filter-failed").textContent).toBe(
-      "Failed–"
-    );
+    // Said once: no strip, no second banner, and no section of UNKNOWNs.
+    expect(
+      document.body.textContent?.match(/not deployed yet/g) ?? []
+    ).toHaveLength(1);
+    expect(screen.queryByTestId("coord-spawns-health")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-unknown-banner")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-requests-summary")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-placement-summary")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-rate-section")).toBeNull();
+    // Nor a column of them: no Last spawned and no in-flight column.
+    expect(screen.queryAllByTestId("coord-spawns-path-last")).toHaveLength(0);
+    expect(screen.queryByText("Last spawned")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-inflight-note")).toBeNull();
+    expect(
+      screen.queryAllByTestId("coord-spawns-machine-inflight")
+    ).toHaveLength(0);
+    // The sections that do not rest on the ledger still render.
+    expect(
+      screen.getAllByTestId("coord-spawns-path-row").length
+    ).toBeGreaterThan(10);
+    expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
+    expect(document.body.textContent).not.toContain("UNKNOWN UNKNOWN");
+  });
+
+  it("collapses nothing when a read FAILED: the ledger is served, and each section keeps its own arm", async () => {
+    const down = { status: 502, body: { detail: "coord unreachable" } };
+    routes.list = () => down;
+    routes.pending = () => down;
+    routes.stats = () => down;
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-ledger-unserved")).toBeNull();
+    expect(screen.getByTestId("coord-spawns-health")).toBeTruthy();
+    expect(screen.getByTestId("coord-spawns-unknown-banner")).toBeTruthy();
+    expect(countOf("all")).toBe("unknown");
+    expect(
+      screen.getAllByTestId("coord-spawns-path-last").length
+    ).toBeGreaterThan(0);
   });
 
   it("renders a null share as UNKNOWN, never 0%", async () => {
@@ -353,7 +290,7 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     );
   });
 
-  it("marks a backfilled row history partial, and only that row", async () => {
+  it("counts the backfilled rows whose history is partial on the strip", async () => {
     const backfilled = rowFx({
       history_complete: false,
       requested_at: "2026-10-21T11:00:00Z",
@@ -369,24 +306,51 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     });
     await renderPage();
 
-    const [first, second] = screen.getAllByTestId("coord-spawn-row");
-    expect(
-      within(first!).getByTestId("coord-spawn-history-partial").textContent
-    ).toBe("history partial");
-    expect(
-      within(second!).queryByTestId("coord-spawn-history-partial")
-    ).toBeNull();
     expect(screen.getByTestId("coord-spawns-history-partial").textContent).toBe(
       "history partial 1"
     );
+  });
 
-    await act(async () => {
-      fireEvent.click(within(first!).getByRole("button"));
+  it("counts only the devices that took a placement, and labels the count so", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            ...good.per_device,
+            {
+              ...good.per_device[1]!,
+              device_id: "host-c",
+              placed: 0,
+              started: 0,
+            },
+          ],
+        }
+      ),
     });
-    await settle();
-    expect(
-      screen.getByTestId("coord-spawn-history-partial-note").textContent
-    ).toContain("timeline below is incomplete");
+    await renderPage();
+    expect(countOf("placed")).toBe("38");
+    expect(countOf("devices")).toBe("2");
+    expect(labelOf("devices")).toBe("devices with a placement");
+  });
+
+  it("names a single device with a placement in the singular", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            good.per_device[0]!,
+            { ...good.per_device[1]!, placed: 0, started: 0 },
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    expect(countOf("devices")).toBe("1");
+    expect(labelOf("devices")).toBe("device with a placement");
   });
 
   it("renders an empty window as a measured empty, with zero counts", async () => {
@@ -414,23 +378,16 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
       "No spawn was requested in the last 7 days, and none is waiting"
     );
-    expect(screen.getByTestId("coord-spawns-list-empty").textContent).toBe(
-      "Coord recorded no spawn request in the last 7 days, and none older was waiting."
-    );
-    expect(screen.queryByTestId("coord-spawns-list-unknown")).toBeNull();
-    expect(screen.getByTestId("coord-spawns-devices-empty")).toBeTruthy();
-    expect(screen.getByTestId("coord-spawns-filter-all").textContent).toBe(
-      "All0"
-    );
-    expect(screen.queryAllByTestId("coord-spawn-row")).toHaveLength(0);
+    expect(countOf("all")).toBe("0");
+    expect(countOf("placed")).toBe("0");
+    expect(countOf("devices")).toBe("0");
   });
 });
 
 describe("/admin/coord/spawns — the failure arms", () => {
-  it("clears the rows and says who may read when the admin gate answers 403", async () => {
+  it("clears the counts and says who may read when the admin gate answers 403", async () => {
     routes.list = () => ({ body: listFx([rowFx()]) });
     await renderPage();
-    expect(screen.getAllByTestId("coord-spawn-row")).toHaveLength(1);
 
     const refused = {
       status: 403,
@@ -449,29 +406,26 @@ describe("/admin/coord/spawns — the failure arms", () => {
         .getByTestId("coord-spawns-unknown-banner")
         .getAttribute("data-issue")
     ).toBe("forbidden");
-    expect(screen.queryAllByTestId("coord-spawn-row")).toHaveLength(0);
-    expect(screen.getByTestId("coord-spawns-list-unknown")).toBeTruthy();
+    expect(countOf("all")).toBe("unknown");
   });
 
-  it("says coord does not serve the ledger yet on its no_such_route 404", async () => {
+  it("says once that coord does not serve the ledger yet on its no_such_route 404", async () => {
     const notServed = { status: 404, body: { error: "no_such_route" } };
     routes.stats = () => notServed;
     routes.list = () => notServed;
     routes.pending = () => notServed;
     await renderPage();
 
-    expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
+    const notice = screen.getByTestId("coord-spawns-ledger-unserved");
+    expect(notice.getAttribute("data-issue")).toBe("route_unavailable");
+    expect(notice.textContent).toContain(
       "Coord does not serve the spawn ledger yet"
     );
-    const banner = screen.getByTestId("coord-spawns-unknown-banner");
-    expect(banner.getAttribute("data-issue")).toBe("route_unavailable");
-    expect(banner.textContent).toContain("does not serve the spawn ledger yet");
-    expect(screen.getByTestId("coord-spawns-filter-all").textContent).toBe(
-      "All–"
-    );
+    expect(screen.queryByTestId("coord-spawns-health")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-unknown-banner")).toBeNull();
   });
 
-  it("keeps the rows and says the refresh failed when a read after a good one answers 502", async () => {
+  it("keeps the counts and says the refresh failed when a read after a good one answers 502", async () => {
     routes.list = () => ({ body: listFx([rowFx()]) });
     await renderPage();
 
@@ -481,16 +435,102 @@ describe("/admin/coord/spawns — the failure arms", () => {
     routes.pending = () => down;
     await refresh();
 
-    expect(screen.getAllByTestId("coord-spawn-row")).toHaveLength(1);
     const banner = screen.getByTestId("coord-spawns-unknown-banner");
     expect(banner.getAttribute("data-issue")).toBe("error");
     expect(banner.textContent).toContain("Last refresh failed");
+    // Named for what this page shows from the retained list.
+    expect(banner.textContent).toContain(
+      "Last refresh failed — the counts below are from the last good read."
+    );
+    // The declared ignorance floor, never a hand-typed amber (§4.1).
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(banner.classList.contains(cls)).toBe(true);
+    }
     expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
       "Last refresh failed"
     );
+    expect(countOf("all")).toBe("1");
   });
 
-  it("gives the window's tabs no count and no 'none' when only the window's list fails", async () => {
+  it("gives the placement counts a dash, never 0, when a device's placed is not a number", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            { ...good.per_device[0]!, placed: null as never },
+            good.per_device[1]!,
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+  });
+
+  it("gives the placement counts a dash, never 0, when the stats answer carries no per-device list", async () => {
+    const { per_device: _dropped, ...noPerDevice } = statsFx();
+    routes.stats = () => ({ body: noPerDevice });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+  });
+
+  it("says the placement counts are at the last good read when only the stats refresh fails", async () => {
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
+
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await refresh();
+
+    expect(countOf("placed")).toBe("38");
+    const stale = screen.getByTestId("coord-spawns-placement-stale");
+    expect(stale.textContent).toContain("at the last good read");
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(stale.classList.contains(cls)).toBe(true);
+    }
+  });
+
+  it("never says dashes are at the last good read when the stats read failed with nothing retained", async () => {
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
+  });
+
+  it("never says malformed placement counts are at the last good read when a refresh then fails", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            { ...good.per_device[0]!, placed: null as never },
+            good.per_device[1]!,
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await refresh();
+    expect(countOf("placed")).toBe("unknown");
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
+  });
+
+  it("gives the window's counts a dash, never 0, when only the window's list fails", async () => {
     routes.list = () => ({
       status: 502,
       body: { detail: "coord unreachable" },
@@ -509,47 +549,43 @@ describe("/admin/coord/spawns — the failure arms", () => {
     });
     await renderPage();
 
-    const tab = (id: string) =>
-      screen.getByTestId(`coord-spawns-filter-${id}`).textContent;
-    expect(tab("all")).toBe("All–");
-    expect(tab("queued")).toBe("Queued1");
-    expect(tab("failed")).toBe("Failed–");
-    expect(tab("never_ran")).toBe("Never ran–");
-    expect(tab("finished")).toBe("Finished–");
-    expect(screen.getByTestId("coord-spawns-coverage").textContent).toContain(
-      "The requests in the last 7 days could not be read; only requests still waiting are listed."
-    );
-
-    fireEvent.click(screen.getByTestId("coord-spawns-filter-failed"));
-    expect(screen.queryByTestId("coord-spawns-list-empty")).toBeNull();
-    expect(screen.getByTestId("coord-spawns-list-unknown").textContent).toBe(
-      "Coord's list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
-    );
-
-    // The waiting read DID answer, so the Queued tab still lists its row.
-    fireEvent.click(screen.getByTestId("coord-spawns-filter-queued"));
-    expect(screen.getAllByTestId("coord-spawn-row")).toHaveLength(1);
-  });
-
-  it("says there is no such request when a detail answers spawn_not_found", async () => {
-    const row = rowFx();
-    routes.list = () => ({ body: listFx([row]) });
-    routes.detail = () => ({ status: 404, body: { error: "spawn_not_found" } });
-    await renderPage();
-
-    await act(async () => {
-      fireEvent.click(
-        within(screen.getByTestId("coord-spawn-row")).getByRole("button")
-      );
-    });
-    await settle();
-    const timeline = screen.getByTestId("coord-spawn-timeline-unknown");
-    expect(timeline.getAttribute("data-issue")).toBe("not_found");
-    expect(timeline.textContent).toContain("no such spawn request");
+    expect(countOf("all")).toBe("unknown");
+    expect(countOf("queued")).toBe("1");
+    expect(countOf("failed")).toBe("unknown");
+    expect(countOf("never_ran")).toBe("unknown");
+    expect(countOf("finished")).toBe("unknown");
   });
 });
 
 describe("/admin/coord/spawns — controls", () => {
+  it("says when a refresh re-read the page, even when no read answered and every as-of is null", async () => {
+    const down = () => ({ status: 502, body: { detail: "coord unreachable" } });
+    for (const key of [
+      "stats",
+      "list",
+      "pending",
+      "fleet",
+      "roles",
+      "effective",
+      "defaults",
+      "nextStep",
+      "merge",
+      "repos",
+      "drain",
+      "concurrency",
+    ] as const) {
+      routes[key] = down;
+    }
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-reread")).toBeNull();
+    const before = calls.length;
+    await refresh();
+    expect(calls.length).toBeGreaterThan(before);
+    const reread = screen.getByTestId("coord-spawns-reread");
+    expect(reread.textContent).toMatch(/^Re-read at \S/);
+    expect(reread.getAttribute("role")).toBe("status");
+  });
+
   it("re-reads stats and list for a new window, from coord's window_start", async () => {
     routes.stats = (url) => ({
       body: url.includes("window=24h")
@@ -579,21 +615,7 @@ describe("/admin/coord/spawns — controls", () => {
     );
   });
 
-  it("gives a filter tab its own empty sentence", async () => {
-    routes.list = () => ({ body: listFx([rowFx()]) });
-    await renderPage();
-
-    fireEvent.click(screen.getByTestId("coord-spawns-filter-failed"));
-    expect(screen.getByTestId("coord-spawns-list-empty").textContent).toBe(
-      "No request in the last 7 days failed to start."
-    );
-    fireEvent.click(screen.getByTestId("coord-spawns-filter-never_ran"));
-    expect(screen.getByTestId("coord-spawns-list-empty").textContent).toBe(
-      "No request in the last 7 days expired, was cancelled or was superseded."
-    );
-  });
-
-  it("draws a truncated list as a partial chart, with a coverage line and its as-of", async () => {
+  it("draws a truncated list as a partial chart, and says the counts cover the rows loaded", async () => {
     routes.list = () => ({
       body: listFx(
         [
@@ -611,10 +633,9 @@ describe("/admin/coord/spawns — controls", () => {
     });
     await renderPage();
 
-    const coverage =
-      screen.getByTestId("coord-spawns-coverage").textContent ?? "";
-    expect(coverage).toContain("Showing the 2 most recent of 900 requests");
-    expect(coverage).toContain("as of");
+    expect(screen.getByTestId("coord-spawns-count-truncated").textContent).toBe(
+      "Counts cover the 2 most recent of 900 requests loaded."
+    );
     const caption =
       screen.getByTestId("coord-spawns-rate-caption").textContent ?? "";
     expect(caption).toContain("Drawn from 10-21 10:00 UTC only");

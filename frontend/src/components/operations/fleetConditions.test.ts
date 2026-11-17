@@ -98,6 +98,84 @@ describe("summarizeFleetConditions — what may be called 'Nothing unhandled'", 
   });
 });
 
+describe("summarizeFleetConditions — a cut device roster", () => {
+  const body = (over: Partial<FleetHealthPayload>) =>
+    summarize({
+      devices: [],
+      conditions: measured({ open: 3, claimed: 3 }),
+      ...over,
+    });
+
+  it("is not green when coord withheld a machine that could be degrading", () => {
+    const s = body({ truncated: true, total: 10_002, degradable_dropped: 2 });
+    expect(s.headline).toBe(
+      "Nothing unhandled among listed machines, any others unknown"
+    );
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("2 machines that could be degrading");
+  });
+
+  it("voids the calm headline a coord with no operator counts gives, too", () => {
+    const s = summarize({
+      devices: Array.from({ length: 1000 }, (_, i) => ({
+        device_id: `d${i}`,
+        hostname: `d${i}`,
+        state: "healthy",
+      })),
+      conditions: measured({
+        open: 3,
+        claimed: 3,
+        awaiting_operator_unasked: undefined,
+        awaiting_operator_answered_uncleared: undefined,
+      }),
+    });
+    expect(s.headline).toBe(
+      "No agent work unhandled among listed machines, any others unknown"
+    );
+    expect(s.detail).toContain("may be cut off");
+  });
+
+  it("keeps a non-calm verdict, and still says what the cut hides", () => {
+    const s = body({
+      conditions: measured({
+        awaiting_operator: 2,
+        awaiting_operator_question_ids: ["a", "b"],
+      }),
+      truncated: true,
+      total: 10_002,
+      degradable_dropped: 2,
+    });
+    expect(s.level).toBe("red");
+    expect(s.detail).toContain("2 machines that could be degrading");
+  });
+
+  it("discloses the cut beside a failed latest read over a kept body", () => {
+    const s = summarize(
+      {
+        devices: [],
+        conditions: measured({ open: 3, claimed: 3 }),
+        truncated: true,
+        total: 10_002,
+        degradable_dropped: 2,
+      },
+      { error: "502" }
+    );
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("2 machines that could be degrading");
+  });
+
+  it("stays green when the cut withheld only rows that cannot degrade", () => {
+    const s = body({
+      devices: [{ device_id: "a", hostname: "a", state: "healthy" }],
+      truncated: true,
+      total: 4647,
+      degradable_dropped: 0,
+    });
+    expect(s.level).toBe("green");
+    expect(s.detail).not.toContain("roster");
+  });
+});
+
 describe("summarizeFleetConditions — the unknown states", () => {
   it("reads an ABSENT block as not reported, never as zero", () => {
     const s = summarize({ devices: [] });

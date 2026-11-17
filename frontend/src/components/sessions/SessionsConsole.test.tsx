@@ -11,7 +11,13 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SessionsApiError } from "@/lib/api/operations/sessions";
@@ -73,7 +79,12 @@ function envelope(
     scope: "all",
     shape: "consolidated",
     sessions,
-    row_class_counts: { linked: 0, lifecycle_only: 0, agent_only: 0, unknown: 0 },
+    row_class_counts: {
+      linked: 0,
+      lifecycle_only: 0,
+      agent_only: 0,
+      unknown: 0,
+    },
     agent_half: { read: "ok" },
     ...over,
   };
@@ -107,6 +118,8 @@ function stubReaders() {
     // that expands a row still touches no network — and so "nothing fetches
     // while shut" can also count subscriptions.
     revalidation: { subscribe: vi.fn(() => () => {}) },
+    // The page's one subproject lookup (plan 2026-11-08 subprojects).
+    lookupSubprojects: vi.fn(async () => ({ items: {}, missing: [] })),
   };
 }
 
@@ -147,7 +160,9 @@ describe("D1 — the three row classes", () => {
   it("renders one line per session for linked, lifecycle_only and agent_only", async () => {
     mount(envelope([LINKED, LIFECYCLE_ONLY, AGENT_ONLY]));
     await waitFor(async () =>
-      expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(3)
+      expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(
+        3
+      )
     );
   });
 
@@ -176,10 +191,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/none|no transcript|0/i);
     // And the dash says WHICH unknown it is: not applicable, not missing.
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("not applicable")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("not applicable"));
   });
 
   it("an agent_only row renders – for heartbeat/state, not false / 0 / closed", async () => {
@@ -188,10 +202,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     const cell = within(row).getByTestId("sessions-console-row-heartbeat");
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/closed|false|^0$/i);
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("NOT closed")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("NOT closed"));
     // The status badge must not read "closed" either.
     expect(row.textContent).not.toMatch(/\bclosed\b/);
   });
@@ -227,7 +240,9 @@ describe("D2 — a missing half renders a dash, never 0 / false / closed", () =>
     await userEvent.click(within(row).getByRole("button"));
     const detail = await screen.findByTestId("sessions-console-detail");
     expect(detail).toHaveTextContent("agent_only");
-    expect(detail).toHaveTextContent(/heartbeat and lifecycle state are unknown/i);
+    expect(detail).toHaveTextContent(
+      /heartbeat and lifecycle state are unknown/i
+    );
   });
 });
 
@@ -257,7 +272,9 @@ describe("the read axis vs the join axis", () => {
         agent_half: { read: "failed", detail: "502: coord is not reachable" },
       })
     );
-    expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(1);
+    expect(await screen.findAllByTestId("sessions-console-row")).toHaveLength(
+      1
+    );
     const health = screen.getByTestId("sessions-console-health");
     expect(health).toHaveTextContent(/agent half did not answer/i);
     expect(health).toHaveAttribute("data-health-level", "amber");
@@ -309,9 +326,7 @@ describe("the facets", () => {
       "aria-pressed",
       "true"
     );
-    expect(
-      within(kind).queryByTestId("sessions-console-kind-any")
-    ).toBeNull();
+    expect(within(kind).queryByTestId("sessions-console-kind-any")).toBeNull();
   });
 
   it("selecting a kind narrows the list, and deselecting widens it back", async () => {
@@ -463,9 +478,7 @@ describe("the finished marker on a row", () => {
   it("paints NO marker on a row that never reported a work status", async () => {
     mount(envelope([LINKED]));
     const row = await rowFor(LINKED.id);
-    expect(
-      within(row).queryByTestId("sessions-console-row-work")
-    ).toBeNull();
+    expect(within(row).queryByTestId("sessions-console-row-work")).toBeNull();
     // And nothing fabricates the opposite claim either.
     expect(row.textContent).not.toMatch(/unfinished/i);
   });
@@ -585,7 +598,9 @@ describe("D3 — the expansion", () => {
     // The claims read ANSWERED with an empty list — that is data.
     const claims = await screen.findByTestId("sessions-console-detail-claims");
     await waitFor(() =>
-      expect(claims).toHaveTextContent(/coord answered: this session holds no claims/i)
+      expect(claims).toHaveTextContent(
+        /coord answered: this session holds no claims/i
+      )
     );
     // The agent-status read did NOT land — that is a dash and a sentence.
     const agents = screen.getByTestId("sessions-console-detail-agent-status");
@@ -615,10 +630,9 @@ describe("the two transcript stores", () => {
     const cell = within(row).getByTestId("sessions-console-row-transcript");
     expect(cell).toHaveTextContent("–");
     expect(cell.textContent).not.toMatch(/closed|false|^0$/i);
-    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
-      "title",
-      expect.stringContaining("not probed")
-    );
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("not probed"));
   });
 
   it("reports the coord tier once the row is opened", async () => {
@@ -715,5 +729,363 @@ describe("the two transcript stores", () => {
       within(stores).getByTestId("session-transcript-archive")
     ).toHaveTextContent(/qontinui-web/i);
     expect(stores).toHaveTextContent(/7 days/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Account column, the account facet, and search by name / id / trailer —
+// plan `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3
+// ---------------------------------------------------------------------------
+
+const SID = "86e2b721-8270-49fe-bb15-6c8b33b000c8";
+
+function withAgent(
+  base: ConsolidatedSessionRow,
+  id: string,
+  agent: Partial<NonNullable<ConsolidatedSessionRow["agent_session"]>>
+): ConsolidatedSessionRow {
+  return {
+    ...base,
+    id,
+    agent_session: {
+      ...(base.agent_session ?? { id }),
+      device_id: base.device_id ?? null,
+      ...agent,
+    },
+  };
+}
+
+async function accountCellFor(id: string) {
+  return within(await rowFor(id)).getByTestId("sessions-console-row-account");
+}
+
+describe("the Account column — never blank, three UNKNOWNs kept apart", () => {
+  it("renders the stamped account label", async () => {
+    const row = withAgent(LINKED, "acc-1", {
+      account: "qontinui",
+      config_dir: "C:/claude/.claude-qontinui",
+    });
+    mount(envelope([row]));
+    const cell = await accountCellFor("acc-1");
+    expect(cell).toHaveTextContent("qontinui");
+    expect(cell).toHaveAttribute("data-account-state", "known");
+  });
+
+  it("renders `default` with its config dir", async () => {
+    const row = withAgent(LINKED, "acc-2", {
+      account: "default",
+      config_dir: "/home/spinak/.claude",
+    });
+    mount(envelope([row]));
+    expect(await accountCellFor("acc-2")).toHaveTextContent(
+      "default (/home/spinak/.claude)"
+    );
+  });
+
+  it("agent half read, account null → UNKNOWN — not yet reported by <device>", async () => {
+    const row = withAgent(LINKED, "acc-3", { account: null });
+    mount(envelope([row]));
+    const cell = await accountCellFor("acc-3");
+    // dev-a is `alpha` through the console's own machine label.
+    expect(cell).toHaveTextContent(
+      "UNKNOWN — account not yet reported by alpha"
+    );
+    expect(cell).toHaveAttribute("data-account-state", "unknown");
+  });
+
+  it("row_class null → UNKNOWN — agent half unread (<detail>)", async () => {
+    const row: ConsolidatedSessionRow = {
+      ...LINKED,
+      id: "acc-4",
+      row_class: null,
+      agent_session: null,
+    };
+    mount(
+      envelope([row], {
+        agent_half: { read: "failed", detail: "502: coord is not reachable" },
+      })
+    );
+    expect(await accountCellFor("acc-4")).toHaveTextContent(
+      "UNKNOWN — agent half unread (502: coord is not reachable)"
+    );
+  });
+
+  it("the field ABSENT from coord's row → UNKNOWN — coord does not report the account yet", async () => {
+    // LINKED's agent half carries no `account` key: the deployed coord's shape.
+    mount(envelope([LINKED]));
+    const cell = await accountCellFor(LINKED.id);
+    expect(cell).toHaveTextContent(
+      "UNKNOWN — coord does not report the account yet"
+    );
+    expect(cell.textContent).not.toMatch(/not yet reported by|none/i);
+  });
+
+  it("a lifecycle_only row is a not-applicable dash, never 'none'", async () => {
+    mount(envelope([LIFECYCLE_ONLY]));
+    const cell = await accountCellFor(LIFECYCLE_ONLY.id);
+    expect(cell).toHaveTextContent("–");
+    expect(cell).toHaveAttribute("data-account-state", "not-applicable");
+    expect(
+      within(cell).getByTestId("sessions-console-unknown")
+    ).toHaveAttribute("title", expect.stringContaining("not applicable"));
+  });
+
+  it("carries the full sentence in a title, so a narrow column hides nothing", async () => {
+    const row = withAgent(LINKED, "acc-5", { account: null });
+    mount(envelope([row]));
+    expect(await accountCellFor("acc-5")).toHaveAttribute(
+      "title",
+      expect.stringContaining("not yet reported by alpha")
+    );
+  });
+
+  it("no row's account cell is ever empty", async () => {
+    mount(envelope([LINKED, LIFECYCLE_ONLY, AGENT_ONLY]));
+    await screen.findAllByTestId("sessions-console-row");
+    const cells = screen.getAllByTestId("sessions-console-row-account");
+    expect(cells).toHaveLength(3);
+    for (const cell of cells) expect(cell.textContent?.trim()).not.toBe("");
+  });
+});
+
+describe("the account facet", () => {
+  it("narrows to one account, with one UNKNOWN chip and no chip for shells", async () => {
+    const q = withAgent(LINKED, "f-1", { account: "qontinui" });
+    const g = withAgent(LINKED, "f-2", { account: "gmail" });
+    mount(envelope([q, g, LINKED, LIFECYCLE_ONLY]));
+    await screen.findAllByTestId("sessions-console-row");
+    const unknownChip = screen.getByTestId("sessions-console-account-unknown");
+    expect(unknownChip).toHaveTextContent("UNKNOWN");
+    expect(unknownChip).toHaveTextContent("1");
+
+    await userEvent.click(
+      screen.getByTestId("sessions-console-account-qontinui")
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(1)
+    );
+    expect(screen.getByTestId("sessions-console-row")).toHaveAttribute(
+      "data-row-key",
+      "f-1"
+    );
+  });
+
+  it("a list emptied by the account facet says a FILTER emptied it", async () => {
+    mount(
+      envelope([
+        withAgent(LINKED, "f-3", { account: "qontinui" }),
+        LIFECYCLE_ONLY,
+      ])
+    );
+    await screen.findAllByTestId("sessions-console-row");
+    await userEvent.click(
+      screen.getByTestId("sessions-console-account-qontinui")
+    );
+    await userEvent.click(
+      screen.getByTestId("sessions-console-kind-terminal_shell")
+    );
+    expect(
+      await screen.findByTestId("sessions-console-empty")
+    ).toHaveTextContent(/No sessions match this filter/i);
+  });
+});
+
+describe("search by name, session id, or a pasted trailer line", () => {
+  it("a pasted `Session-Id:` line goes on the wire as the bare id", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste(`Session-Id: ${SID}`);
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some((c) => c[0]?.q === SID)).toBe(true)
+    );
+    expect(
+      fetcher.mock.calls.some((c) => /Session-Id/i.test(c[0]?.q ?? ""))
+    ).toBe(false);
+    expect(
+      screen.getByTestId("sessions-console-query-trailer")
+    ).toHaveTextContent(`Searching the Session-Id value ${SID}`);
+  });
+
+  it("a pasted `Session-Name:` line goes on the wire as the name", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste("Session-Name: spaceship-latency");
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some((c) => c[0]?.q === "spaceship-latency")
+      ).toBe(true)
+    );
+  });
+
+  it("a plain name goes on the wire unchanged, with no trailer note", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste("spaceship-latency");
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some((c) => c[0]?.q === "spaceship-latency")
+      ).toBe(true)
+    );
+    expect(screen.queryByTestId("sessions-console-query-trailer")).toBeNull();
+  });
+
+  it("a name matching several sessions renders EVERY match, each with its own account", async () => {
+    // Names are not unique (a reused `merge-train-steward`, a resumed session
+    // under another account) — collapsing to one would hide the others.
+    const first = withAgent(LINKED, "m-1", {
+      tag_name: "spaceship-latency",
+      account: "qontinui",
+      config_dir: "C:/claude/.claude-qontinui",
+    });
+    const second = withAgent(AGENT_ONLY, "m-2", {
+      id: "m-2",
+      tag_name: "spaceship-latency",
+      account: "default",
+      config_dir: "/home/spinak/.claude",
+    });
+    mount(envelope([first, second]));
+    const rows = await screen.findAllByTestId("sessions-console-row");
+    expect(rows.map((r) => r.getAttribute("data-row-key")).sort()).toEqual([
+      "m-1",
+      "m-2",
+    ]);
+    expect(await accountCellFor("m-1")).toHaveTextContent("qontinui");
+    expect(await accountCellFor("m-2")).toHaveTextContent(
+      "default (/home/spinak/.claude)"
+    );
+  });
+});
+
+describe("matches hidden by a server filter are counted, never silent", () => {
+  it("an emptied tab says how many matches the filter hid", async () => {
+    mount(envelope([], { withheld_by_filter: 2 }), { initialStatus: "stale" });
+    const empty = await screen.findByTestId("sessions-console-empty");
+    expect(empty).toHaveTextContent(/No sessions match this filter/i);
+    expect(
+      screen.getByTestId("sessions-console-empty-withheld")
+    ).toHaveTextContent("2 matches hidden by this filter");
+  });
+
+  it("a non-empty tab says it too, above the list", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 1 }), {
+      initialStatus: "live",
+    });
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.getByTestId("sessions-console-withheld")).toHaveTextContent(
+      "1 match hidden by this filter"
+    );
+  });
+
+  it("says nothing when nothing was hidden, or the backend did not report it", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 0 }));
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.queryByTestId("sessions-console-withheld")).toBeNull();
+  });
+});
+
+describe("the subproject chip (plan 2026-11-08 subprojects, Phase 6)", () => {
+  it("asks for the page's subprojects in ONE lookup, by Claude Code session id", async () => {
+    const lookupSubprojects = vi.fn(async (_ids: readonly string[]) => ({
+      items: {
+        "agent-1": { id: "sp-1", title: "console work", headline: "working" },
+      },
+      missing: ["cccccccc-0000-0000-0000-000000000003"],
+    }));
+    mount(envelope([LINKED, LIFECYCLE_ONLY, AGENT_ONLY]), {
+      lookupSubprojects: lookupSubprojects as never,
+    });
+    const linked = await rowFor(LINKED.id);
+    await waitFor(() =>
+      expect(
+        within(linked).getByTestId("sessions-console-row-subproject")
+      ).toHaveTextContent("console work")
+    );
+    expect(lookupSubprojects).toHaveBeenCalledTimes(1);
+    expect(lookupSubprojects.mock.calls[0]?.[0]).toEqual([
+      "agent-1",
+      "cccccccc-0000-0000-0000-000000000003",
+    ]);
+    // A shell has no Claude Code session id: not applicable, said as a dash.
+    const shell = await rowFor(LIFECYCLE_ONLY.id);
+    expect(
+      within(shell)
+        .getByTestId("sessions-console-row-subproject")
+        .querySelector("[data-chip]")
+    ).toHaveAttribute("data-chip", "not_applicable");
+    // No live membership is "none" — a dash that says so, never a guess.
+    const agentOnly = await rowFor(AGENT_ONLY.id);
+    expect(
+      within(agentOnly)
+        .getByTestId("sessions-console-row-subproject")
+        .querySelector("[data-chip]")
+    ).toHaveAttribute("data-chip", "none");
+  });
+
+  it("looks a row up by its bridge column when the agent half did not answer, and says unknown when there is no id at all", async () => {
+    const bridged: ConsolidatedSessionRow = {
+      ...LIFECYCLE_ONLY,
+      id: "dddddddd-0000-0000-0000-000000000004",
+      row_class: null,
+      session_kind: "terminal_claude",
+      claude_code_session_id: "agent-9",
+    };
+    const unknown: ConsolidatedSessionRow = {
+      ...LIFECYCLE_ONLY,
+      id: "eeeeeeee-0000-0000-0000-000000000005",
+      row_class: null,
+      session_kind: "terminal_claude",
+      claude_code_session_id: null,
+    };
+    const lookupSubprojects = vi.fn(async (_ids: readonly string[]) => ({
+      items: {
+        "agent-9": { id: "sp-9", title: "bridged work", headline: "waiting" },
+      },
+      missing: [],
+    }));
+    mount(envelope([bridged, unknown]), {
+      lookupSubprojects: lookupSubprojects as never,
+    });
+    const bridgedRow = await rowFor(bridged.id);
+    await waitFor(() =>
+      expect(
+        within(bridgedRow).getByTestId("sessions-console-row-subproject")
+      ).toHaveTextContent("bridged work")
+    );
+    expect(lookupSubprojects.mock.calls[0]?.[0]).toEqual(["agent-9"]);
+    // No id at all and an agent half that did not answer: unknown — not
+    // "no session id", which would be a positive claim.
+    const unknownRow = await rowFor(unknown.id);
+    expect(
+      within(unknownRow)
+        .getByTestId("sessions-console-row-subproject")
+        .querySelector("[data-chip]")
+    ).toHaveAttribute("data-chip", "agent_unknown");
+  });
+
+  it("links the subproject from the expanded row, never from inside the row's button", async () => {
+    const lookupSubprojects = vi.fn(async () => ({
+      items: {
+        "agent-1": { id: "sp-1", title: "console work", headline: "working" },
+      },
+      missing: [],
+    }));
+    mount(envelope([LINKED]), {
+      lookupSubprojects: lookupSubprojects as never,
+    });
+    const row = await rowFor(LINKED.id);
+    await waitFor(() =>
+      expect(
+        within(row).getByTestId("sessions-console-row-subproject")
+      ).toHaveTextContent("console work")
+    );
+    const line = row.querySelector("[data-console-row]") as HTMLElement;
+    expect(line.querySelector("a")).toBeNull();
+    fireEvent.click(line);
+    expect(
+      await screen.findByTestId("sessions-console-detail-subproject")
+    ).toHaveAttribute("href", "/admin/coord/subprojects/sp-1");
   });
 });

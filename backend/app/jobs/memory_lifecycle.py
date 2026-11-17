@@ -330,6 +330,18 @@ async def reindex_once(
     re-select the same oldest 100 rows and the loop would spin.
     """
     now = now or datetime.now(UTC)
+    # Session rows are never re-embedded (an embedding job would hand their
+    # content to a device); a stale one is degraded to FTS-only instead, so
+    # it cannot hold the tenant's cosine arm off forever.
+    degraded_session_vectors = await store.degrade_stale_session_vectors(
+        session, current_tag=EMBEDDING_MODEL_TAG
+    )
+    if degraded_session_vectors:
+        logger.info(
+            "memory_reindex_session_vectors_degraded",
+            rows=degraded_session_vectors,
+            model_tag=EMBEDDING_MODEL_TAG,
+        )
     enqueued_rows = 0
     enqueued_jobs = 0
     batches = 0
@@ -372,6 +384,7 @@ async def reindex_once(
         "enqueued_rows": enqueued_rows,
         "enqueued_jobs": enqueued_jobs,
         "batches": batches,
+        "degraded_session_vectors": degraded_session_vectors,
     }
 
 

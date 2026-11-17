@@ -5,6 +5,10 @@ import { toast } from "sonner";
 import { createReadSequence, type ReadSequence } from "@/components/console";
 import { listRegisteredRepos } from "@/lib/api/operations/tenants";
 import {
+  isWriteFailureUnknown,
+  outcomeUnknownReason,
+} from "@/components/admin/coord/writeOutcome";
+import {
   fetchContinuationDeliveryMode,
   fetchPostMergeFollowupScope,
   putContinuationDeliveryMode,
@@ -47,13 +51,24 @@ type Dial = "scope" | "delivery";
 
 /**
  * Per (repo, dial) bookkeeping: the read sequence that orders every read AND
- * write read-back for that dial, the newest ticket whose read-back FAILED
- * (only a later delivery may retire that UNKNOWN), and the last read error.
+ * write read-back for that dial, and the newest ticket at which a write left
+ * the dial UNKNOWN — its read-back failed, or its answer left the outcome
+ * open. Only a later delivery may retire that UNKNOWN.
  */
 interface DialBook {
   seq: ReadSequence;
   readbackFailedAt: number;
 }
+
+const OUTCOME_UNKNOWN_KEY = {
+  scope: "scopeOutcomeUnknown",
+  delivery: "deliveryOutcomeUnknown",
+} as const;
+
+const DIAL_WORDS: Record<Dial, string> = {
+  scope: "follow-up scope",
+  delivery: "delivery mode",
+};
 
 /**
  * The tenant's repos, each with its post-merge follow-up scope and its
@@ -80,6 +95,11 @@ interface DialBook {
  *    value over the read-back or retire a failed read-back's UNKNOWN, and a superseded-but-
  *    successful read is still an answer (never discarded for being old) when
  *    nothing newer has delivered.
+ * 4. **An open write outcome is UNKNOWN, never a failure.** A write whose
+ *    answer may follow a commit (`isWriteFailureUnknown`: a 5xx that is not
+ *    the proxy's own no-write 502, a timeout, a lost or unreadable answer) is
+ *    sent once, sets `*OutcomeUnknown`, and is re-read at once; only a refusal
+ *    lands in `writeErrors` ("not applied").
  */
 export function useRepoFollowupDials() {
   const [repos, setRepos] = useState<string[] | null>(null);
@@ -143,6 +163,7 @@ export function useRepoFollowupDials() {
         }
         if (ticket > b.readbackFailedAt) {
           (update as Record<string, unknown>)[readbackKey] = null;
+          (update as Record<string, unknown>)[OUTCOME_UNKNOWN_KEY[dial]] = null;
         }
         patch(repo, update);
       } else {
@@ -262,6 +283,32 @@ export function useRepoFollowupDials() {
     [book, patch, settleRead]
   );
 
+  /**
+   * A write whose answer left the outcome open (`isWriteFailureUnknown`): the
+   * dial is UNKNOWN — never "the write failed", never the written value —
+   * until a read issued after this point delivers, and that read is started
+   * here. The ticket is taken now so every read already in flight orders
+   * before it and cannot retire the UNKNOWN.
+   */
+  const settleUnknownWrite = useCallback(
+    async (repo: string, dial: Dial, err: unknown): Promise<void> => {
+      const b = book(repo, dial);
+      const ticket = b.seq.issue();
+      b.seq.settle(ticket, false);
+      b.readbackFailedAt = Math.max(b.readbackFailedAt, ticket);
+      const reason = outcomeUnknownReason(err);
+      patch(repo, {
+        [OUTCOME_UNKNOWN_KEY[dial]]: reason,
+      } as Partial<RepoDialReading>);
+      toast.warning(
+        `${repo}: whether the ${DIAL_WORDS[dial]} change was applied is ` +
+          `unknown (${reason}) — re-reading what coord holds.`
+      );
+      await (dial === "scope" ? readScope(repo) : readDelivery(repo));
+    },
+    [book, patch, readScope, readDelivery]
+  );
+
   const writeScope = useCallback(
     async (body: {
       repo: string;
@@ -294,6 +341,10 @@ export function useRepoFollowupDials() {
         }
         return true;
       } catch (err) {
+        if (isWriteFailureUnknown(err)) {
+          await settleUnknownWrite(body.repo, "scope", err);
+          return false;
+        }
         // A refused write delivered nothing and is not a read: it takes no
         // ticket, so it neither updates nor stales the displayed value.
         const text = message(err, "the write failed");
@@ -304,7 +355,7 @@ export function useRepoFollowupDials() {
         setSaving(null);
       }
     },
-    [book, settleWrite]
+    [book, settleWrite, settleUnknownWrite]
   );
 
   const writeDelivery = useCallback(
@@ -332,6 +383,10 @@ export function useRepoFollowupDials() {
         }
         return true;
       } catch (err) {
+        if (isWriteFailureUnknown(err)) {
+          await settleUnknownWrite(repo, "delivery", err);
+          return false;
+        }
         const text = message(err, "the write failed");
         setWriteErrors((prev) => ({ ...prev, [key]: text }));
         toast.error(`${repo}: ${text}`);
@@ -340,7 +395,7 @@ export function useRepoFollowupDials() {
         setSaving(null);
       }
     },
-    [book, settleWrite]
+    [book, settleWrite, settleUnknownWrite]
   );
 
   return {

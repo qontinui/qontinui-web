@@ -77,7 +77,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import devices_to_wire
+from app.api.v1.endpoints.devices import _recent_crash_from, devices_to_wire
 from app.core.config import settings
 from app.core.refusal import (
     GlossaryTerm,
@@ -421,24 +421,33 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _selected_member_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The tenant ``active_tenant`` names, when the operator is a member of it
+    (matched against ``identity.tenants`` by id, or slug defensively)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return None
+
+
 def _effective_tenant_id(
     identity: CoordIdentity, active_tenant: str | None
 ) -> UUID | None:
     """The operator's EFFECTIVE tenant id: the active-switcher selection when
-    the operator is a member of it (matched against ``identity.tenants`` by
-    id, or slug defensively), else the home tenant.
+    the operator is a member of it, else the home tenant.
 
     The WS bridges use this: a browser ``WebSocket`` cannot send the
     ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
     param and is membership-validated here — mirroring coord's
     ``auth::apply_active_tenant_override`` (non-member selection degrades
     to home, never widens)."""
-    selection = (active_tenant or "").strip()
-    if selection:
-        for t in identity.tenants:
-            if str(t.tenant_id) == selection or t.slug == selection:
-                return t.tenant_id
-    return identity.home_tenant_id
+    return _selected_member_tenant_id(identity, active_tenant) or (
+        identity.home_tenant_id
+    )
 
 
 async def require_coord_tenant_admin_target(
@@ -534,6 +543,20 @@ _UI_THREAD_UNKNOWN: dict[str, Any] = {
     "uiThreadSource": None,
     "uiThreadObservedAt": None,
 }
+
+
+def _beacon_recent_crash_wire(beacon: RegisteredRunner) -> dict[str, Any] | None:
+    """The ``recentCrash`` wire value for a beacon-only fleet row.
+
+    The beacon carries the runner's snake_case ``HeartbeatRecentCrash``; it is
+    read through the same ``_recent_crash_from`` a paired row's
+    ``coord.devices.recent_crash`` uses, so both rows render one shape.
+    ``None`` means the runner reported no fresh dump, or predates the field.
+    """
+    if beacon.recent_crash is None:
+        return None
+    crash = _recent_crash_from(beacon.recent_crash.model_dump())
+    return None if crash is None else crash.model_dump(mode="json")
 
 
 def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
@@ -687,7 +710,10 @@ async def get_fleet_status(
                 "lastHeartbeat": beacon.last_heartbeat.isoformat(),
                 "wsConnected": False,
                 "uiError": None,
-                "recentCrash": None,
+                # The beacon's own crash report: a beacon-only runner has no
+                # coord.devices row to carry one, so this is the only place
+                # its crash dump (and the crashed process's pid) is visible.
+                "recentCrash": _beacon_recent_crash_wire(beacon),
                 # Last-reported native UI-thread liveness; None = UNKNOWN.
                 **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
@@ -1060,10 +1086,10 @@ def _coord_timeout(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
-        # The detail is the same constant for a read and a write: callers
-        # (``fleet_targets._reraise_coord_refusal``) recognise web's own
-        # transport text by it. The write's re-read lives in
-        # ``next_action.target``, which ``Refusal::render`` states since
+        # The detail is the same constant for a read and a write (callers
+        # recognise web's own transport refusals by their class,
+        # ``RefusalHTTPException``, not by this text). The write's re-read
+        # lives in ``next_action.target``, which ``Refusal::render`` states since
         # qontinui-schemas#204 ("... but first check "<target>": the earlier
         # attempt may already have taken effect"), as does the web reader's
         # mirror of it (frontend ``lib/errors/refusal.ts``).
@@ -1110,8 +1136,8 @@ def _coord_answer_lost_in_transit(exc: httpx.HTTPError) -> RefusalHTTPException:
     outcome is unknown. For the rare failure before anything was sent
     (``LocalProtocolError``, ``UnsupportedProtocol``) this over-reports "may
     have been applied", which is the safe direction. Shared by
-    ``_proxy_coord_write`` and ``_proxy_coord_verbatim`` so the two cannot
-    drift."""
+    ``_proxy_coord_write``, ``_proxy_coord_post`` and ``_proxy_coord_verbatim``
+    so they cannot drift."""
     return _coord_answer_lost(
         f"coord's answer was lost in transit ({type(exc).__name__}); the "
         "outcome is unknown and the change may have been applied, so re-read "
@@ -1619,6 +1645,7 @@ async def _proxy_coord_patch(
     *,
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a PATCH request to coord. Returns the JSON body (``None`` for an
     empty 2xx).
@@ -1635,11 +1662,18 @@ async def _proxy_coord_patch(
     own identity coord-side and resolves no home tenant web-side, so it
     needs the bearer without the resolution. Default False preserves the
     prior behavior exactly.
+
+    ``structured_errors`` — pass coord's typed JSON refusal object through
+    verbatim on a ≥400, the same opt-in as ``_proxy_coord_put``'s flag (and
+    ``_proxy_coord_post``'s, whose docstring says why it is per route). Default
+    False keeps ``detail=resp.text`` exactly.
     """
     headers = (
         _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
     )
-    return await _proxy_coord_write("patch", path, body, headers=headers)
+    return await _proxy_coord_write(
+        "patch", path, body, headers=headers, structured_errors=structured_errors
+    )
 
 
 async def _proxy_coord_put(
@@ -1735,8 +1769,11 @@ async def post_github_clone_credential(
     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
 
     Passes coord's status + JSON body through verbatim (like the onboarding
-    claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-    the repo's owner isn't a GitHub account connected to the caller's workspace.
+    claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+    not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+    org but a per-repo binding hands the repo to another tenant, otherwise
+    ``repo_owner_not_connected``. A failed governing read is
+    ``500 governing_tenant_unknown``.
     """
     url = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
     headers = _tenant_headers(tenant_id)
@@ -1859,7 +1896,9 @@ class RepoNameCheckResponse(BaseModel):
     """Success body for ``POST /operations/github/check-name`` (forwarded
     verbatim from coord's ``GET /coord/repos/availability``)."""
 
-    status: Literal["available", "taken", "invalid", "owner_unbound"]
+    status: Literal[
+        "available", "taken", "invalid", "owner_unbound", "repo_bound_to_another_tenant"
+    ]
     reason: str | None = None
     normalized_name: str
 
@@ -1915,7 +1954,10 @@ async def post_github_check_name(
 
     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-    "owner_unbound", reason?, normalized_name}``. POST (despite the read
+    "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+    ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+    per-repo binding hands this name to another tenant. A failed governing read
+    is ``500 governing_tenant_unknown``. POST (despite the read
     semantics) so the runner's provisioning flow talks one verb to this
     surface; the upstream coord call is the GET.
     """
@@ -1937,7 +1979,8 @@ async def post_github_create_repo(
     Proxies coord ``POST /coord/repos``. Success is coord's ``201
     {full_name, clone_url, html_url, default_branch}``; coord's error
     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-    ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+    ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+    ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
     carries the ``authorize_url`` the runner must surface), and
     ``503 app_unconfigured``.
 
@@ -1968,8 +2011,9 @@ async def post_github_push_credential(
 
     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-    clone-credential proxy above; coord enforces that the repo's owner is
-    bound to the caller's tenant.
+    clone-credential proxy above; coord enforces that the caller's tenant
+    governs the repo: a per-repo binding, else the owner's binding. A failed
+    governing read is ``500 governing_tenant_unknown``.
     """
     return await _proxy_coord_verbatim(
         "POST",
@@ -3693,9 +3737,9 @@ async def _proxy_coord_post(
     all ~45 callers of this helper. Flipping the default is not a no-op at the
     wire: ``app.middleware.error_handler.http_exception_handler`` splices a
     dict detail into the top level of its envelope, which moves ``error`` from
-    the status-derived code to coord's own, turns ``message`` into a Python
-    repr of the dict rather than coord's verbatim JSON text, and lets coord's
-    remaining keys collide with the envelope's. That is a real contract change
+    the status-derived code to coord's own, turns ``message`` into the dict's
+    own ``message`` or ``error`` string rather than coord's verbatim JSON
+    text, and lets coord's remaining keys collide with the envelope's. That is a real contract change
     for every other route, invisible to their tests (which run against a bare
     ``FastAPI()`` with no handlers registered), so each route opts in
     knowingly.
@@ -3705,6 +3749,14 @@ async def _proxy_coord_post(
     out of ``resp.json()`` as a 500. A success is still a success: the write
     was accepted, and turning that into a server error would tell the operator
     it failed. Default False preserves the prior behavior exactly.
+
+    Any other transport failure (``ReadError``, ``RemoteProtocolError`` — a
+    load balancer cutting the response) is treated as after-send, exactly as
+    ``_proxy_coord_write`` treats it: coord may have committed the POST, so it
+    is the **504** ``answer_lost`` refusal ("the outcome is unknown"), never an
+    unhandled 500 that reads as "refused". For a spawn that difference is the
+    difference between "try again" and "check before trying again, or you may
+    get two".
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -3717,6 +3769,11 @@ async def _proxy_coord_post(
             raise _coord_unreachable()
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "coord_post_answer_lost", path=path, exc_type=type(exc).__name__
+            )
+            raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -6952,6 +7009,33 @@ async def get_fleet_resource_samples(
       runner could not decide", and ``readiness_state`` is coord's freshness
       verdict so no browser subtracts its own clock from ``sampled_at``. A
       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
+    * The **commit-attribution** fields (plan
+      ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
+      D1-D4), all OPTIONAL and on host-lane ``latest`` rows.
+      ``top_consumers`` (alembic ``topcons_01``) is
+      ``{entries: [{pid, name, private_bytes, started_at}], scanned,
+      unreadable, attributed_private_bytes}``: at most 5 entries by
+      per-process private bytes (the commit charge) descending, plus the
+      completeness counts without which a top-5 that misses the real
+      consumer reads the same as one that names it. ``name`` is the image
+      name only — command lines carry secrets and are never published.
+      ``commit_floor_eta_secs`` is coord's least-squares time until free
+      commit reaches the row's served ``floor.bytes``, fitted over the RAW
+      trailing 300 s of samples and confirmed over the trailing 600 s
+      window (never over ``history``): both must be covered and falling,
+      and the LATER of the two projections is served. It is null for a
+      stale lane, and observed and alerted on but never ranks or filters
+      dispatch. ``commit_floor_eta_state`` says what that number (or its
+      null) means: ``falling`` (the ETA is set), ``not_falling``,
+      ``at_or_below_floor``, or the UNKNOWN readings ``sparse`` (too few
+      points, coverage or span), ``stale`` (the newest sample is older
+      than the stale window) and ``degraded`` (coord could not read the
+      raw window); ``null`` is a lane with no commit floor. Passed through
+      untouched, and once more **NULL must stay NULL**: ``top_consumers:
+      null`` is a publisher that predates the field or a read that failed,
+      and a key **absent** is a coord that predates it. Every UNKNOWN
+      reading renders UNKNOWN — never "no consumers", and never "safe";
+      only ``not_falling`` may render as nothing.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -7717,6 +7801,302 @@ async def get_agent(
     return await _proxy_coord_get(f"/agents/{agent_id}", tenant_id=tenant_id)
 
 
+# ---- Subprojects ------------------------------------------------------------
+#
+# Plan ``2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled``
+# Phase 5. A subproject groups the sessions, work units, gates and PRs of one
+# piece of work, and carries coord's verdict on whether anything is still
+# moving it (D1, D6). coord owns all of it, so these six routes are thin
+# proxies over coord's ``/coord/subprojects*`` doors and every body passes
+# through VERBATIM in both directions — no field whitelist and no reshaping, so
+# a field coord adds reaches the page without a web deploy.
+#
+# Auth, per the plan:
+#
+# * the two reads are any tenant member (``get_tenant_id``), like every other
+#   coord read on this router;
+# * the four writes are coord tenant ADMIN (``require_coord_tenant_admin``) —
+#   the gate ``POST /agents/spawn`` uses — because coord serves them on its
+#   ``operator_admin_writes`` router, and Continue (``…/spawn``) IS an operator
+#   spawn: it places the session through ``/agents/spawn``'s own placement.
+#
+# ``structured_errors=True`` on every route: coord's typed refusals
+# (``schema_migration_pending`` before the alembic revision applies, the
+# spawn's capacity and pin refusals, ``subproject_has_no_repo``,
+# ``invalid_effort``, a members ``action`` coord refuses) reach the browser as
+# data the page branches on rather than as text inside ``message``. Nothing
+# else reads these routes, so the opt-in changes no existing envelope (see
+# ``_proxy_coord_post``'s docstring for why the flag is per route).
+#
+# The id is typed ``UUID``: coord keys subprojects by uuid, so anything else
+# names no subproject, and a typed segment cannot carry a ``..`` that would
+# re-aim the forwarded path at another coord route under the operator's bearer.
+
+# Budget for the three subproject routes that make coord aggregate: the detail
+# door computes the verdict LIVE (D1 — "the detail door recomputes on every
+# read"), Continue composes its brief from the same next steps (D7, D8), and
+# the list serves the tick's cached verdicts but counts each row's sessions and
+# work units and classifies the unattached units beside them — none of which
+# is part of the cached verdict. The plan has coord bound the live computation
+# per SOURCE (its D6 and its "Verdict cost" risk): each member session's
+# obligations read under its own deadline (`VERDICT_DEADLINE`), gate recursion
+# depth-capped, and a source that runs out served as ``could_not_read`` while
+# the door still answers 200. That is the same kind of synthesis as the
+# project-state door, so it gets that door's budget (see
+# ``_COORD_PROJECT_STATE_TIMEOUT``). UNMEASURED: coord's doors are being built
+# alongside this proxy, so this is sized by analogy, not by a sampled latency.
+# At ``_COORD_TIMEOUT`` an answer coord gave in 6s would be a 504 here: the
+# detail page would render every section unknown, and Continue would have to
+# say the spawn may or may not have landed. Connect stays short: an
+# unreachable coord should still fail fast.
+#
+# COST: the reads resolve their tenant with ``get_tenant_id``, which holds no
+# backend DB session across the coord call. Continue's admin gate does hold one
+# (``get_current_active_user_async``) for the length of the spawn, once per
+# operator click; the list page and the home count line poll single-flight.
+_COORD_SUBPROJECTS_TIMEOUT = httpx.Timeout(25.0, connect=5.0)
+
+
+@router.get("/subprojects")
+async def get_subprojects(
+    status: str | None = Query(
+        default=None,
+        description="Lifecycle filter, forwarded as sent: `open` (coord's "
+        "default), `done`, `archived` or `all`.",
+    ),
+    headline: str | None = Query(
+        default=None,
+        description="Verdict filter, forwarded as sent: one of `needs_you`, "
+        "`stalled`, `working`, `waiting`, `done` or `unknown` (coord's "
+        "vocabulary), or several comma-separated (`needs_you,stalled`).",
+    ),
+    exclude_headline: str | None = Query(
+        default=None,
+        description="Verdicts to leave out, forwarded as sent, comma-separated "
+        "like `headline` — `done` lists every subproject that is not done in "
+        "one read. A coord that predates the parameter refuses it (400 "
+        "`unknown_query_parameter`, passed through) or ignores it (its answer "
+        "then still holds done subprojects); a caller tells which.",
+    ),
+    origin: str | None = Query(
+        default=None,
+        description="Origin filter, forwarded as sent (`operator_prompt`, "
+        "`autonomous`, `scheduled`, ...).",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=200),
+    cursor: str | None = Query(
+        default=None,
+        description="coord's opaque `next_cursor` from the previous page.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's subprojects — proxy coord's ``GET /coord/subprojects``.
+
+    Each item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``
+    come from the verdict coord's reconciler tick cached, with its
+    ``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,
+    ``total``, ``unattached_units`` and ``counts`` — every headline's count and
+    the folded one-off / scheduled / merged counts over the same status and
+    origin filter, or ``null`` when coord could not take them. The filters
+    (``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,
+    ``cursor``) are forwarded only when set, as sent: coord owns the
+    vocabulary and refuses a value — or a parameter — it does not know, so this
+    route does not keep a second copy of it to drift. Every filter coord takes
+    has to be declared here: this router does not refuse an undeclared query
+    parameter, it drops it, so an undeclared filter would never reach coord.
+    A coord whose migration has not applied answers ``503 {"error":
+    "schema_migration_pending"}``, which reaches the browser as that object.
+    """
+    params: dict[str, Any] = {}
+    for key, value in (
+        ("status", status),
+        ("headline", headline),
+        ("exclude_headline", exclude_headline),
+        ("origin", origin),
+        ("limit", limit),
+        ("cursor", cursor),
+    ):
+        if value is not None:
+            params[key] = value
+    return await _proxy_coord_get(
+        "/coord/subprojects",
+        params=params or None,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+#: coord's bound on one ``by-sessions`` lookup (the contract's "max 200").
+_SUBPROJECT_LOOKUP_MAX_IDS = 200
+
+
+# Declared BEFORE ``/subprojects/{subproject_id}``: Starlette matches routes in
+# order and converts path parameters only after a match, so with the ``{id}``
+# route first, ``by-sessions`` would be taken for an id and refused 422.
+@router.get("/subprojects/by-sessions")
+async def get_subprojects_by_sessions(
+    ids: str = Query(
+        ...,
+        description="Comma-separated harness (Claude Code) session ids, at "
+        "most 200 — one page of session rows.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Which subproject each session belongs to — proxy coord's
+    ``GET /coord/subprojects/by-sessions``.
+
+    One batched read per page of session rows (the sessions console's
+    subproject chip). coord answers ``{"items": {<session id>: {"id",
+    "title", "headline"}}, "missing": [<ids with no live membership>]}``,
+    verbatim; a pending membership is reported under ``missing``. The ids are
+    forwarded as sent; only their COUNT is checked here, so a page that would
+    exceed coord's bound is refused before the call rather than after it.
+    """
+    count = len([part for part in ids.split(",") if part.strip()])
+    if count == 0 or count > _SUBPROJECT_LOOKUP_MAX_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_session_ids",
+                "message": (
+                    f"ids must name between 1 and {_SUBPROJECT_LOOKUP_MAX_IDS} "
+                    f"sessions; got {count}"
+                ),
+            },
+        )
+    return await _proxy_coord_get(
+        "/coord/subprojects/by-sessions",
+        params={"ids": ids},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.get("/subprojects/{subproject_id}")
+async def get_subproject(
+    subproject_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One subproject with its verdict computed live — proxy coord's
+    ``GET /coord/subprojects/{id}``.
+
+    The body is coord's verbatim: the summary plus the note fields, the LIVE
+    ``verdict`` (headline, reasons and per-source read states), ``next_steps``,
+    the member ``sessions`` (open AND closed), ``work_units``, ``gates`` (each
+    with its mover), ``prs`` and ``history``. A merged id resolves to the
+    subproject it was merged into, and the body then carries ``resolved_from``.
+    coord answers 404 for an id that is unknown in the caller's tenant.
+    """
+    return await _proxy_coord_get(
+        f"/coord/subprojects/{subproject_id}",
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+@router.patch("/subprojects/{subproject_id}")
+async def patch_subproject(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Rename a subproject, set its goal or next-steps note, or mark it done /
+    reopen it — proxy coord's ``PATCH /coord/subprojects/{id}``.
+
+    The body (``{"title"?, "goal"?, "next_steps_note"?, "status"?}``) is
+    forwarded verbatim; coord answers the updated ``SubprojectSummary``. Coord
+    tenant admin, like every subproject write (D11).
+    """
+    return await _proxy_coord_patch(
+        f"/coord/subprojects/{subproject_id}",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/merge")
+async def post_subproject_merge(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Merge this subproject INTO another — proxy coord's
+    ``POST /coord/subprojects/{id}/merge``.
+
+    The body (``{"into_id": <uuid>}``) is forwarded verbatim. coord moves the
+    members, records ``merged_into`` and answers
+    ``{"merged_into", "moved_members"}``; the merged id resolves to its target
+    from then on (D11).
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/merge",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/members")
+async def post_subproject_members(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Attach, move or remove one member session or work unit — proxy coord's
+    ``POST /coord/subprojects/{id}/members``.
+
+    The body (``{"action", "member_kind", "agent_session_id"?,
+    "work_unit_id"?, "work_unit_slug"?}``) is forwarded verbatim; coord
+    resolves a harness session id through its identity card in the caller's
+    tenant and answers ``{"member": {...}}`` (D11).
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/members",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/spawn")
+async def post_subproject_spawn(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Continue a subproject: spawn a session to work on it — proxy coord's
+    ``POST /coord/subprojects/{id}/spawn`` (D8).
+
+    The body (``{"effort", "ultracode"?, "prompt_addendum"?,
+    "target_device_id"?, "account"?, "repos"?}``) is forwarded verbatim. coord
+    derives the repos when none are sent, composes the brief from the
+    subproject's next steps, writes the pending allocation membership and
+    places the session through ``/agents/spawn``'s placement: a hard pin on a
+    named device, coord's pool otherwise. It answers the allocation id, where
+    the session went (``placement``) and the effort it was ASKED for — never the
+    effort applied, which no runner reports yet.
+
+    Mirrors ``post_agents_spawn``: coord's refusals pass through as objects
+    (``structured_errors=True``) — the capacity and pin 409s ``/agents/spawn``
+    already returns, ``422 {"error": "subproject_has_no_repo"}`` and
+    ``422 {"error": "invalid_effort"}`` — because the Continue dialog branches
+    on them. It uses ``_COORD_SUBPROJECTS_TIMEOUT``, not ``_COORD_TIMEOUT``:
+    the brief is built from the verdict the detail door computes, and a spawn
+    that times out here is one whose outcome is unknown, so the timeout must
+    outlast coord's own work rather than cut it off.
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/spawn",
+        body,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
 # ---- Wave-3c memory browser (mutation surface) ---------------------------
 #
 # Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 6.
@@ -7734,6 +8114,7 @@ async def _proxy_coord_delete(
     params: dict[str, Any] | None = None,
     body: Any | None = None,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
 
@@ -7750,6 +8131,9 @@ async def _proxy_coord_delete(
     ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
     not accept ``json=``, so this branches. The bearer header is attached
     on both paths.
+
+    ``structured_errors`` — pass coord's typed JSON refusal object through
+    verbatim on a ≥400, the same opt-in as ``_proxy_coord_put``'s flag.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -7766,7 +8150,10 @@ async def _proxy_coord_delete(
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
     if resp.status_code == 204 or not resp.content:
         return {"status": "ok"}
@@ -9535,9 +9922,20 @@ _AGENT_SESSIONS_JOIN_LIMIT = 500
 #: `label` / `derived_name` / `search_text`). The two are therefore not the
 #: same search, and the difference is disclosed rather than smoothed over: a
 #: `q` that matches an agent session's activity text will not match its
-#: lifecycle twin's `intent.purpose` unless the words happen to coincide.
+#: lifecycle twin's `intent.purpose` unless the words happen to coincide —
+#: which is why :func:`list_coord_sessions` ALSO keeps every lifecycle row
+#: whose bridge names an agent row coord's search returned.
+#:
+#: ``claude_code_session_id`` is here so a pasted commit ``Session-Id:``
+#: trailer (the Claude Code session uuid, which the console strips to the bare
+#: id client-side) finds the lifecycle half directly — plan
+#: `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3.
+#: Without it the uuid matches only ``coord.sessions.id``, which is a
+#: DIFFERENT id space, so the lifecycle twin of the session the operator named
+#: would be filtered out of its own search.
 _SESSION_QUERY_FIELDS = (
     "id",
+    "claude_code_session_id",
     "repo",
     "branch",
     "session_kind",
@@ -9601,8 +9999,12 @@ def _bridge_owners(lifecycle: list[dict[str, Any]]) -> dict[str, str]:
 def _consolidate_sessions(
     lifecycle: list[dict[str, Any]],
     agents: list[dict[str, Any]] | None,
-) -> list[dict[str, Any]]:
+    *,
+    filtered_out_bridges: frozenset[str] = frozenset(),
+) -> tuple[list[dict[str, Any]], int]:
     """Join the lifecycle half to the agent half and emit D1's row classes.
+
+    Returns ``(rows, withheld_by_filter)``.
 
     ``agents is None`` means the agent read did NOT land. Every row then
     carries ``row_class: null`` — UNKNOWN — including the rows whose bridge
@@ -9610,9 +10012,26 @@ def _consolidate_sessions(
     payload there is also no ``agent_only`` half, so a list that silently
     dropped those rows while confidently classifying the rest would be
     describing a fleet it did not read. One failed read, one honest answer.
+
+    ``filtered_out_bridges`` are the bridge values of lifecycle rows coord DID
+    serve but the presentation filters (``device`` / ``status``) removed. An
+    agent row bridged by one of them is the agent half of a session the
+    caller's filter excluded, so it is dropped with its lifecycle twin rather
+    than emitted as ``agent_only`` — which would assert "no ``coord.sessions``
+    row bridges this", the opposite of what coord served.
+
+    Dropped, but never SILENTLY: such a row is a session coord's own (agent
+    half) filter matched while its lifecycle half did not — the two halves
+    disagree on status or device — so it is counted in ``withheld_by_filter``
+    and the console says "N matches hidden by this filter" rather than
+    letting the session vanish from every narrowed tab with nothing to show
+    for it.
     """
     if agents is None:
-        return [{**row, "row_class": None, "agent_session": None} for row in lifecycle]
+        return (
+            [{**row, "row_class": None, "agent_session": None} for row in lifecycle],
+            0,
+        )
 
     agents_by_id: dict[str, dict[str, Any]] = {}
     for agent in agents:
@@ -9625,6 +10044,7 @@ def _consolidate_sessions(
     owners = _bridge_owners(lifecycle)
     consumed: set[str] = set()
     out: list[dict[str, Any]] = []
+    withheld = 0
 
     for row in lifecycle:
         bridge = row.get("claude_code_session_id")
@@ -9661,6 +10081,12 @@ def _consolidate_sessions(
             # (the owner was filtered out of this response). Emitting it as
             # `agent_only` would assert an absence we did not observe.
             continue
+        if str(agent_id) in filtered_out_bridges:
+            # Its lifecycle twin was served and then removed by the caller's
+            # `device` / `status` filter. Same reasoning — not `agent_only` —
+            # but COUNTED, because coord's agent-side filter did match it.
+            withheld += 1
+            continue
         out.append(
             {
                 # The lifecycle keys — `state`, `session_kind`, `intent`,
@@ -9676,7 +10102,7 @@ def _consolidate_sessions(
             }
         )
 
-    return out
+    return out, withheld
 
 
 @router.get("/sessions")
@@ -9718,7 +10144,11 @@ async def list_coord_sessions(
         description="Free-text filter. `shape=consolidated` only. The agent "
         "half is searched coord-side (full-text over label / derived_name / "
         "activity); the lifecycle half is matched here over the fields coord's "
-        "`/sessions` route exposes, which carries no search parameter.",
+        "`/sessions` route exposes (which carries no search parameter), "
+        "including `claude_code_session_id` so a pasted `Session-Id:` uuid "
+        "matches it. A lifecycle row whose bridge names an agent row coord's "
+        "search returned is kept too, so matching either half finds the "
+        "session.",
     ),
     status: Literal["live", "stale", "closed"] | None = Query(
         default=None,
@@ -9747,7 +10177,7 @@ async def list_coord_sessions(
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
 
-    With ``shape=consolidated`` the envelope gains three fields and every
+    With ``shape=consolidated`` the envelope gains four fields and every
     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
 
         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -9756,7 +10186,14 @@ async def list_coord_sessions(
                           "agent_session": {...}|null }, ... ],
           "row_class_counts": {"linked": n, "lifecycle_only": n,
                                "agent_only": n, "unknown": n},
+          "withheld_by_filter": n,
           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+
+    ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
+    hid although their agent half matched it — the two halves disagree (e.g.
+    lifecycle ``active``, agent ``stale``). They are not rows of any class, so
+    they sit beside ``row_class_counts`` rather than in it (its values still
+    sum to ``count``).
 
     ``row_class: null`` is UNKNOWN and is load-bearing — see the block
     comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
@@ -9857,6 +10294,11 @@ async def list_coord_sessions(
         )
 
     # ---- presentation filters (NOT the security boundary — trap 7) ------
+    served_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
     if device is not None:
         lifecycle = [
             row for row in lifecycle if str(row.get("device_id") or "") == str(device)
@@ -9867,11 +10309,33 @@ async def list_coord_sessions(
     if q:
         needle = q.strip().lower()
         if needle:
+            # Matching EITHER half finds the session. coord searched the agent
+            # half (its names, and once the session-identity stamp lands, the
+            # account-reporter's registry/tag names and the session uuid), and
+            # those words are not on the lifecycle row — so a lifecycle row is
+            # kept when its bridge names an agent row coord's search returned.
+            # Dropping it instead would leave that agent row with no owner and
+            # emit it as `agent_only`: a fabricated "no coord.sessions row".
+            matched_agent_ids = {
+                str(agent["id"]) for agent in agents or [] if agent.get("id")
+            }
             lifecycle = [
-                row for row in lifecycle if _session_matches_query(row, needle)
+                row
+                for row in lifecycle
+                if _session_matches_query(row, needle)
+                or str(row.get("claude_code_session_id") or "") in matched_agent_ids
             ]
+    kept_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
 
-    rows = _consolidate_sessions(lifecycle, agents)
+    rows, withheld_by_filter = _consolidate_sessions(
+        lifecycle,
+        agents,
+        filtered_out_bridges=frozenset(served_bridges - kept_bridges),
+    )
     counts = {"linked": 0, "lifecycle_only": 0, "agent_only": 0, "unknown": 0}
     for row in rows:
         counts[row.get("row_class") or "unknown"] += 1
@@ -9881,6 +10345,7 @@ async def list_coord_sessions(
         "shape": _SESSIONS_SHAPE_CONSOLIDATED,
         "sessions": rows,
         "row_class_counts": counts,
+        "withheld_by_filter": withheld_by_filter,
         "agent_half": agent_half,
     }
 
@@ -10951,7 +11416,9 @@ async def get_next_step_settings_fleet(
 # 2. Coord's GET answers with the asked-for domain's ``effective_level`` /
 #    ``master_enabled`` / ``resolved_scope`` — and ALSO with
 #    ``controls`` / ``controls_available`` / ``current_version`` / ``drain`` /
-#    ``drain_effective`` blocks read from the UNRELATED ``fleet_resources``
+#    ``drain_effective`` blocks, and the capacity-model dial resolved beside
+#    them (``capacity_controls_available`` / ``capacity_model_available`` /
+#    ``capacity_model``), all read from the UNRELATED ``fleet_resources``
 #    controls row (coord's ``read_controls`` deliberately reads that row
 #    "regardless of which domain the caller asked about"). Rendering those as
 #    the asked-for domain's own values is a real misreport, so this proxy
@@ -10973,6 +11440,11 @@ _FLEET_POLICY_CONTROL_KEYS = (
     "current_version",
     "drain",
     "drain_effective",
+    # The capacity-model dial (plan
+    # 2026-11-05-one-free-resource-model-places-sessions-builds-and-ci D9).
+    "capacity_controls_available",
+    "capacity_model_available",
+    "capacity_model",
 )
 
 
@@ -11799,6 +12271,129 @@ async def put_secrets_broker_device(
         effective=effective,
         readback_error=readback_error,
     )
+
+
+# ---- Tenant GitHub host proxy -------------------------------------------
+#
+# Plan ``2026-10-10-spec-front-end-phase-9-generic-boundary`` Phase 3 (parent
+# ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 9 item 4): the
+# console's door onto coord's ``/coord/tenant/github-host``, which reads and
+# writes the caller's tenant's row in ``coord.tenant_github_hosts`` (qontinui-web
+# alembic ``coord_tenant_github_hosts_01``). No row means github.com.
+#
+# Coord authorizes on the operator bearer (``RequiredOperatorContext``) and
+# re-checks tenant admin on the PUT; its typed refusals —
+# ``invalid_github_host`` (400), ``admin_required`` (403),
+# ``repos_registered_on_another_host`` (409, with the offending ``repos``) and
+# ``schema_migration_pending`` (503) — pass through as structured ``detail``
+# objects so the panel can name them.
+
+
+class TenantGithubHostView(BaseModel):
+    """The tenant's effective GitHub host, as coord resolves it.
+
+    ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+    never "the github.com default". The bases are ``None`` on the same terms.
+    """
+
+    api_base: str | None
+    web_base: str | None
+    graphql_url: str | None
+    configured: bool | None
+    #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
+    can_edit: bool
+
+
+class TenantGithubHostPut(BaseModel):
+    """Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+
+    Coord validates the shape (https, a host, no credentials, query, fragment;
+    ``web_base`` an origin) and that the host is public; the console does not
+    pre-judge either, so coord's ``invalid_github_host`` detail is the one
+    message the operator sees.
+
+    ``extra="forbid"`` mirrors coord's ``deny_unknown_fields``: a misspelled key
+    is a 422 here rather than silently dropped by ``model_dump()``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_base: str = Field(..., min_length=1)
+    web_base: str = Field(..., min_length=1)
+
+
+def _tenant_github_host_view(payload: Any, *, can_edit: bool) -> TenantGithubHostView:
+    body = payload if isinstance(payload, dict) else {}
+
+    def _text(key: str) -> str | None:
+        value = body.get(key)
+        return value if isinstance(value, str) and value else None
+
+    configured = body.get("configured")
+    return TenantGithubHostView(
+        api_base=_text("api_base"),
+        web_base=_text("web_base"),
+        graphql_url=_text("graphql_url"),
+        configured=configured if isinstance(configured, bool) else None,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/tenant/github-host", response_model=TenantGithubHostView)
+async def get_tenant_github_host(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> TenantGithubHostView:
+    """Read the tenant's effective GitHub host (github.com when unconfigured).
+
+    ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+    roles in the EFFECTIVE tenant plus the superuser bypass — because the
+    writes go through ``require_coord_tenant_admin``.
+    """
+    payload = await _proxy_coord_get("/coord/tenant/github-host", tenant_id=tenant_id)
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _tenant_github_host_view(payload, can_edit=can_edit)
+
+
+@router.put("/tenant/github-host", response_model=TenantGithubHostView)
+async def put_tenant_github_host(
+    body: TenantGithubHostPut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+
+    Tenant-admin gated web-side; coord re-checks and answers the typed
+    refusals listed above, which pass through as structured ``detail``.
+    Coord's echo is the stored row, so it is returned rather than re-read.
+    """
+    written = await _proxy_coord_put(
+        "/coord/tenant/github-host",
+        body.model_dump(),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    return _tenant_github_host_view(written, can_edit=True)
+
+
+@router.delete("/tenant/github-host", response_model=TenantGithubHostView)
+async def delete_tenant_github_host(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Return the tenant to github.com. Idempotent.
+
+    Coord refuses with ``repos_registered_on_another_host`` (409) while the
+    tenant still has repos enrolled on the configured host.
+    """
+    reset = await _proxy_coord_delete(
+        "/coord/tenant/github-host", tenant_id=tenant_id, structured_errors=True
+    )
+    return _tenant_github_host_view(reset, can_edit=True)
 
 
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
@@ -12651,16 +13246,28 @@ async def withdraw_prompt_document(
     Only valid for kind ``decision_record``; coord is the authority on that and
     its 4xx passes through, as do unknown-document and non-admin refusals.
 
-    Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-    stamped here and never taken from the browser: coord derives it from its own
-    authenticated ``OperatorContext``, for the same reason the version-restore
-    proxy above declines to stamp ``updated_by``. Whether a reason is required
-    (and what counts as blank) is coord's rule, not a second copy of it here.
+    Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+    withdrawer is NOT stamped here and never taken from the browser: coord
+    derives it from its own authenticated ``OperatorContext``, for the same
+    reason the version-restore proxy above declines to stamp ``updated_by``.
+    Whether a reason is required (and what counts as blank) is coord's rule, not
+    a second copy of it here.
+
+    ``expected_version`` is the ``current_version`` the feed re-read before
+    posting. Coord compares it under its row lock and answers ``409
+    withdraw_stale`` (passed through) when the record moved in between, so the
+    re-read→POST window is closed rather than narrowed — on a coord that
+    carries that check. An older coord ignores the unknown key, and the window
+    is then only narrowed, as before. Its type is coord's to validate, like
+    ``reason``'s.
     """
     payload: dict[str, Any] = {}
     reason = (body or {}).get("reason")
     if reason is not None:
         payload["reason"] = reason
+    expected_version = (body or {}).get("expected_version")
+    if expected_version is not None:
+        payload["expected_version"] = expected_version
     # Re-encoded for the same reason as the restore proxy: FastAPI hands the
     # path segments back URL-decoded.
     return await _proxy_coord_post(
@@ -14588,6 +15195,125 @@ async def get_coord_verification_metrics(
         raise
 
 
+# ---------------------------------------------------------------------------
+# Operator verdict labels — two doors behind the drill-down's one-click
+# "Did this hold up? Yes · No · Can't tell":
+#
+#   `GET  /operations/coord/verification/label-sample`
+#        → coord `GET  /coord/verification/label-sample`
+#   `POST /operations/coord/verification/labels`
+#        → coord `POST /coord/verification/labels`
+#
+# Plan
+# `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+# Phase 4 (web half). What coord does behind both doors is the label-door
+# contract of that plan's Phases 3–4, stated here as the contract this proxy is
+# written against — not as a description of a deployed coord:
+#
+# - the SAMPLE door answers a fixed, server-chosen weekly sample of up to three
+#   verdicts of both polarities, each with any operator label it already
+#   carries, and answers an unreadable store with `503 label_sample_unreadable`
+#   rather than an empty list;
+# - the LABEL door derives `labelled_by` and the tenant from the authenticated
+#   identity, accepts an `operator` label only from an operator principal
+#   (`403 operator_principal_required`), copies the verifier's verdict from the
+#   referenced row, and answers `201` with the row, `409 duplicate_label`
+#   (naming the existing row's `id`), `404 verification_not_found` or `422`.
+#
+# What this proxy itself guarantees:
+#
+# - **The operator's own principal is what labels.** The operator's Cognito
+#   bearer is forwarded (`_tenant_headers`), exactly as the metrics proxy
+#   does. Nothing in either request names a tenant or a labeller.
+# - **The label body is pinned to the operator source.** `label_source` must
+#   be `"operator"` and the model forbids every other field, so this door
+#   cannot write a `seeded` or `consequence` case: only `{label_source,
+#   verification_id, truth}` reaches coord.
+# - **coord's answer passes through with its status** (`_proxy_coord_verbatim`)
+#   — including a `404` from a coord that predates a door, which the page
+#   renders as "unavailable", never as "nothing to label". The one rewrite is
+#   the metrics proxy's: a coord `401` (coord refused the operator's
+#   credential) is re-raised as a named `502` rather than a `401` that would
+#   send the frontend into its session-refresh branch.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_LABELS_PATH = "/coord/verification/labels"
+_COORD_VERIFICATION_LABEL_SAMPLE_PATH = "/coord/verification/label-sample"
+
+
+def _reraise_coord_credential_refusal(resp: JSONResponse, path: str) -> None:
+    """A coord ``401`` on a label door becomes the named ``502`` (see above)."""
+    if resp.status_code != 401:
+        return
+    raise refusal_error(
+        502,
+        RefusalCode.credential_rejected,
+        NextActionKind.report_defect,
+        (
+            f"coord refused the operator's credential on {path} (HTTP 401): "
+            f"{bytes(resp.body).decode(errors='replace')}"
+        ),
+        discriminator="coord_verification_label_credential_refused",
+        glossary_terms=[GlossaryTerm.coord],
+    )
+
+
+@router.get("/coord/verification/label-sample")
+async def get_coord_verification_label_sample(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Return this week's verdicts for the operator to label.
+
+    coord's body is forwarded verbatim with its status: ``{iso_week,
+    population_cutoff, verdicts: [...]}``, or its typed refusal.
+    """
+    resp = await _proxy_coord_verbatim(
+        "GET", _COORD_VERIFICATION_LABEL_SAMPLE_PATH, tenant_id=tenant_id
+    )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABEL_SAMPLE_PATH)
+    return resp
+
+
+class OperatorVerificationLabelRequest(BaseModel):
+    """Body for ``POST /operations/coord/verification/labels``.
+
+    ``truth`` is the operator's answer to "Did this hold up?": ``holds``
+    (Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``
+    names the verdict row (``coord.work_unit_verifications.id``) being judged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label_source: Literal["operator"]
+    verification_id: UUID
+    truth: Literal["holds", "fails", "cannot_tell"]
+
+
+@router.post("/coord/verification/labels", status_code=201)
+async def post_coord_verification_label(
+    body: OperatorVerificationLabelRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Record the operator's label on one verification verdict.
+
+    Forwards ``{label_source: "operator", verification_id, truth}`` with the
+    operator's bearer; coord's status and body come back verbatim (see the
+    section comment), except a coord ``401``.
+    """
+    resp = await _proxy_coord_verbatim(
+        "POST",
+        _COORD_VERIFICATION_LABELS_PATH,
+        tenant_id=tenant_id,
+        json_body={
+            "label_source": body.label_source,
+            "verification_id": str(body.verification_id),
+            "truth": body.truth,
+        },
+    )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABELS_PATH)
+    return resp
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
@@ -14840,14 +15566,14 @@ def _readable_coord_refusal(exc: HTTPException) -> HTTPException:
 
     ``structured_errors=True`` hands coord's typed body through as the
     ``HTTPException`` detail — ``{"error": "not_admin_in_target_tenant"}``.
-    That is the right thing for a machine and, in PRODUCTION, invisible to a
+    That is the right thing for a machine and, in PRODUCTION, bare to a
     person: ``app/main.py`` registers
     ``app.middleware.error_handler.http_exception_handler`` for every
-    ``StarletteHTTPException``, and it renders a dict detail as
-    ``{"error": …, "message": detail.get("message", str(detail)), …}``. With
-    no ``message`` key in coord's body that fallback is ``str(dict)`` — a
-    Python ``repr`` (``{'error': 'not_admin_in_target_tenant'}``) in the one
-    field the dashboard shows the operator.
+    ``StarletteHTTPException``, and with no ``message`` key in coord's body
+    it fills ``message`` with the bare ``error`` code
+    (``not_admin_in_target_tenant``) — in the one field the dashboard shows
+    the operator, with no sentence around it. (An older handler put a Python
+    ``repr`` of the dict there.)
 
     So compose one. The error CODE stays the sentence's subject because it is
     the diagnostic an operator quotes; a coord ``hint``/``reason``/``detail``

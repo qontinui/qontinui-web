@@ -34,6 +34,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+import { dossierHref } from "../dossiers/_lib/dossierDeepLink";
 import CoordFindingsPage from "./page";
 
 /**
@@ -220,6 +221,9 @@ describe("CoordFindingsPage", () => {
     expect(
       within(detail).getByTestId(`coord-finding-dossier-${ID_A}`)
     ).toHaveTextContent(/findings-steward/);
+    expect(
+      within(detail).getByTestId(`coord-finding-dossier-link-${ID_A}`)
+    ).toHaveAttribute("href", dossierHref("worktree-siblings"));
   });
 
   it("keeps the finding's kind enum off the screen and in a data attribute", async () => {

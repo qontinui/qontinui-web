@@ -41,6 +41,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import {
   READ_CONCURRENCY,
   inPool,
@@ -364,6 +365,143 @@ describe("useRepoFollowupDials — refresh during a save", () => {
       await refresh;
     });
     expect(result.current.readings[REPO].scopeReadbackError).toContain("503");
+  });
+});
+
+describe("useRepoFollowupDials — a write whose outcome is open", () => {
+  async function setup() {
+    routeGets(() => Promise.resolve(scopeView("all", "repo")));
+    const hook = renderHook(() => useRepoFollowupDials());
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    return hook;
+  }
+
+  it("a scope write answered 504 is UNKNOWN with a re-read, never 'failed'", async () => {
+    const { result } = await setup();
+    httpPut.mockRejectedValueOnce(
+      new Error(
+        'PUT x failed: 504 - {"error":"gateway_timeout","message":"timeout waiting for coord"}'
+      )
+    );
+    // The re-read the write starts hangs, so the UNKNOWN is observable.
+    const reread = deferred<unknown>();
+    routeGets(() => reread.promise);
+    const getsBefore = httpGet.mock.calls.length;
+    let write!: Promise<boolean>;
+    act(() => {
+      write = result.current.writeScope({ repo: REPO, scope: "none" });
+    });
+    await waitFor(() =>
+      expect(result.current.readings[REPO].scopeOutcomeUnknown).toBe(
+        "timeout waiting for coord"
+      )
+    );
+    expect(httpGet.mock.calls.length).toBe(getsBefore + 1);
+    expect(result.current.writeErrors[`${REPO}:scope`]).toBeUndefined();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining("is unknown (timeout waiting for coord)")
+    );
+
+    await act(async () => {
+      reread.resolve(scopeView("none", "repo"));
+      expect(await write).toBe(false);
+    });
+    expect(result.current.readings[REPO].scopeOutcomeUnknown).toBeNull();
+    expect(result.current.readings[REPO].scope?.scope).toBe("none");
+  });
+
+  it("an open outcome whose re-read fails stays UNKNOWN", async () => {
+    const { result } = await setup();
+    httpPut.mockRejectedValueOnce(new Error("PUT x failed: 500 - oops"));
+    routeGets(() => Promise.reject(new Error("GET x failed: 503 - down")));
+    await act(async () => {
+      await result.current.writeScope({ repo: REPO, scope: "none" });
+    });
+    const r = result.current.readings[REPO];
+    expect(r.scopeOutcomeUnknown).toBe("HTTP 500 with no readable reason");
+    expect(r.scopeError).toContain("503");
+    expect(result.current.writeErrors[`${REPO}:scope`]).toBeUndefined();
+  });
+
+  it("a read already in flight cannot retire the UNKNOWN", async () => {
+    const { result } = await setup();
+    const slow = deferred<unknown>();
+    routeGets(() => slow.promise);
+    const getsBefore = httpGet.mock.calls.length;
+    let refresh!: Promise<void>;
+    act(() => {
+      refresh = result.current.reload();
+    });
+    // The refresh's scope read is in flight before the write starts.
+    await waitFor(() =>
+      expect(httpGet.mock.calls.length).toBeGreaterThan(getsBefore)
+    );
+    httpPut.mockRejectedValueOnce(new Error("PUT x failed: 503 - busy"));
+    const reread = deferred<unknown>();
+    routeGets(() => reread.promise);
+    let write!: Promise<boolean>;
+    act(() => {
+      write = result.current.writeScope({ repo: REPO, scope: "none" });
+    });
+    await waitFor(() =>
+      expect(result.current.readings[REPO].scopeOutcomeUnknown).not.toBeNull()
+    );
+    await act(async () => {
+      slow.resolve(scopeView("all", "repo"));
+      await refresh;
+    });
+    expect(result.current.readings[REPO].scopeOutcomeUnknown).not.toBeNull();
+    await act(async () => {
+      reread.resolve(scopeView("none", "repo"));
+      await write;
+    });
+    expect(result.current.readings[REPO].scopeOutcomeUnknown).toBeNull();
+  });
+
+  it("a delivery write with an unreadable 2xx is UNKNOWN, not 'failed'", async () => {
+    const { result } = await setup();
+    httpPut.mockResolvedValueOnce(
+      new Response("<html>gateway</html>", { status: 200 })
+    );
+    const reread = deferred<unknown>();
+    routeGets(
+      () => Promise.resolve(scopeView("all", "repo")),
+      () => reread.promise
+    );
+    let write!: Promise<boolean>;
+    act(() => {
+      write = result.current.writeDelivery(REPO, "notify_only");
+    });
+    await waitFor(() =>
+      expect(result.current.readings[REPO].deliveryOutcomeUnknown).toBe(
+        "an answer came back that could not be read"
+      )
+    );
+    expect(result.current.writeErrors[`${REPO}:delivery`]).toBeUndefined();
+    expect(toast.error).not.toHaveBeenCalled();
+    await act(async () => {
+      reread.resolve(deliveryView("notify_only"));
+      await write;
+    });
+    expect(result.current.readings[REPO].deliveryOutcomeUnknown).toBeNull();
+    expect(result.current.readings[REPO].delivery?.mode).toBe("notify_only");
+  });
+
+  it("the proxy's own connect-failure 502 is still a refusal", async () => {
+    const { result } = await setup();
+    httpPut.mockRejectedValueOnce(
+      new Error(
+        'PUT x failed: 502 - {"error":"bad_gateway","message":"coord is not reachable"}'
+      )
+    );
+    await act(async () => {
+      await result.current.writeDelivery(REPO, "notify_only");
+    });
+    expect(result.current.writeErrors[`${REPO}:delivery`]).toContain(
+      "coord is not reachable"
+    );
+    expect(result.current.readings[REPO].deliveryOutcomeUnknown).toBeNull();
   });
 });
 

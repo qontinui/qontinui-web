@@ -78,6 +78,13 @@ resolves, silently answered 200 as that operator, on a different tenant
 than the presented token named.
 
 No credential → 401. Credential valid but no tenant resolvable → 403.
+
+The ``session`` partition is reachable only by the coord service token and
+an operator user (:func:`withheld_scopes`): a device JWT proves a device,
+never a session, so for it the list / by-id / graph reads hide session rows,
+query and write refuse a ``session`` scope with 403, and a session row named
+by id (by-id read, hold, delete, supersede predecessor) answers the same 404
+as an unknown id.
 """
 
 from __future__ import annotations
@@ -86,7 +93,7 @@ import base64
 import binascii
 import hashlib
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast, get_args
@@ -110,6 +117,12 @@ from app.api.deps import (
 from app.api.strict_query import StrictQueryRoute
 from app.core import bounded_read
 from app.core.config import settings
+from app.core.refusal import (
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
@@ -735,6 +748,126 @@ async def get_memory_tenant(
     )
 
 
+# --------------------------------------------------------------------------
+# The session partition — which principals may reach it at THIS door
+# --------------------------------------------------------------------------
+
+# Principals admitted to ``scope='session'`` rows here. A session partition
+# is PRIVATE, and its only enforcement is an exact ``scope_ref`` match — so
+# whoever names the ``scope_ref`` makes the access-control decision. This
+# door cannot prove which session a caller is: proving it needs the
+# session's device binding, which lives behind coord's read boundary (see
+# ``_existing_provenance`` and ``test_coord_schema_boundary_guard.py``).
+#
+# * ``coord_service`` — coord's memory proxy. coord proves the calling
+#   session before it names a ``session`` ``scope_ref`` (plan
+#   ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``
+#   Phase 1), so the proven read goes through coord.
+# * ``operator`` — a human's dashboard session, the operator door through
+#   which rows written under an unbound session id stay reachable (that
+#   plan's D5).
+#
+# Everything else — the ``device`` arm, and any actor added later that is
+# not listed here — is withheld the partition: FAIL CLOSED. A device JWT
+# proves a device and a user, never a session, and the session ids are
+# not secret (coord surfaces them on the device floor), so admitting one
+# would let any device read and author into any session's partition.
+_SESSION_PARTITION_ACTORS: frozenset[str] = frozenset({"coord_service", "operator"})
+
+# The partitions withheld from a principal outside the set above. ``agent``
+# is deliberately NOT here: that plan scopes it out ("What this plan does
+# not close"), and clamping it to ``principal.device_id`` is a separate
+# follow-up.
+_SESSION_PARTITION_SCOPES: frozenset[str] = frozenset({"session"})
+
+_SESSION_PARTITION_REFUSAL = (
+    "session-scoped memory is reachable only through coord "
+    "(coord_memory_search / coord_memory_record / coord_memory_supersede / "
+    "coord_memory_get), which proves the calling session; a {actor} "
+    "credential at this door cannot. Use scope 'tenant' for a shared memory."
+)
+
+
+def withheld_scopes(principal: MemoryPrincipal) -> frozenset[str]:
+    """The memory scopes ``principal`` may neither read nor write here.
+
+    THE single predicate for the session partition at this door (plan
+    ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``
+    D6): every route below asks it, and the store applies its answer as an
+    ``exclude_scopes`` filter. Empty for the admitted principals, so their
+    behaviour is unchanged; ``{"session"}`` for every other actor, including
+    an unknown one.
+    """
+    if principal.actor in _SESSION_PARTITION_ACTORS:
+        return frozenset()
+    return _SESSION_PARTITION_SCOPES
+
+
+def _refuse_withheld_scopes(
+    principal: MemoryPrincipal, scopes: Iterable[str | None]
+) -> None:
+    """403 when a request NAMES a scope this principal is withheld.
+
+    Used on the write and query paths, where the caller asked for the
+    partition explicitly — a refusal that says why is the honest answer
+    there. The read-by-id paths HIDE instead (an identical 404), so they
+    cannot be used to probe which ids are session rows.
+    """
+    if withheld_scopes(principal).intersection(s for s in scopes if s is not None):
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.permission_denied,
+            NextActionKind.fix_request,
+            _SESSION_PARTITION_REFUSAL.format(actor=principal.actor),
+            discriminator="memory_session_scope_withheld",
+        )
+
+
+# The not-found answer of every by-id route that HIDES a withheld row: the
+# by-id read, the graph root, supersede's predecessor, the two hold verbs and
+# delete. A withheld row and an unknown id get this same detail, so none of
+# them can probe which ids are session rows.
+# It is a WIRE CONTRACT on the by-id read — see ``get_record_by_id``.
+_RECORD_NOT_FOUND_IN_TENANT = "memory record not found in your tenant"
+
+_WITHHELD_DUPLICATE_DETAIL = (
+    "this content is already stored in a memory this credential cannot "
+    "reach, and a tenant holds one live copy of any content, so it was not "
+    "written. Write it through coord, or change the content."
+)
+
+
+def _withheld_duplicate_conflict() -> RefusalHTTPException:
+    """409 for :class:`store.DedupAgainstWithheldScope` — carries NO id.
+
+    The unique live-content index has no scope column, so the write cannot
+    land as a second row, and deduping onto the withheld row would disclose
+    its id and merge anchors into it. Raised from inside the request, so
+    the session dependency rolls back anything the request already wrote.
+
+    **Accepted residual:** the 409 still tells a device that the exact
+    content it sent already exists in a partition it cannot read — an
+    equality check on session content. Closing it needs a migration (scope
+    in the unique live-content index, or a separate hash namespace for
+    session content); recorded as coord finding ``fd4ffbaa`` and as a
+    follow-up of plan
+    ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``.
+
+    **Accepted residual (2):** the 409 refuses the WHOLE batch, and the
+    runner's ``tenant_sync`` treats a 409 as a permanent rejection, so one
+    colliding record drops every unrelated record in its batch. Recorded as
+    coord finding ``042622ce``; the follow-up is a per-record outcome here or
+    a 409-aware retry in the runner.
+    """
+    return refusal_error(
+        status.HTTP_409_CONFLICT,
+        RefusalCode.conflict,
+        NextActionKind.fix_request,
+        _WITHHELD_DUPLICATE_DETAIL,
+        discriminator="memory_content_held_in_withheld_scope",
+    )
+
+
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -833,7 +966,33 @@ async def write_records(
     ``(tenant_id, content_hash)`` against live rows only. Each record
     carries its own caller-computed ``embedding`` (+ ``embedding_model``)
     or neither, in which case that row is stored unvectorized.
+
+    A record naming a scope :func:`withheld_scopes` withholds from this
+    principal (``session``, for a device JWT) refuses the WHOLE batch with
+    403 before anything is written. A record whose CONTENT is already held
+    by a live row in such a scope refuses the batch with 409 and no id — see
+    :func:`_withheld_duplicate_conflict`.
     """
+    _refuse_withheld_scopes(principal, [rec.scope for rec in payload.records])
+    try:
+        return await _write_records(payload, principal, db)
+    except store.DedupAgainstWithheldScope as exc:
+        raise _withheld_duplicate_conflict() from exc
+
+
+async def _write_records(
+    payload: WriteRecordsRequest,
+    principal: MemoryPrincipal,
+    db: AsyncSession,
+) -> Any:
+    """The body of :func:`write_records`, after its scope refusal.
+
+    Every dedupe lookup and insert below passes ``withheld_scopes`` as
+    ``exclude_scopes``; each raises ``store.DedupAgainstWithheldScope`` on a
+    collision with a withheld row, which the caller maps to a 409.
+    """
+    withheld = withheld_scopes(principal)
+
     # 1. Redact (server-side pass; log counts only, never the secrets).
     redaction_counts: dict[str, int] = {}
     titles: list[str] = []
@@ -1009,6 +1168,7 @@ async def write_records(
             items=batch_items,
             user_id=user_id,
             device_id=device_id,
+            exclude_scopes=withheld,
         ),
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
@@ -1022,7 +1182,9 @@ async def write_records(
         outcome = outcome_by_hash.get(h)
         if outcome is None:
             # Known-duplicate content (pre-existing live row): report it.
-            existing_id = await store.find_by_hash(db, principal.tenant_id, h)
+            existing_id = await store.find_by_hash(
+                db, principal.tenant_id, h, exclude_scopes=withheld
+            )
             if existing_id is not None:
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
@@ -1059,6 +1221,7 @@ async def write_records(
                     anchors=[a.model_dump(mode="json") for a in rec.anchors],
                     user_id=user_id,
                     device_id=device_id,
+                    exclude_scopes=withheld,
                 )
 
             memory_id, deduped = await _write_degrading_dangling_provenance(
@@ -1082,7 +1245,9 @@ async def write_records(
         link.target_ref for rec in payload.records for link in (rec.links or [])
     ]
     if all_refs:
-        resolved = await store.resolve_link_targets(db, principal.tenant_id, all_refs)
+        resolved = await store.resolve_link_targets(
+            db, principal.tenant_id, all_refs, exclude_scopes=withheld
+        )
         seen_edges: set[tuple[UUID, UUID, str]] = set()
         link_items: list[store.MemoryLinkInsert] = []
         for i, rec in enumerate(payload.records):
@@ -1200,7 +1365,13 @@ async def query_records(
 
     The request body is ``extra="forbid"``: an unrecognized key is a 422
     naming the field rather than a silently wider query.
+
+    ``scopes`` naming a scope :func:`withheld_scopes` withholds from this
+    principal (``session``, for a device JWT) is a 403: the caller asked for
+    a partition this door cannot prove is theirs.
     """
+    _refuse_withheld_scopes(principal, payload.scopes or [])
+
     # Left as ``None`` when the caller names no instant, so validity is
     # evaluated against the row's OWN transaction-stamped timestamps
     # rather than a clock read here. Substituting an app-host
@@ -1375,7 +1546,9 @@ async def query_records(
     # corpus moves between the count and the hits it is meant to
     # explain. Same predicate as the facets aggregate — see
     # ``store.live_row_count``.
-    live_rows = await store.live_row_count(db, principal.tenant_id)
+    live_rows = await store.live_row_count(
+        db, principal.tenant_id, exclude_scopes=withheld_scopes(principal)
+    )
 
     # The meta describes ``hits`` only; ``anchored_hits`` is its own list.
     meta = bounded_read.from_ranked_pool(
@@ -1440,9 +1613,15 @@ async def list_records(
     ``created_at``, so the old ``memory_id`` UUID tiebreak paginated a
     batch in random order) and stable under concurrent writes (new rows
     only ever prepend).
+
+    Rows in a scope :func:`withheld_scopes` withholds from this principal
+    (``session``, for a device JWT) are LEFT OUT — filtered in SQL, so a
+    page is still ``limit`` rows of what the caller may see and the cursor
+    stays exact — and so is a visible row's link whose target is one.
     """
     kind_filter = _parse_kinds(kinds)
     cursor_key = _decode_cursor(cursor) if cursor else None
+    withheld = withheld_scopes(principal)
     rows = await store.list_records_page(
         db,
         tenant_id=principal.tenant_id,
@@ -1452,9 +1631,13 @@ async def list_records(
         limit=limit,
         # No caller-named instant — see ``_EFFECTIVE_NOW_SQL``.
         now=None,
+        exclude_scopes=withheld,
     )
     links_by_source = await store.fetch_outbound_links(
-        db, principal.tenant_id, [r["memory_id"] for r in rows]
+        db,
+        principal.tenant_id,
+        [r["memory_id"] for r in rows],
+        exclude_scopes=withheld,
     )
     records = [
         MemoryRecordOut(
@@ -1510,12 +1693,17 @@ async def get_record_by_id(
     :class:`MemoryRecordByIdResponse` for the precedence. A tombstoned
     row's ``title`` and ``content`` are withheld (``null``).
 
-    404 when the id does not exist OR belongs to another tenant — the two
-    are deliberately indistinguishable. Read-only: does not bump
+    404 when the id does not exist OR belongs to another tenant OR sits in
+    a scope :func:`withheld_scopes` withholds from this principal — the
+    three are deliberately indistinguishable. Read-only: does not bump
     ``access_count``.
     """
     row = await store.get_record_by_id(db, principal.tenant_id, memory_id)
-    if row is None:
+    # A row in a scope withheld from this principal answers the SAME 404 as
+    # an unknown id, so the by-id read cannot probe which ids are session
+    # rows (plan 2026-10-30-memory-session-scope-clamp-trusts-an-unproven-
+    # caller-session D6; coord's ``coord_memory_get`` hides the same way).
+    if row is None or row["scope"] in withheld_scopes(principal):
         # This detail string is a WIRE CONTRACT: qontinui-coord's
         # `coord_memory_get` (MEMORY_GET_NOT_FOUND_DETAIL in mcp/tools.rs)
         # matches it byte for byte to tell "not in this tenant" from any other
@@ -1523,7 +1711,7 @@ async def get_record_by_id(
         # every real 404 into coord's errors / tool-error path.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found in your tenant",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     state: MemoryRecordState
     if row["is_tombstone"]:
@@ -1550,7 +1738,16 @@ async def get_record_by_id(
         ),
         created_at=row["created_at"],
         state=state,
-        superseded_by=row["superseded_by"],
+        # The successor's id is withheld when the SUCCESSOR sits in a scope
+        # this principal is withheld: a tenant row superseded into a session
+        # partition would otherwise disclose that session row's id here. The
+        # state still reads ``superseded`` — that much is true and is the
+        # predecessor's own fact.
+        superseded_by=(
+            None
+            if row["successor_scope"] in withheld_scopes(principal)
+            else row["superseded_by"]
+        ),
         valid_until=row["valid_until"],
     )
 
@@ -1570,12 +1767,19 @@ async def memory_graph(
     safe (the depth cap terminates the recursion; duplicate edges
     collapse). 404 when the root does not exist in the caller's tenant
     (cross-tenant ids are never disclosed).
+
+    A scope :func:`withheld_scopes` withholds from this principal
+    (``session``, for a device JWT) is invisible to the walk: such a root
+    answers the same 404 as an unknown one, and the walk never steps onto
+    such a node — so neither the node nor any edge into it, nor anything
+    reached only through it, is returned.
     """
+    withheld = withheld_scopes(principal)
     root = await store.get_record(db, principal.tenant_id, payload.root_memory_id)
-    if root is None:
+    if root is None or root["scope"] in withheld:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     relations: list[str] | None = (
         [str(rel) for rel in payload.relation_filter]
@@ -1588,6 +1792,7 @@ async def memory_graph(
         root_id=payload.root_memory_id,
         depth=payload.depth,
         relations=relations,
+        exclude_scopes=withheld,
     )
     node_ids: set[UUID] = {payload.root_memory_id}
     for edge in edge_rows:
@@ -1638,13 +1843,25 @@ async def supersede_record(
     ``anchors`` ARE inherited when omitted (unlike ``embedding``) — see
     the comment on the insert below for why the two go opposite ways.
     This is the "superseded, or corrected" arm of the plan's Phase 6.
+
+    A predecessor in a scope :func:`withheld_scopes` withholds from this
+    principal is the same 404 as an unknown id — checked BEFORE the payload,
+    because an omitted ``scope``/``scope_ref`` INHERITS the predecessor's, so
+    checking only the payload would let a device supersede a peer's session
+    row by id and write the successor into that partition. A payload that
+    names a withheld scope itself is a 403.
     """
     old = await store.get_record(db, principal.tenant_id, memory_id)
-    if old is None:
+    # A predecessor in a withheld scope answers EXACTLY like an unknown id, so
+    # the supersede route cannot probe which ids are session rows (the by-id
+    # read hides the same way). Only a payload that itself NAMES a withheld
+    # scope gets the explanatory 403 — the caller asked for the partition.
+    if old is None or old["scope"] in withheld_scopes(principal):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
+    _refuse_withheld_scopes(principal, [payload.scope])
 
     rt = redact_text(payload.title)
     rc = redact_text(payload.content)
@@ -1704,35 +1921,48 @@ async def supersede_record(
     # is this caller's — not the superseded row's. Same verified-principal
     # source as every other write, and the same insert-side fail-soft: a
     # dangling id degrades the row, never the supersede.
-    new_id, deduped = await _write_degrading_dangling_provenance(
-        db,
-        principal,
-        lambda user_id, device_id: store.insert_record(
+    # ``exclude_scopes``: replacement content identical to a live row this
+    # principal is withheld must neither dedupe onto that row (its id would
+    # come back as ``memory_id`` and be recorded as this record's successor)
+    # nor merge anchors into it — 409, with no id.
+    withheld = withheld_scopes(principal)
+    try:
+        new_id, deduped = await _write_degrading_dangling_provenance(
             db,
-            tenant_id=principal.tenant_id,
-            scope=payload.scope if payload.scope is not None else old["scope"],
-            scope_ref=(
-                payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+            principal,
+            lambda user_id, device_id: store.insert_record(
+                db,
+                tenant_id=principal.tenant_id,
+                scope=payload.scope if payload.scope is not None else old["scope"],
+                scope_ref=(
+                    payload.scope_ref
+                    if payload.scope_ref is not None
+                    else old["scope_ref"]
+                ),
+                kind=payload.kind if payload.kind is not None else old["kind"],
+                title=rt.text,
+                content=rc.text,
+                content_hash=content_hash,
+                embedding=payload.embedding,
+                embedding_model=payload.embedding_model,
+                importance=(
+                    payload.importance
+                    if payload.importance is not None
+                    else float(old["importance"])
+                ),
+                source=(
+                    payload.source
+                    if payload.source is not None
+                    else (old["source"] or {})
+                ),
+                anchors=inherited_anchors,
+                user_id=user_id,
+                device_id=device_id,
+                exclude_scopes=withheld,
             ),
-            kind=payload.kind if payload.kind is not None else old["kind"],
-            title=rt.text,
-            content=rc.text,
-            content_hash=content_hash,
-            embedding=payload.embedding,
-            embedding_model=payload.embedding_model,
-            importance=(
-                payload.importance
-                if payload.importance is not None
-                else float(old["importance"])
-            ),
-            source=(
-                payload.source if payload.source is not None else (old["source"] or {})
-            ),
-            anchors=inherited_anchors,
-            user_id=user_id,
-            device_id=device_id,
-        ),
-    )
+        )
+    except store.DedupAgainstWithheldScope as exc:
+        raise _withheld_duplicate_conflict() from exc
     if new_id == memory_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1784,7 +2014,8 @@ async def hold_record(
     passes.
 
     404 for records that don't exist in the caller's tenant (cross-tenant
-    ids are never disclosed).
+    ids are never disclosed), or that sit in a scope :func:`withheld_scopes`
+    withholds from this principal — the same detail, and nothing written.
     """
     return await _set_hold(memory_id, held=True, principal=principal, db=db)
 
@@ -1806,7 +2037,8 @@ async def release_record_hold(
 
     Idempotent: releasing an unheld record is a no-op that reports
     ``held=False``. 404 only when the record does not exist in the
-    caller's tenant.
+    caller's tenant, or sits in a scope :func:`withheld_scopes` withholds
+    from this principal (the same detail; nothing written).
     """
     return await _set_hold(memory_id, held=False, principal=principal, db=db)
 
@@ -1825,11 +2057,14 @@ async def _set_hold(
         memory_id=memory_id,
         held=held,
         now=datetime.now(UTC),
+        exclude_scopes=withheld_scopes(principal),
     )
     if not matched:
+        # A row withheld from this principal matched nothing, and answers
+        # exactly like an unknown id — nothing was written.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     logger.info(
         "memory_lifecycle_hold_set",
@@ -1847,19 +2082,33 @@ async def delete_record(
 ) -> Response:
     """Tombstone a record (``is_tombstone = true, valid_until = now()``).
 
-    404 for records that don't exist in the caller's tenant.
+    404 for records that don't exist in the caller's tenant, or that sit in
+    a scope :func:`withheld_scopes` withholds from this principal — the
+    same detail either way, and the withheld row is left untouched.
     """
-    deleted = await store.tombstone_record(db, principal.tenant_id, memory_id)
+    deleted = await store.tombstone_record(
+        db,
+        principal.tenant_id,
+        memory_id,
+        exclude_scopes=withheld_scopes(principal),
+    )
     if not deleted:
+        # A row withheld from this principal is not tombstoned, and answers
+        # exactly like an unknown id.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _stats_facets(db: AsyncSession, tenant_id: UUID) -> MemoryFacets | None:
+async def _stats_facets(
+    db: AsyncSession, tenant_id: UUID, exclude_scopes: frozenset[str]
+) -> MemoryFacets | None:
     """Content facets, or ``None`` when the read could not complete.
+
+    ``exclude_scopes`` is the caller's ``withheld_scopes`` answer, applied
+    at the source by ``store.facets`` (tallies and title sample alike).
 
     ``None`` is the honest answer to a degraded read and drives
     ``corpus_complete=False``. The alternative — returning whatever
@@ -1899,7 +2148,7 @@ async def _stats_facets(db: AsyncSession, tenant_id: UUID) -> MemoryFacets | Non
     is exactly what this path exists to avoid.
     """
     try:
-        facets = await store.facets(db, tenant_id)
+        facets = await store.facets(db, tenant_id, exclude_scopes=exclude_scopes)
     except (OperationalError, SATimeoutError, TimeoutError) as exc:
         try:
             await db.rollback()
@@ -1944,6 +2193,15 @@ async def memory_stats(
     "what is in here" — the read an agent needs BEFORE guessing at query
     vocabulary. ``corpus_complete`` distinguishes a genuinely small
     corpus from a facet read that degraded.
+
+    ``facets`` describes the corpus THIS principal can retrieve: rows in a
+    scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
+    are excluded from its counts and its title sample. The quota fields
+    (``row_count``, ``bytes``, ``lifecycle_held``) and ``embedding_coverage``
+    are tenant posture, not content, and still count every row — an
+    accepted residual (coord finding ``fd4ffbaa``): a device can see
+    ``row_count`` move while its facets do not, which discloses the session
+    partition's size and write cadence, though none of its content.
     """
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
@@ -1955,7 +2213,9 @@ async def memory_stats(
         usage.bytes / usage.quota_bytes if usage.quota_bytes > 0 else 0.0,
         usage.row_count / usage.quota_rows if usage.quota_rows > 0 else 0.0,
     )
-    facets = await _stats_facets(db, principal.tenant_id)
+    facets = await _stats_facets(
+        db, principal.tenant_id, exclude_scopes=withheld_scopes(principal)
+    )
     return MemoryStatsResponse(
         row_count=usage.row_count,
         bytes=usage.bytes,
@@ -2001,6 +2261,9 @@ async def claim_jobs(
         limit=payload.limit,
         kinds=list(payload.kinds),
         worker=worker,
+        # A job targeting a withheld row is never handed to this principal:
+        # its target_ids and input_texts are that row's id and content.
+        exclude_scopes=withheld_scopes(principal),
     )
     return ClaimJobsResponse(
         jobs=[
@@ -2046,7 +2309,27 @@ async def submit_job_result(
     not match the job (wrong kind, wrong vector count, wrong dimension,
     unaccepted model tag), which leaves the job ``claimed`` so the runner
     can still post a correct result before its lease expires.
+
+    A job with a target in a scope :func:`withheld_scopes` withholds from
+    this principal is the same 404 as an unknown job, on the failure path
+    too: such a principal may not write onto that row, nor learn the job
+    exists.
     """
+    # Dispatch on the STORED kind. The job is locked + its kind checked
+    # inside the store call; we must know the kind out here to parse the
+    # payload, so a cheap unlocked peek picks the parser and the store's
+    # locked re-check is what actually enforces it (a kind cannot change
+    # under us — it is set at enqueue and never updated). The peek is also
+    # the visibility check: it answers None for a job targeting a row this
+    # principal is withheld (a job's targets are fixed at enqueue).
+    kind = await store.get_job_kind(
+        db, principal.tenant_id, job_id, exclude_scopes=withheld_scopes(principal)
+    )
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory job not found"
+        )
+
     if payload.failure is not None:
         try:
             ok = await store.record_job_failure(
@@ -2066,17 +2349,6 @@ async def submit_job_result(
     # Success path — `result` is guaranteed present by the schema
     # validator (exactly one of result / failure).
     assert payload.result is not None
-
-    # Dispatch on the STORED kind. The job is locked + its kind checked
-    # inside the store call; we must know the kind out here to parse the
-    # payload, so a cheap unlocked peek picks the parser and the store's
-    # locked re-check is what actually enforces it (a kind cannot change
-    # under us — it is set at enqueue and never updated).
-    kind = await store.get_job_kind(db, principal.tenant_id, job_id)
-    if kind is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="memory job not found"
-        )
 
     try:
         if kind == "embedding":

@@ -57,8 +57,10 @@
  *   `aria-description` / `alt` / `placeholder` / input or textarea value,
  *   always; and any of `options.forbidden` — the fixture's hostnames,
  *   device ids, other parties' names — in text or in those same text-bearing
- *   attributes, matched ignoring case. It does NOT read `href`, `data-*` or
- *   other attributes; scan those with `attributesNaming`. A page test passes
+ *   attributes, matched ignoring case. All three are read in every `href`
+ *   and `data-*` attribute too (a link's URL is shown on hover; a `data-*`
+ *   value is in the DOM an automated walk reads). Other attributes (`value`,
+ *   `id`, `class` …) it does not read; scan those with `attributesNaming`. A page test passes
  *   the real names its fixture holds, so the check sees exactly what the lens was meant to hide (D3.3).
  * - **(f) a view that is not on the screen** — checks (a)–(e) look for what
  *   is shown, so over nothing they pass whatever the page would render. A
@@ -690,7 +692,11 @@ function registrationViolations(
 export { CURRENCY_FIGURE };
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
-const TEXT_ATTRIBUTES = [
+/**
+ * The text-bearing attributes the checks read as on-screen text (exported so a
+ * test reading text the same way cannot drift from this list).
+ */
+export const TEXT_ATTRIBUTES: readonly string[] = [
   "title",
   "aria-label",
   "aria-description",
@@ -790,6 +796,26 @@ const EMAIL =
 const UUID =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
+/**
+ * The attribute values (e) reads besides text and {@link TEXT_ATTRIBUTES}:
+ * every `href` and every `data-*` attribute, root included — the ones
+ * `attributesNaming` (`./attributesNaming.ts`) taught callers to scan by hand.
+ * A link's URL is shown on hover and travels when it is copied, and a `data-*`
+ * value is in the DOM an automated walk reads, so an identity there is shown.
+ */
+function identityAttributeValues(
+  root: Element
+): Array<{ text: string; owner: Element; attr: string }> {
+  const out: Array<{ text: string; owner: Element; attr: string }> = [];
+  for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.value && (attr.name === "href" || attr.name.startsWith("data-")))
+        out.push({ text: attr.value, owner: el, attr: attr.name });
+    }
+  }
+  return out;
+}
+
 function identityViolations(
   root: Element,
   forbidden: readonly string[]
@@ -819,6 +845,30 @@ function identityViolations(
       if (lower.includes(needle)) {
         found.add(needle);
         out.push({ kind: "foreign-identity", detail: `${where} shows "${f}"` });
+      }
+    }
+  }
+  for (const { text, owner, attr } of identityAttributeValues(root)) {
+    const where = `${describeElement(owner)}[${attr}]`;
+    if (EMAIL.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} carries an email address — personal data`,
+      });
+    }
+    if (UUID.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} carries an internal identifier (a UUID)`,
+      });
+    }
+    const lower = text.toLowerCase();
+    for (const { f, lower: needle } of needles) {
+      if (lower.includes(needle)) {
+        out.push({
+          kind: "foreign-identity",
+          detail: `${where} carries "${f}"`,
+        });
       }
     }
   }

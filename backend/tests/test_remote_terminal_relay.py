@@ -64,6 +64,7 @@ from app.services.coord_jwks import CoordTokenExpiredError, CoordTokenInvalidErr
 from app.services.runner import remote_terminal_relay as rtr
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.remote_relay import end as relay_end
+from app.services.runner.remote_relay import registry as relay_registry
 from app.services.runner.remote_relay import target_frames as relay_target_frames
 from app.services.runner.remote_terminal_relay import RemoteTerminalRelay
 from app.services.runner.terminal_relay import TerminalRelayService
@@ -7243,3 +7244,811 @@ async def test_pending_end_ttl_seam_reaches_the_end_timer(
     assert err["code"] == "end_reply_timeout"
     assert err["request_id"] == "req-end-1"
     assert redis.empty()
+
+
+# ---------------------------------------------------------------------------
+# Close under a CREATE grant (plan
+# ``2026-09-23-remote-create-residuals-after-coord-registration-confirm``, Phase 2)
+# ---------------------------------------------------------------------------
+# A source that created a terminal and then failed to attach closes the orphan
+# under the create grant it spent: ``remote_terminal_end`` carrying
+# ``create_grant``. What is pinned: the exact forwarded frame; that neither grant
+# kind is admitted on the other's door; that the capability is checked before
+# anything reaches an attach path; that the create's own spawn claim neither
+# blocks the close nor is released by it; and that the attachment settles like
+# any ``end_only`` one.
+
+_CREATE_TOKEN = "opaque.create.jwt"
+
+
+async def _close_orphan(
+    relay: RemoteTerminalRelay,
+    ws: _FakeWS,
+    manager: Any,
+    claims: Any,
+    *,
+    request_id: str = "req-close-1",
+    **extra: Any,
+) -> None:
+    frame: dict[str, Any] = {
+        "type": "remote_terminal_end",
+        "request_id": request_id,
+        "force": True,
+        "create_grant": _CREATE_TOKEN,
+        "terminal_id": "t-orphan",
+        **extra,
+    }
+    with _verify(claims):
+        await relay.handle_source_frame(frame, SOURCE_DEVICE, manager, ws)
+
+
+async def test_create_close_forwards_exactly_the_contract_frame(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    verify = AsyncMock(return_value=claims)
+    with patch.object(rtr.coord_jwks_client, "verify_token", verify):
+        await relay.handle_source_frame(
+            {
+                "type": "remote_terminal_end",
+                "request_id": "req-close-1",
+                "force": True,
+                "create_grant": _CREATE_TOKEN,
+                "terminal_id": "t-orphan",
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        )
+
+    verify.assert_awaited_once_with(_CREATE_TOKEN)
+    assert ws.sent == []
+    assert manager.send_terminal.await_args.args[0] == TARGET_DEVICE
+    (frame,) = _forwarded_ends(manager)
+    minted, timestamp = frame.pop("request_id"), frame.pop("timestamp")
+    assert minted != "req-close-1" and len(minted) == 32
+    assert isinstance(timestamp, str) and timestamp
+    assert frame == {
+        "type": "terminal_end",
+        "force": True,
+        "terminal_id": "t-orphan",
+        "remote": {
+            "source_device_id": SOURCE_DEVICE,
+            "grant_jti": claims["jti"],
+            "kind": "create",
+        },
+    }
+    await relay.release_source(ws)
+
+
+@pytest.mark.parametrize(
+    ("sent", "forwarded"),
+    [(True, True), (False, False), ("true", False), (1, False), (None, False)],
+)
+async def test_create_close_force_is_true_only_for_the_json_literal(
+    relay: RemoteTerminalRelay, sent: Any, forwarded: bool
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, _create_claims(), force=sent)
+
+    assert _forwarded_ends(manager)[0]["force"] is forwarded
+    await relay.release_source(ws)
+
+
+async def test_attach_end_remote_block_stays_byte_identical(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The session-less create block must not change a byte of the attach one."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims(
+        attach={
+            "target_device_id": TARGET_DEVICE,
+            "target_session_id": TARGET_SESSION,
+            "terminal_id": "t1",
+        }
+    )
+    await _fresh_end(relay, ws, manager, claims)
+
+    (frame,) = _forwarded_ends(manager)
+    assert json.dumps(frame["remote"]) == json.dumps(
+        {
+            "source_device_id": SOURCE_DEVICE,
+            "grant_jti": claims["jti"],
+            "session_id": TARGET_SESSION,
+            "terminal_id": "t1",
+        }
+    )
+    await relay.release_source(ws)
+
+
+# Factories, not values — see the note on the attach parametrisation above.
+@pytest.mark.parametrize(
+    ("make_verifier_result", "expected_code"),
+    [
+        # An attach JWT presented as the create capability.
+        (lambda: _claims(), "create_grant_invalid"),
+        (lambda: _create_claims(sub_type="device"), "create_grant_invalid"),
+        (lambda: CoordTokenInvalidError("bad signature"), "create_grant_invalid"),
+        (lambda: CoordTokenExpiredError("token expired"), "create_grant_expired"),
+        (lambda: _create_claims(exp=int(time.time()) - 5), "create_grant_expired"),
+        (lambda: _create_claims(device_id=str(uuid4())), "create_grant_wrong_source"),
+        (
+            lambda: _create_claims(create={"target_device_id": "not-a-uuid"}),
+            "create_grant_invalid",
+        ),
+    ],
+)
+async def test_create_close_refused_with_typed_code_and_nothing_forwarded(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    make_verifier_result: Any,
+    expected_code: str,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, make_verifier_result())
+
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == expected_code
+    assert err["request_id"] == "req-close-1"
+    assert redis.empty()
+    assert relay._sessions[id(ws)].grants == {}
+
+
+async def test_create_jwt_in_grant_does_not_widen_the_attach_path(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _create_claims(), terminal_id="t-orphan")
+
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == "attach_grant_invalid"
+    assert redis.empty()
+
+
+@pytest.mark.parametrize("terminal_id", [None, "", 7, ["t-orphan"]])
+async def test_create_close_needs_a_named_terminal(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, terminal_id: Any
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims, terminal_id=terminal_id)
+
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == "create_grant_invalid"
+    assert err["grant_jti"] == claims["jti"]
+    assert redis.empty()
+
+
+async def test_create_close_with_no_terminal_id_key_is_refused(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    with _verify(_create_claims()):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": "r",
+                "create_grant": _CREATE_TOKEN,
+            },
+        )
+
+    manager.send_terminal.assert_not_called()
+    assert ws.of_type("error")[0]["code"] == "create_grant_invalid"
+    assert redis.empty()
+
+
+@pytest.mark.parametrize("create_grant", ["", None, 5, ["token"], {"a": 1}])
+async def test_unusable_create_grant_never_falls_through_to_an_attach_path(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, create_grant: Any
+) -> None:
+    """A usable attach ``grant`` beside it must not rescue the frame."""
+    ws = _FakeWS()
+    manager = _manager()
+    verify = AsyncMock(return_value=_claims())
+    with patch.object(rtr.coord_jwks_client, "verify_token", verify):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": "r",
+                "create_grant": create_grant,
+                "grant": "opaque.attach.jwt",
+            },
+        )
+
+    verify.assert_not_awaited()
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == "create_grant_invalid"
+    assert redis.empty()
+
+
+async def test_both_capabilities_with_a_grant_token_is_refused(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, _create_claims(), grant="opaque.attach.jwt")
+
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == "create_grant_invalid"
+    assert redis.empty()
+
+
+async def test_both_capabilities_naming_an_open_tab_leaves_the_tab_alone(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    attached = await _attached(relay, ws, manager)
+
+    await _close_orphan(relay, ws, manager, _create_claims(), grant_jti=attached["jti"])
+
+    assert _forwarded_ends(manager) == []
+    assert ws.of_type("error")[-1]["code"] == "create_grant_invalid"
+    held = relay._sessions[id(ws)].grants[attached["jti"]]
+    assert held.attached and held.terminal_id == "t1"
+    await relay.release_source(ws)
+
+
+async def test_create_close_of_a_create_still_in_flight_is_consumed(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+
+    await _close_orphan(relay, ws, manager, claims)
+
+    assert _forwarded_ends(manager) == []
+    (err,) = ws.of_type("error")
+    assert err["code"] == "create_grant_consumed"
+    # The refusal touched nothing: the create still settles normally.
+    session = relay._sessions[id(ws)]
+    assert len(session.pending_create) == 1
+    assert session.grants[claims["jti"]].end_only is False
+    await relay.release_source(ws)
+
+
+async def test_second_create_close_on_the_socket_is_end_already_pending(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    await _close_orphan(relay, ws, manager, claims, request_id="req-close-2")
+
+    assert len(_forwarded_ends(manager)) == 1
+    (err,) = ws.of_type("error")
+    assert err["code"] == "end_already_pending"
+    assert err["request_id"] == "req-close-2"
+    assert len(relay._sessions[id(ws)].pending_end) == 1
+    await relay.release_source(ws)
+
+
+async def test_create_close_claim_contention_is_consumed(
+    relay: RemoteTerminalRelay,
+) -> None:
+    claims = _create_claims()
+    first_ws = _FakeWS()
+    first_manager = _manager()
+    await _close_orphan(relay, first_ws, first_manager, claims)
+
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, claims)
+
+    assert _forwarded_ends(manager) == []
+    (err,) = ws.of_type("error")
+    assert err["code"] == "create_grant_consumed"
+    assert relay._sessions[id(ws)].grants == {}
+    # The loser's refusal did not release the winner's claim.
+    assert len(relay._sessions[id(first_ws)].pending_end) == 1
+    await relay.release_source(first_ws)
+
+
+async def test_create_close_record_never_touches_a_concurrent_creates_record(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """A create and a close under the same jti in flight at once (two sockets)
+    each write their OWN record, and the close settling deletes only its own.
+    Sharing ``remote_attach:grant:{jti}`` let the close overwrite the create's
+    record and then delete it out from under the create still awaiting its
+    reply."""
+    claims = _create_claims()
+    jti = claims["jti"]
+    create_ws = _FakeWS()
+    create_manager = _manager()
+    await _create(relay, create_ws, create_manager, claims)
+    create_record_key = rtr.grant_key(jti)
+    create_record = dict(redis.hashes[create_record_key])
+    assert create_record["kind"] == "create"
+    assert create_record["request_id"] == "req-create-1"
+
+    close_ws = _FakeWS()
+    close_manager = _manager()
+    await _close_orphan(relay, close_ws, close_manager, claims)
+    assert close_ws.of_type("error") == [], close_ws.sent
+    close_record_key = rtr.create_close_grant_key(jti)
+    assert close_record_key != create_record_key
+    assert redis.hashes[close_record_key]["request_id"] == "req-close-1"
+    # The close's write left the create's record exactly as the create wrote it.
+    assert redis.hashes[create_record_key] == create_record
+
+    close_session = relay._sessions[id(close_ws)]
+    (end,) = _forwarded_ends(close_manager)
+    assert await relay.route_target_frame(
+        close_session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": end["request_id"],
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+        },
+    )
+    assert close_ws.of_type("remote_terminal_ended")[0]["outcome"] == "ended"
+
+    # The close released only its own keys: the create's record survives, and
+    # the create is still pending on its socket.
+    assert close_record_key not in redis.hashes
+    assert redis.hashes[create_record_key] == create_record
+    assert len(relay._sessions[id(create_ws)].pending_create) == 1
+    await relay.release_source(close_ws)
+    await relay.release_source(create_ws)
+
+
+async def test_create_then_failed_attach_closes_and_keeps_the_spawn_single_use(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The real sequence. A create leaves its claim set until the grant expires,
+    so a close claiming THAT key would refuse every genuine orphan."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": _forwarded_create(manager)["request_id"],
+            "terminal": {"id": "t-orphan"},
+        },
+    )
+    assert routed is True
+    assert session.grants == {}
+    spawn_claim = rtr.claim_key(claims["jti"])
+    assert spawn_claim in redis.strings
+
+    await _close_orphan(relay, ws, manager, claims)
+
+    assert ws.of_type("error") == []
+    (end,) = _forwarded_ends(manager)
+    assert await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": end["request_id"],
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+        },
+    )
+    assert ws.of_type("remote_terminal_ended")[0]["outcome"] == "ended"
+
+    # The close released only itself: the jti still cannot buy a second spawn.
+    assert set(redis.strings) == {spawn_claim}
+    assert session.grants == {}
+    await _create(relay, ws, manager, claims, request_id="req-replay")
+    assert len(_forwarded_creates(manager)) == 1
+    assert ws.of_type("error")[-1]["code"] == "create_grant_consumed"
+    await relay.release_source(ws)
+
+
+async def test_a_create_grant_buys_no_other_frame_around_its_close(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The close is the create grant's ONLY extra door. While a close under it
+    is in flight, and with the token itself presented as ``create_grant`` on
+    any other source frame, input/resize/buffer/flow/detach are each refused
+    and nothing reaches the target."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    assert ws.of_type("error") == [], ws.sent
+    assert len(_forwarded_ends(manager)) == 1
+    manager.send_terminal.reset_mock()
+
+    others: tuple[dict[str, Any], ...] = (
+        {"type": "remote_terminal_input", "data": "eA=="},
+        {"type": "remote_terminal_resize", "cols": 10, "rows": 10},
+        {"type": "remote_terminal_buffer"},
+        {"type": "remote_terminal_flow", "paused": True},
+        {"type": "remote_terminal_detach"},
+    )
+    # Each variant's refusal code is asserted, so the test cannot pass on an
+    # unrelated refusal:
+    # - ``grant_jti`` naming the close's jti: the attachment IS registered on
+    #   this socket (end_only, close in flight), so the refusal is the
+    #   end-pending gate that every session-scoped door hits before any other
+    #   check — ``end_already_pending``, never ``attach_not_registered``.
+    # - ``create_grant`` alone: these frames take their capability from
+    #   ``grant_jti`` only and never read ``create_grant``, so the token buys
+    #   nothing and the frame names no attachment. ``attach_not_registered`` is
+    #   the honest code here — it IS the capability refusal for a token these
+    #   doors do not accept.
+    for msg in others:
+        for capability, expected_code in (
+            ({"grant_jti": claims["jti"]}, "end_already_pending"),
+            ({"create_grant": _CREATE_TOKEN}, "attach_not_registered"),
+        ):
+            ws.sent.clear()
+            with _verify(claims):
+                await relay.handle_source_frame(
+                    {
+                        **msg,
+                        **capability,
+                        "request_id": "req-abuse",
+                        "terminal_id": "t-orphan",
+                    },
+                    SOURCE_DEVICE,
+                    manager,
+                    ws,
+                )
+            errors = ws.of_type("error")
+            assert len(errors) == 1, (msg["type"], capability, ws.sent)
+            assert errors[0]["code"] == expected_code, (
+                msg["type"],
+                capability,
+                errors[0],
+            )
+            manager.send_terminal.assert_not_called()
+    # The close is still in flight and untouched by any of the refusals.
+    assert len(relay._sessions[id(ws)].pending_end) == 1
+    await relay.release_source(ws)
+
+
+async def test_create_close_reply_is_rebuilt_and_drops_attachment_and_claim(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    close_claim = relay_registry.create_close_claim_key(claims["jti"])
+    assert close_claim in redis.strings
+    assert session.grants[claims["jti"]].end_only is True
+    (end,) = _forwarded_ends(manager)
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": end["request_id"],
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+            "via": "force",
+            "remote": {"grant_jti": "target-supplied"},
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_ended") == [
+        {
+            "type": "remote_terminal_ended",
+            "request_id": "req-close-1",
+            "grant_jti": claims["jti"],
+            "session_id": None,
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+            "via": "force",
+        }
+    ]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.listeners == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+@pytest.mark.parametrize(
+    "code", ["remote_create_close_attached", "remote_create_close_terminal_mismatch"]
+)
+@pytest.mark.parametrize("frame_type", ["error", "remote_terminal_error"])
+async def test_create_close_target_refusal_reaches_the_source_and_drops(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, code: str, frame_type: str
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    (end,) = _forwarded_ends(manager)
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": frame_type,
+            "request_id": end["request_id"],
+            "code": code,
+            "message": "refused",
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": code,
+            "message": "refused",
+            "request_id": "req-close-1",
+        }
+    ]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+async def test_create_close_refusal_marked_only_by_grant_settles_the_end(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "code": "remote_create_close_terminal_mismatch",
+            "message": "no",
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+
+    assert routed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "remote_create_close_terminal_mismatch"
+    assert err["request_id"] == "req-close-1"
+    assert session.grants == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+async def test_create_close_ttl_settles_typed_and_a_retry_may_follow(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.0):
+        await _close_orphan(relay, ws, manager, claims)
+        await _drain_background(relay)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "end_reply_timeout"
+    assert err["request_id"] == "req-close-1"
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+
+    # UNKNOWN is not spent: the source may ask again under the same grant.
+    await _close_orphan(relay, ws, manager, claims, request_id="req-close-2")
+    assert len(_forwarded_ends(manager)) == 2
+    await relay.release_source(ws)
+
+
+async def test_create_close_to_a_disconnected_target_is_refused_and_released(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager(target_connected=False)
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+
+    (err,) = ws.of_type("error")
+    assert err["code"] == "target_not_connected"
+    assert err["request_id"] == "req-close-1"
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+
+
+@pytest.mark.parametrize("failing", ["set", "hset"])
+async def test_create_close_registry_failure_is_typed_and_releases_the_claim(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+    failing: str,
+) -> None:
+    monkeypatch.setattr(redis, failing, AsyncMock(side_effect=RuntimeError("down")))
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, _create_claims())
+
+    assert _forwarded_ends(manager) == []
+    (err,) = ws.of_type("error")
+    assert err["code"] == "attach_registry_unavailable"
+    assert relay._sessions[id(ws)].grants == {}
+    assert redis.strings == {}
+
+
+async def test_create_close_settles_when_the_target_socket_dies(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+
+    assert routed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "target_not_connected"
+    assert err["request_id"] == "req-close-1"
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+async def test_create_close_settles_when_the_listener_is_lost(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+
+    redis.pubsubs[-1].push(RuntimeError("pubsub died"))
+    await _settle(lambda: bool(ws.of_type("remote_terminal_error")))
+    await _settle(lambda: not session.grants)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "listener_lost"
+    assert err["request_id"] == "req-close-1"
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+async def test_in_flight_create_close_is_not_mistaken_for_an_in_flight_create(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    (end,) = _forwarded_ends(manager)
+
+    assert session.pending_create == {}
+    assert (
+        await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {
+                "type": "terminal_created",
+                "request_id": end["request_id"],
+                "terminal": {"id": "t-orphan"},
+            },
+        )
+        is False
+    )
+    assert ws.of_type("remote_terminal_created") == []
+    assert end["request_id"] in session.pending_end
+
+    # A create re-presented meanwhile is refused and forwards nothing.
+    await _create(relay, ws, manager, claims, request_id="req-replay")
+    assert _forwarded_creates(manager) == []
+    assert ws.of_type("error")[-1]["code"] == "create_grant_consumed"
+
+    # Only the end's own settlement may end it: a detach is refused.
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_detach",
+            "request_id": "r",
+            "grant_jti": claims["jti"],
+        },
+    )
+    assert ws.of_type("error")[-1]["code"] == "end_already_pending"
+    assert claims["jti"] in session.grants
+    await relay.release_source(ws)
+
+
+async def test_expiry_sweep_leaves_an_in_flight_create_close_to_its_reply(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _close_orphan(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+    (end,) = _forwarded_ends(manager)
+
+    assert await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": end["request_id"],
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+        },
+    )
+
+    assert ws.of_type("remote_terminal_error") == []
+    assert ws.of_type("remote_terminal_ended")[0]["outcome"] == "ended"
+    assert session.grants == {}
+    await relay.release_source(ws)
+
+
+async def test_release_source_during_a_create_close_sends_no_detach(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _close_orphan(relay, ws, manager, _create_claims())
+
+    await relay.release_source(ws)
+
+    assert [
+        c.args[1]["type"]
+        for c in manager.send_terminal.await_args_list
+        if c.args[1].get("type") == "terminal_detach"
+    ] == []
+    assert redis.empty()
+
+
+@pytest.mark.parametrize(
+    "code", ["remote_create_close_attached", "remote_create_close_terminal_mismatch"]
+)
+async def test_create_close_refusal_codes_are_target_codes_not_relay_codes(
+    code: str,
+) -> None:
+    assert rtr.namespace_target_code(code) == code
+    assert code in rtr.TARGET_ERROR_CODES
+    assert code not in rtr.RELAY_ERROR_CODES

@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Plus, Check } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
-import { useDragSource } from "@qontinui/ui-bridge";
+import { useDragSource } from "@qontinui/ui-bridge/react";
 import {
   getTotalStepCount,
   type UnifiedWorkflow,

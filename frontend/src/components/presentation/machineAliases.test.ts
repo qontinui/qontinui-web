@@ -259,3 +259,40 @@ describe("MachineAliasRegistry", () => {
     expect(r.aliasFor({ hostname: "h2" })).toBe("Machine A");
   });
 });
+
+describe("MachineAliasRegistry — device ordinals", () => {
+  it("numbers device ids in first-seen order, keyed on the id alone, and leaves the machine's letter shared", () => {
+    const r = new MachineAliasRegistry();
+    const one = { deviceId: "dev-1", hostname: "shared-host" };
+    const two = { deviceId: "dev-2", hostname: "shared-host" };
+    expect(r.aliasFor(one)).toBe("Machine A");
+    expect(r.aliasFor(two)).toBe("Machine A");
+    expect(r.deviceOrdinalFor("dev-2")).toBe(0);
+    expect(r.deviceOrdinalFor("DEV-1")).toBe(1);
+    expect(r.deviceOrdinalFor("dev-2")).toBe(0);
+    expect(r.deviceOrdinalFor("  ")).toBeNull();
+    // Numbering a device merges nothing: both still read as one machine.
+    expect(r.aliasFor(one)).toBe("Machine A");
+    expect(r.mergeCount()).toBe(0);
+  });
+
+  it("keeps device numbers across a reload, without storing the id", () => {
+    const storage = memoryStorage();
+    const first = new MachineAliasRegistry({ storage: () => storage });
+    first.deviceOrdinalFor("dev-secret-1");
+    first.deviceOrdinalFor("dev-secret-2");
+    const raw = storage.getItem(MACHINE_ALIAS_STORAGE_KEY) ?? "";
+    expect(raw).not.toContain("dev-secret");
+    const reloaded = new MachineAliasRegistry({ storage: () => storage });
+    expect(reloaded.deviceOrdinalFor("dev-secret-2")).toBe(1);
+    expect(reloaded.deviceOrdinalFor("dev-new")).toBe(2);
+  });
+
+  it("forgets device numbers on reset", () => {
+    const r = new MachineAliasRegistry();
+    r.deviceOrdinalFor("a");
+    r.deviceOrdinalFor("b");
+    r.reset();
+    expect(r.deviceOrdinalFor("b")).toBe(0);
+  });
+});

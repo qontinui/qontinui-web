@@ -48,6 +48,7 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
+import type { SessionAccountStamp } from "@/services/agent-sessions-api";
 import type { SessionRow } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -68,8 +69,14 @@ export type SessionRowClass =
   | "agent_only"
   | null;
 
-/** One `coord.agent_sessions` row as coord's `/coord/agent-sessions` emits it. */
-export interface AgentSessionHalf {
+/**
+ * One `coord.agent_sessions` row as coord's `/coord/agent-sessions` emits it.
+ *
+ * The account stamp ({@link SessionAccountStamp}) rides on it verbatim — the
+ * web backend passes the agent row through untouched, so an ABSENT key still
+ * means "coord does not serve it" by the time it reaches the console.
+ */
+export interface AgentSessionHalf extends SessionAccountStamp {
   id: string;
   user_id?: string | null;
   device_id?: string | null;
@@ -132,6 +139,14 @@ export interface ConsolidatedSessionsResponse {
   shape: string;
   sessions: ConsolidatedSessionRow[];
   row_class_counts: Record<string, number>;
+  /**
+   * Sessions the `device` / `status` SERVER filter hid although coord's agent
+   * half matched it — the two halves disagree (lifecycle `active`, agent
+   * `stale`; or different machines). Not rows of any class, so not in
+   * `row_class_counts`. Optional: absent from a backend that predates it, which
+   * is "not reported", never zero — the console shows nothing rather than `0`.
+   */
+  withheld_by_filter?: number;
   /** `{read: "ok"}`, or `{read: "failed", detail}` — the join axis's own read. */
   agent_half: { read: string; detail?: string };
 }

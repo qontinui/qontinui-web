@@ -759,6 +759,7 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    "https://api.test/api/v1/admin/sessions/census",
     "https://api.test/api/v1/admin/coord/overlord/labels",
     // Project Overview. Every `overview.*` row is keyed on the active tenant
     // and the backend resolves it from this header ALONE, so a missing entry
@@ -777,6 +778,8 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/helper-tasks",
     "https://api.test/api/v1/devices/pair-codes",
     "https://api.test/api/v1/agent-registry",
+    "https://api.test/api/v1/spawn-launch-settings",
+    "https://api.test/api/v1/spawn-launch-settings/post_merge",
     // Found by the backend drift guard
     // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
     // the caller's tenant, so a missing entry serves the home project.
@@ -791,6 +794,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // The taste inbox: its queue and labels are the active tenant's.
     "https://api.test/api/v1/taste/inbox?limit=5",
     "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
+    // The design reference library: its corpus and judgements are the active tenant's.
+    "https://api.test/api/v1/design-refs/sites?limit=5",
+    "https://api.test/api/v1/design-refs/principles/00000000-0000-0000-0000-000000000001/approve",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
     // Test-host designation writes: coord binding-checks the device against
@@ -969,6 +975,57 @@ describe("HttpClient reactive refresh on 401", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2); // original + replay
     expect(r.status).toBe(200);
     expect(onExpired).not.toHaveBeenCalled();
+  });
+
+  // A replay rebuilds the request, including the tenant header. A caller that
+  // named the tenant must keep it, or a write built for one project lands in
+  // whichever project another tab selected while the token was refreshing.
+  it("keeps a caller-named tenant on the replay when the selection moved", async () => {
+    const STORAGE_KEY = "qontinui.active_tenant_id";
+    localStorage.setItem(STORAGE_KEY, "selected-first");
+    const sent: (string | undefined)[] = [];
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        calls++;
+        sent.push(
+          (init?.headers as Record<string, string>)["X-Qontinui-Active-Tenant"]
+        );
+        if (calls === 1) {
+          localStorage.setItem(STORAGE_KEY, "selected-later");
+          return new Response("", { status: 401 });
+        }
+        return new Response("{}", { status: 200 });
+      })
+    );
+    const client = new HttpClient(
+      makeTokenManager({
+        getAccessToken: vi.fn(() => "expired"),
+        isAccessTokenExpired: vi.fn(() => true),
+      }) as unknown as TokenManager,
+      undefined,
+      makeRefreshService("refreshed") as never
+    );
+
+    try {
+      const named = await client.fetch(
+        "https://api.test/api/v1/operations/fleet",
+        { headers: { "X-Qontinui-Active-Tenant": "the-page-project" } }
+      );
+
+      expect(named.status).toBe(200);
+      expect(sent).toEqual(["the-page-project", "the-page-project"]);
+
+      // Without one, the selection is still read per build, as before.
+      localStorage.setItem(STORAGE_KEY, "selected-first");
+      calls = 0;
+      sent.length = 0;
+      await client.fetch("https://api.test/api/v1/operations/fleet");
+      expect(sent).toEqual(["selected-first", "selected-later"]);
+    } finally {
+      localStorage.removeItem(STORAGE_KEY);
+    }
   });
 
   // The replay issued after a successful refresh is a response like any

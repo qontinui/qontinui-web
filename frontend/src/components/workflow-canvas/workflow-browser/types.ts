@@ -25,7 +25,6 @@ export interface EnhancedWorkflowItem {
   folderPath?: string[];
   complexity?: number;
   complexityRating?: "low" | "medium" | "high" | "very-high";
-  testCoverage?: number;
   hasTests?: boolean;
   hasDocumentation?: boolean;
   lastRun?: string;
@@ -82,7 +81,6 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "name", label: "Name", visible: true, width: 250 },
   { id: "folder", label: "Folder", visible: true, width: 150 },
   { id: "complexity", label: "Complexity", visible: true, width: 120 },
-  { id: "testCoverage", label: "Test Coverage", visible: false, width: 120 },
   { id: "lastRun", label: "Last Run", visible: false, width: 150 },
   { id: "successRate", label: "Success Rate", visible: false, width: 120 },
   { id: "actions", label: "Actions", visible: true, width: 100 },

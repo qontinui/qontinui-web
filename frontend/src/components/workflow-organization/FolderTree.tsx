@@ -37,7 +37,7 @@ import { FolderTreeFooter } from "./_components/FolderTreeFooter";
 import { InlineFolderCreate } from "./_components/InlineFolderCreate";
 import { useFolderTreeState } from "./_hooks/useFolderTreeState";
 import { useFolderTreeHandlers } from "./_hooks/useFolderTreeHandlers";
-import { useDropZone } from "@qontinui/ui-bridge";
+import { useDropZone } from "@qontinui/ui-bridge/react";
 
 // ============================================================================
 // Types

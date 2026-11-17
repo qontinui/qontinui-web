@@ -33,6 +33,7 @@
 
 import type { Attention } from "@/components/console/attention";
 import type { HealthStripLevel } from "@/components/console/HealthStrip";
+import { relativeTime } from "@/components/console/time";
 import {
   AUTHOR_RED,
   INERT,
@@ -451,6 +452,13 @@ export interface FleetSessionRow {
   intent?: string | null;
   state?: string | null;
   sessionStatus?: string | null;
+  /**
+   * When `sessionStatus` last moved. For a finished row, its LATEST finish: a
+   * re-finish restamps it. Absent or null is UNKNOWN (an older coord, a degraded
+   * read, or a row with no clock yet), never "no finish time". A `stalled` row
+   * keeps the clock of the status it stalled in, so this is not when it stalled.
+   */
+  sessionStatusSince?: string | null;
   workUnitSlug?: string | null;
   repo?: string | null;
   branch?: string | null;
@@ -803,9 +811,30 @@ export function originLabel(rec: RunnerSessionRecord): string {
   return SPAWN_ORIGIN_LABEL[origin] ?? origin;
 }
 
-/** Coord's work axis, or UNKNOWN — a null here is unset OR degraded. */
-export function workStatusLabel(rec: RunnerSessionRecord): string {
-  return optionalString(rec.session?.sessionStatus) ?? UNKNOWN_LABEL;
+/** How far ahead of this clock a work-status stamp may be and still read as now. */
+const WORK_STATUS_CLOCK_SKEW_MS = 60_000;
+
+/**
+ * Coord's work axis with how long ago it moved, e.g. `finished (3h ago)`, or
+ * UNKNOWN. A null status is unset OR degraded. The time is left out when coord
+ * served none or an unreadable one, and when a stamp is further ahead than
+ * ordinary skew, since a finish can be dated by the marking runner's own clock. It
+ * is always left out for `stalled`, whose clock belongs to the status it stalled
+ * in.
+ */
+export function workStatusLabel(
+  rec: RunnerSessionRecord,
+  now: number = Date.now()
+): string {
+  const status = optionalString(rec.session?.sessionStatus);
+  if (status === null) return UNKNOWN_LABEL;
+  if (status === "stalled") return status;
+  const since = optionalString(rec.session?.sessionStatusSince);
+  if (since !== null && Date.parse(since) - now > WORK_STATUS_CLOCK_SKEW_MS) {
+    return status;
+  }
+  const moved = relativeTime(since, { absent: "", now });
+  return moved ? `${status} (${moved})` : status;
 }
 
 /** `idle · eligible`, with each half UNKNOWN on its own. */

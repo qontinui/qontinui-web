@@ -93,6 +93,7 @@ import {
 import {
   deriveGateStatus,
   GATE_STATUS_PALETTE,
+  gateVerdictGroupOf,
   isSweepOverdue,
   isTerminalGateVerdict,
   snoozeState,
@@ -100,7 +101,11 @@ import {
 import {
   CONTINUATION_STATUS_PALETTE,
   CONTINUATION_UNKNOWN_OUTCOME_KINDS,
+  deferralHistoryChip,
+  deferralProblemNote,
   deriveContinuationStatus,
+  heldBySiblingHolders,
+  isClearanceHold,
   type ContinuationKind,
   type ContinuationStatus,
 } from "../continuationStatus";
@@ -198,9 +203,7 @@ function SnoozeBadge({ gate }: { gate: GateOverviewRow }) {
 function progressVariant(
   g: GateOverviewRow
 ): "default" | "success" | "warning" | "error" {
-  const v = g.verdict.toLowerCase();
-  if (v === "fail" || v === "failed" || v === "error" || v === "veto")
-    return "error";
+  if (gateVerdictGroupOf(g.verdict) === "failed") return "error";
   const f = g.progress.fraction;
   if (f !== null && f >= 1) return "success";
   if (isSweepOverdue(g)) return "warning";
@@ -228,7 +231,7 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
       <div className="min-w-[8rem]">
         <div className="text-sm text-muted-foreground">—</div>
         <div className="text-[11px] text-muted-foreground/70">
-          {basis === "indeterminate" ? "indeterminate" : detail ?? basis}
+          {basis === "indeterminate" ? "indeterminate" : (detail ?? basis)}
         </div>
       </div>
     );
@@ -393,22 +396,20 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
       data-testid="gates-continuation"
       data-continuation-kind={status.status.kind}
     >
-      <StatusBadge status={status.status} palette={CONTINUATION_STATUS_PALETTE} />
+      <StatusBadge
+        status={status.status}
+        palette={CONTINUATION_STATUS_PALETTE}
+      />
       {historic && deferral && (
         <span
           // Muted, deliberately: a deferral the row has already moved past is
           // EVIDENCE, not a call to action, and R3 does not spend amber on
           // history.
           className="text-[11px] text-muted-foreground/70 tabular-nums"
-          title={
-            deferral.reason
-              ? `Dispatch was pushed back before this state; last reason: ${deferral.reason}`
-              : "Dispatch was pushed back before reaching this state"
-          }
+          title={deferralHistoryChip(deferral).title}
           data-testid="gates-continuation-deferral-chip"
         >
-          after {deferral.countKnown ? deferral.count : "?"} deferral
-          {deferral.countKnown && deferral.count === 1 ? "" : "s"}
+          {deferralHistoryChip(deferral).text}
         </span>
       )}
     </div>
@@ -422,9 +423,17 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
  * A `work_completed` / `armed` / `dispatched` continuation is not a problem and
  * contributes nothing here — the timeline in `history` still records it.
  */
-function ContinuationProblem({ status }: { status: ContinuationStatus | null }) {
+function ContinuationProblem({
+  status,
+}: {
+  status: ContinuationStatus | null;
+}) {
   if (!status || status.status.attention === "none") return null;
   const { status: s, deferral, outcomeDetail } = status;
+  const deferralNote = deferralProblemNote(
+    status,
+    deferral?.at ? formatRelative(deferral.at) : null
+  );
   const tone = s.attention === "author" ? "text-red-200" : "text-amber-200";
   return (
     <div className="space-y-1" data-testid="gates-continuation-problem">
@@ -437,17 +446,12 @@ function ContinuationProblem({ status }: { status: ContinuationStatus | null }) 
           Reported detail: “{outcomeDetail}”
         </p>
       )}
-      {deferral && (
-        <p className="text-[11px] text-muted-foreground">
-          Dispatch pushed back{" "}
-          {deferral.countKnown
-            ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
-            : "an unrecorded number of times"}
-          {deferral.reason ? `; last time ${deferral.reason}` : ""}
-          {deferral.at ? ` (last ${formatRelative(deferral.at)})` : ""}.
-          {deferral.countKnown
-            ? " The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused."
-            : " coord recorded a deferral but no count, so how many times is unknown."}
+      {deferralNote && (
+        <p
+          className="text-[11px] text-muted-foreground"
+          data-testid="gates-continuation-deferral-note"
+        >
+          {deferralNote}
         </p>
       )}
     </div>
@@ -458,7 +462,13 @@ function ContinuationProblem({ status }: { status: ContinuationStatus | null }) 
 function ContinuationTimeline({ gate }: { gate: GateOverviewRow }) {
   const stamps: [string, string | null][] = [
     ["dispatched", gate.continuation_dispatched_at],
-    ["last deferred", gate.continuation_deferred_at],
+    // coord's clearance hold shares the deferral columns; name it as a hold.
+    [
+      isClearanceHold(gate.continuation_deferred_reason)
+        ? "last held"
+        : "last deferred",
+      gate.continuation_deferred_at,
+    ],
     ["consumed", gate.continuation_consumed_at],
     ["cancelled", gate.continuation_cancelled_at],
     ["expired", gate.continuation_expired_at],
@@ -523,7 +533,9 @@ function matchesContinuationFilter(
         ? CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind)
         : false;
     case "deferred":
-      return status?.deferral != null;
+      // A runner's push-back only: coord's own clearance hold shares the
+      // deferral columns but is its own `held` kind (filterable by kind).
+      return status?.deferral != null && !status.deferral.hold;
     case "none":
       return status === null;
     default:
@@ -624,7 +636,7 @@ export function GatesTable({
       if (status.status.attention === "author") attention += 1;
       if (CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind))
         unknown += 1;
-      if (status.deferral) deferred += 1;
+      if (status.deferral && !status.deferral.hold) deferred += 1;
     }
     if (attention === 0 && unknown === 0 && deferred === 0) return [];
     return [
@@ -696,14 +708,11 @@ export function GatesTable({
           g.continuation_deferred_reason,
           g.continuation_expired_reason,
         ];
-        return haystacks.some(
-          (h) => h != null && h.toLowerCase().includes(q)
-        );
+        return haystacks.some((h) => h != null && h.toLowerCase().includes(q));
       });
     }
 
-    if (verdictFilter !== ALL)
-      r = r.filter((g) => g.verdict === verdictFilter);
+    if (verdictFilter !== ALL) r = r.filter((g) => g.verdict === verdictFilter);
     if (basisFilter !== ALL)
       r = r.filter((g) => g.progress.basis === (basisFilter as ProgressBasis));
     if (continuationFilter !== ALL)
@@ -898,9 +907,7 @@ export function GatesTable({
                     <TableRow
                       data-testid="gates-table-row"
                       data-expanded={expanded ? "true" : "false"}
-                      onClick={() =>
-                        setOpenGate(expanded ? null : g.gate_id)
-                      }
+                      onClick={() => setOpenGate(expanded ? null : g.gate_id)}
                       // R4 — a 2px left border, not a coloured row: the body
                       // stays neutral so 40 rows read when 6 are red.
                       {...rowAccentProps(status, "cursor-pointer")}
@@ -1061,11 +1068,13 @@ function GateDetail({
   // is only worth saying while it is still a prediction. Once anything has
   // dispatched, been cancelled or expired, what actually happened (the
   // `problems`/`history` slots below) is the answer, and repeating the
-  // intention beside it invites reading the plan as the outcome.
+  // intention beside it invites reading the plan as the outcome. A drain
+  // expiry on a continuation coord reports HELD is not an outcome — the
+  // fanout still dispatches it — so the intent stays true there.
   const intent =
     !gate.continuation_dispatched_at &&
     !gate.continuation_cancelled_at &&
-    !gate.continuation_expired_at
+    (!gate.continuation_expired_at || heldBySiblingHolders(gate).length > 0)
       ? summarizeContinuation(
           // `GateOverviewRow` types the payload as opaque JSON (coord returns
           // it verbatim); `summarizeContinuation` reads two optional string

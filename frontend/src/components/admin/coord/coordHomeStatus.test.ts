@@ -38,6 +38,11 @@ import {
   sourceRawLine,
   sourceRowReason,
   sourceTimeWords,
+  needsRecommendationShareSentence,
+  needsKindSplit,
+  needsKindSplitText,
+  needsOldestSentence,
+  unreadBlockSentence,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -58,7 +63,9 @@ import {
   isKnownDecisionDomain,
   isKnownPlane,
   isLabelledSource,
+  isDetectionBoundSource,
   planeLabel,
+  unstatedSummary,
 } from "./coordHomeStatus";
 
 const CLASSES = Object.fromEntries(UNIT_CLASSES.map((c) => [c, 1]));
@@ -114,6 +121,20 @@ const BLOCK_KEY: Record<HomeBlock, string> = {
 
 const NOT_READ = BLOCK_STATES.filter((s) => s !== "read");
 
+/** The strip's words for an unread block, written out rather than derived. */
+const UNREAD_NOUN: Record<HomeBlock, string> = {
+  needs_me: "The needs-you list",
+  degradations: "The degradations list",
+  on_track: "The work-by-state summary",
+  correctness: "The correctness check",
+};
+const UNREAD_VERB: Record<string, string> = {
+  could_not_read: "could not be read",
+  stale: "may be incomplete or stale",
+  not_implemented: "is not built yet",
+  unknown: "is unknown",
+};
+
 describe("deriveHomeStrip — never green over what it does not know", () => {
   it("is green for a body whose every block is read and calm (the control)", () => {
     const strip = deriveHomeStrip(parseProjectState(calmBody()), CALM_MACHINES);
@@ -134,7 +155,9 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       };
       const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
       expect(strip.level).not.toBe("green");
-      expect(strip.detail).toContain("Not read");
+      expect(strip.detail).toContain(
+        `${UNREAD_NOUN[block]} ${UNREAD_VERB[state]}.`
+      );
     }
   );
 
@@ -212,7 +235,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("red");
     expect(strip.headline).toBe("2 decisions need you");
-    expect(strip.detail).toContain("correct? unknown");
+    expect(strip.detail).toContain("The correctness check is unknown.");
   });
 
   it("is amber when something is degrading, and a declared drain is not a fault", () => {
@@ -638,6 +661,7 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(decisionDomainLabel("operator_gate")).toBe("operator approval gate");
     expect(decisionDomainLabel("unscanned")).toBe("not yet scanned");
     expect(decisionDomainLabel("unclassified")).toBe("unclassified");
+    expect(decisionDomainLabel("other")).toBe("other kinds");
   });
 
   describe("an initiative's typed status and dates", () => {
@@ -807,6 +831,82 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
     const item = view.needsMe.items![0];
     expect(item.recommendation).toBeNull();
     expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('reads shape "unknown" as an UNKNOWN recommendation, never as none given', () => {
+    // Coord's fork-shape columns were unreadable: it serves `shape: "unknown"`
+    // and OMITS `recommendation` / `if_overturned` (absent, never null).
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "unknown" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(item.ifOverturnedKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+    expect(needsYouReason(item)).not.toMatch(/no recommendation|none given/);
+  });
+
+  it("reads an omitted recommendation as UNKNOWN even beside a served shape", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "open_question" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+  });
+
+  it("keeps a served null recommendation as none given", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            if_overturned: null,
+            shape: "open_question",
+          },
+        ],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(true);
+    expect(item.ifOverturnedKnown).toBe(true);
+    expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('does not let shape "unknown" vouch for a served recommendation key', () => {
+    // `shape` is the column-read verdict: when it says unknown, a stray null
+    // beside it is not a reading of "none".
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            shape: "unknown",
+          },
+        ],
+      },
+    })!;
+    expect(view.needsMe.items![0].recommendationKnown).toBe(false);
   });
 
   it.each([
@@ -1407,6 +1507,134 @@ describe("round-8 review — R8 for what the view does not know", () => {
     );
   });
 
+  // Plan 2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar:
+  // a `detection_bound:<plane>` row's bound is how old a fault on that plane
+  // can be before coord first observes it — a detection lag, not a data age.
+  describe("a detection_bound:<plane> row", () => {
+    const slow = () =>
+      row({
+        source: "detection_bound:merge_train",
+        state: "read",
+        freshness_bound_secs: 3600,
+        exclusion_reason:
+          "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+      });
+    const unknown = () =>
+      row({
+        source: "detection_bound:cloud_service",
+        state: "unknown",
+        freshness_bound_secs: null,
+        exclusion_reason: "no detection bound could be derived for this plane",
+      });
+
+    it("is recognised by its prefix", () => {
+      expect(isDetectionBoundSource("detection_bound:merge_train")).toBe(true);
+      expect(isDetectionBoundSource("watcher:merge_train")).toBe(false);
+      expect(isDetectionBoundSource("work_units")).toBe(false);
+    });
+
+    it("is labelled by the area its fault lag is measured on", () => {
+      expect(sourceLabel("detection_bound:merge_train")).toBe(
+        "Time for a fault on merge train to reach this view"
+      );
+      expect(sourceLabel("detection_bound:coord_itself")).toBe(
+        "Time for a fault on coord to reach this view"
+      );
+      // An unmapped plane is spaced, as planeLabel spaces it.
+      expect(sourceLabel("detection_bound:new_plane")).toBe(
+        "Time for a fault on new plane to reach this view"
+      );
+      // An area the caller's words withhold is not named.
+      expect(sourceLabel("detection_bound:merge_train", null, () => null)).toBe(
+        "Time for a fault on an area not named here to reach this view"
+      );
+    });
+
+    it("words its bound as a detection lag, never as a data age", () => {
+      expect(sourceAgePhrase(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it"
+      );
+      expect(sourceAgePhrase(slow())).not.toMatch(/may be up to/);
+      // It has no rows, so no exclusion count is said to be missing.
+      expect(sourceRowReason(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it"
+      );
+      expect(sourceRowReason(slow())).not.toMatch(/exclusions/);
+    });
+
+    it("writes an odd bound to the second", () => {
+      expect(
+        sourceAgePhrase(
+          row({
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3601,
+          })
+        )
+      ).toBe("a fault can be up to 1h 1s old before coord sees it");
+    });
+
+    it("says no bound is known when coord could derive none", () => {
+      expect(sourceAgePhrase(unknown())).toBe("no detection bound known");
+      // Not dropped as an unstated age when a list states those once.
+      expect(sourceRowReason(unknown(), { omitUnstated: true })).toBe(
+        "no detection bound known"
+      );
+      expect(sourceRowReason(unknown())).toBe("no detection bound known");
+      // Neither an age bound nor an exclusion count is owed by a plane row.
+      expect(unstatedSummary([unknown()])).toBeNull();
+      expect(unstatedSummary([slow(), unknown()])).toBeNull();
+      // Beside an ordinary source, only that source is counted — in the
+      // total as well.
+      expect(
+        unstatedSummary([
+          unknown(),
+          row({ source: "work_units", state: "read" }),
+        ])
+      ).toBe(
+        "Coord stated no age bound for it, and no count of excluded rows for it."
+      );
+    });
+
+    it("labels a bare detection_bound: row without naming an area", () => {
+      expect(sourceLabel("detection_bound:")).toBe(
+        "Time for a fault on an area not named here to reach this view"
+      );
+    });
+
+    it("leaves a slow-but-read plane out of the strip's sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        { source: "work_units", state: "read" },
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).toBe("green");
+      const badge = strip.badges.find((b) => b.key === "unknown");
+      expect(badge?.label).toBe("unknown sources 0");
+    });
+
+    it("counts a plane with no derivable bound among sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        {
+          source: "detection_bound:cloud_service",
+          state: "unknown",
+          freshness_bound_secs: null,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).not.toBe("green");
+      expect(strip.badges.find((b) => b.key === "unknown")?.label).toBe(
+        "unknown sources 1"
+      );
+    });
+  });
+
   it("spaces a source it has no label for, as it does an unknown domain", () => {
     expect(sourceLabel("deploy_freshness_feed")).toBe("Deploy freshness feed");
   });
@@ -1801,5 +2029,411 @@ describe("a served key spelled like an Object.prototype member", () => {
       ["pr_fix", 1],
     ]);
     expect(Object.getPrototypeOf(byDomain)).toBe(Object.prototype);
+  });
+});
+
+function needsBody(needs: Record<string, unknown>) {
+  const body = calmBody();
+  body.needs_me = { state: "read", ...needs };
+  return body;
+}
+
+describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
+  it.each([
+    ["read", "read"],
+    ["stale", "stale"],
+    [undefined, "unknown"],
+    ["maybe", "unknown"],
+  ])("reads questions_coverage %p as %p", (raw, want) => {
+    const view = parseProjectState(
+      needsBody({ total: 0, items: [], questions_coverage: raw })
+    )!;
+    expect(view.needsMe.coverage).toBe(want);
+  });
+
+  it("does not say nothing needs you over a stale zero", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      })
+    )!;
+    expect(nothingNeedsYou(view.needsMe)).toBe(false);
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.level).not.toBe("green");
+    expect(strip.headline).not.toMatch(/^Nothing needs you/);
+    expect(strip.detail).toContain(
+      "Coord says its count of the decisions that need you may be off."
+    );
+    // ONE reading: coord's zero, qualified — never "nothing", never "not known".
+    expect(strip.headline).toBe("No decisions need you (may be off)");
+    expect(strip.badges.find((b) => b.key === "needs")!.label).toBe(
+      "needs you 0 (may be off)"
+    );
+    expect(unservedDecisionsSentence(0, true)).toBe(
+      "Coord counted no decisions for you, but says its count may be off"
+    );
+    expect(unservedDecisionsSentence(3, true)).toBe(
+      "Coord counted 3 decisions for you but served none of them, and says its count may be off"
+    );
+    // Off in either direction: never worded as "too low" only.
+    for (const words of [
+      strip.headline,
+      strip.detail ?? "",
+      unservedDecisionsSentence(0, true),
+    ]) {
+      expect(words).not.toMatch(/incomplete|not known|at least/i);
+    }
+  });
+
+  it.each([
+    ["the machine roster unread", {}, {}],
+    [
+      "a machine with no health verdict",
+      {
+        machines: {
+          ...CALM_MACHINES.machines,
+          counts: summarizeMachineHealth([{ device_id: "d-0", state: null }]),
+        },
+      },
+      {},
+    ],
+    [
+      "the degradations list served unreadable",
+      CALM_MACHINES,
+      { degradations: { state: "read", headline: "none", open: "garbled" } },
+    ],
+  ])(
+    "names what else is not read beside a stale zero: %s",
+    (_label, machines, over) => {
+      // Every coord block read (correctness included): only the roster or the
+      // degradations list keeps the page from calm.
+      const body = needsBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      });
+      Object.assign(body, over);
+      const strip = deriveHomeStrip(parseProjectState(body)!, machines);
+      expect(strip.headline).toBe(
+        "No decisions need you (may be off); part of this view is not read"
+      );
+    }
+  );
+
+  it("says the qualified zero alone when everything else is read and calm", () => {
+    const strip = deriveHomeStrip(
+      parseProjectState(
+        needsBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: "stale",
+        })
+      )!,
+      CALM_MACHINES
+    );
+    expect(strip.headline).toBe("No decisions need you (may be off)");
+  });
+
+  it("marks a stale count as possibly off in the headline", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 2,
+        omitted: 0,
+        items: [
+          {
+            id: "q-1",
+            fork: "A?",
+            recommendation: null,
+            shape: "open_question",
+          },
+          {
+            id: "q-2",
+            fork: "B?",
+            recommendation: null,
+            shape: "open_question",
+          },
+        ],
+        questions_coverage: "stale",
+      })
+    )!;
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toMatch(/^2 decisions need you \(may be off\)/);
+  });
+
+  it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
+    for (const coverage of ["read", undefined]) {
+      const view = parseProjectState(
+        needsBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: coverage,
+        })
+      )!;
+      expect(nothingNeedsYou(view.needsMe)).toBe(true);
+      expect(deriveHomeStrip(view, CALM_MACHINES).level).toBe("green");
+    }
+  });
+
+  it("reads a null share as unknown, never as zero", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 0,
+        items: [],
+        questions_coverage: "stale",
+        shape_share: { with_recommendation: null, total: null },
+      })
+    )!;
+    expect(view.needsMe.shapeShare).toEqual({
+      withRecommendation: null,
+      total: null,
+    });
+  });
+});
+
+describe("needsRecommendationShareSentence", () => {
+  const needs = (fields: Record<string, unknown>) =>
+    parseProjectState(needsBody({ total: 5, items: [], ...fields }))!.needsMe;
+  const share = (with_recommendation: unknown, total: unknown = 5) => ({
+    shape_share: { with_recommendation, total },
+  });
+
+  it.each([
+    [
+      "a count over the whole set",
+      share(3),
+      "3 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "none of them, which is a count",
+      share(0),
+      "0 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "a scan coord calls stale qualifies the count",
+      { ...share(3), questions_coverage: "stale" },
+      "3 of 5 decisions came with a recommendation (may be off).",
+    ],
+    [
+      "a null count is unknown, never zero",
+      share(null),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a share over another total is not this count's",
+      share(3, 4),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a negative share is not a count",
+      share(-1),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a fractional share is not a count",
+      share(2.5),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "one decision is singular",
+      { total: 1, ...share(1, 1) },
+      "1 of 1 decision came with a recommendation.",
+    ],
+    [
+      "a share larger than its total is not a count",
+      share(6),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+  ])("%s", (_name, fields, want) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBe(want);
+  });
+
+  it.each([
+    ["coord served no share", {}],
+    ["nothing is waiting", { total: 0, ...share(0, 0) }],
+    ["no usable count", { total: null, ...share(1, null) }],
+  ])("says nothing when %s", (_name, fields) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBeNull();
+  });
+
+  it("says nothing for a block that was not read", () => {
+    const view = parseProjectState(
+      needsBody({ state: "could_not_read", total: 5, ...share(3) })
+    )!;
+    expect(needsRecommendationShareSentence(view.needsMe)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The strip's needs breakdown — what kind, how many recommended, how old
+// ---------------------------------------------------------------------------
+
+describe("deriveHomeStrip — the needs-you breakdown", () => {
+  /** A read needs_me block: approvals and agent questions, with ages and a share. */
+  function needsBody(needsMe: Record<string, unknown>) {
+    const body = calmBody();
+    body.needs_me = {
+      state: "read",
+      total: 5,
+      omitted: 3,
+      items: [
+        {
+          id: "g-1",
+          source: "operator_gate",
+          fork: "Delete branch?",
+          shape: "open_question",
+          asked_at: "2026-06-05T00:00:00Z",
+          age_secs: 3 * 86_400 + 4 * 3600,
+        },
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+      ],
+      by_domain: { operator_gate: 4, unclassified: 1 },
+      shape_share: { with_recommendation: 1, total: 5 },
+      ...needsMe,
+    };
+    return parseProjectState(body);
+  }
+
+  it("splits the headline into approvals and agent questions, and leads the detail with the share and the oldest", () => {
+    const strip = deriveHomeStrip(needsBody({}), CALM_MACHINES);
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toBe(
+      "5 decisions need you — 4 approvals, 1 agent question"
+    );
+    expect(strip.detail).toMatch(
+      /^1 of 5 decisions came with a recommendation\. The oldest has waited 3d 4h\./
+    );
+  });
+
+  it("sums every bucket but operator_gate into agent questions", () => {
+    const view = needsBody({
+      by_domain: { operator_gate: 1, unclassified: 1, unscanned: 2, other: 1 },
+    });
+    expect(needsKindSplit(view.needsMe)).toEqual({
+      approvals: 1,
+      questions: 4,
+    });
+    expect(needsKindSplitText(view.needsMe)).toBe(
+      "1 approval, 4 agent questions"
+    );
+  });
+
+  it("names only the kinds that are present", () => {
+    const view = needsBody({ by_domain: { operator_gate: 5 } });
+    expect(deriveHomeStrip(view, CALM_MACHINES).headline).toBe(
+      "5 decisions need you — 5 approvals"
+    );
+  });
+
+  it.each([
+    ["by_domain absent (an older coord)", { by_domain: undefined }],
+    ["by_domain null", { by_domain: null }],
+    ["by_domain not summing to the total", { by_domain: { operator_gate: 2 } }],
+    [
+      "by_domain with an unreadable count",
+      { by_domain: { operator_gate: "4", unclassified: 1 } },
+    ],
+  ])("says no breakdown when %s", (_label, needsMe) => {
+    const view = needsBody(needsMe);
+    expect(needsKindSplit(view.needsMe)).toBeNull();
+    expect(deriveHomeStrip(view, CALM_MACHINES).headline).toBe(
+      "5 decisions need you"
+    );
+  });
+
+  it("gives no breakdown when coord says its count may be off, and says the oldest is a lower bound", () => {
+    // Coord's stale causes include a gate mirror counted both as a question
+    // and as an approval: the split itself may be off, so it is not shown.
+    const view = needsBody({ questions_coverage: "stale" });
+    expect(needsKindSplit(view.needsMe)).toBeNull();
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toBe("5 decisions need you (may be off)");
+    expect(strip.detail).toContain("The oldest has waited at least 3d 4h.");
+  });
+
+  it("says the oldest is a lower bound on a view kept from the last good read", () => {
+    const view = needsBody({});
+    expect(needsOldestSentence(view.needsMe, { stale: true })).toBe(
+      "The oldest has waited at least 3d 4h."
+    );
+    expect(
+      deriveHomeStrip(view, { ...CALM_MACHINES, stale: true }).detail
+    ).toContain("The oldest has waited at least 3d 4h.");
+  });
+
+  it("takes the largest listed age, not the first item's", () => {
+    const view = needsBody({
+      items: [
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+        { id: "q-2", fork: "Pick two", shape: "open_question", age_secs: 7200 },
+      ],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "The oldest has waited 2h 0m."
+    );
+  });
+
+  it("says the oldest's wait is not known when any listed item has no age", () => {
+    const view = needsBody({
+      items: [
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+        { id: "q-2", fork: "Pick two", shape: "open_question" },
+      ],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "How long the oldest has waited is not known."
+    );
+  });
+
+  it("gives no breakdown beside an unusable total", () => {
+    const view = needsBody({ total: null });
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toBe("Decisions need you — how many is unknown");
+  });
+
+  it("says a null recommendation share is not known — never 0", () => {
+    const view = needsBody({
+      shape_share: { with_recommendation: null, total: 5 },
+    });
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.detail).toContain(
+      "How many of these decisions came with a recommendation is not known. The oldest has waited 3d 4h."
+    );
+    expect(strip.detail).not.toMatch(/\b0 of 5\b/);
+  });
+
+  it("says the oldest's wait is not known when coord served no age — never 0m", () => {
+    const view = needsBody({
+      items: [{ id: "q-1", fork: "Pick one", shape: "open_question" }],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "How long the oldest has waited is not known."
+    );
+    expect(deriveHomeStrip(view, CALM_MACHINES).detail).not.toContain("0m");
+  });
+
+  it("says nothing of the oldest when no item is listed", () => {
+    const view = needsBody({ items: [], omitted: 5 });
+    expect(needsOldestSentence(view.needsMe)).toBeNull();
+  });
+
+  it("phrases each unread block as a sentence of its own", () => {
+    expect(unreadBlockSentence("degradations", "stale")).toBe(
+      "The degradations list may be incomplete or stale."
+    );
+    expect(unreadBlockSentence("needs_me", "not_implemented")).toBe(
+      "The needs-you list is not built yet."
+    );
+    expect(unreadBlockSentence("on_track", "could_not_read")).toBe(
+      "The work-by-state summary could not be read."
+    );
+    expect(unreadBlockSentence("correctness", "unknown")).toBe(
+      "The correctness check is unknown."
+    );
   });
 });

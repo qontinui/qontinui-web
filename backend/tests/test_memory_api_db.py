@@ -528,6 +528,22 @@ class MemoryClient:
         self._principal = principal
         return self
 
+    def as_actor(self, actor: str) -> MemoryClient:
+        """Same tenant and provenance, a different ``actor``.
+
+        The fixture principal is a DEVICE, which is withheld the ``session``
+        partition (``withheld_scopes``); a test that writes or reads session
+        rows to exercise something else runs as ``coord_service``, the
+        principal that partition is served to.
+        """
+        self._principal = MemoryPrincipal(
+            tenant_id=self._principal.tenant_id,
+            device_id=_FIXTURE_DEVICE_ID,
+            actor=actor,
+            user_id=_FIXTURE_USER_ID,
+        )
+        return self
+
 
 def _client_vector(text_: str) -> list[float]:
     """The vector a client (the runner) would compute for ``text_``."""
@@ -1076,6 +1092,9 @@ class TestHybridQuery:
         assert all(h["kind"] == "rule" for h in hits)
 
     def test_narrow_scope_requires_scope_ref(self, mc: MemoryClient) -> None:
+        # The session partition is served to coord's proxy only; a device is
+        # refused it outright (test_memory_session_partition_db.py).
+        mc.as_actor("coord_service")
         mc.client.post(
             "/api/v1/memory/records",
             json={
@@ -3537,6 +3556,9 @@ class TestLinkExpansionArm:
     def test_session_scoped_neighbour_needs_the_matching_scope_ref(
         self, mc: MemoryClient, db: AsyncEngine
     ) -> None:
+        # Session rows are served to coord's proxy only; a device is refused
+        # the partition outright (test_memory_session_partition_db.py).
+        mc.as_actor("coord_service")
         _seed_id, neighbour_id = self._seed_and_neighbour(
             mc, db, scope="session", scope_ref="sess-999"
         )
@@ -3896,7 +3918,11 @@ class TestStatsContentFacets:
         the PAST, which is why neither caught it. ``GET /records`` is
         asserted alongside because "the facets and the listing disagree
         for the same tenant" is the observable symptom.
+
+        Runs as ``coord_service``: a device principal is withheld session
+        rows on both the write and the listing.
         """
+        mc.as_actor("coord_service")
         _write_one(mc, "the plainly live pika fact")
         pending = _write_one(
             mc,

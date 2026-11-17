@@ -133,8 +133,9 @@ import CoordLayout from "./layout";
  * The page the console is entered on: a lens surface that is NOT yet in
  * `PRESENTATION_READY_ROUTES`, so the layout's `PresentationPage` withholds it
  * and stands the surface's caption in its place. (Dev Ops registered itself in
- * Phase 7, which is why this is no longer `/admin/coord/devops`; the next
- * phase to register this surface moves this to one still unprepared.)
+ * Phase 7, which is why this is no longer `/admin/coord/devops`. Agentic
+ * activity is withheld until coord serves the spawn ledger; the phase that
+ * registers it moves this to a surface still unprepared.)
  */
 const UNPREPARED_SURFACE = "/admin/coord/spawns";
 

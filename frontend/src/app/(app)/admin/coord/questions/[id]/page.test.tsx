@@ -223,6 +223,78 @@ describe("over-correction guards — coord ANSWERING is still real information",
   });
 });
 
+describe("the recommendation survives the click from needs-you", () => {
+  async function renderRow(row: Record<string, unknown>) {
+    get.mockResolvedValue({ ...QUESTION, ...row });
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("coord-question-meta")).toBeInTheDocument();
+    });
+  }
+
+  it("shows the recommendation and what overturning it costs", async () => {
+    await renderRow({
+      shape: "fork_with_recommendation",
+      recommendation: "Pin it",
+      if_overturned: "A bump re-opens the CVE review",
+    });
+    const block = screen.getByTestId("coord-question-recommendation");
+    expect(block).toHaveTextContent("Recommended: Pin it");
+    expect(block).toHaveTextContent(
+      "If overturned: A bump re-opens the CVE review"
+    );
+    expect(
+      screen.queryByTestId("coord-question-no-recommendation")
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits the overturned line when the asker gave none", async () => {
+    await renderRow({
+      shape: "fork_with_recommendation",
+      recommendation: "Pin it",
+    });
+    expect(
+      screen.getByTestId("coord-question-recommendation")
+    ).not.toHaveTextContent("If overturned");
+  });
+
+  it("names an open question as one", async () => {
+    await renderRow({ shape: "open_question" });
+    expect(
+      screen.getByTestId("coord-question-no-recommendation")
+    ).toHaveTextContent("Open question — no recommendation");
+  });
+
+  it("calls a mirrored gate an approval, not an open question", async () => {
+    await renderRow({
+      shape: "open_question",
+      effect_kind: "gate",
+      effect_ref: { id: "g-1", gate_id: "g-1" },
+      options: ["met", "not_met"],
+    });
+    expect(
+      screen.getByTestId("coord-question-no-recommendation")
+    ).toHaveTextContent("Approval — no recommendation");
+  });
+
+  it("never reads an unreadable recommendation as none given", async () => {
+    await renderRow({ shape: "unknown" });
+    const line = screen.getByTestId("coord-question-no-recommendation");
+    expect(line).toHaveTextContent("Recommendation unknown (could not be read)");
+    expect(line).not.toHaveTextContent("no recommendation");
+  });
+
+  it("says nothing on a coord build that does not serve the shape", async () => {
+    await renderRow({});
+    expect(
+      screen.queryByTestId("coord-question-recommendation")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-no-recommendation")
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("a route with no id explains itself instead of loading forever", () => {
   it("clears the skeleton rather than pinning it", async () => {
     routeId = undefined;

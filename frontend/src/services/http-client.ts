@@ -55,6 +55,9 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
   "/api/v1/admin-dev/",
   "/api/v1/admin/agent-sessions",
+  // The session-census proxy beside it: forwards the header to coord, which
+  // checks the caller's membership.
+  "/api/v1/admin/sessions/census",
   // Helper-task portal proxy — coord-scoped; honoring the override lets a
   // caller who is a coord member of another tenant point the portal at it.
   "/api/v1/helper-tasks",
@@ -67,6 +70,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Spawn launch settings (model + effort per spawn type) — coord-scoped; the
+  // backend forwards the override so the operator edits the settings of the
+  // tenant they switched to (membership-validated coord-side). Plan
+  // `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+  "/api/v1/spawn-launch-settings",
   // Project Overview — the ONE thing that scopes it. Every `overview.*` row
   // is keyed on the active coord tenant, which the backend resolves from this
   // header alone (`get_overview_tenant_id` /
@@ -126,6 +134,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // project's queue under another project's name. Plan
   // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
   "/api/v1/taste/",
+  // The design reference library — `get_memory_tenant`'s operator arm for
+  // every read and write, and `require_coord_tenant_admin_target` for
+  // principle approval: every `design_refs.*` row is the selected project's,
+  // so without the header a multi-tenant operator would review (and confirm)
+  // the home project's corpus under another project's name. Plan
+  // 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query.
+  "/api/v1/design-refs/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -174,6 +189,68 @@ export function readActiveTenantId(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The header the active-project selection travels in, on the URLs
+ * `isActiveTenantScopedUrl` covers.
+ */
+export const ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant";
+
+/**
+ * Request options that PIN the project a request is sent in, across every
+ * attempt the client makes of it.
+ *
+ * The client builds headers afresh on each attempt — the first, each retry of
+ * a retryable status, the replay after a token refresh — and reads the stored
+ * selection each time, so a request re-issued after another tab switched
+ * project goes to the NEW project. A caller that has to know which project
+ * answered (a stamp it will act on) or where a write landed pins it here:
+ *
+ * - a project id → sent as {@link ACTIVE_TENANT_HEADER} on every attempt (the
+ *   client keeps a caller-set header and never overwrites it);
+ * - `null` (none selected: the backend serves the home project) → there is no
+ *   header to pin, so the request is not retried (`maxRetries: 0`). The replay
+ *   after a token refresh is not charged to that budget and still re-reads the
+ *   selection — the one attempt this cannot pin, so a `null`-pinned answer can
+ *   still come from whatever project is stored by then.
+ */
+export function pinActiveTenant(
+  tenant: string | null
+): Pick<HttpOptions, "headers" | "maxRetries"> {
+  return tenant === null
+    ? { maxRetries: 0 }
+    : { headers: { [ACTIVE_TENANT_HEADER]: tenant } };
+}
+
+/**
+ * Which project to send a request in, pinned for every attempt — see
+ * {@link pinActiveTenant}. Omitted, the request goes in whatever project is
+ * stored when each attempt is made, which is right for an ordinary read and
+ * wrong for a read or write a caller will attribute to a specific project.
+ */
+export interface TenantPin {
+  tenant: string | null;
+}
+
+/**
+ * A {@link TenantPin} that NAMES a project — the only kind that holds a
+ * request to one. A `null` tenant does not: there is no header to set for it,
+ * so the client fills in the project stored when each attempt is made (another
+ * tab's, once it has switched), and `pinActiveTenant(null)` also gives up the
+ * request's retries. A caller that must keep a request in its page's project
+ * pins with one of these, and refuses at call time while it has none.
+ */
+export type ProjectPin = TenantPin & { tenant: string };
+
+/**
+ * The request options that send a request in `pin`'s project on every
+ * attempt ({@link pinActiveTenant}), or none when there is no pin.
+ */
+export function pinned(
+  pin: TenantPin | undefined
+): Pick<HttpOptions, "headers" | "maxRetries"> {
+  return pin ? pinActiveTenant(pin.tenant) : {};
 }
 
 function isActiveTenantScopedUrl(url: string): boolean {
@@ -293,6 +370,57 @@ export function isRetryableStatus(args: {
     );
   }
   return false;
+}
+
+/**
+ * What a request rejects with when it failed and the browser reports it is
+ * offline. Exported so a caller deciding whether a write may have landed can
+ * tell this apart from a fetch that failed for a reason nobody can name.
+ */
+export const NO_CONNECTION_MESSAGE =
+  "No internet connection. Please check your network.";
+
+/**
+ * What a request rejects with when the client's own timeout fired. Exported so
+ * a caller that must not invite a retry (a write whose outcome is open) can
+ * word it differently.
+ */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "Request timeout - backend may be starting up. Please try again.";
+
+/**
+ * What reading an answer's body rejects with once the answer has arrived: the
+ * body would not parse (an HTML page, an empty body on a 2xx) or broke off
+ * mid-read. It is a `SyntaxError` so every caller that already names an
+ * unparseable body by that type keeps doing so, and it keeps the reader's own
+ * message. `answeredStatus` is the status that DID come back — distinct from a
+ * `status` field on purpose, because a caller reads `status` as the failure's.
+ *
+ * Exported so a caller deciding whether a write may have landed can say that an
+ * answer came back, rather than that none reached the browser.
+ */
+export class UnreadableAnswerError extends SyntaxError {
+  readonly answeredStatus: number;
+
+  constructor(answeredStatus: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "UnreadableAnswerError";
+    this.answeredStatus = answeredStatus;
+  }
+}
+
+/**
+ * `response.json()`, with every failure after the answer arrived raised as an
+ * {@link UnreadableAnswerError}. A caller's own abort is handed back as it came.
+ */
+export async function readAnswerJson<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch (err: unknown) {
+    // A DOMException is not an `Error` in every runtime, so read the name.
+    if ((err as { name?: unknown } | null)?.name === "AbortError") throw err;
+    throw new UnreadableAnswerError(response.status, err);
+  }
 }
 
 /**
@@ -738,11 +866,17 @@ export class HttpClient {
     // the operator's coord context re-scopes to the chosen tenant (validated
     // coord-side against their memberships). Scoped to the tenant-aware proxy
     // prefixes (operations / admin-dev / admin agent-sessions / constraints)
-    // so the header never leaks onto unrelated requests.
-    if (!skipAuth && isActiveTenantScopedUrl(url)) {
+    // so the header never leaks onto unrelated requests. A caller that names
+    // the tenant itself keeps it: this runs again on a replay after a token
+    // refresh, by when the selection may have moved.
+    if (
+      !skipAuth &&
+      isActiveTenantScopedUrl(url) &&
+      !headers[ACTIVE_TENANT_HEADER]
+    ) {
       const activeTenant = readActiveTenantId();
       if (activeTenant) {
-        headers["X-Qontinui-Active-Tenant"] = activeTenant;
+        headers[ACTIVE_TENANT_HEADER] = activeTenant;
       }
     }
 
@@ -823,13 +957,11 @@ export class HttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
-        throw new Error(
-          "Request timeout - backend may be starting up. Please try again."
-        );
+        throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        throw new Error("No internet connection. Please check your network.");
+        throw new Error(NO_CONNECTION_MESSAGE);
       }
 
       throw error;
@@ -929,7 +1061,7 @@ export class HttpClient {
       throw new Error(`GET ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -954,7 +1086,7 @@ export class HttpClient {
       throw new Error(`POST ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -975,7 +1107,7 @@ export class HttpClient {
       throw new Error(`PUT ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -1000,7 +1132,7 @@ export class HttpClient {
       throw new Error(`PATCH ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -1027,7 +1159,7 @@ export class HttpClient {
       return undefined as T;
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**

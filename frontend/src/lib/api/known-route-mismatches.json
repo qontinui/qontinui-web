@@ -1,12 +1,5 @@
 [
   {
-    "file": "app/(app)/workflow-viz/_hooks/useHistoricalData.ts",
-    "method": "GET",
-    "path": "/api/v1/historical/test-run/{param}",
-    "reason": "dead",
-    "kind": "no-path"
-  },
-  {
     "file": "app/dev/reset/page.tsx",
     "method": "POST",
     "path": "/api/v1/auth/jwt/logout",

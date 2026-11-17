@@ -264,6 +264,22 @@ async def redeem_pair_code_endpoint(
             status=resp.status_code,
             body=resp.text[:500],
         )
+        # The code's holder reads this answer, so coord's 5xx text (which can
+        # carry SQL/pool context, ``pg_error::wrap``) stays in the log above,
+        # as ``fleet_targets._reraise_coord_refusal`` keeps it from the
+        # browser: the status and a fixed sentence only. A 4xx is coord's
+        # refusal of this device, and its body says why.
+        if resp.status_code >= 500:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "coord_status": resp.status_code,
+                    "message": (
+                        f"Coord failed to pair the device (HTTP {resp.status_code}). "
+                        "Retry; if it persists, check coord."
+                    ),
+                },
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={

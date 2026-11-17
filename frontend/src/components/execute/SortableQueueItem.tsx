@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, X, Calendar } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource } from "@qontinui/ui-bridge";
+import { useDragSource } from "@qontinui/ui-bridge/react";
 import { cn } from "@/lib/utils";
 
 interface SortableQueueItemProps {

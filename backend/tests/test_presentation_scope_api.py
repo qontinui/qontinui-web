@@ -310,8 +310,7 @@ async def harness(
 
 #: The sentence the read's tenant-not-resolved refusal carries.
 TENANT_NOT_RESOLVED_SENTENCE = (
-    "No project could be resolved for this request: select a project you "
-    "belong to, or ask a project admin to add you."
+    "No project could be resolved for this request: ask a project admin to add you."
 )
 
 #: The ONE body the read serves when no project resolves, on either arm, less
@@ -323,7 +322,7 @@ TENANT_NOT_RESOLVED_BODY: dict[str, Any] = {
     "refusal": {
         "code": "permission_denied",
         "discriminator": "tenant_not_resolved",
-        "next_action": {"kind": "fix_request"},
+        "next_action": {"kind": "request_access", "target": "a project admin"},
         "glossary_terms": [],
         "detail": TENANT_NOT_RESOLVED_SENTENCE,
         "source": "web_backend",

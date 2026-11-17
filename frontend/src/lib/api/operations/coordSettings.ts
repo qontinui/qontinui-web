@@ -65,6 +65,12 @@ export interface NextStepDomain {
    * when nothing visible is off — `unknown` is how coord says so.
    */
   effective_state?: "effective" | "not_effective" | "unknown";
+  /**
+   * For `effective_state: "unknown"` only: coord's own words for the conjunct
+   * of the real gate this read cannot see (a per-repo or per-tenant knob).
+   * Absent on an older coord.
+   */
+  effective_unknown_reason?: string | null;
 }
 
 /**
@@ -98,18 +104,30 @@ export interface NextStepSettingsFleet {
   tenants: TenantNextStepSetting[];
 }
 
-/** `GET /coord/next-step-settings` (`get_next_step_settings`). */
-export async function fetchNextStepSettings(): Promise<NextStepSettings> {
+/**
+ * `GET /coord/next-step-settings` (`get_next_step_settings`). `options` are
+ * merged over the read's own (a dashboard poll passes
+ * `COORD_DASHBOARD_POLL_OPTIONS`: one request, the next poll is the retry).
+ */
+export async function fetchNextStepSettings(
+  options: HttpOptions = {}
+): Promise<NextStepSettings> {
   const url = `${OPERATIONS_BASE}/coord/next-step-settings`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
   return readJson<NextStepSettings>(res, `GET ${url}`);
 }
 
 /**
  * `PUT /coord/next-step-settings` (`put_next_step_settings`) — the changed
- * domains; answers the authoritative new state. Declared `idempotent: false`
- * (a write); the client's method rule still treats a PUT as retryable, as the
- * `httpClient.put` this replaced did.
+ * domains; answers the authoritative new state. Sent ONCE (`maxRetries: 0`):
+ * the client's method rule would re-send a PUT on any 5xx, and a caller
+ * classifying the failure (`writeOutcome.ts`) reads only the last answer — a
+ * first 504 after coord committed, then retries answering the proxy's
+ * connect-failure 502, would read as a refusal of a write that landed.
  */
 export async function putNextStepSettings(
   domains: NextStepDomainWrite[]
@@ -119,6 +137,7 @@ export async function putNextStepSettings(
     method: "PUT",
     body: JSON.stringify({ domains }),
     idempotent: false,
+    maxRetries: 0,
   });
   return readJson<NextStepSettings>(res, `PUT ${url}`);
 }

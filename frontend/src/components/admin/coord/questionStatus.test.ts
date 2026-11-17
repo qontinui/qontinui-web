@@ -18,6 +18,7 @@ import {
   QUESTION_STATUS_PALETTE,
   QUESTION_TERMINAL_KINDS,
   deriveGapStatus,
+  deriveQuestionForkShape,
   deriveQuestionStatus,
   formatRelative,
   optionLabels,
@@ -307,5 +308,33 @@ describe("presentation helpers", () => {
   it("formats a relative span", () => {
     const twoHoursAgo = new Date(Date.now() - 7200_000).toISOString();
     expect(formatRelative(twoHoursAgo)).toBe("2h ago");
+  });
+});
+
+describe("deriveQuestionForkShape", () => {
+  it("reads a recommendation as a fork, trimmed", () => {
+    expect(
+      deriveQuestionForkShape({
+        shape: "fork_with_recommendation",
+        recommendation: "  pin  ",
+        if_overturned: "  ",
+      })
+    ).toEqual({ kind: "fork", recommendation: "pin", ifOverturned: null });
+  });
+
+  it("reads a blank recommendation as an open question", () => {
+    expect(
+      deriveQuestionForkShape({ shape: "open_question", recommendation: "  " })
+    ).toEqual({ kind: "open" });
+  });
+
+  it("lets coord's unknown win over any value it sent", () => {
+    expect(
+      deriveQuestionForkShape({ shape: "unknown", recommendation: "pin" })
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("says nothing about a row whose door did not serve a shape", () => {
+    expect(deriveQuestionForkShape({})).toEqual({ kind: "not_served" });
   });
 });

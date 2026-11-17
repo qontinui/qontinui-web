@@ -44,7 +44,7 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
-vi.mock("@qontinui/ui-bridge", () => ({
+vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIComponent: (c: typeof registered.current) => {
     registered.current = c;
   },

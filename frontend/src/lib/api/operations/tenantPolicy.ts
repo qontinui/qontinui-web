@@ -28,6 +28,7 @@
  */
 
 import { httpClient } from "@/services/service-factory";
+import { pinned, type TenantPin } from "@/services/http-client";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 // ───────────────────────────────── fleet policy ─────────────────────────────────
@@ -118,15 +119,22 @@ export interface FleetPolicyWrite {
 /**
  * `GET /fleet-policy?domain=[&repo=]` (`get_fleet_policy`) — what one domain
  * resolves. With `repo`, coord resolves as that repo would, so a repo-band row
- * for it can win; without it, repo-band rows never match.
+ * for it can win; without it, repo-band rows never match. With `pin`, the read
+ * is sent in that project on every attempt (`pinActiveTenant`); omitted, in
+ * the project stored when each attempt is made.
  */
 export async function fetchFleetPolicy(
   domain: string,
-  repo?: string
+  repo?: string,
+  pin?: TenantPin
 ): Promise<FleetPolicyView> {
   let url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
   if (repo) url += `&repo=${encodeURIComponent(repo)}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<FleetPolicyView>(res, `GET ${url}`);
 }
 
@@ -134,16 +142,20 @@ export async function fetchFleetPolicy(
  * `PUT /fleet-policy` (`put_fleet_policy`) — write one level at one scope
  * band. Declared `idempotent: false`: the write is versioned coord-side, so it
  * is not ours to call repeat-safe (the client's method rule still treats a PUT
- * as retryable, exactly as the `httpClient.put` this replaced did).
+ * as retryable, exactly as the `httpClient.put` this replaced did). With
+ * `pin`, every attempt — the first, a retry, the replay after a token refresh
+ * — is sent in that project, so a re-issued write cannot land in another one.
  */
 export async function putFleetPolicy(
-  write: FleetPolicyWrite
+  write: FleetPolicyWrite,
+  pin?: TenantPin
 ): Promise<FleetPolicyWriteResult> {
   const url = `${OPERATIONS_BASE}/fleet-policy`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
     body: JSON.stringify(write),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<FleetPolicyWriteResult>(res, `PUT ${url}`);
 }
@@ -216,4 +228,65 @@ export async function putSecretsBrokerDevice(
     idempotent: false,
   });
   return readJson<SecretsBrokerDeviceWriteResult>(res, `PUT ${url}`);
+}
+
+// ───────────────────────────────── GitHub host ─────────────────────────────────
+
+/**
+ * Mirrors `TenantGithubHostView`: the tenant's effective GitHub host as coord
+ * resolves it from `coord.tenant_github_hosts` (plan
+ * `2026-10-10-spec-front-end-phase-9-generic-boundary` Phase 3). No row is
+ * github.com, which reads `configured: false`. Every field coord did not send
+ * is `null` — UNKNOWN, never the github.com default.
+ */
+export interface TenantGithubHostView {
+  /** REST origin, e.g. `https://ghe.example.com/api/v3`. */
+  api_base: string | null;
+  /** Web + git origin, e.g. `https://ghe.example.com`. */
+  web_base: string | null;
+  graphql_url: string | null;
+  /** `false` = the github.com default; `null` = UNKNOWN. */
+  configured: boolean | null;
+  can_edit: boolean;
+}
+
+/** Body of `PUT /tenant/github-host` — coord's `PutGithubHostRequest`. */
+export interface TenantGithubHostWrite {
+  api_base: string;
+  web_base: string;
+}
+
+/** `GET /tenant/github-host` (`get_tenant_github_host`). */
+export async function fetchTenantGithubHost(): Promise<TenantGithubHostView> {
+  const url = `${OPERATIONS_BASE}/tenant/github-host`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<TenantGithubHostView>(res, `GET ${url}`);
+}
+
+/**
+ * `PUT /tenant/github-host` (`put_tenant_github_host`) — set the host. Coord
+ * validates the bases and refuses with a typed `detail` (`invalid_github_host`,
+ * `admin_required`, `repos_registered_on_another_host`,
+ * `schema_migration_pending`), which rejects through {@link readJson}.
+ */
+export async function putTenantGithubHost(
+  write: TenantGithubHostWrite
+): Promise<TenantGithubHostView> {
+  const url = `${OPERATIONS_BASE}/tenant/github-host`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify(write),
+    idempotent: true,
+  });
+  return readJson<TenantGithubHostView>(res, `PUT ${url}`);
+}
+
+/** `DELETE /tenant/github-host` (`delete_tenant_github_host`) — back to github.com. */
+export async function deleteTenantGithubHost(): Promise<TenantGithubHostView> {
+  const url = `${OPERATIONS_BASE}/tenant/github-host`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    idempotent: true,
+  });
+  return readJson<TenantGithubHostView>(res, `DELETE ${url}`);
 }

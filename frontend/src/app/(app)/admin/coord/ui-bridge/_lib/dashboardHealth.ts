@@ -17,8 +17,10 @@
  * registers at least one action and every one declares its effect, and
  * nothing that was checked came back red or UNKNOWN. A read that did not
  * answer never contributes a green — including an occlusion row that is
- * UNKNOWN, which it is on every runner today (no relay carries the sweep), so
- * a strip that has had page health run on it is never green.
+ * UNKNOWN: a sweep that observed no occlusion data, a runner whose build
+ * predates the sweep's relay entry, or a project whose egress withheld it. A
+ * strip that has had page health run on it is green only when the sweep came
+ * back clear WITH occlusion data observed.
  *
  * Nor does a STALE read — one whose latest refresh failed, so the page keeps
  * an earlier read's value (`readState.ts`). Its figures stay on the badges,
@@ -66,8 +68,8 @@ export interface DashboardHealthInput {
   /** The page-health summary, once run. */
   readonly pageHealth: ReadState<PageHealthKind>;
   /**
-   * The occlusion row, once page health is run — the standing UNKNOWN while
-   * no relay carries the sweep (`occlusionReadOf`).
+   * The occlusion row, once page health is run — read from the visibility
+   * sweep, which runs with it (`occlusionStatus.ts` `readOcclusion`).
    */
   readonly occlusion: ReadState<OcclusionKind>;
   /** Apps across both registries — exact, a floor, or unknown. */
@@ -99,7 +101,7 @@ export function issuePhrase(issue: SourceIssue, route: RunnerRoute): string {
       return "the read failed";
     case "not-carried":
       return route.carriage === "dashboard"
-        ? "this runner's build predates the relay entries this page reads"
+        ? `this runner's build predates this route's relay entry (qontinui-runner ${route.since})`
         : "the relay does not carry it";
   }
 }
@@ -275,7 +277,9 @@ export function deriveDashboardHealth(
     return {
       level: "amber",
       headline: `${input.machine}: ${counts.undeclared} of ${counts.actions} actions declare no effect.${
-        unreadable > 0 ? ` ${unreadableEntries}, so both counts are floors.` : ""
+        unreadable > 0
+          ? ` ${unreadableEntries}, so both counts are floors.`
+          : ""
       }`,
       badges,
     };

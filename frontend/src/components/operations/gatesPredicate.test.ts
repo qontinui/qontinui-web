@@ -74,6 +74,35 @@ describe("humanizePredicate", () => {
     expect(out.startsWith("time_elapsed: 7d from ")).toBe(true);
   });
 
+  it("renders a bare time_elapsed as the duration alone", () => {
+    expect(
+      humanizePredicate({ kind: "time_elapsed", duration_secs: 3_600 })
+    ).toBe("time_elapsed: 1h");
+  });
+
+  // Finding 150f64a6. coord stores a since_gate soak with `since` parked at
+  // this fixed far-future stamp (gates.rs `since_gate_parked_since`), and the
+  // evaluator ignores it. The clock starts when the target gate clears.
+  it("renders a since_gate soak against its target, never the parked since", () => {
+    const out = humanizePredicate({
+      kind: "time_elapsed",
+      duration_secs: 3_600,
+      since: "9999-12-31T23:59:59Z",
+      since_gate: "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+    });
+    expect(out).toBe("time_elapsed: 1h after gate 0a1b2c3d clears");
+  });
+
+  it("treats a null since_gate as absent", () => {
+    const out = humanizePredicate({
+      kind: "time_elapsed",
+      duration_secs: 604_800,
+      since: "2026-06-05T00:00:00Z",
+      since_gate: null,
+    });
+    expect(out.startsWith("time_elapsed: 7d from ")).toBe(true);
+  });
+
   it("renders ci_green with a shortened sha", () => {
     expect(
       humanizePredicate({
@@ -108,6 +137,13 @@ describe("humanizeDurationSecs", () => {
     expect(humanizeDurationSecs(3_600)).toBe("1h");
     expect(humanizeDurationSecs(60)).toBe("1m");
     expect(humanizeDurationSecs(30)).toBe("30s");
+  });
+
+  it("keeps the remainder of a duration that is not a whole unit", () => {
+    expect(humanizeDurationSecs(5_400)).toBe("1h 30m");
+    expect(humanizeDurationSecs(90)).toBe("1m 30s");
+    expect(humanizeDurationSecs(129_600)).toBe("1d 12h");
+    expect(humanizeDurationSecs(172_799)).toBe("1d 23h 59m 59s");
   });
 
   it("handles edge cases", () => {

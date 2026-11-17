@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
@@ -38,6 +37,7 @@ from app.api.v1.endpoints.plan_library import (
 from app.api.v1.endpoints.session_repository import EXPORT_PROVENANCE_HEADERS
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
+from app.core.refusal import REFUSAL_ORIGIN_HEADER
 from app.db.init_db import init_db
 from app.db.session import AsyncSessionLocal
 from app.middleware.body_limit import BodyLimit, BodyLimitMiddleware
@@ -56,6 +56,10 @@ from app.middleware.error_handler import (
 )
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.metrics_middleware import MetricsMiddleware
+from app.middleware.private_uploads import (
+    UPLOADS_DENIED_PREFIXES,
+    PrefixDenyingStaticFiles,
+)
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -307,6 +311,10 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # public page went down, including on a coord failure where the body
             # is coord's error; unpublished, a browser could never see it.
             "X-Build-Record-Retracted",
+            # Set by `http_exception_handler` on every refusal this backend
+            # raised itself, so a client can tell the web's own 502 from a
+            # coord 502 passed through with the same envelope.
+            REFUSAL_ORIGIN_HEADER,
         ]
     )
 )
@@ -341,10 +349,20 @@ from app.api.v1.endpoints.wrappers import router as wrappers_router  # noqa: E40
 
 app.include_router(wrappers_router, prefix="/api/wrappers", tags=["wrappers"])
 
-# Mount static files for avatars
+# Mount static files for avatars. With the local storage backend, uploads/ is
+# ALSO where tenant-scoped content-addressed objects live (design-refs/ and
+# image-assets/); those are served only through their authenticated routes, so
+# the anonymous static mount refuses their prefixes with a 404.
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+app.mount(
+    "/uploads",
+    PrefixDenyingStaticFiles(
+        directory=str(uploads_dir),
+        denied_prefixes=UPLOADS_DENIED_PREFIXES,
+    ),
+    name="uploads",
+)
 
 # Background task handle for the wrapper-registry sync loop. The stale-
 # connection / clipboard / file cleanups and the cron dispatch now run inside

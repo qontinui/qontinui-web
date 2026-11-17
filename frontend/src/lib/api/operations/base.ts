@@ -37,6 +37,7 @@
 
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { ApiConfig } from "@/services/api-config";
+import { readAnswerJson } from "@/services/http-client";
 import {
   BackendError,
   type BackendErrorReading,
@@ -122,6 +123,9 @@ export interface ReadJsonOptions {
  * `request` only words the error; it is never fetched, so this is not a URL
  * wrapper and `route-walker.test.ts` resolves the caller's own
  * `httpClient.fetch` as usual.
+ *
+ * A 2xx whose body cannot be read rejects with an `UnreadableAnswerError` (a
+ * `SyntaxError`), which says an answer came back — unless `unparseable: "null"`.
  */
 export async function readJson<T>(res: Response, request: string): Promise<T>;
 export async function readJson<T>(
@@ -141,7 +145,7 @@ export async function readJson<T>(
   if (options?.unparseable === "null") {
     return (await res.json().catch(() => null)) as T | null;
   }
-  return (await res.json()) as T;
+  return readAnswerJson<T>(res);
 }
 
 /**

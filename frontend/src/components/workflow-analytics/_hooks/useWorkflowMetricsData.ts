@@ -1,7 +1,9 @@
 import { useMemo } from "react";
-import { WorkflowMetrics } from "@/services/workflow-analytics-service";
+import {
+  ExecutionRecord,
+  WorkflowMetrics,
+} from "@/services/workflow-analytics-service";
 import { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
-import { TestResult } from "@/services/workflow-testing-service";
 import { CHART_COLORS } from "../workflow-metrics-panel-utils";
 import { formatRelativeTime } from "../workflow-metrics-panel-utils";
 import type {
@@ -15,7 +17,7 @@ import type {
 export function useWorkflowMetricsData(
   metrics: WorkflowMetrics,
   complexityMetrics: ComplexityAnalysis,
-  executionHistory: TestResult[]
+  executionHistory: ExecutionRecord[]
 ) {
   const avgMetrics = useMemo(() => {
     return {
@@ -46,8 +48,8 @@ export function useWorkflowMetricsData(
     return executionHistory.slice(-30).map((result, index) => ({
       index: index + 1,
       duration: result.duration,
-      success: result.passed ? 1 : 0,
-      failed: result.passed ? 0 : 1,
+      success: result.success ? 1 : 0,
+      failed: result.success ? 0 : 1,
       timestamp: new Date(result.startTime).toLocaleString(),
     }));
   }, [executionHistory]);
@@ -82,7 +84,7 @@ export function useWorkflowMetricsData(
 
     for (let i = 0; i < executionHistory.length; i += chunkSize) {
       const chunk = executionHistory.slice(i, i + chunkSize);
-      const successful = chunk.filter((r) => r.passed).length;
+      const successful = chunk.filter((r) => r.success).length;
       const rate = (successful / chunk.length) * 100;
 
       chunks.push({

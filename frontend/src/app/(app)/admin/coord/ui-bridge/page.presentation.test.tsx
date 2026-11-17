@@ -56,7 +56,9 @@ import {
   REQUEST_ID_NOT_OWNED,
   SPEC_GRAPH_BODY,
   SPEC_LIST_BODY,
-  VISIBILITY_HIDES_TEXT,
+  VISIBILITY_LOCAL_HIDES_TEXT,
+  VISIBILITY_RELAYED_CLEAR_UNOBSERVED,
+  VISIBILITY_RELAYED_HIDES_TEXT,
   appNotFoundBody,
   componentsBodyWithDisclosure,
   nativeCaptureSnapshotBody,
@@ -166,10 +168,10 @@ beforeEach(() => {
     locality: "unknown",
   };
   state.relay = relayFake({
-    // A runner that WOULD answer the occlusion sweep with hidden text — which
-    // quotes the window. The page never asks, so the row stays UNKNOWN and the
-    // text never arrives (coord finding 99796499).
-    visibility: () => json(200, VISIBILITY_HIDES_TEXT),
+    // The occlusion sweep finding hidden text, as the relay sends it: counts
+    // and `hidesText`, but no entry names or text (`occlusionText:
+    // "withheld"`, qontinui-runner `827745bd3`).
+    visibility: () => json(200, VISIBILITY_RELAYED_HIDES_TEXT),
   });
   state.fleetApps = async () => FLEET_APPS;
   state.fleetAppsReads = 0;
@@ -237,7 +239,10 @@ const PAGE_HEALTH_WITH_UNKNOWN_CHECK = pageHealthBodyWith({
 describe("the UI Bridge dashboard while presenting", () => {
   it("is safe to show an outsider: no write control, no cost, every caption", async () => {
     state.relay = relayFake({
-      visibility: () => json(200, VISIBILITY_HIDES_TEXT),
+      // Defence in depth: the LOCAL shape, whose entries name and quote what
+      // they cover. No relayed read carries it, and the page renders none of
+      // it even if one did — "Partner A" is in FORBIDDEN.
+      visibility: () => json(200, VISIBILITY_LOCAL_HIDES_TEXT),
       pageHealth: () => json(200, PAGE_HEALTH_WITH_UNKNOWN_CHECK),
     });
     const view = await renderPresenting();
@@ -337,10 +342,10 @@ describe("the UI Bridge dashboard while presenting", () => {
             ?.getAttribute("data-status-kind")
         )
     ).toEqual(["undeclared", "undeclared", "read"]);
-    // The runner would have said hidden text; the row says what is true here.
+    // The relayed sweep found hidden text, and the row says so.
     expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
       "data-occlusion",
-      "unknown"
+      "hides-text"
     );
     expect(
       screen.getAllByTestId("coord-ui-bridge-health-finding")
@@ -363,25 +368,45 @@ describe("the UI Bridge dashboard while presenting", () => {
     expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
   });
 
-  it("shows the occlusion row as UNKNOWN with its cause and its provenance — never as a reading", async () => {
-    await renderPresenting();
+  it("shows the relayed sweep's finding with its counts and provenance — and quotes nothing it covers", async () => {
+    const view = await renderPresenting();
     const row = screen.getByTestId("coord-ui-bridge-occlusion");
-    expect(row).toHaveAttribute("data-occlusion", "unknown");
-    expect(row).toHaveTextContent("UNKNOWN");
+    expect(row).toHaveAttribute("data-occlusion", "hides-text");
     expect(row).toHaveTextContent(
-      "The visibility sweep is not available over the relay yet"
+      "2 occlusions across 47 elements, 1 hiding text."
     );
-    expect(row).not.toHaveTextContent("Nothing covered");
-    expect(row).not.toHaveTextContent("hiding text");
-    // The runner's would-be answer quotes the window; none of it arrived.
+    expect(row).not.toHaveTextContent("UNKNOWN");
     expect(document.body).not.toHaveTextContent("Session for Partner A");
-    // Its provenance names the sweep, and its time is UNKNOWN: nothing was read.
+    // Its provenance names the sweep, with the time it was read.
     const chip = screen
       .getByTestId("coord-ui-bridge-occlusion-section")
       .querySelector("[data-provenance]");
     expect(chip).toHaveTextContent("source: the runner's visibility sweep");
-    expect(chip).toHaveTextContent("as of UNKNOWN");
-    expect(chip).toHaveAttribute("data-provenance-known", "false");
+    expect(chip).not.toHaveTextContent("as of UNKNOWN");
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+    // The disclosure renders, says the names were not sent, and quotes nothing.
+    const line = screen.getByTestId("coord-ui-bridge-occlusion-text");
+    expect(line).toHaveAttribute("data-occlusion-text", "withheld");
+    expect(line).toHaveTextContent("is not sent over the relay");
+    expect(line).not.toHaveTextContent("Partner A");
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+  });
+
+  it("renders no entry text even from a runner that sent the local shape", async () => {
+    state.relay = relayFake({
+      visibility: () => json(200, VISIBILITY_LOCAL_HIDES_TEXT),
+    });
+    const view = await renderPresenting();
+    expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
+      "data-occlusion",
+      "hides-text"
+    );
+    expect(document.body).not.toHaveTextContent("Session for Partner A");
+    expect(document.body).not.toHaveTextContent("div.minimap");
+    expect(
+      screen.getByTestId("coord-ui-bridge-occlusion-text")
+    ).toHaveAttribute("data-occlusion-text", "included");
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
   });
 
   it.each([
@@ -391,10 +416,11 @@ describe("the UI Bridge dashboard while presenting", () => {
       { occlusionDataObserved: true, verdict: "clear", occlusions: [] },
     ],
   ])(
-    "reads the occlusion row as UNKNOWN when page health says %s and carries an occlusion field",
+    "keeps the sweep's unobserved clear UNKNOWN when page health says %s and carries an occlusion field",
     async (summary, extra) => {
       state.relay = relayFake({
         pageHealth: () => json(200, pageHealthBodyWith({ summary, ...extra })),
+        visibility: () => json(200, VISIBILITY_RELAYED_CLEAR_UNOBSERVED),
       });
       const view = await renderPresenting();
       const row = screen.getByTestId("coord-ui-bridge-occlusion");
@@ -785,7 +811,9 @@ describe("a snapshot with no element tree, while presenting", () => {
     });
     await screen.findByTestId("coord-ui-bridge-actions-counts");
     fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
-    const notice = await screen.findByTestId("coord-ui-bridge-snapshot-no-tree");
+    const notice = await screen.findByTestId(
+      "coord-ui-bridge-snapshot-no-tree"
+    );
     expect(notice).toHaveTextContent("UNKNOWN");
     expect(notice).toHaveTextContent(
       "The runner fell back to a window capture with no element tree, so its element counts are unknown."

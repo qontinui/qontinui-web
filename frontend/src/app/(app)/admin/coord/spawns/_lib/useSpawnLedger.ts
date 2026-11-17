@@ -108,11 +108,19 @@ function nextPart<T>(
   return { data: issueClearsRetained(issue) ? null : prev.data, issue };
 }
 
-export function useSpawnLedger(windowId: SpawnStatsWindow): SpawnLedgerRead {
+/**
+ * The ledger for a window. `null` is a window not yet decided (a page still
+ * reading which window a link asked for): nothing is read until it is, so the
+ * first read is the one for the window the page shows.
+ */
+export function useSpawnLedger(
+  windowId: SpawnStatsWindow | null
+): SpawnLedgerRead {
   const [stored, setStored] = useState<Stored | null>(null);
 
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
+      if (windowId === null) return;
       const [stats] = await Promise.allSettled([
         fetchSpawnStats(windowId, COORD_DASHBOARD_POLL_OPTIONS),
       ]);

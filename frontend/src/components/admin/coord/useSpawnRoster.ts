@@ -36,8 +36,12 @@ import {
   type ClaudeAccountRow,
   type ClaudeAccountsPayload,
 } from "@/lib/api/operations/agents";
-import { findRosterDevice } from "@/components/operations/DevicePicker";
+import {
+  findRosterDevice,
+  pickableDevices,
+} from "@/components/operations/DevicePicker";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { appendRosterExclusions } from "@/components/admin/coord/machineHealth";
 import {
   MAX_CAUSE_LENGTH,
   messageFromErrorBody,
@@ -162,11 +166,26 @@ export function useSpawnRoster(open: boolean, device: string) {
         if (roster.length === 0) {
           setDevicesError({
             kind: "empty",
-            message:
+            message: appendRosterExclusions(
               "Coord reported 0 live devices for this tenant. A device is " +
-              "listed only if it is bound to this tenant and its last heartbeat " +
-              "is recent, so a healthy machine can still be absent. Enter the " +
-              "device id directly if you know it.",
+                "listed only if it is bound to this tenant and its last heartbeat " +
+                "is recent, so a healthy machine can still be absent. Enter the " +
+                "device id directly if you know it.",
+              body
+            ),
+          });
+          setManualDevice(true);
+        } else if (pickableDevices(roster).shown.length === 0) {
+          // Rows came back, but every one is a CI runner registration, so
+          // the picker would open on nothing.
+          setDevicesError({
+            kind: "empty",
+            message: appendRosterExclusions(
+              "No runner machine to offer: every device coord reported is a " +
+                "CI runner registration. Enter the device id directly if you " +
+                "know it.",
+              body
+            ),
           });
           setManualDevice(true);
         }

@@ -59,7 +59,7 @@ describe("prMerge pipeline + recovery client", () => {
     ]);
   });
 
-  it("patchTenantAutoFixPr keeps httpClient.patch's error shape, which isUnconfirmedWrite reads", async () => {
+  it("patchTenantAutoFixPr keeps httpClient.patch's error shape, which isUnconfirmedFailure reads", async () => {
     fetchMock.mockResolvedValueOnce(new Response("gateway", { status: 504 }));
     const err = await patchTenantAutoFixPr(true).catch((e: unknown) => e);
     expect((err as Error).message).toBe(
@@ -210,9 +210,7 @@ describe("prMerge pipeline + recovery client", () => {
   });
 
   it("cancelMergeProposal hands coord's 409 body back through the rejection", async () => {
-    fetchMock.mockResolvedValueOnce(
-      answer({ error: "land_in_flight" }, 409)
-    );
+    fetchMock.mockResolvedValueOnce(answer({ error: "land_in_flight" }, 409));
     const err = await cancelMergeProposal("p1", {
       unblock: false,
       reason: "r",
@@ -234,9 +232,9 @@ describe("prMerge pipeline + recovery client", () => {
 
   it("setPrHold POSTs {held, reason} to /prs/.../hold, never re-sent on a 5xx", async () => {
     fetchMock.mockResolvedValueOnce(new Response("not json", { status: 200 }));
-    await expect(setPrHold("o", "r", 4, true, "waiting on web#1")).resolves.toBe(
-      null
-    );
+    await expect(
+      setPrHold("o", "r", 4, true, "waiting on web#1")
+    ).resolves.toBe(null);
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/prs/o/r/4/hold",
       {

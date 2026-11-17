@@ -49,6 +49,11 @@ const RUNNER_APPS: RegisteredApp[] = [
   },
 ];
 
+/** Whether a record row is expanded: its row line's own `aria-expanded`. */
+const isOpen = (row: HTMLElement): boolean =>
+  row.querySelector("[data-console-row]")?.getAttribute("aria-expanded") ===
+  "true";
+
 const ok = <T,>(value: T): RegistryRead<T> => ({
   state: "ok",
   value,
@@ -98,6 +103,37 @@ describe("the app registry panel handed rows while presenting", () => {
       "Update strategy: pull only.",
       "Update strategy: pull and build.",
     ]);
+  });
+
+  it("keeps the open row on its app when a refresh adds a row above it", () => {
+    const panel = (apps: RegisteredApp[]) => (
+      <AppRegistryPanel
+        web={ok<readonly WebAppConfig[]>([])}
+        webError={null}
+        runner={ok<readonly RegisteredApp[]>(apps)}
+        build={BUILD}
+      />
+    );
+    const view = renderInPresentationMode(panel([RUNNER_APPS[0]!]), {
+      scope: SCOPE,
+    });
+    const [runnerRow] = screen.getAllByTestId("coord-ui-bridge-app-row");
+    fireEvent.click(within(runnerRow!).getAllByRole("button")[0]!);
+    expect(isOpen(runnerRow!)).toBe(true);
+    // A refresh lists an app that sorts first: the runner's row moves down.
+    view.rerender(panel(RUNNER_APPS));
+    const rows = screen.getAllByTestId("coord-ui-bridge-app-row");
+    expect(rows).toHaveLength(2);
+    const open = rows.filter(isOpen);
+    expect(open).toHaveLength(1);
+    expect(within(open[0]!).queryByText("Qontinui Runner")).not.toBeNull();
+    // And the key it is open under still names no app.
+    for (const r of rows) {
+      expect(r.getAttribute("data-row-key") ?? "").not.toMatch(
+        /acme|qontinui-runner/
+      );
+    }
+    expectPresentationSafe(view, { forbidden: FORBIDDEN });
   });
 
   it("keeps the strategy this build does not know for the operator, on the raw line", () => {

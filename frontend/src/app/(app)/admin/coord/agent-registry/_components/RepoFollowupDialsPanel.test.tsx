@@ -264,6 +264,43 @@ describe("RepoFollowupDialsPanel", () => {
     );
   });
 
+  it("a delivery write answered 504 reads UNKNOWN with a re-read, never 'not applied'", async () => {
+    serve({
+      [NOTES]: scopeView(NOTES, "all"),
+      [WEB]: scopeView(WEB, "all"),
+    });
+    httpPut.mockRejectedValueOnce(
+      new Error(
+        'PUT x failed: 504 - {"error":"gateway_timeout","message":"timeout waiting for coord"}'
+      )
+    );
+    render(<RepoFollowupDialsPanel />);
+    await waitFor(() =>
+      expect(rowFor(WEB).textContent).toContain("Every merge")
+    );
+    fireEvent.click(
+      within(rowFor(WEB)).getByRole("button", { expanded: false })
+    );
+    const detail = await screen.findByTestId("repo-followup-detail");
+    // The re-read the write starts hangs, so the UNKNOWN stays on screen.
+    httpGet.mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(
+      within(detail).getByTestId("repo-followup-delivery-notify_only")
+    );
+    await waitFor(() =>
+      expect(detail.textContent).toContain(
+        "whether the last change was applied is unknown (timeout waiting for coord) — re-reading what coord holds"
+      )
+    );
+    expect(
+      within(detail).getByTestId("repo-followup-delivery-current").textContent
+    ).toBe("–");
+    expect(
+      within(detail).queryByTestId("repo-followup-delivery-write-error")
+    ).toBeNull();
+    expect(detail.textContent).not.toContain("not applied");
+  });
+
   it("controls are disabled when the backend says the caller cannot edit", async () => {
     serve({
       [NOTES]: scopeView(NOTES, "all", { canEdit: false }),

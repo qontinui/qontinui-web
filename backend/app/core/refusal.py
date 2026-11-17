@@ -75,6 +75,8 @@ from app.core.error_codes import ErrorCode, get_default_error_code
 
 __all__ = [
     "REFUSAL_KEY",
+    "REFUSAL_ORIGIN_HEADER",
+    "REFUSAL_ORIGIN_WEB",
     "GlossaryTerm",
     "NextAction",
     "NextActionKind",
@@ -88,6 +90,20 @@ __all__ = [
 
 #: The one top-level key the envelope occupies.
 REFUSAL_KEY = "refusal"
+
+#: The response header the HTTP exception handler sets on every refusal THIS
+#: backend raised (value :data:`REFUSAL_ORIGIN_WEB`). A proxied upstream body
+#: may carry a ``refusal`` envelope too; this header is what tells a reader the
+#: web backend itself decided the answer. Only the handler sets it, and the
+#: verbatim coord proxies echo no upstream header but ``Retry-After``, so a
+#: passed-through coord response can never carry it.
+#:
+#: The frontend reads the same name as ``REFUSAL_ORIGIN_HEADER`` in
+#: ``frontend/src/lib/api/operations/coordVerification.ts``; both sides are
+#: pinned to the literal by a test (``test_operations_verification_label_proxy.py``
+#: and ``coordVerification.test.ts``), so rename them together.
+REFUSAL_ORIGIN_HEADER = "X-Qontinui-Refusal-Origin"
+REFUSAL_ORIGIN_WEB = "web"
 
 #: Kinds that are READER-SIDE only. A producer that emits one is claiming not
 #: to know its own next action, so this module refuses to build it.

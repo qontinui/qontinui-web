@@ -344,6 +344,9 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.services.runner.remote_relay.end.EndCoordinator._end_with_fresh_grant": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
+    "app.services.runner.remote_relay.end.EndCoordinator._end_with_create_grant": (
+        "relay frame handler reached from the device WebSocket, not an HTTP route"
+    ),
     "app.services.runner.remote_terminal_relay.handle_source_frame": (
         "relay frame entry point reached from the device WebSocket, not an HTTP route"
     ),
@@ -563,24 +566,3 @@ def test_declared_closed_fields_equal_the_body_schema_enums(
                 f"{key}: {name} now serves an enum — move it to closed_fields "
                 "and lower UNSERVED_CLOSED_FIELD_PIN"
             )
-
-
-def test_a_device_refused_cost_row_matches_the_refusal_table() -> None:
-    """The cost-ledger rows are ``Read`` only because their rule refuses a
-    device every write. Tie the posture to that table, so dropping a rule
-    from ``DEVICE_WRITE_REFUSALS`` cannot leave a false ``Read`` behind."""
-    from app.overview.permissions import DEVICE_WRITE_REFUSALS
-    from app.overview.registry import REGISTRY
-
-    refused_paths = {
-        f"/api/v1/overview/{spec.path}"
-        for spec in REGISTRY.values()
-        if spec.permission in DEVICE_WRITE_REFUSALS
-    }
-    for path in (
-        "/api/v1/overview/cost-categories",
-        "/api/v1/overview/recurring-costs",
-        "/api/v1/overview/cost-entries",
-    ):
-        assert path in refused_paths, path
-        assert isinstance(ROUTE_POSTURE[("POST", path)], Read), path

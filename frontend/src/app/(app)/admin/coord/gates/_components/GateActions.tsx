@@ -75,6 +75,7 @@ import {
   unmuteGate,
 } from "@/lib/api/operations/coordGates";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
+import { heldBySiblingHolders } from "../continuationStatus";
 
 const log = createLogger("GateActions");
 
@@ -139,12 +140,19 @@ export function GateActions({
   // `continuationStatus.ts` separately orders `expired` above `cancelled` so
   // a cancel arriving from any other door cannot erase the expiry from the
   // row's rendering either.
+  //
+  // ONE expiry is not dead: the never-actioned drain's
+  // `never_dispatched_at_clearance` stamp on a continuation coord reports as
+  // HELD by open anchor siblings (`dispatch_held_by`). coord's fanout still
+  // dispatches that row once the siblings leave `open`, so cancelling it is
+  // the one way to stop a follow-up that is still coming.
   const hasCancellableContinuation =
     (gate.continuation_spawn != null ||
       gate.continuation_dispatched_at != null) &&
     gate.continuation_consumed_at == null &&
     gate.continuation_cancelled_at == null &&
-    gate.continuation_expired_at == null;
+    (gate.continuation_expired_at == null ||
+      heldBySiblingHolders(gate).length > 0);
 
   // Shared action runner — surfaces coord's error message on failure and
   // refetches on success. `action` is one `coordGates` call. A non-2xx

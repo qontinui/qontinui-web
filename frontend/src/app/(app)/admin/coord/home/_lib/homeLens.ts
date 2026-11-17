@@ -41,11 +41,12 @@ import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
   correctnessHasNoSource,
   decisionDomainLabel,
+  isDetectionBoundSource,
   isKnownDecisionDomain,
   isKnownPlane,
   isLabelledSource,
-  ownEntry,
   isWatcherSource,
+  ownEntry,
   planeLabel,
   sourceLabel,
   type CorrectnessView,
@@ -309,12 +310,17 @@ export function repositoryAliasDescriptor(alias: string): RedactionDescriptor {
 export const INITIATIVE_UNPARSEABLE_SENTENCE =
   "The current initiative's document could not be read as written, so its status and scope are not shown.";
 
-/** A needs-you item's own status word — the badge the row shows. */
+/**
+ * A needs-you item's own status word — the badge the row shows. An item whose
+ * recommendation coord could not read is `unknown`: calling it an "open
+ * question" would state that none was given, which coord does not know.
+ */
 export function needsStatusWord(
   item: NeedsMeItem
-): "approval" | "decide" | "open question" {
+): "approval" | "decide" | "open question" | "unknown" {
   if (item.source === "operator_gate") return "approval";
-  return item.recommendation !== null ? "decide" : "open question";
+  if (item.recommendation !== null) return "decide";
+  return item.recommendationKnown ? "open question" : "unknown";
 }
 
 /** What a part of a needs-you item is, for its descriptor. */
@@ -552,8 +558,9 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
- * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`, each area as {@link presentedPlaneWords} words it); for any
+ * sources it knows, a watcher's row is named by the areas it feeds, and a
+ * detection-bound row by its area (`sourceLabel`, each area as
+ * {@link presentedPlaneWords} words it); for any
  * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
@@ -566,7 +573,9 @@ export function presentedSourceLabel(
   source: string,
   planes: PlaneView[] | null
 ): string {
-  return isLabelledSource(source) || isWatcherSource(source)
+  return isLabelledSource(source) ||
+    isWatcherSource(source) ||
+    isDetectionBoundSource(source)
     ? sourceLabel(source, planes, presentedPlaneWords)
     : UNLABELLED_SOURCE;
 }
@@ -667,35 +676,4 @@ export function presentedInitiativeDate(date: string | null): string | null {
   if (date === null) return null;
   const trimmed = date.trim();
   return ISO_DATE.test(trimmed) ? trimmed : WITHHELD;
-}
-
-/**
- * List row keys while presenting: an opaque alias of the key operator mode
- * gives the same row.
- *
- * `RecordList` writes a row's key to `data-row-key`, and the page's own keys
- * carry a question id, gate id, device id, repository or source id — so while
- * presenting a row is keyed by an alias instead. The key is also what
- * expansion compares, so the alias must not change which row is open: a key
- * by POSITION would keep "row 2" open when a poll removes the row above it,
- * and the detail on screen would silently become another record's. So the
- * alias is of the WHOLE operator key, index suffix included: a bijection of
- * it, assigned on first sight and never reused, so a presented row opens,
- * stays open and collapses exactly when the operator's would (D1: the mode
- * changes rendering only). One registry per mounted region, kept across
- * polls (`HomeLens.tsx` `useRowKey`).
- */
-export class RowKeyAliases {
-  private readonly aliases = new Map<string, number>();
-
-  /** The presented key of the row operator mode keys `operatorKey` in `list`. */
-  key(list: string, operatorKey: string): string {
-    const identity = `${list}\u0000${operatorKey}`;
-    let n = this.aliases.get(identity);
-    if (n === undefined) {
-      n = this.aliases.size + 1;
-      this.aliases.set(identity, n);
-    }
-    return `${list}:row-${n}`;
-  }
 }

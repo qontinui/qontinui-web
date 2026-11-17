@@ -36,14 +36,13 @@ import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 import {
   emptyRosterSentence,
   isRosterComplete,
+  liveMachineCount,
   noLiveMachine,
   noLiveMachineSentence,
-  readRosterCut,
-  readRosterExclusions,
+  readMachineRoster,
   rosterCutHidesHealth,
   rosterCutSentence,
   rosterIncompleteSentence,
-  summarizeMachineHealth,
   unstatedRosterCut,
   type MachineHealthCounts,
   type RosterCut,
@@ -88,19 +87,8 @@ export function parseMachineHealth(
 } | null {
   if (!body || !Array.isArray(body.devices)) return null;
   return {
-    counts: summarizeMachineHealth(body.devices),
+    ...readMachineRoster(body.devices, body),
     asOf: typeof body.as_of === "string" ? body.as_of : null,
-    // Read on every roster: a device coord withheld is missing from a
-    // non-empty roster just as from an empty one.
-    exclusions: readRosterExclusions(body),
-    // A roster cut at coord's row limit is missing rows `excluded` cannot see.
-    cut: readRosterCut({
-      devices: body.devices,
-      truncated: body.truncated,
-      total: body.total,
-      degradable_dropped: body.degradable_dropped,
-      row_cap: body.row_cap,
-    }),
   };
 }
 
@@ -109,9 +97,14 @@ export function parseMachineHealth(
  * read, current, at least one live (not abandoned) graded machine listed,
  * coord withheld none from the roster, its cut (if any) withheld no machine
  * that could be degrading, no machine degrading and none without a verdict. An abandoned
- * machine is a decision, not a degradation, and a placeholder row is not a
- * machine, so neither stands in the way — but neither reports either, so a
+ * machine (silent past coord's timer) is not a degradation, and a placeholder
+ * row is not a machine, so neither stands in the way — but neither reports either, so a
  * roster of only those is never calm.
+ *
+ * A `ci_unrefreshed` row deliberately does NOT make this false: coord's
+ * project state raises no degradation for it, so "nothing is degrading" still
+ * holds. It is not healthy either, so `machineHealthSentence` stops short of
+ * "all report healthy" and the reconcile line names it.
  */
 export function machinesAllHealthy(m: MachineHealthView): boolean {
   return (
@@ -160,7 +153,11 @@ export function machineHealthSentence(
       ? "Machine health could not be read — unknown, so this view cannot say no machine is degrading."
       : "Machine health has not been read yet — unknown.";
   }
-  const { total, healthy, degrading, noVerdict, placeholders } = m.counts;
+  const { total, degrading, noVerdict, placeholders } = m.counts;
+  // The population is the live machines: never the rows coord served, which
+  // stop at its row cap and are mostly abandoned on a long-lived tenant. The
+  // reconcile line says how many abandoned machines are left out.
+  const live = liveMachineCount(m.counts);
   const exclusions = m.exclusions ?? { kind: "not_stated" };
   if (total === 0 && placeholders === 0) {
     return emptyRosterSentence(exclusions, { withReason });
@@ -193,24 +190,30 @@ export function machineHealthSentence(
             : " — not in coord's list above";
     }
     parts.push(
-      `${degrading} of ${machines(total)} ${degrading === 1 ? "is" : "are"} in a degrading state${where}`
+      `${degrading} of ${machines(live)} ${degrading === 1 ? "is" : "are"} in a degrading state${where}`
     );
   }
   if (noVerdict > 0) {
     parts.push(
-      `${noVerdict}${parts.length === 0 ? ` of ${machines(total)}` : ""} ${noVerdict === 1 ? "has" : "have"} no health verdict, so ${noVerdict === 1 ? "its" : "their"} health is unknown`
+      `${noVerdict}${parts.length === 0 ? ` of ${machines(live)}` : ""} ${noVerdict === 1 ? "has" : "have"} no health verdict, so ${noVerdict === 1 ? "its" : "their"} health is unknown`
     );
   }
   if (parts.length > 0) return withIncomplete(`${parts.join("; ")}.`);
   if (noLiveMachine(m.counts)) {
     return withIncomplete(noLiveMachineSentence(m.counts));
   }
+  // A CI registration the registrar has not refreshed is not a degradation,
+  // but it is not healthy either, so "all report healthy" would be false. The
+  // reconcile line names those rows; this one only stops short of "all".
+  if (m.counts.ciUnrefreshed > 0) {
+    return withIncomplete(
+      `No machine is degrading; ${m.counts.healthy} of ${machines(live)} ${m.counts.healthy === 1 ? "reports" : "report"} healthy.`
+    );
+  }
   return withIncomplete(
-    healthy === total
-      ? total === 1
-        ? "The 1 machine reports healthy."
-        : `All ${machines(total)} report healthy.`
-      : `${healthy} of ${machines(total)} ${healthy === 1 ? "reports" : "report"} healthy; none is degrading.`
+    live === 1
+      ? "The 1 machine reports healthy."
+      : `All ${machines(live)} report healthy.`
   );
 }
 

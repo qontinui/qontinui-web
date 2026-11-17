@@ -42,8 +42,8 @@ export const DEV_OPS_CAPTIONS = {
   },
   "dev-ops.machines": {
     title: "Machines",
-    oneLiner: copy`Every ${term("device", "machine")} in the fleet, with what is running on it and how much disk it has left.`,
-    whyItMatters: copy`A machine that stops reporting stays on this list as ${term("unknown")} instead of disappearing, so a silent machine can never pass for a healthy one.`,
+    oneLiner: copy`The ${term("device", "machines")} the ${term("coord", "coordination service")} lists, with what is running on each and how much disk it has left.`,
+    whyItMatters: copy`A machine that stops reporting is marked unreachable, then abandoned after a long silence, so a silent machine can never pass for a healthy one. A very long list stops at a row limit, and the strip above says how many rows it leaves out.`,
   },
   "dev-ops.roles": {
     title: "Machine roles",

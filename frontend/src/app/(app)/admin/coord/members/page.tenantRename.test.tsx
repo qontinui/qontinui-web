@@ -37,7 +37,7 @@ vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({ refresh: vi.fn().mockResolvedValue(true) }),
 }));
 
-vi.mock("@qontinui/ui-bridge", () => ({
+vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIComponent: () => undefined,
 }));
 

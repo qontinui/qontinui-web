@@ -288,6 +288,57 @@ describe("GatesTable search + gate-id", () => {
     expect(badge.getAttribute("data-status-kind")).toBe("withdrawn");
   });
 
+  it("colours a failed gate's progress bar as an error — misconfigured and a padded Rejected included", () => {
+    const half = {
+      basis: "binary",
+      current: null,
+      target: null,
+      unit: null,
+      fraction: 0.5,
+      eta: null,
+      eta_confidence: "none",
+    } as GateOverviewRow["progress"];
+    const done = { ...half, fraction: 1 } as GateOverviewRow["progress"];
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            gate_id: "11111111-0000-4000-8000-000000000001",
+            verdict: "misconfigured",
+            progress: half,
+          }),
+          gate({
+            gate_id: "22222222-0000-4000-8000-000000000002",
+            verdict: " Rejected ",
+            progress: half,
+          }),
+          gate({
+            gate_id: "33333333-0000-4000-8000-000000000003",
+            verdict: "cleared",
+            progress: done,
+          }),
+        ]}
+        onActed={() => {}}
+      />
+    );
+    // The bar is the element labelled with its percentage; its fill is the
+    // first child, which carries the variant's class.
+    const fillOf = (row: HTMLElement) =>
+      within(row).getByLabelText(/^progress \d+%$/).firstElementChild;
+    // Each row by its own short gate id, not by position.
+    const rowOf = (shortId: string) => {
+      const row = screen
+        .getAllByTestId("gates-table-row")
+        .find((r) => r.textContent?.includes(shortId));
+      if (!row) throw new Error(`no row for ${shortId}`);
+      return row;
+    };
+    expect(fillOf(rowOf("11111111"))).toHaveClass("bg-error");
+    expect(fillOf(rowOf("22222222"))).toHaveClass("bg-error");
+    expect(fillOf(rowOf("33333333"))).not.toHaveClass("bg-error");
+    expect(fillOf(rowOf("33333333"))).toHaveClass("bg-success");
+  });
+
   it("renders the clearance-provenance sub-line when coord stamps the columns", async () => {
     const user = userEvent.setup();
     render(
@@ -745,6 +796,59 @@ describe("GatesTable — continuation column", () => {
     expect(
       screen.getByTestId("gates-continuation-timeline").textContent,
     ).toContain("last deferred");
+  });
+
+  it("never words coord's clearance hold as a runner pushing back", async () => {
+    const user = userEvent.setup();
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+    const held = gate({
+      title: "Held at clearance",
+      continuation_spawn: { target_device_id: "abcdef1234567890" },
+      continuation_deferred_at: ago(180_000),
+      continuation_deferred_reason: "coord_hold.no_capable_device:os:linux",
+      continuation_deferred_count: 12,
+    });
+    const { unmount } = render(<GatesTable gates={[held]} onActed={() => {}} />);
+    expect(kinds()).toEqual(["held"]);
+    expect(screen.queryByTestId("gates-continuation-deferral-chip")).toBeNull();
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const problem =
+      screen.getByTestId("gates-continuation-problem").textContent ?? "";
+    expect(problem).toContain("no online device advertises os:linux");
+    expect(problem).not.toMatch(/pushed back|runner stamps/i);
+    expect(screen.queryByTestId("gates-continuation-deferral-note")).toBeNull();
+    unmount();
+
+    // coord's hold-TTL expiry keeps the hold reason on the row.
+    render(
+      <GatesTable
+        gates={[
+          {
+            ...held,
+            continuation_expired_at: ago(60_000),
+            continuation_expired_reason: "held_no_eligible_device_ttl",
+          },
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(kinds()).toEqual(["expired"]);
+    const chip = screen.getByTestId("gates-continuation-deferral-chip");
+    expect(chip.textContent).toBe("after 12 holds");
+    expect(chip.getAttribute("title")).toContain(
+      "coord stamped a hold on this continuation 12 times",
+    );
+    expect(chip.getAttribute("title")).not.toMatch(/pushed back|runner/i);
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const note =
+      screen.getByTestId("gates-continuation-deferral-note").textContent ?? "";
+    expect(note).toContain(
+      "coord stamped a hold on this continuation 12 times",
+    );
+    expect(
+      screen.getByTestId("gates-continuation-timeline").textContent,
+    ).toContain("last held");
+    expect(note).not.toMatch(/pushed back|runner/i);
   });
 
   it("carries coord's verbatim outcome into the raw slot", async () => {

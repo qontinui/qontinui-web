@@ -10,9 +10,10 @@ import {
 } from "../_lib/twin-aspects";
 import {
   FIDELITY_SUBSPACE,
-  formatAge,
+  fidelityReadAt,
   formatCount,
   readFidelity,
+  reportAgeText,
   reportComputedAt,
 } from "../_lib/twin-fidelity";
 
@@ -53,11 +54,14 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function TwinFidelityHeader() {
   const query = useSubspaceRaw(FIDELITY_SUBSPACE, true);
   const { presenting } = usePresentationMode();
-  const now = Date.now();
-  const read = readFidelity(query, now);
+  // The read's own time: a served `age_seconds` is the report's age when
+  // coord answered, so an age computed from `computed_at` is taken against
+  // the same moment rather than against this render.
+  const readAt = fidelityReadAt(query, Date.now());
+  const read = readFidelity(query, readAt);
   const asOf =
     read.kind === "report"
-      ? reportComputedAt(query.data, now)
+      ? reportComputedAt(query.data, readAt)
       : query.errorUpdatedAt > 0
         ? query.errorUpdatedAt
         : null;
@@ -77,8 +81,12 @@ export function TwinFidelityHeader() {
           Twin self-fidelity
         </h2>
         {read.kind === "report" && (
-          <span className="text-xs text-muted-foreground">
-            report {formatAge(read.report.ageSeconds)}
+          <span
+            data-testid="digital-twin-fidelity-age"
+            data-age-source={read.report.ageSource ?? "unknown"}
+            className="text-xs text-muted-foreground"
+          >
+            {reportAgeText(read.report)}
           </span>
         )}
         {read.kind !== "loading" && (

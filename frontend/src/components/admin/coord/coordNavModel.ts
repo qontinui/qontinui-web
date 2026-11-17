@@ -12,7 +12,8 @@
  *
  *   Home · Pipeline · Pull Requests · Gates · Notifications · Action items ·
  *   Tour                                                               ← direct
- *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
+ *   Work ▸    Plans / Work Units / Subprojects / Plan Library /
+ *             Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
  *             Verification /
@@ -66,6 +67,7 @@ import {
   Cpu,
   FileText,
   Files,
+  FolderKanban,
   FolderOpen,
   Gauge,
   Gavel,
@@ -283,6 +285,19 @@ export const GROUPS: NavGroup[] = [
         label: "Work Units",
         icon: ListTodo,
         testId: "coord-nav-work-units",
+      },
+      {
+        // Beside Work Units because a subproject GROUPS them: the sessions,
+        // gates, work units and PRs of one piece of work, with coord's verdict
+        // on whether anything is still moving it (plan
+        // `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`).
+        // Member-visible like Work Units — its reads are tenant-member reads;
+        // its writes are admin-gated on the page and in the proxies. Its own
+        // path, so no other leaf's startsWith active-match claims it.
+        href: "/admin/coord/subprojects",
+        label: "Subprojects",
+        icon: FolderKanban,
+        testId: "coord-nav-subprojects",
       },
       {
         // The plan library's two policy dials (`plan_capture`,
@@ -676,9 +691,13 @@ export const GROUPS: NavGroup[] = [
       },
       {
         // Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-
-        // arbitration` Phase 5: every spawn coord was asked to place — where
-        // it went, how long it waited, how it ended — and the per-device
-        // breakdown. Beside Computers because it reports spawns PER device,
+        // arbitration` Phase 5, as plan `2026-10-23-console-presentation-
+        // spaces` Phase 4 reshaped it: agentic activity — the spawn paths and
+        // their switches, the machines, and how many spawns coord was asked
+        // to place and how they ended. The per-request list and the
+        // per-device placement moved to the spawn requests view
+        // (`/admin/coord/spawns/requests`), which has no menu entry of its
+        // own: this page links to it from those counts. Beside Computers because it reports spawns PER device,
         // and `coordAdminOnly` for the same reason as Computers: its three
         // proxies (`/operations/spawns…`) are `require_coord_tenant_admin`
         // (the rows name each spawn's devices, account and session), and the

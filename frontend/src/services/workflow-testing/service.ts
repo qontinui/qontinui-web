@@ -1,24 +1,16 @@
 /**
  * Workflow Testing Service
  *
- * Core service class for the workflow testing framework.
- * Manages test cases, suites, execution, results, coverage, and persistence.
+ * Core service class for the workflow testing framework: authoring and
+ * persistence of test cases and suites.
+ *
+ * It runs nothing. The in-browser runner it used to carry was a simulator
+ * (random delay, mock variables, an always-met expected behavior), so it and
+ * the results, statistics and coverage computed from its runs were removed:
+ * no store serves a web-simulated run.
  */
 
-import type { Workflow, Action } from "@/lib/action-schema/action-types";
-import { evaluateCustomAssertion } from "@/lib/safe-eval";
-import type {
-  Assertion,
-  AssertionResult,
-  TestCase,
-  TestCaseConfig,
-  TestSuite,
-  TestResult,
-  TestStatistics,
-  ActionCoverage,
-  WorkflowCoverage,
-  CoverageReport,
-} from "./types";
+import type { TestCase, TestCaseConfig, TestSuite } from "./types";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("WorkflowTesting");
 
@@ -29,7 +21,8 @@ const logger = createLogger("WorkflowTesting");
 const STORAGE_KEYS = {
   TEST_CASES: "workflow-test-cases",
   TEST_SUITES: "workflow-test-suites",
-  TEST_RESULTS: "workflow-test-results",
+  /** Simulated-run results written by the removed runner; only ever cleared. */
+  LEGACY_TEST_RESULTS: "workflow-test-results",
 } as const;
 
 // ============================================================================
@@ -39,8 +32,6 @@ const STORAGE_KEYS = {
 export class WorkflowTestingService {
   private testCases: Map<string, TestCase> = new Map();
   private testSuites: Map<string, TestSuite> = new Map();
-  private testResults: Map<string, TestResult[]> = new Map();
-  private runningTests: Map<string, AbortController> = new Map();
 
   constructor() {
     this.loadFromStorage();
@@ -113,7 +104,6 @@ export class WorkflowTestingService {
       }
     });
 
-    this.testResults.delete(testId);
     this.testCases.delete(testId);
     this.saveToStorage();
     return true;
@@ -256,492 +246,6 @@ export class WorkflowTestingService {
   }
 
   // ==========================================================================
-  // Test Execution (Mock Implementation)
-  // ==========================================================================
-
-  async runTestCase(testId: string, workflow?: Workflow): Promise<TestResult> {
-    const testCase = this.testCases.get(testId);
-    if (!testCase) {
-      throw new Error(`Test case not found: ${testId}`);
-    }
-
-    if (!testCase.enabled) {
-      throw new Error(`Test case is disabled: ${testId}`);
-    }
-
-    const startTime = new Date().toISOString();
-    const abortController = new AbortController();
-    this.runningTests.set(testId, abortController);
-
-    try {
-      await this.delay(100 + Math.random() * 500);
-
-      if (abortController.signal.aborted) {
-        throw new Error("Test execution was stopped");
-      }
-
-      const mockExecutionPath =
-        workflow?.actions.slice(0, 3).map((a) => a.id) || [];
-      const mockVariables = {
-        ...testCase.config.inputs,
-        result: "mock_result",
-      };
-
-      const assertionResults = testCase.config.assertions.map((assertion) =>
-        this.evaluateAssertion(assertion, mockVariables)
-      );
-
-      const endTime = new Date().toISOString();
-      const duration =
-        new Date(endTime).getTime() - new Date(startTime).getTime();
-
-      const allAssertionsPassed = assertionResults.every((r) => r.passed);
-      const expectedBehaviorMet = true;
-
-      const result: TestResult = {
-        id: this.generateId("result"),
-        testCaseId: testId,
-        testCaseName: testCase.name,
-        workflowId: testCase.workflowId,
-        workflowName: workflow?.name,
-        passed: allAssertionsPassed && expectedBehaviorMet,
-        startTime,
-        endTime,
-        duration,
-        assertions: assertionResults,
-        executionPath: mockExecutionPath,
-        finalState: {
-          variables: mockVariables,
-          activeStates: testCase.config.initialState?.activeStates || [],
-        },
-        actionsExecuted: mockExecutionPath.length,
-        actionsSucceeded: mockExecutionPath.length,
-      };
-
-      this.saveTestResult(result);
-
-      this.updateTestCase(testId, {
-        metadata: {
-          ...testCase.metadata,
-          lastRun: endTime,
-        },
-      });
-
-      return result;
-    } catch (error) {
-      const endTime = new Date().toISOString();
-      const duration =
-        new Date(endTime).getTime() - new Date(startTime).getTime();
-
-      const result: TestResult = {
-        id: this.generateId("result"),
-        testCaseId: testId,
-        testCaseName: testCase.name,
-        workflowId: testCase.workflowId,
-        workflowName: workflow?.name,
-        passed: false,
-        startTime,
-        endTime,
-        duration,
-        assertions: [],
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-
-      this.saveTestResult(result);
-      return result;
-    } finally {
-      this.runningTests.delete(testId);
-    }
-  }
-
-  async runTestSuite(
-    suiteId: string,
-    workflows?: Map<string, Workflow>
-  ): Promise<TestResult[]> {
-    const suite = this.testSuites.get(suiteId);
-    if (!suite) {
-      throw new Error(`Test suite not found: ${suiteId}`);
-    }
-
-    const results: TestResult[] = [];
-
-    if (suite.executionOrder === "parallel") {
-      const promises = suite.testCaseIds.map((testId) => {
-        const testCase = this.testCases.get(testId);
-        const workflow = testCase
-          ? workflows?.get(testCase.workflowId)
-          : undefined;
-        return this.runTestCase(testId, workflow);
-      });
-      results.push(...(await Promise.all(promises)));
-    } else {
-      for (const testId of suite.testCaseIds) {
-        const testCase = this.testCases.get(testId);
-        const workflow = testCase
-          ? workflows?.get(testCase.workflowId)
-          : undefined;
-        const result = await this.runTestCase(testId, workflow);
-        results.push(result);
-
-        if (!result.passed && suite.stopOnFailure) {
-          break;
-        }
-      }
-    }
-
-    return results;
-  }
-
-  async runAllTests(workflows?: Map<string, Workflow>): Promise<TestResult[]> {
-    const allTestIds = Array.from(this.testCases.keys());
-    const results: TestResult[] = [];
-
-    for (const testId of allTestIds) {
-      const testCase = this.testCases.get(testId);
-      if (testCase?.enabled) {
-        const workflow = workflows?.get(testCase.workflowId);
-        const result = await this.runTestCase(testId, workflow);
-        results.push(result);
-      }
-    }
-
-    return results;
-  }
-
-  async runTestsForWorkflow(
-    workflowId: string,
-    workflow?: Workflow
-  ): Promise<TestResult[]> {
-    const testCases = this.getTestCasesForWorkflow(workflowId);
-    const results: TestResult[] = [];
-
-    for (const testCase of testCases) {
-      if (testCase.enabled) {
-        const result = await this.runTestCase(testCase.id, workflow);
-        results.push(result);
-      }
-    }
-
-    return results;
-  }
-
-  stopTestExecution(testId: string): boolean {
-    const controller = this.runningTests.get(testId);
-    if (controller) {
-      controller.abort();
-      this.runningTests.delete(testId);
-      return true;
-    }
-    return false;
-  }
-
-  isTestRunning(testId: string): boolean {
-    return this.runningTests.has(testId);
-  }
-
-  // ==========================================================================
-  // Assertions
-  // ==========================================================================
-
-  evaluateAssertion(assertion: Assertion, context: unknown): AssertionResult {
-    try {
-      const actualValue = assertion.path
-        ? this.getValueByPath(context, assertion.path)
-        : context;
-
-      let passed = false;
-      let error: string | undefined;
-
-      switch (assertion.type) {
-        case "equals":
-          passed = this.deepEquals(actualValue, assertion.expected);
-          if (!passed) {
-            error = `Expected ${JSON.stringify(assertion.expected)}, got ${JSON.stringify(actualValue)}`;
-          }
-          break;
-
-        case "notEquals":
-          passed = !this.deepEquals(actualValue, assertion.expected);
-          if (!passed) {
-            error = `Expected value not to equal ${JSON.stringify(assertion.expected)}`;
-          }
-          break;
-
-        case "contains":
-          if (Array.isArray(actualValue)) {
-            passed = actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === "string") {
-            passed = actualValue.includes(assertion.expected as string);
-          } else if (typeof actualValue === "object" && actualValue !== null) {
-            passed = String(assertion.expected) in actualValue;
-          }
-          if (!passed) {
-            error = `Expected to contain ${JSON.stringify(assertion.expected)}`;
-          }
-          break;
-
-        case "notContains":
-          if (Array.isArray(actualValue)) {
-            passed = !actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === "string") {
-            passed = !actualValue.includes(assertion.expected as string);
-          } else if (typeof actualValue === "object" && actualValue !== null) {
-            passed = !(String(assertion.expected) in actualValue);
-          }
-          if (!passed) {
-            error = `Expected not to contain ${JSON.stringify(assertion.expected)}`;
-          }
-          break;
-
-        case "exists":
-          passed = actualValue !== undefined && actualValue !== null;
-          if (!passed) {
-            error = "Expected value to exist";
-          }
-          break;
-
-        case "notExists":
-          passed = actualValue === undefined || actualValue === null;
-          if (!passed) {
-            error = "Expected value not to exist";
-          }
-          break;
-
-        case "greaterThan":
-          passed =
-            typeof actualValue === "number" &&
-            actualValue > (assertion.expected as number);
-          if (!passed) {
-            error = `Expected ${actualValue} to be greater than ${assertion.expected}`;
-          }
-          break;
-
-        case "lessThan":
-          passed =
-            typeof actualValue === "number" &&
-            actualValue < (assertion.expected as number);
-          if (!passed) {
-            error = `Expected ${actualValue} to be less than ${assertion.expected}`;
-          }
-          break;
-
-        case "regex":
-          if (assertion.pattern) {
-            const regex = new RegExp(assertion.pattern);
-            passed = regex.test(String(actualValue));
-            if (!passed) {
-              error = `Expected ${actualValue} to match pattern ${assertion.pattern}`;
-            }
-          } else {
-            passed = false;
-            error = "No regex pattern provided";
-          }
-          break;
-
-        case "custom":
-          if (assertion.customFunction) {
-            try {
-              // Evaluate custom assertion using safe structured checks
-              passed = evaluateCustomAssertion(
-                assertion.customFunction,
-                actualValue,
-                context as Record<string, unknown>
-              );
-            } catch (err) {
-              passed = false;
-              error = `Custom assertion error: ${err instanceof Error ? err.message : "Unknown error"}`;
-            }
-          } else {
-            passed = false;
-            error = "No custom function provided";
-          }
-          break;
-
-        default:
-          passed = false;
-          error = `Unknown assertion type: ${assertion.type}`;
-      }
-
-      return {
-        assertion,
-        passed,
-        actualValue,
-        error,
-      };
-    } catch (err) {
-      return {
-        assertion,
-        passed: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      };
-    }
-  }
-
-  // ==========================================================================
-  // Test Results
-  // ==========================================================================
-
-  saveTestResult(result: TestResult): void {
-    if (!this.testResults.has(result.testCaseId)) {
-      this.testResults.set(result.testCaseId, []);
-    }
-
-    const results = this.testResults.get(result.testCaseId)!;
-    results.unshift(result);
-
-    if (results.length > 100) {
-      results.splice(100);
-    }
-
-    this.saveToStorage();
-  }
-
-  getTestResults(testId: string, limit?: number): TestResult[] {
-    const results = this.testResults.get(testId) || [];
-    return limit ? results.slice(0, limit) : results;
-  }
-
-  getTestHistory(testId: string): TestResult[] {
-    return this.getTestResults(testId);
-  }
-
-  getTestStatistics(testId: string): TestStatistics | null {
-    const results = this.testResults.get(testId);
-    if (!results || results.length === 0) {
-      return null;
-    }
-
-    const successfulRuns = results.filter((r) => r.passed).length;
-    const failedRuns = results.length - successfulRuns;
-    const durations = results.map((r) => r.duration);
-
-    return {
-      testCaseId: testId,
-      totalRuns: results.length,
-      successfulRuns,
-      failedRuns,
-      passRate: (successfulRuns / results.length) * 100,
-      avgDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
-      minDuration: Math.min(...durations),
-      maxDuration: Math.max(...durations),
-      lastRun: results[0]?.endTime,
-      lastPassed: results[0]?.passed,
-    };
-  }
-
-  clearTestResults(testId: string): boolean {
-    if (!this.testResults.has(testId)) {
-      return false;
-    }
-
-    this.testResults.delete(testId);
-    this.saveToStorage();
-    return true;
-  }
-
-  getAllTestResults(): Map<string, TestResult[]> {
-    return new Map(this.testResults);
-  }
-
-  // ==========================================================================
-  // Coverage Analysis
-  // ==========================================================================
-
-  calculateCoverage(workflowId: string, workflow: Workflow): WorkflowCoverage {
-    const testCases = this.getTestCasesForWorkflow(workflowId);
-    const testCaseIds = testCases.map((t) => t.id);
-
-    const allResults = testCases.flatMap((tc) => this.getTestResults(tc.id));
-
-    const actionCoverageMap = new Map<string, ActionCoverage>();
-
-    workflow.actions.forEach((action) => {
-      actionCoverageMap.set(action.id, {
-        actionId: action.id,
-        actionType: action.type,
-        actionName: action.name,
-        covered: false,
-        coveredByTests: [],
-        testCount: 0,
-      });
-    });
-
-    allResults.forEach((result) => {
-      if (result.executionPath) {
-        result.executionPath.forEach((actionId) => {
-          const coverage = actionCoverageMap.get(actionId);
-          if (coverage) {
-            coverage.covered = true;
-            if (!coverage.coveredByTests.includes(result.testCaseId)) {
-              coverage.coveredByTests.push(result.testCaseId);
-            }
-            coverage.testCount++;
-          }
-        });
-      }
-    });
-
-    const actions = Array.from(actionCoverageMap.values());
-    const coveredActions = actions.filter((a) => a.covered).length;
-    const untestedActions = actions
-      .filter((a) => !a.covered)
-      .map((a) => a.actionId);
-
-    return {
-      workflowId,
-      workflowName: workflow.name,
-      coveragePercentage:
-        workflow.actions.length > 0
-          ? (coveredActions / workflow.actions.length) * 100
-          : 0,
-      totalActions: workflow.actions.length,
-      coveredActions,
-      actions,
-      untestedActions,
-      testCases: testCaseIds,
-    };
-  }
-
-  getUntestedActions(workflowId: string, workflow: Workflow): Action[] {
-    const coverage = this.calculateCoverage(workflowId, workflow);
-    return workflow.actions.filter((action) =>
-      coverage.untestedActions.includes(action.id)
-    );
-  }
-
-  getCoverageReport(workflows: Map<string, Workflow>): CoverageReport {
-    const workflowCoverages: WorkflowCoverage[] = [];
-
-    workflows.forEach((workflow, workflowId) => {
-      const coverage = this.calculateCoverage(workflowId, workflow);
-      workflowCoverages.push(coverage);
-    });
-
-    const totalActions = workflowCoverages.reduce(
-      (sum, wc) => sum + wc.totalActions,
-      0
-    );
-    const coveredActions = workflowCoverages.reduce(
-      (sum, wc) => sum + wc.coveredActions,
-      0
-    );
-
-    return {
-      timestamp: new Date().toISOString(),
-      workflows: workflowCoverages,
-      overallCoverage:
-        totalActions > 0 ? (coveredActions / totalActions) * 100 : 0,
-      totalWorkflows: workflows.size,
-      summary: {
-        totalActions,
-        coveredActions,
-        totalTestCases: this.testCases.size,
-        totalTestSuites: this.testSuites.size,
-      },
-    };
-  }
-
-  // ==========================================================================
   // Import/Export
   // ==========================================================================
 
@@ -811,27 +315,10 @@ export class WorkflowTestingService {
     }
   }
 
-  exportTestResults(testId: string): string {
-    const testCase = this.testCases.get(testId);
-    const results = this.testResults.get(testId) || [];
-    const statistics = this.getTestStatistics(testId);
-
-    const exportData = {
-      testCase,
-      results,
-      statistics,
-      exportedAt: new Date().toISOString(),
-      version: "1.0.0",
-    };
-
-    return JSON.stringify(exportData, null, 2);
-  }
-
   exportAll(): string {
     const exportData = {
       testCases: Array.from(this.testCases.values()),
       testSuites: Array.from(this.testSuites.values()),
-      testResults: Array.from(this.testResults.entries()),
       exportedAt: new Date().toISOString(),
       version: "1.0.0",
     };
@@ -853,10 +340,6 @@ export class WorkflowTestingService {
         parsed.testSuites.forEach((suite: TestSuite) => {
           this.testSuites.set(suite.id, suite);
         });
-      }
-
-      if (parsed.testResults) {
-        this.testResults = new Map(parsed.testResults);
       }
 
       this.saveToStorage();
@@ -882,11 +365,6 @@ export class WorkflowTestingService {
         STORAGE_KEYS.TEST_SUITES,
         JSON.stringify(Array.from(this.testSuites.entries()))
       );
-
-      localStorage.setItem(
-        STORAGE_KEYS.TEST_RESULTS,
-        JSON.stringify(Array.from(this.testResults.entries()))
-      );
     } catch (error) {
       logger.error("Failed to save to localStorage:", error);
     }
@@ -904,11 +382,6 @@ export class WorkflowTestingService {
       if (testSuitesData) {
         this.testSuites = new Map(JSON.parse(testSuitesData));
       }
-
-      const testResultsData = localStorage.getItem(STORAGE_KEYS.TEST_RESULTS);
-      if (testResultsData) {
-        this.testResults = new Map(JSON.parse(testResultsData));
-      }
     } catch (error) {
       logger.error("Failed to load from localStorage:", error);
     }
@@ -917,12 +390,10 @@ export class WorkflowTestingService {
   clearStorage(): void {
     this.testCases.clear();
     this.testSuites.clear();
-    this.testResults.clear();
-    this.runningTests.clear();
 
     localStorage.removeItem(STORAGE_KEYS.TEST_CASES);
     localStorage.removeItem(STORAGE_KEYS.TEST_SUITES);
-    localStorage.removeItem(STORAGE_KEYS.TEST_RESULTS);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_TEST_RESULTS);
   }
 
   // ==========================================================================
@@ -931,41 +402,6 @@ export class WorkflowTestingService {
 
   private generateId(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-  }
-
-  private deepEquals(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (a == null || b == null) return false;
-    if (typeof a !== typeof b) return false;
-
-    if (typeof a === "object" && typeof b === "object") {
-      const aRecord = a as Record<string, unknown>;
-      const bRecord = b as Record<string, unknown>;
-      const aKeys = Object.keys(aRecord);
-      const bKeys = Object.keys(bRecord);
-
-      if (aKeys.length !== bKeys.length) return false;
-
-      return aKeys.every((key) => this.deepEquals(aRecord[key], bRecord[key]));
-    }
-
-    return false;
-  }
-
-  private getValueByPath(obj: unknown, path: string): unknown {
-    const parts = path.split(".");
-    let current: unknown = obj;
-
-    for (const part of parts) {
-      if (current == null) return undefined;
-      current = (current as Record<string, unknown>)[part];
-    }
-
-    return current;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

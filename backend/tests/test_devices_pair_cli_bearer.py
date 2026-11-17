@@ -72,7 +72,7 @@ def _build_test_app() -> FastAPI:
     test_app.dependency_overrides[get_async_db] = lambda: None
     # The production handler, so these tests pin the shape a client actually
     # receives: it rewrites a dict detail rather than nesting it.
-    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     test_app.include_router(devices_router, prefix=API_PREFIX)
     return test_app
 
@@ -233,6 +233,35 @@ class TestPairCliTenantForwarding:
         assert resp.status_code == 201, resp.text
         body = instance.post.call_args.kwargs["json"]
         assert "tenant_id" not in body
+
+    def test_coord_500_relays_its_status_and_a_fixed_sentence_only(
+        self, client: TestClient
+    ) -> None:
+        leak = "pg_error::wrap: deadlock detected on coord.devices"
+        with _patch_enabled(), _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(status_code=500, text=leak)
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json=_BODY,
+                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert leak not in resp.text
+        body = resp.json()
+        assert body["error"] == "BAD_GATEWAY"
+        assert body["coord_status"] == 500
+        assert "coord_body" not in body
+        # pair-cli carries no one-shot nonce, so retrying it can succeed:
+        # its advice is "Retry", unlike pair-confirm's.
+        assert body["message"] == (
+            "Coord failed to complete pairing (HTTP 500). "
+            "Retry; if it persists, check coord."
+        )
+        assert "Start pairing again" not in body["message"]
 
     def test_coord_403_for_non_member_tenant_surfaces_as_502(
         self, client: TestClient

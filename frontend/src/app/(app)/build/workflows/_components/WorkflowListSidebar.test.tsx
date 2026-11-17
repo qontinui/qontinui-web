@@ -21,7 +21,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-vi.mock("@qontinui/ui-bridge", () => ({
+vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIComponent: () => undefined,
 }));
 

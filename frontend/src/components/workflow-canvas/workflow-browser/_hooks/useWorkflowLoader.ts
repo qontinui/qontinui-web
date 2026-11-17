@@ -54,10 +54,6 @@ export function useWorkflowLoader(open: boolean) {
             workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
           const testCases = testingService.getTestCasesForWorkflow(workflow.id);
-          const coverage =
-            testCases.length > 0
-              ? testingService.calculateCoverage(workflow.id, workflow)
-              : null;
 
           const metrics = workflowAnalyticsService.getWorkflowMetrics(
             workflow.id
@@ -76,7 +72,6 @@ export function useWorkflowLoader(open: boolean) {
             folderPath,
             complexity: complexityAnalysis.complexityScore,
             complexityRating: complexityAnalysis.complexityRating,
-            testCoverage: coverage?.coveragePercentage,
             hasTests: testCases.length > 0,
             hasDocumentation: Boolean(
               workflow.description && workflow.description.length > 0

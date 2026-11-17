@@ -97,6 +97,7 @@ const PRODUCER_KINDS_TABLE: Readonly<Record<ProducerNextActionKind, true>> = {
   none_terminal: true,
   report_defect: true,
   fix_request: true,
+  request_access: true,
   resnapshot: true,
   scroll_into_view: true,
   wait_for_enabled: true,
@@ -378,6 +379,12 @@ export function renderNextAction(
       return t !== null
         ? `Correct "${t}" in the request and send it again; sending it unchanged fails the same way`
         : "Correct the request and send it again; sending it unchanged fails the same way";
+    case "request_access":
+      // The one unquoted target: it names a person to ask ("a project
+      // admin"), not a value to type. Cleaned by `quotable` all the same.
+      return t !== null
+        ? `Ask ${t} to grant you access, then try again`
+        : "Ask an administrator to grant you access, then try again";
     case "resnapshot":
       return "Take a fresh snapshot of the page, then retry";
     case "scroll_into_view":

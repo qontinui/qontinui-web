@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useUIComponent } from "@qontinui/ui-bridge";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import * as workflowApi from "@/lib/api/unified-workflows";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";

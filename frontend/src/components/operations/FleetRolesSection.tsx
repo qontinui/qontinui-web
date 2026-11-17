@@ -74,6 +74,7 @@ import {
   SectionCaption,
   useMachineAliaser,
   usePresentationMode,
+  useRowKey,
   type MachineIdentity,
 } from "@/components/presentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
@@ -88,6 +89,7 @@ import {
   describeLiveSessions,
   describeRole,
   describeRoleEffect,
+  presentedLaneState,
   describeRoleWriteError,
   formatGiB,
   laneNotRegistered,
@@ -126,7 +128,11 @@ function machineWriteKey(c: {
     : `host:${(c.ciHostName ?? "").trim().toLowerCase()}`;
 }
 
-function laneSummary(m: RoleMachine, maybeCut: boolean): string {
+function laneSummary(
+  m: RoleMachine,
+  maybeCut: boolean,
+  presenting: boolean
+): string {
   if (!m.registered)
     return maybeCut
       ? "no lanes shown — may be cut from a truncated read"
@@ -137,7 +143,9 @@ function laneSummary(m: RoleMachine, maybeCut: boolean): string {
       `${LANE_LABEL[l]}: ${
         l === "agent" && m.hostOnly
           ? "n/a"
-          : (m.lanes![l].effective ?? "unknown")
+          : presenting
+            ? presentedLaneState(m.lanes![l].effective)
+            : (m.lanes![l].effective ?? "unknown")
       }`
   )
     .join(" · ")
@@ -266,7 +274,7 @@ function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
                 ) : lane.effective === null ? (
                   "not served"
                 ) : presenting ? (
-                  lane.effective.replaceAll("_", " ")
+                  presentedLaneState(lane.effective)
                 ) : (
                   lane.effective
                 )}
@@ -326,10 +334,21 @@ function RoleButtons({
   );
 }
 
+/** What stands in for coord's note on the roles read while presenting. */
+const ROLES_NOTE_WITHHELD =
+  "Coord added a note about this list, withheld in presentation mode.";
+
 export function FleetRolesSection() {
   const { read, asOfMs, refresh } = useFleetDispatchRoles();
   const { presenting } = usePresentationMode();
   const machineName = useMachineAliaser();
+  const rowKey = useRowKey();
+  // An unrecognised role is shown as coord's raw token, for the operator to act
+  // on; an outsider reads that it was not recognised (D3.3).
+  const roleWords = (m: RoleMachine) =>
+    presenting && m.unrecognisedRole !== null
+      ? "Role not recognised"
+      : describeRole(m);
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -530,8 +549,10 @@ export function FleetRolesSection() {
             loaded={read.state === "known"}
             // The list writes its key into `data-row-key`, and coord's machine
             // key IS `device:<id>` / `host:<name>` — so an outsider's rows are
-            // keyed by position instead (D3.3).
-            itemKey={(m, index) => (presenting ? `machine-${index}` : m.key)}
+            // keyed by an alias of it (D3.3). Never by position: this read
+            // polls, and a machine leaving the list would hand the open row's
+            // key to the next machine, whose detail would silently show.
+            itemKey={(m) => rowKey("machines", m.key)}
             empty={
               <p className="text-xs text-muted-foreground">
                 Coord lists no machines for this tenant
@@ -544,7 +565,7 @@ export function FleetRolesSection() {
             renderRow={(m, { expanded, onToggle }) => (
               <RecordRow
                 identity={machineName(roleIdentity(m), m.name)}
-                label={describeRole(m)}
+                label={roleWords(m)}
                 status={
                   !m.registered ? (
                     <NotRegisteredBadge
@@ -565,7 +586,8 @@ export function FleetRolesSection() {
                 }
                 reason={laneSummary(
                   m,
-                  read.state === "known" && read.rosterTruncated === true
+                  read.state === "known" && read.rosterTruncated === true,
+                  presenting
                 )}
                 attention={m.unrecognisedRole !== null ? "waiting" : undefined}
                 expanded={expanded}
@@ -576,7 +598,7 @@ export function FleetRolesSection() {
                   why={
                     <div className="space-y-1 text-xs">
                       <p className="break-words">
-                        <span className="font-medium">{describeRole(m)}</span>
+                        <span className="font-medium">{roleWords(m)}</span>
                         {m.role !== null && m.updatedAt
                           ? ` — set ${absoluteTime(m.updatedAt)}${
                               // Who set it and why: an operator's identity and
@@ -706,7 +728,9 @@ export function FleetRolesSection() {
             className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
             data-testid="fleet-roles-notice"
           >
-            {read.notice}
+            {/* Coord's own words, which can name a table or a machine; an
+                outsider reads that there is a note, in fixed words (D3.3). */}
+            {presenting ? ROLES_NOTE_WITHHELD : read.notice}
           </p>
         )}
         {read.state === "known" && read.rosterTruncated === true && (

@@ -14,8 +14,9 @@ runs:
   using: composite
   steps:
     # The vocabulary is PINNED, never read at schemas main: a vocabulary edit
-    # there would otherwise redden every PR here; at a pin, a red can only come
-    # from this repo's change. Same pattern as qontinui-claude-config check #71.
+    # there would otherwise redden every PR here; at a pin, a red comes from this
+    # repo's change or from the pinned bytes being unreachable, which names itself.
+    # Same pattern as qontinui-claude-config check #71.
     - name: Read the fleet-noun vocabulary pin
       id: pin
       shell: bash

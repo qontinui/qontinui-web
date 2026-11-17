@@ -1,4 +1,4 @@
-import type { TestSuite, TestCase } from "@/services/workflow-testing-service";
+import type { TestSuite, TestCase } from "@/services/workflow-testing";
 
 export interface TestSuiteEditorProps {
   suite?: TestSuite;

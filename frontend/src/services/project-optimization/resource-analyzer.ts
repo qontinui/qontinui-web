@@ -17,7 +17,7 @@ import type {
 import { workflowComplexityAnalyzer } from "../workflow-complexity-analyzer";
 import { WorkflowDependencyAnalyzer } from "../workflow-dependency-analyzer";
 import { WorkflowDocumentationService } from "../workflow-documentation";
-import { getWorkflowTestingService } from "../workflow-testing-service";
+import { getWorkflowTestingService } from "../workflow-testing";
 import type {
   WorkflowAnalysis,
   StateAnalysis,

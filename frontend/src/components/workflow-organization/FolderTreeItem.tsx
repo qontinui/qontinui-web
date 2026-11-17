@@ -32,7 +32,7 @@ import {
 } from "../ui/dropdown-menu";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource } from "@qontinui/ui-bridge";
+import { useDragSource } from "@qontinui/ui-bridge/react";
 import { cn } from "../../lib/utils";
 
 export interface FolderTreeItemProps {

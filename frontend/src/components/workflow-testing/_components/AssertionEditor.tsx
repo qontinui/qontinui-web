@@ -13,10 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type {
-  Assertion,
-  AssertionType,
-} from "@/services/workflow-testing-service";
+import type { Assertion, AssertionType } from "@/services/workflow-testing";
 
 interface AssertionEditorProps {
   assertion: Assertion;

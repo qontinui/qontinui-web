@@ -63,6 +63,13 @@ export interface AgentQuestionRow {
   withdrawal_evidence?: unknown;
   /** The ask-time reference, same shape as `withdrawal_evidence`. */
   asked_about?: unknown;
+  // The fork shape coord's single-question door serves (plan
+  // `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+  // Phase 3). The list doors omit all three, and so does a coord build that
+  // predates them: an absent `shape` says nothing, so it renders nothing.
+  recommendation?: string | null;
+  if_overturned?: string | null;
+  shape?: string | null;
   // The decision this row MIRRORS, added by alembic revision
   // `coord_agent_questions_effect` (plan
   // `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
@@ -440,4 +447,30 @@ export function optionLabels(q: AgentQuestionRow): string[] {
       typeof o === "string" ? o : (o.label ?? o.value ?? "")
     )
     .filter((s) => s.length > 0);
+}
+
+/**
+ * What the answer page says about a question's recommendation. Same arms as the
+ * needs-me row: `unknown` means coord could not read it, which is not "none was
+ * given", and an absent `shape` means this door did not say, so nothing shows.
+ */
+export type QuestionForkShape =
+  | { kind: "fork"; recommendation: string; ifOverturned: string | null }
+  | { kind: "open" }
+  | { kind: "unknown" }
+  | { kind: "not_served" };
+
+export function deriveQuestionForkShape(
+  row: Pick<AgentQuestionRow, "recommendation" | "if_overturned" | "shape">
+): QuestionForkShape {
+  if (row.shape === "unknown") return { kind: "unknown" };
+  const recommendation = row.recommendation?.trim();
+  if (recommendation) {
+    return {
+      kind: "fork",
+      recommendation,
+      ifOverturned: row.if_overturned?.trim() || null,
+    };
+  }
+  return row.shape === "open_question" ? { kind: "open" } : { kind: "not_served" };
 }

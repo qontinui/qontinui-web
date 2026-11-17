@@ -53,11 +53,16 @@
  *   never moves the level.
  */
 
+import {
+  rosterCutHidesHealth,
+  rosterCutSentence,
+} from "@/components/admin/coord/machineHealth";
 import { relativeTime } from "@/components/console/time";
 import type {
   FleetHealthConditions,
   FleetHealthPayload,
 } from "@/lib/api/operations/coordFleet";
+import { fleetRosterCut } from "./fleetLiveness";
 
 /** Traffic-light level, same vocabulary as `console/HealthStrip`. */
 export type FleetConditionsLevel = "green" | "amber" | "red";
@@ -306,7 +311,32 @@ export interface SummarizeFleetConditionsInput {
   nowMs?: number;
 }
 
-export function summarizeFleetConditions({
+export function summarizeFleetConditions(
+  input: SummarizeFleetConditionsInput
+): FleetConditionsSummary {
+  const summary = summarizeConditionsBlock(input);
+  // A machine coord's row cap withheld can raise no new machine alert, so a calm
+  // reading here would vouch for machines nothing evaluated. A cut of only the rows
+  // coord says cannot degrade changes nothing: this panel counts no rows.
+  const cut = fleetRosterCut(input.data);
+  if (!rosterCutHidesHealth(cut)) return summary;
+  return {
+    ...summary,
+    level: summary.level === "green" ? "amber" : summary.level,
+    headline: CALM_HEADLINES.has(summary.headline)
+      ? `${summary.headline} among listed machines, any others unknown`
+      : summary.headline,
+    detail: `${summary.detail} ${rosterCutSentence(cut)}`,
+  };
+}
+
+/** The headlines that claim nothing is wrong, which a health-hiding cut voids. */
+const CALM_HEADLINES: ReadonlySet<string> = new Set([
+  "Nothing unhandled",
+  "No agent work unhandled",
+]);
+
+function summarizeConditionsBlock({
   data,
   loading,
   error,

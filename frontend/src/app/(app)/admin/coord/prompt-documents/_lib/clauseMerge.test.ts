@@ -95,6 +95,37 @@ describe("clauseText", () => {
   it("renders an absent side as empty, so a removal diffs as a pure deletion", () => {
     expect(clauseText(undefined)).toBe("");
   });
+
+  it("renders a raw clause as its verbatim body, not as empty labels", () => {
+    const body = "## clause: prose-rule\n\nAgents do the thing, carefully.";
+    expect(
+      clauseText(
+        side("", {
+          category: null,
+          status: null,
+          tier: null,
+          trigger: null,
+          action: null,
+          body,
+        })
+      )
+    ).toBe("Agents do the thing, carefully.");
+  });
+
+  it("lines a raw side up against a labelled one (no header-only diff)", () => {
+    const raw = clauseText(
+      side("", {
+        category: null,
+        status: null,
+        tier: null,
+        trigger: null,
+        action: null,
+        body: "## clause: prose-rule\n\n- **action:** do the thing",
+      })
+    );
+    expect(raw).toBe("- **action:** do the thing");
+    expect(raw).not.toMatch(/## clause:/);
+  });
 });
 
 describe("resultingSide", () => {

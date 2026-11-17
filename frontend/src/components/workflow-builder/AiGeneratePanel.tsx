@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useUIComponent } from "@qontinui/ui-bridge";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import { SpecSourceSection } from "./SpecSourceSection";
 import { useGenerateFormState } from "./_hooks/useGenerateFormState";
 import { useAdvancedOptions } from "./_hooks/useAdvancedOptions";

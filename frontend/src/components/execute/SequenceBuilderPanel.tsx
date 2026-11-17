@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { SortableQueueItem } from "./SortableQueueItem";
-import { useDropZone } from "@qontinui/ui-bridge";
+import { useDropZone } from "@qontinui/ui-bridge/react";
 
 export interface QueueItem {
   queueId: string;

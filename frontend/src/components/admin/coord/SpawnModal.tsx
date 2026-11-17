@@ -123,7 +123,10 @@ import {
   type SpawnBodySubject,
 } from "@/components/admin/coord/planBodySignal";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { DevicePicker } from "@/components/operations/DevicePicker";
+import {
+  DevicePicker,
+  pickableDevices,
+} from "@/components/operations/DevicePicker";
 import {
   describeSpawnPlacement,
   describeSpawnRefusal,
@@ -651,7 +654,7 @@ export function SpawnModal({
             {/* Only offer the return trip when there is something to return
                 to: switching back to a zero-item Select is the dead end this
                 change exists to remove. */}
-            {!devicesLoading && (!manualDevice || devices.length > 0) && (
+            {!devicesLoading && (!manualDevice || pickableDevices(devices).shown.length > 0) && (
               <button
                 type="button"
                 className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
@@ -663,7 +666,7 @@ export function SpawnModal({
                 }}
               >
                 {manualDevice
-                  ? `Choose from the roster (${devices.length})`
+                  ? `Choose from the roster (${pickableDevices(devices).shown.length})`
                   : "Enter a device id instead"}
               </button>
             )}

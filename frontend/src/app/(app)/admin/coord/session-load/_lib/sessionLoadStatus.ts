@@ -65,7 +65,13 @@ import type {
   ConcurrencyBucket,
   SessionRunsWindow,
 } from "@/lib/api/operations/coordSessionRuns";
-import { formatDuration } from "../../spawns/_lib/spawnStatus";
+import type { SpawnStatsWindow } from "@/lib/api/operations/coordSpawns";
+import { spawnRequestsHref } from "../../spawns/_lib/spawnRequestsRoute";
+import {
+  SPAWN_WINDOWS,
+  formatDuration,
+  windowSpec,
+} from "../../spawns/_lib/spawnStatus";
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -1675,8 +1681,57 @@ export interface RunLink {
   id: string;
 }
 
-/** The records a run points at that the console can open. */
-export function runLinks(run: SessionRunWire): RunLink[] {
+/** The spawn requests window a run's request link opens. */
+export interface SpawnRequestWindow {
+  window: SpawnStatsWindow;
+  /**
+   * No wider window is left to absorb a deferral: the run started inside
+   * only the widest window, before it, or at an unreadable time. The request
+   * may then be older than anything the view can show.
+   */
+  mayBeOlderThanView: boolean;
+}
+
+/**
+ * The spawn requests window to open for a run's request, from the run's
+ * start alone. The view filters requests by when they were FIRST requested,
+ * and a request is made at or before its run starts — possibly long before,
+ * when it was deferred. So the narrowest window that holds the start is only
+ * a lower bound: a request made 25 h ago and deferred 2 h has a run that
+ * started 23 h ago, and the 24 h view would not list it. The link therefore
+ * opens the NEXT wider window, which also absorbs the page clock moving
+ * between this render and the click. That holds every request made up to
+ * the gap between the two windows before its run started (6 days past a
+ * 24 h start, 23 days past a 7 d start). A start already past 7 days has no
+ * wider window left: it opens the widest, 30 days, which is the most the
+ * view offers, and so does a start older than that or unreadable. In all
+ * three the request may have been made before the 30 days begin, so the
+ * link says it may be older than the view. `nowMs` is the caller's clock,
+ * passed in so the row and its link agree on what "now" is.
+ */
+export function spawnWindowForRun(
+  run: SessionRunWire,
+  nowMs: number
+): SpawnRequestWindow {
+  const widest = SPAWN_WINDOWS.length - 1;
+  // An unreadable start is NaN, which no window holds: the beyond-view arm.
+  const age = Math.max(0, nowMs - Date.parse(run.started_at));
+  const narrowest = SPAWN_WINDOWS.findIndex((w) => age <= w.ms);
+  // Nothing wider than the window holding the start: the widest, flagged.
+  if (narrowest < 0 || narrowest + 1 > widest)
+    return { window: SPAWN_WINDOWS[widest]!.id, mayBeOlderThanView: true };
+  return {
+    window: SPAWN_WINDOWS[narrowest + 1]!.id,
+    mayBeOlderThanView: false,
+  };
+}
+
+/**
+ * The records a run points at that the console can open. The spawn request
+ * opens the spawn requests view (the per-request list), at the window
+ * `spawnWindowForRun` picks.
+ */
+export function runLinks(run: SessionRunWire, nowMs: number): RunLink[] {
   const links: RunLink[] = [];
   if (run.gate_id) {
     links.push({
@@ -1687,10 +1742,13 @@ export function runLinks(run: SessionRunWire): RunLink[] {
     });
   }
   if (run.spawn_request_id) {
+    const { window, mayBeOlderThanView } = spawnWindowForRun(run, nowMs);
     links.push({
       key: "spawn",
-      label: "Spawn request (Spawns page)",
-      href: "/admin/coord/spawns",
+      label: mayBeOlderThanView
+        ? `Find the spawn request (it may be older than the ${windowSpec(window).label}, the widest view)`
+        : "Find the spawn request",
+      href: spawnRequestsHref(window),
       id: run.spawn_request_id,
     });
   }

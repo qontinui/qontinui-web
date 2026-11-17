@@ -78,6 +78,14 @@
  * named apart from the inbox row's `coord-question-withdrawal` so a test can
  * say which surface it is asserting on.
  *
+ * ## The recommendation survives the click from "needs you"
+ *
+ * Plan
+ * `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+ * Phase 3. The asker's recommendation and what overturning it costs show here,
+ * where the decision is made, under the arms of `deriveQuestionForkShape`
+ * (`coord-question-recommendation`, `coord-question-no-recommendation`).
+ *
  * ## Decision effects — answered through the effect's own core
  *
  * Plan
@@ -137,9 +145,11 @@ import {
   respondToAgentQuestion,
 } from "@/lib/api/operations/agentQuestions";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { NEEDS_UNREADABLE_WORDS } from "@/components/admin/coord/coordHomeStatus";
 import {
   QUESTION_STATUS_PALETTE,
   QUESTION_TERMINAL_KINDS,
+  deriveQuestionForkShape,
   deriveQuestionStatus,
   formatRelative,
   type AgentQuestionOption,
@@ -386,6 +396,7 @@ export default function CoordQuestionDetailPage() {
   // may be null while the first read is in flight; the block that consumes
   // this only renders once it is not.
   const status = deriveQuestionStatus(shown ?? {});
+  const forkShape = deriveQuestionForkShape(shown ?? {});
   /**
    * The page's terminal predicate must MATCH the derivation above, kind for
    * kind — three-valued, not two.
@@ -517,6 +528,37 @@ export default function CoordQuestionDetailPage() {
               )}
             </div>
             <p className="text-base font-medium">{shown.question}</p>
+            {forkShape.kind === "fork" && (
+              <div
+                data-testid="coord-question-recommendation"
+                className="text-sm space-y-1"
+              >
+                <p>
+                  <span className="text-muted-foreground">Recommended: </span>
+                  {forkShape.recommendation}
+                </p>
+                {forkShape.ifOverturned && (
+                  <p>
+                    <span className="text-muted-foreground">
+                      If overturned:{" "}
+                    </span>
+                    {forkShape.ifOverturned}
+                  </p>
+                )}
+              </div>
+            )}
+            {(forkShape.kind === "open" || forkShape.kind === "unknown") && (
+              <p
+                data-testid="coord-question-no-recommendation"
+                className="text-sm text-muted-foreground"
+              >
+                {forkShape.kind === "unknown"
+                  ? `Recommendation ${NEEDS_UNREADABLE_WORDS}`
+                  : effect?.kind === "gate"
+                    ? "Approval — no recommendation"
+                    : "Open question — no recommendation"}
+              </p>
+            )}
             {/* R8 — the raw coord ids live at the bottom, muted and mono, not
                 beside the question they are support material for. */}
             <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">

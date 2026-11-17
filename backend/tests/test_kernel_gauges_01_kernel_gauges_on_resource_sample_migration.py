@@ -44,14 +44,18 @@ from sqlalchemy.engine import Engine
 
 from tests._alembic_harness import (
     admin_database_url,
+    alter_statement,
     backend_root,
+    backfill_statements,
     can_connect,
     column_comment,
     column_info,
     comment_body_from_source,
     declared_parent_revision_id,
     ephemeral_database,
+    forbidden_add_clauses,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     table_exists,
 )
@@ -237,30 +241,11 @@ def test_every_ddl_type_has_a_postgres_spelling_and_names_are_unique() -> None:
 
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    """Run ``upgrade`` or ``downgrade`` against a recording ``op`` stub."""
-    module = _revision_module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_revision_module(), step, monkeypatch)
 
 
 def _alter_statement(statements: list[str], table: str, verb: str) -> str:
-    """The ONE ``ALTER TABLE coord.<table> <verb> COLUMN`` statement."""
-    head = re.compile(rf"^\s*ALTER TABLE {_SCHEMA}\.{table}\s")
-    found = [
-        sql for sql in statements if head.match(sql) and f"{verb} COLUMN" in sql.upper()
-    ]
-    assert len(found) == 1, (
-        f"expected one {verb} statement for {_SCHEMA}.{table}, got {len(found)}"
-    )
-    return found[0]
+    return alter_statement(statements, _SCHEMA, table, verb)
 
 
 def test_upgrade_adds_exactly_the_listed_columns_to_each_table(
@@ -309,13 +294,33 @@ def test_both_directions_open_with_the_lock_bound(
 def test_upgrade_never_drops_defaults_or_constrains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Nullable, no DEFAULT, no CHECK (validated app-side), and no DROP."""
-    up = "\n".join(_recorded_sql(monkeypatch, "upgrade"))
-    ddl = "\n".join(sql for sql in up.split("\n") if "ADD COLUMN" in sql)
-    assert not re.search(r"\bDROP\b", up)
-    assert not re.search(r"\bNOT NULL\b|\bDEFAULT\b|\bCHECK\b", ddl, re.I), (
-        "an ADD carries NOT NULL / DEFAULT / CHECK; NULL is load-bearing here "
-        "and the control ranges are validated app-side by design"
+    """Nullable, no DEFAULT / CHECK / constraint (validated app-side), no DROP,
+    and no backfill — on EVERY table's ADD.
+
+    The clause scan reads each WHOLE ADD statement, whitespace-collapsed
+    (``_alembic_harness.forbidden_add_clauses``): reading only its
+    ``ADD COLUMN`` lines let a clause on a continuation line pass.
+    """
+    statements = _recorded_sql(monkeypatch, "upgrade")
+    assert not re.search(r"\bDROP\b", "\n".join(statements))
+    for table, _ in _TABLE_COLUMNS:
+        found = forbidden_add_clauses(_alter_statement(statements, table, "ADD"))
+        assert not found, (
+            f"{_SCHEMA}.{table}: the ADD carries {found}; NULL is load-bearing "
+            "here and the control ranges are validated app-side by design"
+        )
+    assert not backfill_statements(statements), (
+        "the revision backfills; rows written before it must keep NULL"
+    )
+    # Pin the shape: the lock bound, one ALTER per listed table, then only
+    # COMMENTs — so a second ALTER the finder's anchor does not match
+    # (``ALTER TABLE ONLY``, an unlisted table, a ``SET DEFAULT``) cannot slip
+    # past the clause scan.
+    adds = {_alter_statement(statements, table, "ADD") for table, _ in _TABLE_COLUMNS}
+    others = [sql for sql in statements if sql not in adds]
+    assert others[0] == _LOCK_BOUND, others
+    assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others[1:]), (
+        others
     )
 
 

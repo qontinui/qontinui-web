@@ -566,3 +566,69 @@ class TestRedeemEndpoint:
         assert resp.status_code == 404, (
             f"redeem must be unauthenticated; got {resp.status_code}: {resp.text}"
         )
+
+
+class TestRedeemCoordFailureRelay:
+    """What a failed coord pair-cli call tells the code's holder.
+
+    A coord 5xx's text can carry SQL/pool context, so only its status and a
+    fixed sentence reach the browser (the rule ``fleet_targets`` applies); a
+    coord 4xx is coord's refusal of this device, and its body is relayed.
+    """
+
+    _COORD_5XX_TEXT = 'pg_error: relation "coord.devices" pool timed out at 10.0.0.5'
+
+    async def _redeem_with_coord_answer(
+        self, async_db_session: AsyncSession, test_user, status_code: int, text: str
+    ) -> httpx.Response:
+        row = await pair_code_crud.mint_pair_code(
+            async_db_session,
+            tenant_id=_FIXTURE_TENANT_ID,
+            issued_by_user_id=test_user.id,
+        )
+        app = _build_test_app(db_session=async_db_session, user_id=test_user.id)
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch("app.api.v1.endpoints.pair_codes.coord_service_account") as bridge,
+            patch(
+                "app.api.v1.endpoints.pair_codes.post_to_coord",
+                AsyncMock(return_value=_mock_resp(status_code=status_code, text=text)),
+            ),
+        ):
+            bridge.enabled = True
+            bridge._headers = AsyncMock(return_value={"X-Test": "1"})
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                return await client.post(
+                    f"/api/v1/devices/pair-codes/{row.code}/redeem",
+                    json={"device_id": str(_FIXTURE_DEVICE_ID), "hostname": "host-a"},
+                )
+
+    @pytest.mark.asyncio
+    async def test_a_coord_5xx_relays_its_status_and_a_fixed_sentence_only(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        resp = await self._redeem_with_coord_answer(
+            async_db_session, test_user, 500, self._COORD_5XX_TEXT
+        )
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["coord_status"] == 500
+        assert "coord_body" not in detail
+        assert detail["message"] == (
+            "Coord failed to pair the device (HTTP 500). "
+            "Retry; if it persists, check coord."
+        )
+        assert "pg_error" not in resp.text and "10.0.0.5" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_a_coord_4xx_relays_its_body(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        refusal = '{"error":"device_already_paired"}'
+        resp = await self._redeem_with_coord_answer(
+            async_db_session, test_user, 409, refusal
+        )
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"] == {"coord_status": 409, "coord_body": refusal}

@@ -90,6 +90,31 @@ export type ReviewDecision =
   | "CHANGES_REQUESTED"
   | string;
 
+/**
+ * Whether coord will bring a BEHIND branch current, as coord read it. Plan
+ * `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`, D1.
+ */
+export type FreshenState =
+  | "eligible"
+  | "in_progress"
+  | "ineligible"
+  | "exhausted"
+  | "suppressed"
+  | "disabled"
+  | "unknown";
+
+export interface PrFreshen {
+  state: FreshenState;
+  /** `null` when coord could not read its own attempt record. */
+  attempts: number | null;
+  max_attempts: number;
+  last_attempt_at: string | null;
+  /** Why coord refused, e.g. `ineligible:distance_arm_not_shipped`. */
+  skip: string | null;
+  /** Coord's one human clause. */
+  reason: string;
+}
+
 export interface PrRow {
   repo: string;
   pr_number: number;
@@ -135,6 +160,12 @@ export interface PrRow {
   /** Short human one-liner explaining {@link PrRow.merge_status}. Same
    *  optionality contract. */
   blocking_summary?: string;
+  /**
+   * Served only on rows whose `merge_status` is `behind-base` or
+   * `ci-failed-stale-base`. ABSENT on an older coord, which reads as UNKNOWN,
+   * never as `eligible`. Rendered through `readBehindFreshen`.
+   */
+  freshen?: PrFreshen | null;
   /**
    * Status of the latest non-cancelled `merge_proposal` linked to this PR via
    * `coord.merge_proposal_repos (repo, head_sha)`. Same optionality contract;
@@ -234,8 +265,12 @@ export type MergeStatusToken =
   | "ci-failed"
   /** CI is red, but `main` has moved past the PR's CI base, so the red may be
    *  main's fault rather than the PR's. Emitted from the predicate code
-   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. The remedy is coord's
-   *  own BEHIND freshen (update the branch; CI re-runs) — not author work.
+   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. Not author work:
+   *  coord's own stale-base freshen MAY update the branch and re-run CI;
+   *  whether it will is the row's served `freshen` block (it refuses a
+   *  distance-only stale base outright), read through `readBehindFreshen`, and
+   *  an absent block is an UNKNOWN wait, never a promise. Plan
+   *  `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`.
    *  Plan `2026-09-05-a-red-pr-is-classified-before-coord-looks-at-behind-so-a-stale-base-is-never-refreshed`. */
   | "ci-failed-stale-base"
   /** Added by qontinui-coord#2723 (not yet emitted by coord main — mapped here

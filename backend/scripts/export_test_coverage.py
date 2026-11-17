@@ -16,6 +16,20 @@ Design constraints (see plan 2026-06-04-ci-per-test-coverage-producer-plan):
   * Cadence is push-to-main only (enforced by the workflow `if:` guard, not
     here); this script just emits whatever db it's pointed at.
 
+Sharded producer (one db, several JUnit files):
+  `.github/workflows/backend-coverage-producer.yml` runs the suite as a matrix
+  of shards. Each shard writes its OWN coverage data file and JUnit file; the
+  downstream export job `coverage combine`s the data files into ONE `.coverage`
+  db (dynamic contexts survive the combine, so per-test attribution is intact)
+  and passes every shard's JUnit file here as a repeated `--junit-xml`. Those
+  are merged into ONE `<testsuites>` document and POSTed ONCE, so coord sees
+  exactly the single results batch per head it always did. If any of several
+  JUnit files is missing or unparseable the results POST is SKIPPED rather
+  than sent partial: a partial results batch presented as the whole run is
+  the one thing this producer must never publish. (The workflow refuses to
+  reach this script at all unless every shard delivered both files; this is
+  the script's own second guard.)
+
 test_id alignment (LOAD-BEARING — downstream joins coverage<->results on it):
   coverage.py contexts (with --cov-context=test) look like a pytest nodeid plus
   a `|run` / `|setup` / `|teardown` suffix, e.g.
@@ -46,11 +60,13 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 
 REPO = "qontinui-web"
 DEFAULT_COORD_URL = "https://coord.qontinui.io"
 OBSERVE_PATH = "/coord/test-coverage/observe"
 RESULTS_PATH = "/coord/test-results/ingest"
+DEFAULT_JUNIT_XML = "junit-results.xml"
 
 # coverage.py appends these to a nodeid when --cov-context=test is used; they
 # denote which phase of the test ran the line. We attribute all phases to the
@@ -276,12 +292,73 @@ def post_observations(coord_url: str, observations: list[dict]) -> None:
     post_json(coord_url.rstrip("/") + OBSERVE_PATH, {"observations": observations})
 
 
-def post_junit(coord_url: str, junit_path: str, head_sha: str) -> None:
-    if not os.path.exists(junit_path):
-        warn(f"junit file not found: {junit_path}; skipping results ingest")
+def _int_attr(el: ET.Element, name: str) -> int:
+    try:
+        return int(float(el.get(name, "0") or "0"))
+    except ValueError:
+        return 0
+
+
+def merge_junit_xml(paths: list[str]) -> str | None:
+    """Return ONE JUnit document covering every file in ``paths``, or None.
+
+    One path is returned VERBATIM (byte-for-byte what pytest wrote), so the
+    unsharded call is unchanged. Several paths are merged: every
+    ``<testsuite>`` -- whether the file's root is ``<testsuites>`` (what pytest
+    writes) or a bare ``<testsuite>`` -- becomes a child of a new
+    ``<testsuites>`` root, whose ``tests``/``failures``/``errors``/``skipped``
+    are the sums over its children.
+
+    None means "do not POST": no path given, any path missing, or any document
+    unparseable. With several files a hole is not skipped over, because a
+    results batch missing one shard would be published as if it were the run.
+    """
+    if not paths:
+        warn("no junit file given; skipping results ingest")
+        return None
+    raws: list[tuple[str, str]] = []
+    for path in paths:
+        if not os.path.exists(path):
+            warn(f"junit file not found: {path}; skipping results ingest")
+            return None
+        with open(path, encoding="utf-8") as fh:
+            raws.append((path, fh.read()))
+    if len(raws) == 1:
+        return raws[0][1]
+
+    merged = ET.Element("testsuites", {"name": "pytest tests"})
+    for path, raw in raws:
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError as exc:
+            warn(
+                f"junit file {path} is not parseable XML ({exc}); skipping results ingest"
+            )
+            return None
+        if root.tag == "testsuites":
+            suites = list(root)
+        elif root.tag == "testsuite":
+            suites = [root]
+        else:
+            warn(
+                f"junit file {path} has root <{root.tag}>, not a testsuite; skipping results ingest"
+            )
+            return None
+        for suite in suites:
+            merged.append(suite)
+    for attr in ("tests", "failures", "errors", "skipped"):
+        merged.set(attr, str(sum(_int_attr(s, attr) for s in merged)))
+    return '<?xml version="1.0" encoding="utf-8"?>' + ET.tostring(
+        merged, encoding="unicode"
+    )
+
+
+def post_junit(coord_url: str, junit_paths: list[str], head_sha: str) -> None:
+    raw = merge_junit_xml(junit_paths)
+    if raw is None:
         return
-    with open(junit_path, encoding="utf-8") as fh:
-        raw = fh.read()
+    if len(junit_paths) > 1:
+        info(f"merged {len(junit_paths)} junit files into one results batch")
     post_json(
         coord_url.rstrip("/") + RESULTS_PATH,
         {
@@ -321,7 +398,7 @@ def run_export(args: argparse.Namespace) -> int:
         warn(f"coverage observe POST failed: {exc!r} — continuing (best-effort)")
 
     try:
-        post_junit(coord_url, args.junit_xml, head_sha)
+        post_junit(coord_url, args.junit_xml or [DEFAULT_JUNIT_XML], head_sha)
     except Exception as exc:  # noqa: BLE001
         warn(f"junit results POST failed: {exc!r} — continuing (best-effort)")
 
@@ -464,6 +541,54 @@ def self_test() -> int:
         assert o["files_touched"], "files_touched must be non-empty"
         assert all(p.startswith("backend/app/") for p in o["files_touched"])
 
+    # 4. JUnit merge: several shards -> one document, and never a partial one.
+    with tempfile.TemporaryDirectory() as tmp:
+        wrapped = os.path.join(tmp, "a.xml")
+        bare = os.path.join(tmp, "b.xml")
+        broken = os.path.join(tmp, "c.xml")
+        with open(wrapped, "w", encoding="utf-8") as fh:
+            fh.write(
+                '<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests">'
+                '<testsuite name="pytest" tests="2" failures="1" errors="0" skipped="0">'
+                '<testcase classname="tests.test_a" name="test_x"/>'
+                '<testcase classname="tests.test_a" name="test_y"><failure message="m"/></testcase>'
+                "</testsuite></testsuites>"
+            )
+        with open(bare, "w", encoding="utf-8") as fh:
+            fh.write(
+                '<testsuite name="pytest" tests="1" failures="0" errors="0" skipped="1">'
+                '<testcase classname="tests.test_b.TestB" name="test_z[1]"><skipped/></testcase>'
+                "</testsuite>"
+            )
+        with open(broken, "w", encoding="utf-8") as fh:
+            fh.write("<testsuite><testcase")
+
+        with open(wrapped, encoding="utf-8") as fh:
+            assert merge_junit_xml([wrapped]) == fh.read(), "one file must be verbatim"
+
+        merged = merge_junit_xml([wrapped, bare])
+        assert merged is not None
+        root = ET.fromstring(merged)
+        assert root.tag == "testsuites"
+        names = [
+            f"{tc.get('classname')}::{tc.get('name')}" for tc in root.iter("testcase")
+        ]
+        assert names == [
+            "tests.test_a::test_x",
+            "tests.test_a::test_y",
+            "tests.test_b.TestB::test_z[1]",
+        ], names
+        assert (root.get("tests"), root.get("failures"), root.get("skipped")) == (
+            "3",
+            "1",
+            "1",
+        ), root.attrib
+
+        # A hole in a multi-shard set is never skipped over.
+        assert merge_junit_xml([wrapped, os.path.join(tmp, "missing.xml")]) is None
+        assert merge_junit_xml([wrapped, broken]) is None
+        assert merge_junit_xml([]) is None
+
     print("SELF-TEST PASSED:", json.dumps({"observations": obs}, indent=2))
     return 0
 
@@ -477,8 +602,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--junit-xml",
-        default="junit-results.xml",
-        help="path to the JUnit XML to POST to the results ingest",
+        action="append",
+        default=None,
+        help=(
+            "path to a JUnit XML to POST to the results ingest; repeat it once "
+            "per shard and the files are merged into ONE batch (default: "
+            f"{DEFAULT_JUNIT_XML})"
+        ),
     )
     parser.add_argument(
         "--print-batch",
