@@ -75,7 +75,9 @@ the body carries ``partial``: ``true`` when an earlier id came back ``unbound``
 (the tenant changed) or ``unknown`` (it may have), ``false`` when nothing
 before the refusal changed. It is derived from the same ``results`` the body
 carries, so it can never disagree with them; it exists so a reader that does
-not walk the rows still cannot read the 403 as "nothing was removed".
+not walk the rows still cannot read the 403 as "nothing was removed". It covers
+THIS request only: a caller that split a removal into several requests (the
+console batches by 64) merges its earlier requests' rows itself.
 
 It is a sibling module rather than a module INSIDE the ``operations`` package
 because the package's D4 guard (``tests/test_operations_route_table.py``
