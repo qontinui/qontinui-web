@@ -461,10 +461,10 @@ async def post_fleet_devices_unbind(
                     _not_attempted(d, "the batch was aborted by a caller refusal")
                     for d in ids[index + 1 :]
                 )
-                partial = _tally(results)
+                tally = _tally(results)
                 # Something before the refusal changed the tenant (unbound) or
                 # may have (unknown): see the module docstring.
-                changed = partial.unbound > 0 or partial.unknown > 0
+                partial = tally.unbound > 0 or tally.unknown > 0
                 logger.warning(
                     "fleet_devices_unbind_aborted",
                     tenant_id=str(tenant_id),
@@ -472,12 +472,12 @@ async def post_fleet_devices_unbind(
                     coord_status=refused_status,
                     reached=index + 1,
                     requested=len(ids),
-                    partial=changed,
-                    unbound=partial.unbound,
-                    already_absent=partial.already_absent,
-                    unknown=partial.unknown,
-                    failed=partial.failed,
-                    not_attempted=partial.not_attempted,
+                    partial=partial,
+                    unbound=tally.unbound,
+                    already_absent=tally.already_absent,
+                    unknown=tally.unknown,
+                    failed=tally.failed,
+                    not_attempted=tally.not_attempted,
                 )
                 raise HTTPException(
                     status_code=_ABORT_STATUS,
@@ -486,8 +486,9 @@ async def post_fleet_devices_unbind(
                         "coord_status": refused_status,
                         "coord_error": result.error,
                         "refused_device_id": str(device_id),
-                        "partial": changed,
-                        **partial.model_dump(mode="json"),
+                        **tally.model_dump(mode="json"),
+                        # After the tally, so no tally field can shadow it.
+                        "partial": partial,
                     },
                 )
 
