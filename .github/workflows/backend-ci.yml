@@ -6,10 +6,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-      # Read by tests/test_secret_scan_download_guard.py: the gitleaks fetch
-      # script and the workflow that pins it.
+      # Read by tests/test_secret_scan_download_guard.py and
+      # tests/test_gitleaks_harness_guard.py: the gitleaks fetch script, its
+      # harness-diff guard and the workflow that pins and runs them.
       - '.github/workflows/secret-scan.yml'
       - '.github/scripts/fetch-gitleaks.sh'
+      - '.github/scripts/harness-guarded.sh'
       # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
       # reads: a pin bump must run the ratchet it re-seeds.
       - 'fleet-nouns.pin.toml'
@@ -112,10 +114,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
-      # Read by tests/test_secret_scan_download_guard.py: the gitleaks fetch
-      # script and the workflow that pins it.
+      # Read by tests/test_secret_scan_download_guard.py and
+      # tests/test_gitleaks_harness_guard.py: the gitleaks fetch script, its
+      # harness-diff guard and the workflow that pins and runs them.
       - '.github/workflows/secret-scan.yml'
       - '.github/scripts/fetch-gitleaks.sh'
+      - '.github/scripts/harness-guarded.sh'
       # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
       # reads: a pin bump must run the ratchet it re-seeds.
       - 'fleet-nouns.pin.toml'
