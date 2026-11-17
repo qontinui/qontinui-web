@@ -1,0 +1,1274 @@
+{
+ "_source": "gh api 'repos/qontinui/qontinui-web/actions/runs/42466217222/attempts/1/jobs?per_page=100' fetched 2026-11-11 (qontinui-web#2144, head a6b710fef: shard 1 died in Install Poetry during the 2026-11-08 release-CDN outage; attempt 2 is the `--failed` re-run), trimmed to the fields shard_headroom.py and aggregate_setup_death.py read (+ step names/conclusions)",
+ "total_count": 12,
+ "jobs": [
+  {
+   "id": 128686240470,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Security Scanning",
+   "status": "completed",
+   "conclusion": "failure",
+   "runner_id": 146901,
+   "runner_name": "nawa-org-10",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:15:58Z",
+   "completed_at": "2026-11-08T09:18:37Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up runner",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Trivy",
+     "status": "completed",
+     "conclusion": "failure"
+    },
+    {
+     "name": "Run Trivy vulnerability scanner",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Upload Trivy results to GitHub Security",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Run safety check (dependency vulnerabilities)",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Upload Trivy results to GitHub Security",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Install Trivy",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240510,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 2/6)",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477048,
+   "runner_name": "GitHub Actions 1000477048",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:26:51Z",
+   "completed_at": "2026-11-08T09:51:54Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240530,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Test Docker Build",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477069,
+   "runner_name": "GitHub Actions 1000477069",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:46:11Z",
+   "completed_at": "2026-11-08T09:49:12Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Resolve qontinui-cloud-control pin",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Build Docker image",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Test Docker image",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240581,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 4/6)",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477059,
+   "runner_name": "GitHub Actions 1000477059",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:35:24Z",
+   "completed_at": "2026-11-08T09:56:27Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240583,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Lint & Format Check",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 146921,
+   "runner_name": "nawa-org-30",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:15:39Z",
+   "completed_at": "2026-11-08T09:20:51Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up runner",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run ruff (linting)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run ruff format (formatting)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run mypy (type checking)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240590,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 5/6)",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477073,
+   "runner_name": "GitHub Actions 1000477073",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T09:49:14Z",
+   "completed_at": "2026-11-08T10:14:39Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240591,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 6/6)",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477109,
+   "runner_name": "GitHub Actions 1000477109",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T10:19:55Z",
+   "completed_at": "2026-11-08T10:38:33Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240645,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 1/6)",
+   "status": "completed",
+   "conclusion": "failure",
+   "runner_id": 1000477212,
+   "runner_name": "GitHub Actions 1000477212",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T11:55:26Z",
+   "completed_at": "2026-11-08T11:58:04Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "failure"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128686240687,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests (shard 3/6)",
+   "status": "completed",
+   "conclusion": "success",
+   "runner_id": 1000477218,
+   "runner_name": "GitHub Actions 1000477218",
+   "created_at": "2026-11-08T09:12:52Z",
+   "started_at": "2026-11-08T12:02:45Z",
+   "completed_at": "2026-11-08T12:20:48Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Initialize containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Record job start time",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Self-hosted: host provisioned",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Free disk space",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install Poetry",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install dependencies",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Install qontinui-cloud-control into poetry venv",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Check OpenAPI snapshot is up to date",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload CI-generated OpenAPI snapshot on drift",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Install postgresql-client",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Create test schemas and extensions",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Collect the test suite",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Select this shard's test files",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Run tests with coverage",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Warn if the job is approaching its budget",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage to Codecov",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload coverage artifacts",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Upload junit results",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Explain infrastructure timeout vs external cancellation",
+     "status": "completed",
+     "conclusion": "skipped"
+    },
+    {
+     "name": "Post Set up Python",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Fleet-noun vocabulary (pinned)",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Stop containers",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128729073684,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests",
+   "status": "completed",
+   "conclusion": "failure",
+   "runner_id": 146927,
+   "runner_name": "nawa-org-31",
+   "created_at": "2026-11-08T12:20:48Z",
+   "started_at": "2026-11-08T12:20:50Z",
+   "completed_at": "2026-11-08T12:20:59Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Set up runner",
+     "status": "completed",
+     "conclusion": "success"
+    },
+    {
+     "name": "Assert every shard succeeded",
+     "status": "completed",
+     "conclusion": "failure"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success"
+    }
+   ]
+  },
+  {
+   "id": 128729074863,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Run Tests shard headroom",
+   "status": "completed",
+   "conclusion": "skipped",
+   "runner_id": null,
+   "runner_name": null,
+   "created_at": "2026-11-08T12:20:48Z",
+   "started_at": "2026-11-08T12:20:48Z",
+   "completed_at": "2026-11-08T12:20:48Z",
+   "steps": []
+  },
+  {
+   "id": 128729074935,
+   "run_id": 42466217222,
+   "run_attempt": 1,
+   "name": "Propose shard durations",
+   "status": "completed",
+   "conclusion": "skipped",
+   "runner_id": null,
+   "runner_name": null,
+   "created_at": "2026-11-08T12:20:48Z",
+   "started_at": "2026-11-08T12:20:48Z",
+   "completed_at": "2026-11-08T12:20:48Z",
+   "steps": []
+  }
+ ]
+}
