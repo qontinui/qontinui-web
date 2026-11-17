@@ -288,6 +288,57 @@ describe("GatesTable search + gate-id", () => {
     expect(badge.getAttribute("data-status-kind")).toBe("withdrawn");
   });
 
+  it("colours a failed gate's progress bar as an error — misconfigured and a padded Rejected included", () => {
+    const half = {
+      basis: "binary",
+      current: null,
+      target: null,
+      unit: null,
+      fraction: 0.5,
+      eta: null,
+      eta_confidence: "none",
+    } as GateOverviewRow["progress"];
+    const done = { ...half, fraction: 1 } as GateOverviewRow["progress"];
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            gate_id: "11111111-0000-4000-8000-000000000001",
+            verdict: "misconfigured",
+            progress: half,
+          }),
+          gate({
+            gate_id: "22222222-0000-4000-8000-000000000002",
+            verdict: " Rejected ",
+            progress: half,
+          }),
+          gate({
+            gate_id: "33333333-0000-4000-8000-000000000003",
+            verdict: "cleared",
+            progress: done,
+          }),
+        ]}
+        onActed={() => {}}
+      />
+    );
+    // The bar is the element labelled with its percentage; its fill is the
+    // first child, which carries the variant's class.
+    const fillOf = (row: HTMLElement) =>
+      within(row).getByLabelText(/^progress \d+%$/).firstElementChild;
+    // Each row by its own short gate id, not by position.
+    const rowOf = (shortId: string) => {
+      const row = screen
+        .getAllByTestId("gates-table-row")
+        .find((r) => r.textContent?.includes(shortId));
+      if (!row) throw new Error(`no row for ${shortId}`);
+      return row;
+    };
+    expect(fillOf(rowOf("11111111"))).toHaveClass("bg-error");
+    expect(fillOf(rowOf("22222222"))).toHaveClass("bg-error");
+    expect(fillOf(rowOf("33333333"))).not.toHaveClass("bg-error");
+    expect(fillOf(rowOf("33333333"))).toHaveClass("bg-success");
+  });
+
   it("renders the clearance-provenance sub-line when coord stamps the columns", async () => {
     const user = userEvent.setup();
     render(
