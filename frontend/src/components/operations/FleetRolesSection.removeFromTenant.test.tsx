@@ -1150,7 +1150,10 @@ describe("the answer", () => {
     ).toBe(MAY_HAVE_APPLIED_TEXT);
   });
 
-  it("sends the removal exactly once: no retry of a 429 or a 5xx", async () => {
+  // `httpClient.fetch` is mocked here, so this pins only the OPTIONS the
+  // console sends. That the real retry chain then sends one request for a
+  // 429 or a 5xx is `lib/api/operations/coordDeviceBindings.test.ts`.
+  it("sends the removal once, with retries disabled (maxRetries: 0)", async () => {
     postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
     render(<FleetRolesSection />);
     await openRemoval(CI_HOST_LABEL);
