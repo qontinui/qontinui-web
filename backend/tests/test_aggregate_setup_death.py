@@ -1232,6 +1232,8 @@ def _per_job_output(env: dict[str, str], job: str = "Lint & Format Check") -> st
         },
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=60,
         check=False,
     )
@@ -1512,6 +1514,8 @@ def test_the_script_runs_standalone_and_exits_zero_without_a_token():
         },
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=60,
         check=False,
     )

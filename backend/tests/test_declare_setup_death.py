@@ -249,6 +249,8 @@ def _run(
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
     )
@@ -2036,3 +2038,33 @@ def test_the_script_is_executable_and_strict():
     )
     assert "eval " not in _defang(text)
     assert os.access(SCRIPT, os.X_OK)
+
+
+POETRY_INSTALLER_STEPS = [
+    ("backend-ci.yml", "lint"),
+    ("backend-ci.yml", "test"),
+    ("backend-ci.yml", "security-scan"),
+    ("memory-recall-eval.yml", "recall-eval"),
+]
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), POETRY_INSTALLER_STEPS)
+def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id):
+    """Without pipefail, curl failing before any byte arrives leaves `python3 -P -`
+    running an empty program that exits 0, so the SETUP row reads success."""
+    run = str(_steps_by_id(_job(workflow, job_id))["poetry_install"][1]["run"])
+    lines = run.splitlines()
+    pipe = [i for i, line in enumerate(lines) if "install.python-poetry.org" in line]
+    assert len(pipe) == 1, f"{workflow}:{job_id}: one installer pipe"
+    assert any(line.strip() == "set -o pipefail" for line in lines[: pipe[0]]), (
+        f"{workflow}:{job_id}: pipefail must precede the installer pipe"
+    )
+    assert "curl -fsSL https://install.python-poetry.org" in lines[pipe[0]], (
+        f"{workflow}:{job_id}: curl must fail on an HTTP error (-f)"
+    )
+
+
+def test_install_safety_forces_a_poetry_virtualenv():
+    """A PR's backend/poetry.toml `create = false` would empty `poetry env info -e`."""
+    step = _steps_by_id(_job("backend-ci.yml", "security-scan"))["safety_install"][1]
+    assert step["env"]["POETRY_VIRTUALENVS_CREATE"] == "true"
