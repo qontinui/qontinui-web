@@ -57,18 +57,23 @@ org key ``org:<owner>``), so for every hostname that HAS an ``@``, "ends with
 a scope would match the new read and not the old. That row cannot reach a
 retirement: coord's selector keeps only rows whose hostname
 ``scope_of_hostname`` resolves to the listing's scope (the ``gh-runner-``
-prefix and an ``@`` required). coord pins the match with a DB test that EXPLAINs
-its read against this exact definition.
+prefix and an ``@`` required). The companion coord change (pending; it lands
+after this revision) adds a DB test that EXPLAINs its read against this exact
+definition.
 
 Not measured on production: the row counts of ``coord.devices`` and the share
 carrying ``ci_runner`` were not read for this revision. The argument is the
 plan shape (a per-scope, per-tick full scan becomes an index range scan over
 one scope's rows), not a measured latency.
 
-Write cost: one more btree entry per INSERT, and per UPDATE of ``hostname`` or
-``capabilities``, of a CI-runner row only (the predicate keeps every other
-device out of the index). ``regexp_replace`` is IMMUTABLE, as an index
-expression must be.
+Write cost: one more btree entry per INSERT of a CI-runner row, and per
+non-HOT UPDATE of one (an update of ``hostname`` or ``capabilities``, or any
+update that does not fit its page — a heartbeat on a full page included); the
+predicate keeps every other device's entries out of the index. And because
+``capabilities`` is now an indexed column (it is the predicate), an UPDATE that
+changes ``capabilities`` on ANY device row is no longer HOT-eligible; capability
+changes are rare next to heartbeats, which do not touch it.
+``regexp_replace`` is IMMUTABLE, as an index expression must be.
 
 Built ``CONCURRENTLY`` so device heartbeats and registrations are never blocked.
 A killed concurrent build leaves an INVALID index that ``IF NOT EXISTS`` would

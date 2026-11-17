@@ -9,7 +9,7 @@ Pins what coord's CI-runner retirement arm relies on (its per-scope read in
 2. **It serves coord's read** — with sequential scans disabled, coord's exact
    per-scope SELECT plans through the index, and it returns the CI-runner rows
    of that scope only: not another scope's, not a non-CI row of the same
-   hostname, and the text after the LAST ``@`` is what is compared.
+   scope, and the text after the LAST ``@`` is what is compared.
 3. **Re-running is harmless** — ``stamp <parent>`` then ``upgrade`` again
    leaves the same index (same oid).
 4. **Reversal** — downgrade removes only this index (every other
@@ -151,7 +151,7 @@ def _plan(engine: Engine, scope: str) -> str:
     ),
 )
 def test_cirscope_02_indexes_the_ci_runner_scope_scan() -> None:
-    """Shape, serves coord's read, re-run, INVALID leftover refused, reversal."""
+    """Shape, serves coord's read, re-run, reversal (INVALID: the next test)."""
     root = backend_root()
 
     with ephemeral_database(admin_database_url(), "cirscope02_test") as (
