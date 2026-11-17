@@ -76,6 +76,8 @@ import {
   historyEventWords,
   gateVerdictWords,
   joinedViaWords,
+  memberViaPr,
+  titleBasisText,
   memberEmptyText,
   memberList,
   memberSessionKey,
@@ -316,6 +318,7 @@ function SubprojectBody({
   onChanged: () => void;
 }) {
   const s = detail.subproject;
+  const titleBasis = titleBasisText(s);
   const status = deriveVerdictStatus(detail.verdict ?? null);
   const context: RefContext = { units: detail.work_units, prs: detail.prs };
   const unread = unreadSources(detail.verdict?.sources ?? []);
@@ -657,7 +660,9 @@ function SubprojectBody({
         data-testid="coord-subproject-raw"
       >
         id {s.id} · slug {s.slug} · origin {s.origin} · title from{" "}
-        {s.title_source} · status {s.status}
+        {s.title_source}
+        {titleBasis !== null ? ` · title basis ${titleBasis}` : ""} · status{" "}
+        {s.status}
         {s.root_agent_session_id
           ? ` · root session ${s.root_agent_session_id}`
           : ""}
@@ -783,6 +788,9 @@ function SessionRow({
 }) {
   const status = deriveMemberSessionStatus(member);
   const key = memberSessionKey(member);
+  // An anchor / work-evidence join through a PR links to it; any other
+  // via_ref (a unit id, a unit anchor) stays on the raw line only.
+  const viaPr = memberViaPr(member);
   // Words on the line; the ids are on the raw line (R8).
   const name =
     member.name ??
@@ -830,6 +838,13 @@ function SessionRow({
                     label: "its gate",
                   }}
                 />
+              </>
+            ) : null}
+            {viaPr ? (
+              <>
+                {" "}
+                —{" "}
+                <RefLink subjectRef={{ type: "pr", id: viaPr, label: viaPr }} />
               </>
             ) : null}
             .
