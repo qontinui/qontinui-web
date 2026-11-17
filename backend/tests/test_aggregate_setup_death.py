@@ -233,7 +233,8 @@ def _shard_title(n: int) -> str:
 #: pins the YAML to it).
 RUN_TESTS_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
-    r"|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/"
+    r"|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$"
+    r"|^scripts/ci/"
 )
 BASH = shutil.which("bash")
 requires_git = pytest.mark.skipif(
