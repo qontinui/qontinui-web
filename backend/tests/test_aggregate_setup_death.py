@@ -1318,7 +1318,7 @@ def _aggregate_reading(outcome) -> str:
 def test_the_aggregate_guard_reads_what_the_per_job_guard_reads(
     github, tmp_path, home, scenario, reading
 ):
-    """The port must not drift from `compute_guard`: same PR, same reading."""
+    """The port must not drift from `harness_guard_compute`: same PR, same reading."""
     _declared_failure(github)
     changes: dict[str, str | None] = {
         "clean": {"backend/app/main.py": "x\n"},

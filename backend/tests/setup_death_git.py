@@ -2,8 +2,9 @@
 
 Plan ``2026-11-11-web-setup-step-deaths-declare-not-a-verdict``. Two declarers
 read a pull_request's own diff before they write the not-a-verdict phrase: the
-per-job ``.github/scripts/declare-setup-death.sh`` (its ``compute_guard``) and
-the aggregate ``scripts/ci/aggregate_setup_death.py`` (rule 5, a port of it).
+per-job ``.github/scripts/declare-setup-death.sh`` (its guard,
+``harness_guard_compute`` in ``.github/scripts/harness-diff-guard.sh``) and the
+aggregate ``scripts/ci/aggregate_setup_death.py`` (rule 5, a port of it).
 Both read the same thing -- the FIRST parent of the merge commit
 ``GITHUB_SHA`` names, fetched when a depth-1 checkout lacks it, and
 ``git diff --no-renames`` from it -- so both are tested here against the same

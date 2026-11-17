@@ -141,13 +141,14 @@ def _run(
     rc: int = 75,
     path_prefix: Path | None = None,
     env_override: dict[str, str | None] | None = None,
+    script: Path = GUARD,
 ) -> subprocess.CompletedProcess[str]:
     """Run the shipped wrapper around a stub fetch that fails with ``rc``.
 
     ``path_prefix`` puts a stub ``git`` / ``timeout`` first on PATH.
     ``env_override`` sets a variable, or REMOVES it when its value is None, so
     a test can run with the fetch lever unset (the shipped 20 s bound) or set
-    to any value.
+    to any value. ``script`` runs a copy of the wrapper instead.
     """
     env: dict[str, str] = {
         **_clean_env(),
@@ -167,7 +168,7 @@ def _run(
     if path_prefix is not None:
         env["PATH"] = f"{path_prefix}:{env['PATH']}"
     return subprocess.run(
-        [bash, str(GUARD), bash, str(_failing_fetch(tmp_path, rc))],
+        [bash, str(script), bash, str(_failing_fetch(tmp_path, rc))],
         env=env,
         capture_output=True,
         text=True,
@@ -330,6 +331,26 @@ def test_the_fetch_lever_can_only_lower_the_bound(tmp_path: Path, lever: str) ->
     )
     _withheld(proc, "could not be fetched (git fetch exited 128")
     assert "is the 20s bound" in proc.stdout, repr(proc.stdout)
+
+
+@requires_bash_git
+def test_an_absent_guard_helper_is_unknown_and_withholds(tmp_path: Path) -> None:
+    """The wrapper alone, without harness-diff-guard.sh beside it.
+
+    A clean PR, so the helper would read `false`. Absent, the guard reads
+    UNKNOWN: the phrase is rewritten, the notice names the helper, the command
+    still runs and keeps its exit status, and no undefined function is called.
+    """
+    repo, sha = _merge_repo(tmp_path, "backend/app.py")
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    copy = alone / "harness-guarded.sh"
+    copy.write_bytes(GUARD.read_bytes())
+    proc = _run(tmp_path, repo, sha, script=copy)
+    _withheld(proc, "harness-diff-guard.sh is absent or did not load")
+    assert "The harness-diff guard read UNKNOWN" in proc.stdout, repr(proc.stdout)
+    assert "the harness diff of this PR is unread" in proc.stdout, repr(proc.stdout)
+    assert "command not found" not in proc.stdout + proc.stderr, repr(proc.stderr)
 
 
 @requires_bash_git

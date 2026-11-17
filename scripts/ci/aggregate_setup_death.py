@@ -104,8 +104,8 @@ The harness-diff guard (rule 5)
 This script runs from the PR's OWN merge commit (the ``Check out the
 declarer`` checkout), so a PR that edits it, a module it imports or the
 aggregate's workflow file would otherwise get the phrase from its edited
-code. The guard is the per-job declarer's ``compute_guard``
-(``.github/scripts/declare-setup-death.sh``), ported, and fails closed the
+code. The guard is the per-job declarer's guard (``harness_guard_compute``
+in ``.github/scripts/harness-diff-guard.sh``), ported, and fails closed the
 same way. Each aggregate's ``HARNESS_PATHS_RE`` is its members' per-job
 harness -- its workflow file (theirs too), the ``.github/actions/`` tree and
 the per-job declarer -- plus the WHOLE ``scripts/ci/`` tree. The per-job
@@ -398,7 +398,7 @@ def _fetch_bound(env: Mapping[str, str]) -> int:
 def _changed_paths(env: Mapping[str, str], clock: _Clock) -> list[str]:
     """Every path the pull_request merge commit changes against its first parent.
 
-    Raises ``UnknownError`` on every arm the per-job ``compute_guard`` reads
+    Raises ``UnknownError`` on every arm the per-job ``harness_guard_compute`` reads
     UNKNOWN once its event and pattern are usable.
     """
     workspace = env.get("GITHUB_WORKSPACE") or ""
@@ -462,7 +462,7 @@ def _changed_paths(env: Mapping[str, str], clock: _Clock) -> list[str]:
 def harness_guard(env: Mapping[str, str], clock: _Clock) -> Guard:
     """Rule 5: does this PR's diff touch the aggregate's harness?
 
-    The per-job declarer's ``compute_guard``, in its order; see the module
+    The per-job declarer's guard (``harness_guard_compute``), in its order; see the module
     docstring.
     """
     event = env.get("GITHUB_EVENT_NAME") or ""
