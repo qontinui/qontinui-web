@@ -15,9 +15,9 @@
  * one the chain DOES retry, so a single request is not passing for want of a
  * retryable answer. The two are held by different options: a 429 is retried
  * for every method, so only `maxRetries: 0` stops it; a 503 on a POST is held
- * by `idempotent: false` as well (the method rule) — that case fails if
- * either option is dropped in favour of `idempotent: true` without
- * `maxRetries: 0`.
+ * by BOTH `maxRetries: 0` and `idempotent: false` (the method rule), so that
+ * case fails only when `idempotent` is flipped to true AND `maxRetries: 0`
+ * is removed; dropping either option alone still sends one request.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

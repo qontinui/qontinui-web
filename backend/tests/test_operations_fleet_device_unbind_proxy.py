@@ -528,6 +528,26 @@ class TestCallerRefusalAborts:
         # DEVICE_B was never sent to coord.
         assert len(stub.calls) == 1
 
+    def test_an_already_absent_row_before_the_refusal_is_not_partial(
+        self, auth_client: TestClient
+    ):
+        # An earlier id that was already gone changed nothing: the abort is
+        # not partial, though a row was recorded before it.
+        stub = _CoordStub(
+            {
+                DEVICE_A: [_not_found(DEVICE_A)],
+                DEVICE_B: [_mock_response(403, {"error": "admin_required"})],
+            }
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert [r["outcome"] for r in detail["results"]] == [
+            "already_absent",
+            "failed",
+        ]
+        assert detail["partial"] is False
+
     def test_an_aborted_batch_still_logs_its_earlier_lost_row(
         self, auth_client: TestClient
     ):
