@@ -61,8 +61,10 @@ def _parent_revision_id() -> str:
 
 _PARENT_REVISION_ID = _parent_revision_id()
 
-#: coord's per-scope read, byte for byte the predicate half of
-#: ``SCOPE_ROWS_SQL`` in qontinui-coord ``ci_runner_registrar/retire.rs``.
+#: coord's per-scope read: the predicate half of ``SCOPE_ROWS_SQL`` as the
+#: companion qontinui-coord change rewrites it in
+#: ``ci_runner_registrar/retire.rs`` (coord main still carries the older
+#: ``right(...)`` suffix test until that change lands after this revision).
 _COORD_SCOPE_READ = (
     "SELECT d.device_id, d.hostname FROM coord.devices d "
     "WHERE d.capabilities @> '[\"ci_runner\"]'::jsonb "

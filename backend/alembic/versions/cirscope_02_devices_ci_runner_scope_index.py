@@ -45,11 +45,19 @@ companion change rewrites the read as::
     WHERE d.capabilities @> '["ci_runner"]'::jsonb
       AND regexp_replace(d.hostname, '^.*@', '') = $1::text
 
-so the planner can prove the partial predicate and match the expression. The two
-spellings select the same rows: in a WHERE, ``COALESCE(x, false)`` and ``x``
-both reject NULL; and a scope key holds no ``@`` (a slug is ``owner/name``, an
-org key ``org:<owner>``), so "ends with ``@<scope>``" and "text after the last
-``@`` is ``<scope>``" agree. coord pins the match with a DB test that EXPLAINs
+so the planner can prove the partial predicate and match the expression. Note
+the bind changes with it: the old read binds ``$1`` as ``@<scope>`` (the ``@``
+included, so the suffix test cannot match ``…@bigacme/shop`` for
+``acme/shop``); the new one binds the bare ``<scope>``. The two spellings select
+the same rows with one exception: in a WHERE, ``COALESCE(x, false)`` and ``x``
+both reject NULL, and a scope key holds no ``@`` (a slug is ``owner/name``, an
+org key ``org:<owner>``), so for every hostname that HAS an ``@``, "ends with
+``@<scope>``" and "text after the last ``@`` is ``<scope>``" agree. A
+``ci_runner`` hostname with NO ``@`` maps to itself, so one spelled exactly like
+a scope would match the new read and not the old. That row cannot reach a
+retirement: coord's selector keeps only rows whose hostname
+``scope_of_hostname`` resolves to the listing's scope (the ``gh-runner-``
+prefix and an ``@`` required). coord pins the match with a DB test that EXPLAINs
 its read against this exact definition.
 
 Not measured on production: the row counts of ``coord.devices`` and the share
@@ -118,10 +126,15 @@ def _require_valid() -> None:
         .scalar()
     )
     if valid is not True:
-        state = "INVALID" if valid is False else "absent"
+        if valid is None:
+            raise RuntimeError(
+                f"coord.{INDEX_NAME} is absent after CREATE INDEX CONCURRENTLY IF "
+                "NOT EXISTS reported success; nothing was left to drop. Re-run "
+                "this revision and inspect the database if it persists."
+            )
         raise RuntimeError(
-            f"coord.{INDEX_NAME} is {state} after CREATE INDEX CONCURRENTLY IF NOT EXISTS "
-            "— a killed concurrent build left it (IF NOT EXISTS skipped it). "
+            f"coord.{INDEX_NAME} is INVALID after CREATE INDEX CONCURRENTLY IF NOT "
+            "EXISTS — a killed concurrent build left it (IF NOT EXISTS skipped it). "
             "If pg_stat_progress_create_index shows no build still running on "
             f"coord.devices, run `DROP INDEX CONCURRENTLY coord.{INDEX_NAME}` "
             "(it drops an INVALID index without blocking the table) and re-run "
