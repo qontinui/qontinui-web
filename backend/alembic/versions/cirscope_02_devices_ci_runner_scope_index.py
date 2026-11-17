@@ -1,7 +1,7 @@
 """coord.devices: partial expression index for the CI-runner registrar's per-scope scan
 
 Revision ID: cirscope_02_devices_ci_runner_scope_index
-Revises: coord_subprojects_03_lineage_vocabulary
+Revises: coord_subprojects_04_same_anchor_indexes
 Create Date: 2026-11-17
 
 A review follow-up of plan
@@ -107,7 +107,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cirscope_02_devices_ci_runner_scope_index"
-down_revision: str | Sequence[str] | None = "coord_subprojects_03_lineage_vocabulary"
+down_revision: str | Sequence[str] | None = "coord_subprojects_04_same_anchor_indexes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
