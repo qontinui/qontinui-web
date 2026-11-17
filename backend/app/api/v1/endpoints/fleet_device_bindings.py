@@ -64,6 +64,19 @@ whose earlier ids already landed. Coord's own status is kept in the body as
 ``failed``, every later id as ``not_attempted``) with the tallies, so nothing
 already removed goes unreported.
 
+**Why a mid-batch abort is still a 403, and how it says "partial".** By the
+time coord refuses id N, ids 1..N-1 may already be removed, so the status alone
+would read as "nothing happened". A 2xx (``207 Multi-Status`` included) was
+rejected: every client of this route, ``readJson`` first, takes a 2xx as an
+answered batch and would drop the refusal — the operator would be told the
+removal ran when coord refused their authority mid-way, and a retry under the
+same credential would be refused again. So the status stays the refusal, and
+the body carries ``partial``: ``true`` when an earlier id came back ``unbound``
+(the tenant changed) or ``unknown`` (it may have), ``false`` when nothing
+before the refusal changed. It is derived from the same ``results`` the body
+carries, so it can never disagree with them; it exists so a reader that does
+not walk the rows still cannot read the 403 as "nothing was removed".
+
 It is a sibling module rather than a module INSIDE the ``operations`` package
 because the package's D4 guard (``tests/test_operations_route_table.py``
 ``test_operations_package_has_no_init_imports``) forbids a submodule importing
@@ -449,6 +462,9 @@ async def post_fleet_devices_unbind(
                     for d in ids[index + 1 :]
                 )
                 partial = _tally(results)
+                # Something before the refusal changed the tenant (unbound) or
+                # may have (unknown): see the module docstring.
+                changed = partial.unbound > 0 or partial.unknown > 0
                 logger.warning(
                     "fleet_devices_unbind_aborted",
                     tenant_id=str(tenant_id),
@@ -456,6 +472,7 @@ async def post_fleet_devices_unbind(
                     coord_status=refused_status,
                     reached=index + 1,
                     requested=len(ids),
+                    partial=changed,
                     unbound=partial.unbound,
                     already_absent=partial.already_absent,
                     unknown=partial.unknown,
@@ -469,6 +486,7 @@ async def post_fleet_devices_unbind(
                         "coord_status": refused_status,
                         "coord_error": result.error,
                         "refused_device_id": str(device_id),
+                        "partial": changed,
                         **partial.model_dump(mode="json"),
                     },
                 )
