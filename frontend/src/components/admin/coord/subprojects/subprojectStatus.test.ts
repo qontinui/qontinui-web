@@ -39,6 +39,7 @@ import {
   isRouteMissing,
   joinedViaWords,
   memberViaPr,
+  titleBasisText,
   memberEmptyText,
   memberList,
   memberSessionKey,
@@ -1433,5 +1434,30 @@ describe("the home count line", () => {
         failure: null,
       })
     ).toEqual({ value: "0", note: null });
+  });
+});
+
+describe("titleBasisText", () => {
+  const rs = "root_session";
+  it("says nothing when coord predates the field (absent)", () => {
+    expect(titleBasisText({ title_source: rs })).toBeNull();
+    expect(
+      titleBasisText({ title_source: rs, title_basis: undefined })
+    ).toBeNull();
+  });
+  it("reads a null basis as not recorded, never as derived", () => {
+    expect(titleBasisText({ title_source: rs, title_basis: null })).toBe(
+      "not recorded"
+    );
+  });
+  it("passes a recorded basis through", () => {
+    expect(titleBasisText({ title_source: rs, title_basis: "pr_title" })).toBe(
+      "pr_title"
+    );
+  });
+  it("says nothing for a title that is not taken from the root session", () => {
+    expect(
+      titleBasisText({ title_source: "explicit", title_basis: null })
+    ).toBeNull();
   });
 });
