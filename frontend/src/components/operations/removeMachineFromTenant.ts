@@ -724,6 +724,15 @@ export const STILL_LISTED_LAG_TEXT =
 export const STILL_LISTED_HOME_TENANT_TEXT =
   "Still listed after the removal — it may be listed through its home tenant (which only its owner can change on /runners), or the list has not caught up; coord did not report why.";
 
+/** The re-read lists the machine under device rows this removal never sent. */
+export function unsentRowsListedText(n: number): string {
+  return `Still listed under ${n} device row${
+    n === 1 ? "" : "s"
+  } this removal did not include (registered after the dialog opened) — open it again to remove ${
+    n === 1 ? "it" : "them"
+  }.`;
+}
+
 export const MAY_HAVE_APPLIED_TEXT =
   "Some bindings may have been removed — the list re-reads to show what coord now holds.";
 

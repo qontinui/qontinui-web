@@ -70,6 +70,7 @@ import {
   removalRows,
   combineSummaries,
   summarizeUnbind,
+  unsentRowsListedText,
 } from "./removeMachineFromTenant";
 
 /** A second registration of the same CI host, on another repository. */
@@ -1159,6 +1160,24 @@ describe("the answer", () => {
       ([, init]) => (init as RequestInit | undefined)?.method === "POST"
     );
     expect(call?.[1]).toMatchObject({ maxRetries: 0, idempotent: false });
+  });
+
+  it("a row registered after the dialog opened keeps the machine listed: a warning, never success", async () => {
+    const DEV_CI_3 = "c3c3c3c3-0000-4000-8000-0000000000c3";
+    machines = [ciHost()];
+    postAnswers = [answer([unbound(DEV_CI), unbound(DEV_CI_2)])];
+    render(<FleetRolesSection />);
+    await openRemoval(CI_HOST_LABEL);
+    // A third registration lands while the dialog is open.
+    machines = [ciHost({ device_ids: [DEV_CI, DEV_CI_2, DEV_CI_3] })];
+    fireEvent.click(confirmButton());
+    await waitFor(() =>
+      expect(toastMock.warning).toHaveBeenCalledWith(
+        expect.stringContaining(unsentRowsListedText(1))
+      )
+    );
+    expect(posts).toEqual([[DEV_CI, DEV_CI_2]]);
+    expect(toastMock.success).not.toHaveBeenCalled();
   });
 
   it("a retry never sends another machine's ids", async () => {
