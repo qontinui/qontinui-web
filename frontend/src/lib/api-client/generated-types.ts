@@ -13829,6 +13829,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/devices/unbind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Fleet Devices Unbind
+         * @description Remove each named device's binding to the caller's tenant (operator-only).
+         *
+         *     Calls coord sequentially, one id at a time, within
+         *     :data:`BATCH_DEADLINE_SECONDS`, so an auth refusal stops the batch before it
+         *     is repeated for every remaining id. See the module docstring for the
+         *     outcomes.
+         */
+        post: operations["api_v1_operations_fleet_devices_unbind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/dispatch-role": {
         parameters: {
             query?: never;
@@ -40474,6 +40499,54 @@ export interface components {
             task_run_id: string;
             /** Task Run Name */
             task_run_name?: string | null;
+        };
+        /**
+         * FleetDeviceUnbindRequest
+         * @description Closed body for ``POST /operations/fleet/devices/unbind``.
+         */
+        FleetDeviceUnbindRequest: {
+            /** Device Ids */
+            device_ids: string[];
+        };
+        /**
+         * FleetDeviceUnbindResponse
+         * @description Per-id results (one per requested id, in request order) plus tallies.
+         */
+        FleetDeviceUnbindResponse: {
+            /** Already Absent */
+            already_absent: number;
+            /** Failed */
+            failed: number;
+            /** Not Attempted */
+            not_attempted: number;
+            /** Results */
+            results: components["schemas"]["FleetDeviceUnbindResult"][];
+            /** Unbound */
+            unbound: number;
+            /** Unknown */
+            unknown: number;
+        };
+        /**
+         * FleetDeviceUnbindResult
+         * @description What happened to one device id.
+         */
+        FleetDeviceUnbindResult: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Error */
+            error?: unknown;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "unbound" | "already_absent" | "unknown" | "failed" | "not_attempted";
+            /** Status */
+            status: number | null;
+            /** Still Member Via Pointer */
+            still_member_via_pointer?: boolean | null;
         };
         /**
          * FleetPolicyPut
@@ -82021,6 +82094,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_devices_unbind_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetDeviceUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetDeviceUnbindResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
