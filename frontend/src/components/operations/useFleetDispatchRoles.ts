@@ -15,7 +15,7 @@
  * the drain half of each lane's state. The panel's own write forces a re-read.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   fetchFleetDispatchRoles,
@@ -50,11 +50,18 @@ export interface UseFleetDispatchRolesResult {
    */
   asOfMs: number | null;
   refresh: () => Promise<void>;
+  /**
+   * The read as the latest poll left it — current as soon as `refresh()`
+   * resolves, before React has rendered it (a caller deciding something
+   * from the re-read it just awaited reads this, not `read`).
+   */
+  latestRead?: () => DispatchRolesRead;
 }
 
 export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const [read, setRead] = useState<DispatchRolesRead>(LOADING);
   const [asOfMs, setAsOfMs] = useState<number | null>(null);
+  const latest = useRef<DispatchRolesRead>(LOADING);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
@@ -96,6 +103,7 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
       }
     }
     if (!isCurrent()) return;
+    latest.current = next;
     setRead(next);
     if (next.state === "known" && answeredAsOf !== null) {
       setAsOfMs(answeredAsOf);
@@ -103,7 +111,8 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DISPATCH_ROLES_POLL_MS);
-  return { read, asOfMs, refresh };
+  const latestRead = useCallback(() => latest.current, []);
+  return { read, asOfMs, refresh, latestRead };
 }
 
 export type RoleWriteResult =
