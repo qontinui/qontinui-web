@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.setup_death_git import PrRepo, shallow_clone, stub_git, stub_timeout
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / ".github" / "scripts" / "harness-guarded.sh"
@@ -136,8 +139,17 @@ def _run(
     event: str = "pull_request",
     pattern: str | None = None,
     rc: int = 75,
+    path_prefix: Path | None = None,
+    env_override: dict[str, str | None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    env = {
+    """Run the shipped wrapper around a stub fetch that fails with ``rc``.
+
+    ``path_prefix`` puts a stub ``git`` / ``timeout`` first on PATH.
+    ``env_override`` sets a variable, or REMOVES it when its value is None, so
+    a test can run with the fetch lever unset (the shipped 20 s bound) or set
+    to any value.
+    """
+    env: dict[str, str] = {
         **_clean_env(),
         "GITHUB_EVENT_NAME": event,
         "GITHUB_WORKSPACE": str(repo),
@@ -147,6 +159,13 @@ def _run(
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
     }
+    for key, value in (env_override or {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    if path_prefix is not None:
+        env["PATH"] = f"{path_prefix}:{env['PATH']}"
     return subprocess.run(
         [bash, str(GUARD), bash, str(_failing_fetch(tmp_path, rc))],
         env=env,
@@ -226,6 +245,91 @@ def test_an_unfetchable_first_parent_is_unknown_and_withholds(
     _git(tmp_path, "clone", "-q", "--depth=1", f"file://{repo}", str(shallow))
     _git(shallow, "remote", "set-url", "origin", str(tmp_path / "nowhere"))
     _withheld(_run(tmp_path, shallow, sha), "could not be fetched")
+
+
+def _shallow_clean_pr(tmp_path: Path) -> tuple[Path, str]:
+    """A depth-1 clone of a clean PR's merge commit: the first parent is absent.
+
+    Its origin serves any sha, so the guard's first-parent fetch can succeed.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    pr = PrRepo(
+        tmp_path / "origin", home, changes={"backend/app/main.py": "print('pr')\n"}
+    )
+    return shallow_clone(pr, tmp_path / "checkout"), pr.merge
+
+
+@requires_bash_git
+def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
+    tmp_path: Path,
+) -> None:
+    """Each git call runs under `timeout -k 5 <bound>`, lazy fetch and prompts off.
+
+    The lever is UNSET, so the bounds are the shipped ones: 20 s for the
+    first-parent fetch, 10 s for every other call. A stub `git` records each
+    call's environment and a stub `timeout` each call's bound, in a depth-1
+    clone, so every call runs: the merge commit read, the first-parent check,
+    the fetch, its re-check and the diff.
+    """
+    clone, sha = _shallow_clean_pr(tmp_path)
+    git_log = tmp_path / "git-calls.log"
+    timeout_log = tmp_path / "timeout-calls.log"
+    record = 'echo "${GIT_NO_LAZY_FETCH-unset} ${GIT_TERMINAL_PROMPT-unset} $*" >> '
+    stub = stub_git(tmp_path, on_every=record + shlex.quote(str(git_log)))
+    stub_timeout(stub, timeout_log)
+    proc = _run(
+        tmp_path,
+        clone,
+        sha,
+        path_prefix=stub,
+        env_override={"HARNESS_GUARD_FETCH_BOUND_SECS": None},
+    )
+    out = proc.stdout + proc.stderr
+    # The guard read `false`: the claim passes through unchanged.
+    assert proc.returncode == 75, repr(out)
+    assert TITLE_LINE in proc.stdout.splitlines(), repr(out)
+    assert "withheld" not in out, repr(out)
+    # Each git call: `<lazy fetch> <prompt> -C <workspace> <verb> ...`.
+    calls = [line.split() for line in git_log.read_text(encoding="utf-8").splitlines()]
+    assert [call[4] for call in calls] == [
+        "cat-file",
+        "cat-file",
+        "fetch",
+        "cat-file",
+        "diff",
+    ]
+    assert [call[:2] for call in calls] == [["1", "0"]] * 5
+    # Each timeout call: `-k 5 <bound> git -C <workspace> <verb> ...`, and
+    # exactly one per git call, so no git call ran outside a bound.
+    bounded = [
+        line.split() for line in timeout_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row[4:] for row in bounded] == [call[2:] for call in calls]
+    assert [row[:4] for row in bounded] == [
+        ["-k", "5", "10", "git"],
+        ["-k", "5", "10", "git"],
+        ["-k", "5", "20", "git"],
+        ["-k", "5", "10", "git"],
+        ["-k", "5", "10", "git"],
+    ]
+
+
+@requires_bash_git
+@pytest.mark.parametrize("lever", ["", "0", "21", "600", "abc", "-1"])
+def test_the_fetch_lever_can_only_lower_the_bound(tmp_path: Path, lever: str) -> None:
+    """Anything that is not 1..20 reads as the 20 s default."""
+    clone, sha = _shallow_clean_pr(tmp_path)
+    stub = stub_git(tmp_path, "exit 128")
+    proc = _run(
+        tmp_path,
+        clone,
+        sha,
+        path_prefix=stub,
+        env_override={"HARNESS_GUARD_FETCH_BOUND_SECS": lever},
+    )
+    _withheld(proc, "could not be fetched (git fetch exited 128")
+    assert "is the 20s bound" in proc.stdout, repr(proc.stdout)
 
 
 @requires_bash_git

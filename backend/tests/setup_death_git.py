@@ -38,6 +38,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -256,6 +257,25 @@ def stub_git(
     )
     stub.chmod(0o755)
     return stub_dir
+
+
+def stub_timeout(stub_dir: Path, log: Path) -> None:
+    """A ``timeout`` in ``stub_dir`` that logs its arguments, then runs the real one.
+
+    Paired with ``stub_git(on_every=...)``: one line per bounded call, so a
+    test can pin each git call's ``-k 5 <bound>`` against a literal.
+    """
+    real = shutil.which("timeout")
+    assert real is not None
+    stub = stub_dir / "timeout"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$*" >> {shlex.quote(str(log))}\n'
+        f'exec {shlex.quote(real)} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    stub.chmod(0o755)
 
 
 def shallow_clone(repo: PrRepo, dest: Path) -> Path:

@@ -84,6 +84,7 @@ from tests.setup_death_git import (
     run_pytest_probe,
     shallow_clone,
     stub_git,
+    stub_timeout,
 )
 from tests.setup_death_git import defang as _defang
 
@@ -681,21 +682,6 @@ def test_a_merge_commit_absent_from_the_checkout_is_unknown(clean_pr):
     assert "is not readable in this checkout" in _assert_withheld(out)
 
 
-def _stub_timeout(stub_dir: Path, log: Path) -> None:
-    """A ``timeout`` in ``stub_dir`` that logs its arguments, then runs the real one."""
-    real = shutil.which("timeout")
-    assert real is not None
-    stub = stub_dir / "timeout"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        f'echo "$*" >> {shlex.quote(str(log))}\n'
-        f'exec {shlex.quote(real)} "$@"\n',
-        encoding="utf-8",
-        newline="\n",
-    )
-    stub.chmod(0o755)
-
-
 @requires_bash_and_git
 def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
     tmp_path, clean_pr
@@ -713,7 +699,7 @@ def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
     timeout_log = tmp_path / "timeout-calls.log"
     record = 'echo "${GIT_NO_LAZY_FETCH-unset} ${GIT_TERMINAL_PROMPT-unset} $*" >> '
     stub = stub_git(tmp_path, on_every=record + shlex.quote(str(git_log)))
-    _stub_timeout(stub, timeout_log)
+    stub_timeout(stub, timeout_log)
     env = _pr_env(clean_pr, workspace=clone)
     env.pop("GIT_TERMINAL_PROMPT")
     assert "GIT_NO_LAZY_FETCH" not in env
