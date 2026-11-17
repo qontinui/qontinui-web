@@ -145,7 +145,9 @@ export interface RoleMachine {
    * Every `coord.devices` row this roster entry groups (`MachineView.device_ids`
    * — a CI host registered on N repos is N rows, D3). Empty for a machine
    * that is assigned but not registered. A coord that serves no
-   * `device_ids` leaves the workstation's own `device_id`, else nothing.
+   * `device_ids` leaves the workstation's own `device_id`, else nothing: a
+   * CI host's lone `device_id` names one of its N rows, so falling back to it
+   * would remove one binding and report the machine removed.
    */
   deviceIds: string[];
   /** Coord's machine-level `last_seen_at` (the freshest of its rows). */
@@ -291,10 +293,12 @@ export function parseDeviceListings(v: unknown): DeviceListing[] | null {
 function parseDeviceIds(
   v: unknown,
   deviceId: string | null,
-  registered: boolean
+  registered: boolean,
+  hostOnly: boolean
 ): string[] {
   if (!registered) return [];
-  if (!Array.isArray(v)) return deviceId !== null ? [deviceId] : [];
+  if (!Array.isArray(v))
+    return deviceId !== null && !hostOnly ? [deviceId] : [];
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const raw of v) {
@@ -362,7 +366,7 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
   return {
     key,
     deviceId,
-    deviceIds: parseDeviceIds(v.device_ids, deviceId, registered),
+    deviceIds: parseDeviceIds(v.device_ids, deviceId, registered, hostOnly),
     lastSeenAt: str(v.last_seen_at),
     deviceListings: hostOnly ? parseDeviceListings(v.device_listings) : null,
     ciHostName,

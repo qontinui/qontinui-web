@@ -372,6 +372,14 @@ describe("parseDispatchRoles — device rows and their GitHub listings", () => {
     expect(m.deviceIds).toEqual([DEV_A]);
     expect(m.deviceListings).toBeNull();
   });
+
+  it("a CI host with no device_ids served offers no rows: its lone device_id is one of N", () => {
+    const raw = ciHost({ device_id: DEV_CI });
+    delete (raw as Record<string, unknown>).device_ids;
+    const m = readMachine(raw);
+    expect(m.deviceId).not.toBeNull();
+    expect(m.deviceIds).toEqual([]);
+  });
 });
 
 describe("removal rules", () => {
