@@ -184,9 +184,7 @@ def test_a_diff_touching_the_harness_withholds_the_claim(
     repo, sha = _merge_repo(tmp_path, path)
     proc = _run(tmp_path, repo, sha)
     _withheld(proc, "touches this job's own harness ('" + path + "')")
-    assert "this PR changes the harness of this step" in proc.stdout, repr(
-        proc.stdout
-    )
+    assert "this PR changes the harness of this step" in proc.stdout, repr(proc.stdout)
 
 
 @requires_bash_git
