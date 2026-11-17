@@ -125,6 +125,7 @@ LINT_TITLE = "Lint & Format Check SETUP FAILED (not a verdict on this PR)"
 BACKEND_CI_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
+    r"|^\.github/scripts/harness-diff-guard\.sh$"
 )
 
 SETUP_POETRY_DIED = (
@@ -934,7 +935,8 @@ POETRY_TOML_CARRIERS = frozenset({"backend-ci.yml"})
 
 
 def _harness_literal(workflow: str) -> str:
-    """The plan's pattern: own workflow file, local actions, the declarer.
+    """The plan's pattern: own workflow file, local actions, the declarer and
+    its guard helper.
 
     Plus the frontend lockfile for the FRONTEND_LOCKFILE_CARRIERS.
     """
@@ -942,6 +944,7 @@ def _harness_literal(workflow: str) -> str:
     pattern = (
         f"^\\.github/workflows/{escaped}$|^\\.github/actions/"
         "|^\\.github/scripts/declare-setup-death\\.sh$"
+        "|^\\.github/scripts/harness-diff-guard\\.sh$"
     )
     if workflow in FRONTEND_LOCKFILE_CARRIERS:
         pattern += "|^frontend/package(-lock)?\\.json$"
@@ -1515,6 +1518,7 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         f".github/workflows/{workflow}",
         ".github/actions/self-hosted-host-provisioned/action.yml",
         SCRIPT_REF,
+        HELPER_REF,
     ):
         assert compiled.search(path), path
     for path in (
@@ -1522,6 +1526,7 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         f".github/workflows/{workflow}.orig",
         "frontend/.github/actions/x.yml",
         ".github/scripts/declare-setup-death.sh.bak",
+        ".github/scripts/harness-diff-guard.sh.bak",
         "frontend/src/package.json",
         "frontend/package-lock.json.orig",
         "backend/frontend/package.json",
@@ -1532,6 +1537,25 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         assert bool(compiled.search(path)) == (
             workflow in FRONTEND_LOCKFILE_CARRIERS
         ), f"{path}: harness only where a SETUP row reads it"
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_pr_that_touches_only_the_guard_helper_is_never_declared(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern: the helper can make the guard read `false`."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(tmp_path / "repo", home, changes={HELPER_REF: "edited\n"})
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    code, out, _ = _run(env)
+    assert code == 0
+    reason = _assert_withheld(out)
+    assert "harness-diff guard read true" in reason, _defang(out)
+    assert "('.github/scripts/harness-diff-guard.sh')" in reason, _defang(out)
 
 
 @requires_bash_and_git
@@ -1923,7 +1947,7 @@ def test_backend_ci_triggers_on_every_file_this_module_reads():
     tests that pin it. Both triggers, so a filter added to one and forgotten on
     the other is a failure.
     """
-    read = [SCRIPT_REF] + sorted(
+    read = [SCRIPT_REF, HELPER_REF] + sorted(
         {f".github/workflows/{workflow}" for workflow, _ in _carrier_jobs()}
     )
     for trigger in ("pull_request", "push"):

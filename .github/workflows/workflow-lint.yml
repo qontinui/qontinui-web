@@ -459,7 +459,7 @@ jobs:
           VERDICT_STEPS: |
             !zizmor|${{ steps.zizmor.outcome }}|${{ steps.zizmor.conclusion }}
             !actionlint|${{ steps.actionlint.outcome }}|${{ steps.actionlint.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."

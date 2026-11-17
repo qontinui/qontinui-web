@@ -107,8 +107,8 @@ aggregate's workflow file would otherwise get the phrase from its edited
 code. The guard is the per-job declarer's guard (``harness_guard_compute``
 in ``.github/scripts/harness-diff-guard.sh``), ported, and fails closed the
 same way. Each aggregate's ``HARNESS_PATHS_RE`` is its members' per-job
-harness -- its workflow file (theirs too), the ``.github/actions/`` tree and
-the per-job declarer -- plus the WHOLE ``scripts/ci/`` tree. The per-job
+harness -- its workflow file (theirs too), the ``.github/actions/`` tree,
+the per-job declarer and its guard helper -- plus the WHOLE ``scripts/ci/`` tree. The per-job
 declarer wrote the member titles this script trusts, and when a PR edits
 that declarer, the members' guard runs inside the edit while this one does
 not. And the step runs ``python3 scripts/ci/aggregate_setup_death.py``, which

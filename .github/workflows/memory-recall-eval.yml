@@ -634,7 +634,7 @@ jobs:
           VERDICT_STEPS: |
             Run the recall harness|${{ steps.eval.outcome }}|${{ steps.eval.conclusion }}
             Assert the harness actually ran|${{ steps.ran.outcome }}|${{ steps.ran.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/memory-recall-eval\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/memory-recall-eval\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."

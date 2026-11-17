@@ -43,6 +43,7 @@ HARNESS_PATHS = (
     ".github/workflows/secret-scan.yml",
     ".github/scripts/fetch-gitleaks.sh",
     ".github/scripts/harness-guarded.sh",
+    ".github/scripts/harness-diff-guard.sh",
 )
 
 bash = shutil.which("bash")
@@ -404,7 +405,12 @@ def test_the_fetch_step_runs_the_fetch_through_the_guard() -> None:
     pattern = re.compile(_harness_re())
     for path in HARNESS_PATHS:
         assert pattern.search(path), path
-    for path in ("backend/app.py", ".gitleaks.toml", ".github/workflows/ci.yml"):
+    for path in (
+        "backend/app.py",
+        ".gitleaks.toml",
+        ".github/workflows/ci.yml",
+        ".github/scripts/harness-diff-guard.sh.bak",
+    ):
         assert not pattern.search(path), path
 
 
@@ -413,3 +419,4 @@ def test_backend_ci_runs_on_changes_to_the_guard() -> None:
     triggers = workflow.get("on", workflow.get(True))
     for event in ("pull_request", "push"):
         assert ".github/scripts/harness-guarded.sh" in triggers[event]["paths"]
+        assert ".github/scripts/harness-diff-guard.sh" in triggers[event]["paths"]

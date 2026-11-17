@@ -111,6 +111,7 @@ on:
       # PR that edits only the script or a carrier must run that module. The
       # module asserts every file it reads appears in BOTH filters.
       - '.github/scripts/declare-setup-death.sh'
+      - '.github/scripts/harness-diff-guard.sh'
       - '.github/workflows/memory-recall-eval.yml'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
@@ -158,6 +159,7 @@ on:
       - '.github/workflows/verify-frontend-run.yml'
       # See the pull_request filter above (the setup-death declarer).
       - '.github/scripts/declare-setup-death.sh'
+      - '.github/scripts/harness-diff-guard.sh'
       - '.github/workflows/memory-recall-eval.yml'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
@@ -392,7 +394,7 @@ jobs:
             Run ruff (linting)|${{ steps.ruff_check.outcome }}|${{ steps.ruff_check.conclusion }}
             Run ruff format (formatting)|${{ steps.ruff_format.outcome }}|${{ steps.ruff_format.conclusion }}
             Run mypy (type checking)|${{ steps.mypy.outcome }}|${{ steps.mypy.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1442,7 +1444,7 @@ jobs:
             Collect the test suite|${{ steps.collect.outcome }}|${{ steps.collect.conclusion }}
             Select this shard's test files|${{ steps.select_shard.outcome }}|${{ steps.select_shard.conclusion }}
             Run tests with coverage|${{ steps.pytest.outcome }}|${{ steps.pytest.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1623,7 +1625,7 @@ jobs:
           VERDICT_STEPS: |
             Run Trivy vulnerability scanner|${{ steps.trivy_scan.outcome }}|${{ steps.trivy_scan.conclusion }}
             Run safety check (dependency vulnerabilities)|${{ steps.safety_check.outcome }}|${{ steps.safety_check.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1812,7 +1814,7 @@ jobs:
           # with scripts/ci first on sys.path, so a module a PR adds there
           # runs inside it. A PR touching any of it gets no title (rule 5,
           # the harness-diff guard).
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$|^scripts/ci/'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$|^scripts/ci/'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
