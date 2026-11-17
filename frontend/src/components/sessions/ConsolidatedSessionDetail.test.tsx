@@ -33,7 +33,8 @@ vi.mock("@/services/devenv-api", () => ({
 }));
 
 vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api/operations/sessions")>();
+  const actual =
+    await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     // The panes fetch on mount. None of them is what this file is about.
@@ -135,9 +136,10 @@ describe("D5 — nine sections, both halves, one page", () => {
     // The half `/sessions/[id]` never had.
     expect(await screen.findByTestId("twin-session-card")).toBeInTheDocument();
     // The half `/environments/sessions/[key]` never had.
-    expect(
-      await screen.findByTestId("stub-session-detail")
-    ).toHaveAttribute("data-session-id", "agent-1");
+    expect(await screen.findByTestId("stub-session-detail")).toHaveAttribute(
+      "data-session-id",
+      "agent-1"
+    );
   });
 
   it("carries the frozen testids forward VERBATIM (trap 5)", async () => {
@@ -160,12 +162,12 @@ describe("D5 — nine sections, both halves, one page", () => {
   it("shows BOTH transcript stores beside each other, labelled", async () => {
     mount();
     const stores = await screen.findByTestId("session-transcript-stores");
-    expect(
-      screen.getByTestId("session-transcript-live")
-    ).toHaveTextContent(/coord/i);
-    expect(
-      screen.getByTestId("session-transcript-archive")
-    ).toHaveTextContent(/Permanent/i);
+    expect(screen.getByTestId("session-transcript-live")).toHaveTextContent(
+      /coord/i
+    );
+    expect(screen.getByTestId("session-transcript-archive")).toHaveTextContent(
+      /Permanent/i
+    );
     expect(stores).toHaveTextContent(/7 days/i);
   });
 
@@ -256,9 +258,9 @@ describe("the identity panel — account, config dir, device, names, live", () =
     });
     const panel = await screen.findByTestId("session-identity-panel");
     // Identifying text in FULL — no truncation of the id or the names.
-    expect(
-      screen.getByTestId("session-identity-session-id")
-    ).toHaveTextContent(STAMPED.id);
+    expect(screen.getByTestId("session-identity-session-id")).toHaveTextContent(
+      STAMPED.id
+    );
     expect(screen.getByTestId("session-identity-account")).toHaveTextContent(
       "qontinui"
     );
@@ -301,7 +303,8 @@ describe("the identity panel — account, config dir, device, names, live", () =
   });
 
   it("a failed census read is UNKNOWN with its status, not 'not served' and not 'not live'", async () => {
-    const { AgentSessionsApiError } = await import("@/services/agent-sessions-api");
+    const { AgentSessionsApiError } =
+      await import("@/services/agent-sessions-api");
     mount({
       card: STAMPED,
       sessionId: STAMPED.id,
@@ -335,7 +338,9 @@ describe("the identity panel — account, config dir, device, names, live", () =
       })) as never,
     });
     const live = await screen.findByTestId("session-identity-live");
-    await waitFor(() => expect(live).toHaveTextContent("live now on spaceship"));
+    await waitFor(() =>
+      expect(live).toHaveTextContent("live now on spaceship")
+    );
     expect(live).toHaveAttribute("data-state", "live");
   });
 
@@ -355,5 +360,48 @@ describe("the identity panel — account, config dir, device, names, live", () =
     await screen.findByTestId("consolidated-session-agent-half-absent");
     expect(screen.queryByTestId("session-identity-panel")).toBeNull();
     expect(readCensus).not.toHaveBeenCalled();
+  });
+});
+
+// Plan 2026-11-16-runner-page-name-reaches-the-coord-session-identity-card
+// Phase 3b: the operator reaches the machine and runner-page rows through THIS
+// page, so the arming assertion enters here rather than at SessionCardView.
+describe("the identity card's machine and runner page reach the consolidated page", () => {
+  it("shows a coord_device machine without a dead link, and says the runner page is not served", async () => {
+    mount({
+      card: {
+        ...CARD,
+        machine: {
+          id: null,
+          name: null,
+          hostname: "nawa",
+          environment: null,
+          source: "coord_device",
+        },
+        machine_unknown_reason: null,
+      },
+    });
+    const machine = await screen.findByTestId("session-card-machine");
+    expect(machine.textContent).toContain("nawa");
+    expect(machine.textContent).not.toContain("unnamed machine");
+    expect(machine.textContent).toContain("via coord device");
+    expect(machine.querySelector("a")).toBeNull();
+    expect(
+      screen.getByTestId("session-card-runner-page").textContent
+    ).toContain("Runner page: unknown (not served)");
+  });
+
+  it("names a null machine's reason instead of rendering nothing", async () => {
+    mount({
+      card: {
+        ...CARD,
+        machine: null,
+        machine_unknown_reason: "device_read_failed",
+      },
+    });
+    const machine = await screen.findByTestId("session-card-machine");
+    expect(machine.textContent).toContain(
+      "machine unknown: device read failed"
+    );
   });
 });

@@ -1312,6 +1312,11 @@ def test_python_is_set_up_before_the_qualifier() -> None:
 POST_MORTEMS = {
     "Name an unavailable postgresql client",
     "Explain infrastructure timeout vs external cancellation",
+    # `if: failure()` only (plan 2026-11-11-web-setup-step-deaths-declare-not-a-
+    # verdict). On a doc-only run every SETUP row after the qualifier is
+    # skipped, so it can declare only a setup death from before the qualifier
+    # ran; its exact `if:` is pinned by tests/test_declare_setup_death.py.
+    "Declare a setup death",
 }
 
 
