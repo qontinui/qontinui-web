@@ -50,6 +50,7 @@ import {
   POINTER_UNREPORTED_TEXT,
   STILL_LISTED_HOME_TENANT_TEXT,
   STILL_LISTED_LAG_TEXT,
+  unsentRowsListedText,
   STILL_LISTED_TEXT,
   STILL_LISTED_VIA_POINTER_TEXT,
   WORKSTATION_TEXT,
@@ -360,6 +361,17 @@ export function useRemoveMachineFromTenant(
               .filter((id) => sent.has(id))
           : [];
       const stillListedAfter = listedSent.length > 0;
+      // The re-read may list this machine under rows the snapshot never held
+      // (registered after the dialog opened): those were not sent, so the
+      // machine is not gone whatever this removal's counts say.
+      const snapshot = new Set(m.deviceIds.map((id) => id.toLowerCase()));
+      const listedUnsent =
+        read !== null && read.state === "known"
+          ? read.machines
+              .filter((x) => x.key === m.key)
+              .flatMap((x) => x.deviceIds.map((id) => id.toLowerCase()))
+              .filter((id) => !snapshot.has(id))
+          : [];
       // Every still-listed id coord said it removed (pointer false): only a
       // list that has not caught up explains it — no home-tenant clause.
       const outcomeOf = new Map(
@@ -371,12 +383,15 @@ export function useRemoveMachineFromTenant(
       // already absent, or with the pointer unreported — is worth saying.
       const homeTenant =
         stillListedAfter && s.alreadyAbsent + s.pointerUnknown + s.removed > 0;
+      const listedNote = homeTenant
+        ? `${summarySentence} ${
+            onlyLag ? STILL_LISTED_LAG_TEXT : STILL_LISTED_HOME_TENANT_TEXT
+          }`
+        : summarySentence;
       const sentence = writeAck(
-        homeTenant
-          ? `${summarySentence} ${
-              onlyLag ? STILL_LISTED_LAG_TEXT : STILL_LISTED_HOME_TENANT_TEXT
-            }`
-          : summarySentence,
+        listedUnsent.length > 0
+          ? `${listedNote} ${unsentRowsListedText(listedUnsent.length)}`
+          : listedNote,
         true,
         s,
         false
@@ -384,7 +399,11 @@ export function useRemoveMachineFromTenant(
       // Every id unbound or already absent. A binding the home-tenant
       // pointer keeps listed (or may keep listed), a machine still listed,
       // or an absence nothing confirmed is not a clean removal: a warning.
-      if (s.stillListed + s.pointerUnknown + s.removedEarlier > 0 || homeTenant)
+      if (
+        s.stillListed + s.pointerUnknown + s.removedEarlier > 0 ||
+        homeTenant ||
+        listedUnsent.length > 0
+      )
         toast.warning(`${m.name}: ${sentence}`);
       else if (nothingRemoved)
         // Nothing happened this time. After an earlier attempt that removed
