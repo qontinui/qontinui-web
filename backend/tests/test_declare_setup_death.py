@@ -935,6 +935,10 @@ RUST_TOOLCHAIN_CARRIERS = frozenset({"style-gate.yml"})
 # backend-ci's `Install safety` resolves its interpreter through poetry, which
 # reads the PR's own backend/poetry.toml (`create = false`, `no-pip = true`).
 POETRY_TOML_CARRIERS = frozenset({"backend-ci.yml"})
+#: The carriers whose SETUP rows run `.github/scripts/fetch-pinned-binary.sh`
+#: (plan 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage): a PR
+#: that edits that script is a harness edit, never declared not-a-verdict.
+FETCH_PINNED_CARRIERS = frozenset({"backend-ci.yml", "workflow-lint.yml"})
 
 
 def _harness_literal(workflow: str) -> str:
@@ -949,6 +953,8 @@ def _harness_literal(workflow: str) -> str:
         "|^\\.github/scripts/declare-setup-death\\.sh$"
         "|^\\.github/scripts/harness-diff-guard\\.sh$"
     )
+    if workflow in FETCH_PINNED_CARRIERS:
+        pattern += "|^\\.github/scripts/fetch-pinned-binary\\.sh$"
     if workflow in FRONTEND_LOCKFILE_CARRIERS:
         pattern += "|^frontend/package(-lock)?\\.json$"
     if workflow in RUST_TOOLCHAIN_CARRIERS:
@@ -2230,6 +2236,30 @@ def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
         reason = _assert_withheld(out)
         assert "harness-diff guard read true" in reason, _defang(out)
         assert "('backend/poetry.toml')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_fetch_script_edit_withholds_only_where_setup_runs_it(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern, against a PR that adds only the fetch script."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={".github/scripts/fetch-pinned-binary.sh": "#!/usr/bin/env bash\n"},
+    )
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in FETCH_PINNED_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
     else:
         assert _titles(out) == [LINT_TITLE], _defang(out)
 
