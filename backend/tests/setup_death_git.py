@@ -148,6 +148,8 @@ def run_git(cwd: Path, *args: str, home: Path) -> str:
         },
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert proc.returncode == 0, defang(f"git {args}: {proc.stdout}{proc.stderr}")
@@ -159,7 +161,12 @@ def git_version() -> tuple[int, ...]:
     if GIT is None:
         return ()
     proc = subprocess.run(
-        [GIT, "--version"], capture_output=True, text=True, check=False
+        [GIT, "--version"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     found = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", proc.stdout)
     if proc.returncode != 0 or not found:
@@ -326,6 +333,8 @@ def local_objects(workspace: Path, home: Path) -> dict[str, str]:
         env=base_env(home),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert proc.returncode == 0, defang(proc.stderr)
@@ -379,6 +388,8 @@ def run_pytest_probe(tmp_path: Path, source: str, *extra: str) -> tuple[int, str
         },
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
         check=False,
     )

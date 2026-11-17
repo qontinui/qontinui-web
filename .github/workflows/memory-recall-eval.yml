@@ -207,7 +207,8 @@ jobs:
         id: poetry_install
         working-directory: ${{ runner.temp }}
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -P -
+          set -o pipefail
+          curl -fsSL https://install.python-poetry.org | python3 -P -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
