@@ -65,7 +65,9 @@ expression must be.
 Built ``CONCURRENTLY`` so device heartbeats and registrations are never blocked.
 A killed concurrent build leaves an INVALID index that ``IF NOT EXISTS`` would
 then skip and report as success, so the create is followed by an ``indisvalid``
-check that raises with the recovery (the ``census_idx_01`` precedent).
+check that raises with the recovery (the ``census_idx_01`` precedent), except
+that the recovery is a ``DROP INDEX CONCURRENTLY``: a plain ``DROP INDEX`` would
+take ACCESS EXCLUSIVE on ``coord.devices`` and queue every heartbeat behind it.
 
 Merge-train classifier disposition
 ==================================
@@ -120,7 +122,10 @@ def _require_valid() -> None:
         raise RuntimeError(
             f"coord.{INDEX_NAME} is {state} after CREATE INDEX CONCURRENTLY IF NOT EXISTS "
             "— a killed concurrent build left it (IF NOT EXISTS skipped it). "
-            f"Run `DROP INDEX coord.{INDEX_NAME}` plainly and re-run this revision."
+            "If pg_stat_progress_create_index shows no build still running on "
+            f"coord.devices, run `DROP INDEX CONCURRENTLY coord.{INDEX_NAME}` "
+            "(it drops an INVALID index without blocking the table) and re-run "
+            "this revision."
         )
 
 

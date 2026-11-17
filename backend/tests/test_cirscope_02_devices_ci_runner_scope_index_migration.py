@@ -12,9 +12,12 @@ Pins what coord's CI-runner retirement arm relies on (its per-scope read in
    hostname, and the text after the LAST ``@`` is what is compared.
 3. **Re-running is harmless** — ``stamp <parent>`` then ``upgrade`` again
    leaves the same index (same oid).
-4. **A killed concurrent build is refused, not skipped** — an INVALID leftover
-   makes the upgrade raise with the recovery instead of reporting success.
-5. **Reversal** — downgrade removes only this index; re-applying works.
+4. **Reversal** — downgrade removes only this index (every other
+   ``coord.devices`` index survives); re-applying works.
+5. **A killed concurrent build is refused, not skipped** — an INVALID leftover
+   makes the upgrade fail with the non-blocking recovery instead of reporting
+   success. Its own test, SKIPPED (reported) when the role cannot write
+   ``pg_index``.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
 Postgres, skipped when none is reachable.
@@ -70,7 +73,7 @@ _COORD_SCOPE_READ = (
 def _assert_shape(engine: Engine) -> None:
     valid, unique, predicate = index_state(engine, _INDEX)
     assert valid, f"coord.{_INDEX} is INVALID"
-    assert not unique, "two scopes' rows share a key: the index must not be unique"
+    assert not unique, "runners of one scope share a key: the index must not be unique"
     assert "capabilities @> '[\"ci_runner\"]'::jsonb" in predicate, predicate
     definition = index_definition(engine, _INDEX)
     assert "ON coord.devices USING btree" in definition, definition
@@ -109,6 +112,17 @@ def _insert_device(engine: Engine, tenant_id: str, hostname: str, ci: bool) -> s
             },
         )
     return device_id
+
+
+def _device_indexes(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT indexname FROM pg_indexes "
+                "WHERE schemaname = 'coord' AND tablename = 'devices'"
+            )
+        ).all()
+    return {str(r[0]) for r in rows}
 
 
 def _scope_rows(engine: Engine, scope: str) -> set[str]:
@@ -171,20 +185,38 @@ def test_cirscope_02_indexes_the_ci_runner_scope_scan() -> None:
         _assert_shape(engine)
         assert index_oid(engine, _INDEX) == oid
 
-        # 5. An INVALID leftover of a killed CONCURRENTLY build is refused.
-        if is_superuser(engine):
-            invalidate_index(engine, _INDEX)
-            run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
-            with pytest.raises(Exception, match="INVALID"):
-                run_alembic(root, url, "upgrade", _REVISION_ID)
-            with engine.begin() as conn:
-                conn.execute(text(f"DROP INDEX coord.{_INDEX}"))
-            run_alembic(root, url, "upgrade", _REVISION_ID)
-            _assert_shape(engine)
-
-        # 6. Downgrade drops only this index; re-apply works.
+        # 5. Downgrade drops only this index; re-apply works.
+        before = _device_indexes(engine)
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX)
+        assert _device_indexes(engine) == before - {_INDEX}
         assert _scope_rows(engine, "acme/shop") == {mine, odd}
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        _assert_shape(engine)
+
+
+@pytest.mark.skipif(
+    not can_connect(admin_database_url()),
+    reason="Postgres not reachable at the conftest URL.",
+)
+def test_cirscope_02_refuses_an_invalid_leftover_with_a_non_blocking_recovery() -> None:
+    """A killed CONCURRENTLY build's INVALID index is refused, never skipped."""
+    root = backend_root()
+    with ephemeral_database(admin_database_url(), "cirscope02_inv_test") as (
+        engine,
+        url,
+    ):
+        if not is_superuser(engine):
+            pytest.skip("marking an index INVALID writes pg_index: needs superuser")
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        invalidate_index(engine, _INDEX)
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        proc = run_alembic(root, url, "upgrade", _REVISION_ID, expect_success=False)
+        assert proc.returncode != 0
+        assert "is INVALID after CREATE INDEX CONCURRENTLY" in proc.stderr, proc.stderr
+        assert f"DROP INDEX CONCURRENTLY coord.{_INDEX}" in proc.stderr, proc.stderr
+        # The recovery the message names works.
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text(f"DROP INDEX CONCURRENTLY coord.{_INDEX}"))
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
