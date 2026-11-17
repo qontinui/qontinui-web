@@ -79,6 +79,7 @@ import {
   gatesOverview,
   pendingQuestions,
   resetSupplements,
+  stalledSubprojects,
 } from "./__fixtures__/supplementReads";
 import CoordHomePage from "./page";
 
@@ -226,7 +227,7 @@ describe("/admin/coord/home", () => {
     vi.useRealTimers();
   });
 
-  it("reads the project-state proxy once, and beside it only the machine roster and the two queue lists", async () => {
+  it("reads the project-state proxy once, and beside it only the machine roster, the two queue lists and the stalled-subproject count", async () => {
     await renderWith(doorBody());
     expect(httpFetch.mock.calls.map((c) => c[0])).toEqual([
       "/api/v1/operations/project-state",
@@ -235,6 +236,54 @@ describe("/admin/coord/home", () => {
     expect(fleetHealth).toHaveBeenCalledTimes(1);
     expect(pendingQuestions).toHaveBeenCalledTimes(1);
     expect(gatesOverview).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(stalledSubprojects).toHaveBeenCalledTimes(1));
+  });
+
+  describe("the stalled-subprojects line (plan 2026-11-08 subprojects, F3)", () => {
+    it("reads coord's count of stalled subprojects and links to that list", async () => {
+      stalledSubprojects.mockImplementation(async () => ({
+        items: [],
+        next_cursor: null,
+        truncated: false,
+        total: 3,
+        unattached_units: { count: 0, by_class: {} },
+        generated_at: new Date().toISOString(),
+      }));
+      await renderWith(doorBody());
+      const line = screen.getByTestId("coord-home.stalled-subprojects");
+      await waitFor(() =>
+        expect(
+          within(line).getByTestId("coord-home.stalled-subprojects.count")
+        ).toHaveTextContent("3")
+      );
+      expect(
+        within(line).getByRole("link", {
+          name: "Subprojects with nothing moving them",
+        })
+      ).toHaveAttribute("href", "/admin/coord/subprojects?tab=stalled");
+    });
+
+    it("is a dash, never a zero, until coord answers", async () => {
+      stalledSubprojects.mockImplementation(() => new Promise(() => {}));
+      await renderWith(doorBody());
+      expect(
+        screen.getByTestId("coord-home.stalled-subprojects.count")
+      ).toHaveTextContent("–");
+    });
+
+    it("names a pending migration instead of claiming none", async () => {
+      stalledSubprojects.mockRejectedValue(
+        new Error(
+          'GET /api/v1/operations/subprojects?status=open&headline=stalled&limit=1 failed: 503 - {"error":"schema_migration_pending"}'
+        )
+      );
+      await renderWith(doorBody());
+      const line = screen.getByTestId("coord-home.stalled-subprojects");
+      await waitFor(() => expect(line).toHaveTextContent(/not migrated yet/));
+      expect(
+        within(line).getByTestId("coord-home.stalled-subprojects.count")
+      ).toHaveTextContent("–");
+    });
   });
 
   it("renders every region with its ui-bridge id and testid", async () => {

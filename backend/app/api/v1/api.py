@@ -49,6 +49,7 @@ from app.api.v1.endpoints import (
     constraints,
     custom_functions,
     design_policies,
+    design_refs,
     devenv,
     devenv_agent,
     device_bridge_ws,
@@ -69,6 +70,7 @@ from app.api.v1.endpoints import (
     feedback_scores,
     files_sharing,
     finding_categories,
+    fleet_device_bindings,
     fleet_dispatch,
     fleet_targets,
     health,
@@ -281,6 +283,15 @@ api_router.include_router(
 # `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
 api_router.include_router(
     session_runs.router, prefix="/operations", tags=["operations"]
+)
+# Fleet device bindings — remove a roster machine's device rows from the
+# caller's tenant (coord's per-tenant `DELETE /coord/devices/:id/tenant-binding`,
+# once per id, with a per-id outcome). Under `/operations` so the active-tenant
+# prefix rule covers it; a sibling module so the operations hub file is
+# untouched. Plan
+# `2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console` Phase 1.
+api_router.include_router(
+    fleet_device_bindings.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
@@ -521,6 +532,14 @@ api_router.include_router(
 # labelled by coord-tenant admins (plan
 # 2026-10-13-image-generation-and-visual-judgment, Phase 23).
 api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The design reference library — the design_refs schema: captured third-party
+# web examples with descriptions and perception judgements, tenant-scoped under
+# the memory credential (plan
+# 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query,
+# Phase 1). No public route: public serving is Phase 6.
+api_router.include_router(
+    design_refs.router, prefix="/design-refs", tags=["design-refs"]
+)
 # The presentation scope — web.presentation_scopes: the first-party owners and
 # confidential terms the console's presentation lens redacts by, read by any
 # member of the active project and written by its admins (plan
