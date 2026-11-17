@@ -122,10 +122,13 @@ RESERVED_PHRASES = (
 )
 LINT_JOB = "Lint & Format Check"
 LINT_TITLE = "Lint & Format Check SETUP FAILED (not a verdict on this PR)"
+#: backend-ci `lint`'s own HARNESS_PATHS_RE, byte for byte; pinned by
+#: test_backend_ci_harness_is_the_lint_jobs_own_pattern so it cannot drift.
 BACKEND_CI_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
     r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^backend/poetry\.toml$"
 )
 
 SETUP_POETRY_DIED = (
@@ -2175,6 +2178,12 @@ def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id
     assert "curl -fsSL https://install.python-poetry.org" in lines[pipe[0]], (
         f"{workflow}:{job_id}: curl must fail on an HTTP error (-f)"
     )
+
+
+def test_backend_ci_harness_is_the_lint_jobs_own_pattern():
+    """`_pr_env`'s default harness is the pattern the lint carrier really runs."""
+    step = _declarer(_job("backend-ci.yml", "lint"))
+    assert step["env"]["HARNESS_PATHS_RE"] == BACKEND_CI_HARNESS
 
 
 @requires_bash_and_git
