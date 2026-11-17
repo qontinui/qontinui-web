@@ -244,6 +244,8 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   session_stuck: "A session is stuck",
   needs_operator: "Waiting on your answer",
   source_unreadable: "coord could not read part of the evidence",
+  finish_undeclared: "A member session ended without declaring it finished",
+  undetermined: "coord could not judge this subproject's state",
 };
 
 /** A reason kind in the operator's words. An unrecognised kind keeps coord's

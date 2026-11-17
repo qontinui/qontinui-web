@@ -258,9 +258,22 @@ describe("reasons", () => {
       "session_stuck",
       "needs_operator",
       "source_unreadable",
+      "finish_undeclared",
+      "undetermined",
     ]) {
       expect(reasonWords(kind).recognised, kind).toBe(true);
     }
+  });
+
+  it("words the two kinds a computed unknown carries", () => {
+    expect(reasonWords("finish_undeclared")).toEqual({
+      label: "A member session ended without declaring it finished",
+      recognised: true,
+    });
+    expect(reasonWords("undetermined")).toEqual({
+      label: "coord could not judge this subproject's state",
+      recognised: true,
+    });
   });
 
   it("keeps an unknown kind's own token rather than inventing a meaning", () => {
