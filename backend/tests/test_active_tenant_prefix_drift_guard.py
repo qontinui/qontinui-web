@@ -231,6 +231,10 @@ _FORWARDED_TO_COORD: dict[str, str] = {
         "reads it only for can_edit's _effective_tenant_roles (membership-"
         "matched); operations' _tenant_headers forwards it to coord"
     ),
+    "app.api.v1.endpoints.spawn_launch_settings": (
+        "reads it only for can_edit's _effective_tenant_roles (membership-"
+        "matched); operations' _tenant_headers forwards it to coord"
+    ),
     "app.api.v1.endpoints.prompt_injections": "_coord_headers forwards it to coord",
     "app.services.coord_device_resolve": (
         "CoordCaller carries it to coord's /coord/devices/resolve, which "
@@ -277,6 +281,19 @@ _VALIDATED_LOCALLY: dict[str, str] = {
 # Each entry is ``module -> (reason, paths)``. The reason says why the module
 # names a resolver at all and what these routes are scoped by instead.
 _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
+    "app.api.v1.endpoints.design_refs": (
+        "the vocabulary writes (style families, perception dimensions, "
+        "personality traits) are GLOBAL rows written by a qontinui superuser "
+        "(current_superuser); they resolve no tenant, so the selection does "
+        "not change what they do",
+        frozenset(
+            {
+                "/api/v1/design-refs/vocab/dimensions",
+                "/api/v1/design-refs/vocab/style-families",
+                "/api/v1/design-refs/vocab/traits",
+            }
+        ),
+    ),
     "app.api.v1.endpoints.users": (
         "names get_tenant_id only in a comment; /users/me* is the caller's own "
         "web-DB profile, /users is a superuser web-DB listing",

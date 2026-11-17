@@ -116,10 +116,48 @@ export interface RoleSuggestion {
   sampleAgeSecs: number | null;
 }
 
+/**
+ * Whether GitHub still lists one CI-runner registration, as coord's registrar
+ * last saw it (plan
+ * `2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console`
+ * Phase 2). `unknown` covers no stored listing, an absent relation, a read
+ * error — and a coord build that serves no `device_listings` at all. It is
+ * never defaulted to either arm.
+ */
+export type RegistrarListing = "listed" | "not_listed" | "unknown";
+
+/** One `coord.devices` row of a CI host, with its own age and listing. */
+export interface DeviceListing {
+  deviceId: string;
+  /** The registrar's scope (`owner/repo` or an org), `null` when not served. */
+  scope: string | null;
+  lastSeenAt: string | null;
+  registrarListing: RegistrarListing;
+  /** Coord's words for WHY the listing reads as it does. */
+  detail: string | null;
+}
+
 export interface RoleMachine {
   /** Coord's `machine_key` — the row's stable identity. */
   key: string;
   deviceId: string | null;
+  /**
+   * Every `coord.devices` row this roster entry groups (`MachineView.device_ids`
+   * — a CI host registered on N repos is N rows, D3). Empty for a machine
+   * that is assigned but not registered. A coord that serves no
+   * `device_ids` leaves the workstation's own `device_id`, else nothing: a
+   * CI host's lone `device_id` names one of its N rows, so falling back to it
+   * would remove one binding and report the machine removed.
+   */
+  deviceIds: string[];
+  /** Coord's machine-level `last_seen_at` (the freshest of its rows). */
+  lastSeenAt: string | null;
+  /**
+   * Per registration (`device_listings`), for a CI host. `null` when coord
+   * did not serve it — a workstation, or a coord predating the field; every
+   * row is then UNKNOWN, never `listed`.
+   */
+  deviceListings: DeviceListing[] | null;
   ciHostName: string | null;
   name: string;
   /** `null` = no row (unassigned). */
@@ -229,6 +267,49 @@ export function parseLane(v: unknown): LaneView {
   return { effective: str(v.effective), role, drain: parseDrainLayer(v.drain) };
 }
 
+function parseRegistrarListing(v: unknown): RegistrarListing {
+  return v === "listed" || v === "not_listed" ? v : "unknown";
+}
+
+/** `device_listings`, tolerantly: a non-array is "not served" (`null`). */
+export function parseDeviceListings(v: unknown): DeviceListing[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: DeviceListing[] = [];
+  for (const row of v) {
+    if (!isRecord(row)) continue;
+    const deviceId = str(row.device_id);
+    if (deviceId === null) continue;
+    out.push({
+      deviceId,
+      scope: str(row.scope),
+      lastSeenAt: str(row.last_seen_at),
+      registrarListing: parseRegistrarListing(row.registrar_listing),
+      detail: str(row.registrar_listing_detail),
+    });
+  }
+  return out;
+}
+
+function parseDeviceIds(
+  v: unknown,
+  deviceId: string | null,
+  registered: boolean,
+  hostOnly: boolean
+): string[] {
+  if (!registered) return [];
+  if (!Array.isArray(v))
+    return deviceId !== null && !hostOnly ? [deviceId] : [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const raw of v) {
+    const id = str(raw);
+    if (id === null || seen.has(id.toLowerCase())) continue;
+    seen.add(id.toLowerCase());
+    ids.push(id);
+  }
+  return ids;
+}
+
 /** One machine row, or `null` when it names no machine at all. */
 export function parseRoleMachine(v: unknown): RoleMachine | null {
   if (!isRecord(v)) return null;
@@ -285,6 +366,9 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
   return {
     key,
     deviceId,
+    deviceIds: parseDeviceIds(v.device_ids, deviceId, registered, hostOnly),
+    lastSeenAt: str(v.last_seen_at),
+    deviceListings: hostOnly ? parseDeviceListings(v.device_listings) : null,
     ciHostName,
     name: str(v.name) ?? ciHostName ?? (deviceId as string),
     role,

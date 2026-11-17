@@ -9,7 +9,9 @@ Pins what a reviewer cannot read off the DDL at a glance:
 2. **The column contract, EXACTLY** — names, types and nullability are the
    cross-repo contract coord's ingest and read are written against, and the set
    is a privacy contract too (no transcript content, no environment values, no
-   credentials). Widening it must be a reviewed edit of this test.
+   credentials). Widening it must be a reviewed edit of this test — or, for a
+   later revision, of that revision's test, which imports this set and pins
+   the widened one (``test_coord_session_census_02_migration``).
 3. **The key** — ``(device_id, session_id, pid)`` is enforced: the same session
    on two pids is two rows, the same triple twice is refused.
 4. **The FK** — a session row without its device's freshness row is refused,
