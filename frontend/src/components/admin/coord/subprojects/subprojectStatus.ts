@@ -544,6 +544,21 @@ export function joinedViaWords(joinedVia: string): string {
   return own(JOINED_VIA_WORDS, joinedVia) ?? joinedVia.replace(/_/g, " ");
 }
 
+/**
+ * The raw-line text for a subproject's `title_basis` — which evidence coord
+ * took a `root_session` title from. Only a `root_session` title has a basis,
+ * so any other `title_source` yields `null` (nothing to say). `null` too when
+ * the field is ABSENT (a coord that predates it: say nothing rather than
+ * guess); `"not recorded"` when coord sent `null` (never read as `derived`).
+ */
+export function titleBasisText(
+  s: Pick<SubprojectSummary, "title_source" | "title_basis">
+): string | null {
+  if (s.title_source !== "root_session" || s.title_basis === undefined)
+    return null;
+  return s.title_basis === null ? "not recorded" : s.title_basis;
+}
+
 /** The claim prefix coord writes before an anchored PR (`claim:pr:owner/repo#N`). */
 const PR_CLAIM_PREFIX = "claim:pr:";
 

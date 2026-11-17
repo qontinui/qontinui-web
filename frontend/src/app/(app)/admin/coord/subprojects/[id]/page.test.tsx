@@ -654,6 +654,47 @@ describe("/admin/coord/subprojects/[id]", () => {
     expect(row).toHaveTextContent(`via_ref ${ANCHOR}`);
   });
 
+  it("shows a root-session title's basis on the raw line, and a null one as not recorded", async () => {
+    const base = detail();
+    const rootTitled = { ...base.subproject, title_source: "root_session" };
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...rootTitled, title_basis: "pr_title" } })
+    );
+    const { unmount } = render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain("title from root_session · title basis pr_title · status open");
+    unmount();
+
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...rootTitled, title_basis: null } })
+    );
+    render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain(
+      "title from root_session · title basis not recorded · status open"
+    );
+  });
+
+  it("says nothing about a title basis coord did not send, or for an explicit title", async () => {
+    const base = detail();
+    fetchSubproject.mockResolvedValue(detail());
+    const { unmount } = render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain("title from explicit · status open");
+    unmount();
+
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...base.subproject, title_basis: null } })
+    );
+    render(<SubprojectDetailPage />);
+    const raw = await screen.findByTestId("coord-subproject-raw");
+    expect(raw.textContent).toContain("title from explicit · status open");
+    expect(raw).not.toHaveTextContent("title basis");
+  });
+
   it("keeps a work-evidence unit via_ref as plain text", async () => {
     const base = detail();
     const UNIT = "0a1b2c3d-0000-4000-8000-000000000001";
