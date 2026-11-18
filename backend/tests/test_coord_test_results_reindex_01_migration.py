@@ -154,6 +154,8 @@ _FAILURE_MARKER = "coord_test_results_reindex_01: REINDEX FAILED"
 #: The revision's own bound on its statements, and the restore after them.
 _SET_TIMEOUT = "SET statement_timeout = '4h'"
 _RESET_TIMEOUT = "RESET statement_timeout"
+_SET_LOCK_TIMEOUT = "SET lock_timeout = 0"
+_RESET_LOCK_TIMEOUT = "RESET lock_timeout"
 
 # 3 repos x 40 tests, 1200 rows: enough that each rebuild sorts and writes real
 # pages rather than an empty index.
@@ -352,7 +354,7 @@ def test_upgrade_issues_static_literals_in_order_outside_a_transaction() -> None
         "and this test can only read the SQL that way"
     )
     issued = [" ".join(str(call.sql).split()) for call in calls]
-    expected: list[str] = [_SET_TIMEOUT]
+    expected: list[str] = [_SET_TIMEOUT, _SET_LOCK_TIMEOUT]
     for name in _REINDEXED:
         expected += [
             *_leftover_drops(name),
@@ -360,7 +362,7 @@ def test_upgrade_issues_static_literals_in_order_outside_a_transaction() -> None
             *_leftover_drops(name),
         ]
     expected += [*_leftover_drops(_RECREATED), *_RECREATE_STATEMENTS]
-    expected.append(_RESET_TIMEOUT)
+    expected += [_RESET_LOCK_TIMEOUT, _RESET_TIMEOUT]
     assert issued == expected, (
         "the timeout bound, then per rebuilt index, smallest first: drop _ccnew, "
         "drop _ccold, REINDEX, the same two drops in the failure handler; then the "
@@ -391,7 +393,12 @@ def test_the_block_sets_its_own_statement_timeout_and_resets_it_last() -> None:
     assert _SET_TIMEOUT in issued[:first_reindex], (
         f"{_SET_TIMEOUT!r} must run before the first REINDEX, so no rebuild is "
         "bounded by the migrator role's statement_timeout instead (a short one "
-        "cancels the large rebuild, which the catch then stamps unreclaimed)"
+        "cancels a rebuild on an ordinary wait: a REINDEX is then stamped "
+        "unreclaimed, and the large index's drop or build fails unstamped)"
+    )
+    assert _SET_LOCK_TIMEOUT in issued[:first_reindex], (
+        f"{_SET_LOCK_TIMEOUT!r} must run before the first REINDEX, so a short role "
+        "lock_timeout cannot cancel a statement's ordinary lock wait"
     )
     assert issued[-1] == _RESET_TIMEOUT, (
         f"{_RESET_TIMEOUT!r} must be the last statement, so the session goes back "
@@ -501,9 +508,29 @@ def test_each_reindex_sits_alone_in_its_own_try_with_a_dbapierror_handler() -> N
         for node in ast.walk(block)
         if (sql := _op_execute_literal(node)) is not None
     }
+    # Any other context manager around them (``contextlib.suppress``, say) could
+    # swallow the failure just as a try would; only the autocommit block may
+    # enclose them.
+    for block in ast.walk(upgrade):
+        if not isinstance(block, ast.With):
+            continue
+        is_autocommit = any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Attribute)
+            and item.context_expr.func.attr == "autocommit_block"
+            for item in block.items
+        )
+        if is_autocommit:
+            continue
+        inside_a_try |= {
+            sql
+            for node in ast.walk(block)
+            if (sql := _op_execute_literal(node)) is not None
+        }
     caught = [sql for sql in _RECREATE_STATEMENTS if sql in inside_a_try]
     assert not caught, (
-        f"{_RECREATED}'s drop and re-create must sit in no try: a caught failed "
+        f"{_RECREATED}'s drop and re-create must sit in no try and under no "
+        "context manager but the autocommit block: a caught failed "
         "build would stamp with the large index INVALID for good; caught: "
         f"{caught}"
     )

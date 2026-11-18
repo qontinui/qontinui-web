@@ -122,14 +122,17 @@ in the middle rebuild to prove it.
 Bounded waits, and what to do about a stall
 ===========================================
 
-The block opens with ``SET statement_timeout = '4h'`` and closes with
-``RESET statement_timeout``. Every statement in it is then bounded by this
-revision's own 4 h rather than by whatever the migrator's role sets: a role
-``statement_timeout`` under about an hour would cancel the large rebuild, which
-the catch above would then stamp with nothing reclaimed. The ``SET`` is
-session-level because inside an autocommit block a ``SET LOCAL`` lasts only for
-its own statement. ``lock_timeout`` is deliberately left alone: a short one
-would turn the rebuilds' ordinary waits into stamps that reclaim nothing.
+The block opens with ``SET statement_timeout = '4h'`` and ``SET lock_timeout
+= 0``, and closes with ``RESET lock_timeout`` and ``RESET statement_timeout``.
+Every statement in it is then bounded by this revision's own 4 h rather than by
+whatever the migrator's role sets. A short role ``statement_timeout`` or
+``lock_timeout`` would otherwise cancel a statement on an ordinary wait: a
+cancelled ``REINDEX`` would be caught and stamped with nothing reclaimed, and a
+cancelled drop or build of the large index would fail the revision unstamped,
+with that index absent or INVALID, on every retry. With ``lock_timeout = 0`` a
+lock wait is bounded by the 4 h ``statement_timeout`` instead. Both ``SET`` statements
+are session-level because inside an autocommit block a ``SET LOCAL`` lasts only
+for its own statement.
 
 A rebuild waits for every transaction holding a lock on ``coord.test_results``,
 and later for every transaction with an older snapshot, so a session left idle
@@ -210,8 +213,10 @@ guarded ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` is the one form it admits. E
 SQL string is still a static literal at its ``op.execute`` call site, with no
 catalog read and no f-string, so those three verbs are the only reasons it has.
 
-Hand-authored, never ``--autogenerate``d. Every statement is schema-qualified
-``coord.``.
+Hand-authored, never ``--autogenerate``d. Every statement names its table or
+index schema-qualified as ``coord.``, except the new index name in the
+``CREATE INDEX``, which PostgreSQL does not allow to be qualified: it is created
+in the schema of ``coord.test_results``.
 """
 
 import logging
@@ -295,6 +300,7 @@ def upgrade() -> None:
         # migrator's role sets ("Bounded waits" above). Session-level, so it
         # outlives each autocommit statement; reset at the end of the block.
         op.execute("SET statement_timeout = '4h'")
+        op.execute("SET lock_timeout = 0")
 
         # 1 of 3: idx_test_results_repo_observed (2.19 GB reusable).
         op.execute(
@@ -359,6 +365,7 @@ def upgrade() -> None:
         )
 
         # Back to the connection's configured value before alembic stamps.
+        op.execute("RESET lock_timeout")
         op.execute("RESET statement_timeout")
 
 
