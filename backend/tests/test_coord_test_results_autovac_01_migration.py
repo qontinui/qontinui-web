@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "coord_claude_acct_usage_05"
+_PARENT_REVISION_ID = "prcheckruns_suite_01"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
