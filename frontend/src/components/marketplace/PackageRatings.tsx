@@ -21,8 +21,10 @@ import { formatDistanceToNow } from "date-fns";
 interface PackageRatingsProps {
   packageId: string;
   ratings: PackageRating[];
-  averageRating: number;
-  totalRatings: number;
+  /** Absent when the package has no rating to average. */
+  averageRating?: number;
+  /** Absent when the payload does not serve a count. */
+  totalRatings?: number;
   userRating?: PackageRating;
   onSubmitRating: (rating: number, review?: string) => void;
   isSubmitting?: boolean;
@@ -66,7 +68,10 @@ export function PackageRatings({
   // Calculate rating distribution
   const ratingDistribution = [5, 4, 3, 2, 1].map((stars) => {
     const count = ratings.filter((r) => r.rating === stars).length;
-    const percentage = totalRatings > 0 ? (count / totalRatings) * 100 : 0;
+    const percentage =
+      totalRatings !== undefined && totalRatings > 0
+        ? (count / totalRatings) * 100
+        : 0;
     return { stars, count, percentage };
   });
 
@@ -77,7 +82,7 @@ export function PackageRatings({
         {/* Average Rating */}
         <div className="flex flex-col items-center justify-center p-6 bg-surface-canvas/50 rounded-lg border border-border-subtle min-w-[200px]">
           <div className="text-5xl font-bold text-text-primary mb-2">
-            {averageRating.toFixed(1)}
+            {averageRating !== undefined ? averageRating.toFixed(1) : "–"}
           </div>
           <div className="flex gap-1 mb-2">
             {[1, 2, 3, 4, 5].map((star) => (
@@ -85,7 +90,8 @@ export function PackageRatings({
                 key={star}
                 className={cn(
                   "w-5 h-5",
-                  star <= Math.round(averageRating)
+                  averageRating !== undefined &&
+                    star <= Math.round(averageRating)
                     ? "fill-amber-500 text-amber-500"
                     : "text-text-muted"
                 )}
@@ -93,7 +99,9 @@ export function PackageRatings({
             ))}
           </div>
           <div className="text-sm text-text-muted">
-            {totalRatings} {totalRatings === 1 ? "rating" : "ratings"}
+            {totalRatings === undefined
+              ? "Rating count unknown"
+              : `${totalRatings} ${totalRatings === 1 ? "rating" : "ratings"}`}
           </div>
         </div>
 

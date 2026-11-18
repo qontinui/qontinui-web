@@ -54,11 +54,6 @@ function pkg(latest: PackageVersion | null): CodePackage {
     created_at: "2026-11-01T10:00:00Z",
     updated_at: "2026-11-01T10:00:00Z",
     total_downloads: 0,
-    weekly_downloads: 0,
-    average_rating: 0,
-    rating_count: 0,
-    fork_count: 0,
-    star_count: 0,
     verified: false,
     featured: false,
     deprecated: false,
@@ -108,6 +103,19 @@ describe("PackageSidebar scan status", () => {
     expect(row).not.toBeNull();
     expect(within(row as HTMLElement).getByText("Unknown")).toBeInTheDocument();
     expect(within(row as HTMLElement).queryByText("0")).toBeNull();
+  });
+
+  it("an absent rating reads Not rated, not 0.0 (0)", () => {
+    const served = pkg(version("passed"));
+    delete served.average_rating;
+    delete served.rating_count;
+    render(<PackageSidebar pkg={served} />);
+
+    const row = screen.getByText("Rating").closest(".justify-between");
+    expect(row).not.toBeNull();
+    expect(
+      within(row as HTMLElement).getByText("Not rated")
+    ).toBeInTheDocument();
   });
 
   it("passed with warnings lists them and is not a clean pass", () => {

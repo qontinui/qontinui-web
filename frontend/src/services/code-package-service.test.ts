@@ -9,7 +9,7 @@
  *
  * Mutation: restoring an unbound `.map(this.transformBackendPackageToFrontend)`
  * makes `this` undefined inside the transform (it calls
- * `this.mapCategoryIdToName`), so `searchPackages` and `getPopularPackages`
+ * `this.buildPackage`), so `searchPackages` and `getPopularPackages`
  * reject and these cases red.
  *
  * Phase 2: the scan status each version carries is the one the API served.
@@ -47,8 +47,49 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function stubClient(body: unknown, status = 200) {
-  const fetch = vi.fn(async () => jsonResponse(body, status));
+/**
+ * The served categories. Their ids are deliberately NOT the 1-10 of the
+ * retired hard-coded table: a category read off an id table instead of the
+ * served list reds every case that maps one.
+ */
+const SERVED_CATEGORIES: components["schemas"]["CategoryRead"][] = [
+  {
+    id: 21,
+    name: "Data Processing",
+    slug: "data-processing",
+    created_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: 22,
+    name: "Utilities",
+    slug: "utilities",
+    created_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: 23,
+    name: "Integrations",
+    slug: "integrations",
+    created_at: "2026-01-01T00:00:00Z",
+  },
+];
+
+/**
+ * A stub `HttpClient`: `GET /categories` answers `categories` (a failing
+ * 500 when it is `null`), every other route answers `body`.
+ */
+function stubClient(
+  body: unknown,
+  status = 200,
+  categories: unknown = SERVED_CATEGORIES
+) {
+  const fetch = vi.fn(async (url: string) => {
+    if (url === `${PREFIX}/categories`) {
+      return categories === null
+        ? jsonResponse({ detail: "down" }, 500)
+        : jsonResponse(categories);
+    }
+    return jsonResponse(body, status);
+  });
   const client = { fetch } as unknown as HttpClient;
   return { fetch, service: new CodePackageService(client) };
 }
@@ -59,7 +100,7 @@ const searchResult: PackageSearchResult = {
   slug: "data-extractor",
   description: "Extracts data",
   author_id: "4f1c2a9e-0000-4000-8000-000000000001",
-  category_id: 7,
+  category_id: 21,
   category_name: "Data Processing",
   license: "MIT",
   tags: ["extract", "csv"],
@@ -75,9 +116,11 @@ describe("CodePackageService.searchPackages", () => {
     const served: PackageListResponse = {
       packages: [
         searchResult,
-        { ...searchResult, id: 8, slug: "other", category_id: 2 },
+        { ...searchResult, id: 8, slug: "other", category_id: 22 },
+        { ...searchResult, id: 9, slug: "stray", category_id: 99 },
+        { ...searchResult, id: 10, slug: "none", category_id: null },
       ],
-      total: 2,
+      total: 4,
       limit: 20,
       offset: 0,
       has_more: false,
@@ -90,16 +133,20 @@ describe("CodePackageService.searchPackages", () => {
       limit: 20,
     });
 
-    expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith(
       `${PREFIX}/packages?query=extract&limit=20&offset=0`
     );
-    expect(result.total).toBe(2);
+    expect(fetch).toHaveBeenCalledWith(`${PREFIX}/categories`);
+    expect(result.total).toBe(4);
     expect(result.page).toBe(1);
     expect(result.total_pages).toBe(1);
     expect(result.packages.map((p) => [p.id, p.slug, p.category])).toEqual([
       ["7", "data-extractor", "data-processing"],
       ["8", "other", "utilities"],
+      // An id the served list does not carry, and a package with no category,
+      // leave it absent: never "other".
+      ["9", "stray", undefined],
+      ["10", "none", undefined],
     ]);
     expect(result.packages[0]).toMatchObject({
       name: "Data Extractor",
@@ -111,6 +158,94 @@ describe("CodePackageService.searchPackages", () => {
     });
     // A search result carries no version record, so none is made up.
     expect(result.packages[0].latest_version).toBeUndefined();
+  });
+
+  it("serves no author, rating count or counters a search result does not carry", async () => {
+    const served: PackageListResponse = {
+      packages: [searchResult, { ...searchResult, id: 8, avg_rating: null }],
+      total: 2,
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    };
+    const { service } = stubClient(served);
+
+    const { packages } = await service.searchPackages();
+
+    for (const key of [
+      "author",
+      "rating_count",
+      "weekly_downloads",
+      "fork_count",
+      "star_count",
+    ]) {
+      expect(packages[0]).not.toHaveProperty(key);
+    }
+    expect(packages[0].average_rating).toBe(4.5);
+    // An unrated package has no average, which is not 0.
+    expect(packages[1]).not.toHaveProperty("average_rating");
+  });
+
+  it("leaves every category absent when the categories route cannot be read", async () => {
+    const served: PackageListResponse = {
+      packages: [searchResult],
+      total: 1,
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    };
+    const { service } = stubClient(served, 200, null);
+
+    const { packages } = await service.searchPackages();
+
+    expect(packages[0]).not.toHaveProperty("category");
+  });
+
+  it("retries a failed categories read on the next call", async () => {
+    const served: PackageListResponse = {
+      packages: [searchResult],
+      total: 1,
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    };
+    let down = true;
+    const fetch = vi.fn(async (url: string) => {
+      if (url === `${PREFIX}/categories`) {
+        return down
+          ? jsonResponse({ detail: "down" }, 500)
+          : jsonResponse(SERVED_CATEGORIES);
+      }
+      return jsonResponse(served);
+    });
+    const service = new CodePackageService({ fetch } as unknown as HttpClient);
+
+    expect((await service.searchPackages()).packages[0]).not.toHaveProperty(
+      "category"
+    );
+    down = false;
+    expect((await service.searchPackages()).packages[0].category).toBe(
+      "data-processing"
+    );
+  });
+
+  it("reads the categories once for the life of the service", async () => {
+    const served: PackageListResponse = {
+      packages: [searchResult],
+      total: 1,
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    };
+    const { fetch, service } = stubClient(served);
+
+    await service.searchPackages();
+    await service.searchPackages();
+
+    const categoryReads = fetch.mock.calls.filter(
+      ([url]) => url === `${PREFIX}/categories`
+    );
+    expect(categoryReads).toHaveLength(1);
   });
 
   it("rejects when the route does not answer 2xx", async () => {
@@ -239,7 +374,7 @@ function detailRead(latest: VersionRead | null): PackageDetailRead {
     description: "Extracts data",
     long_description: null,
     author_id: "4f1c2a9e-0000-4000-8000-000000000001",
-    category_id: 7,
+    category_id: 21,
     license: "MIT",
     tags: [],
     is_verified: false,
@@ -247,7 +382,7 @@ function detailRead(latest: VersionRead | null): PackageDetailRead {
     avg_rating: null,
     created_at: "2026-11-01T10:00:00Z",
     updated_at: "2026-11-01T10:00:00Z",
-    category: null,
+    category: SERVED_CATEGORIES[0],
     latest_version: latest,
     total_versions: latest ? 1 : 0,
     total_ratings: 0,
@@ -495,7 +630,8 @@ function packageRead(overrides: Partial<PackageRead> = {}): PackageRead {
     slug: "new-pkg",
     description: "A new package",
     author_id: "4f1c2a9e-0000-4000-8000-000000000001",
-    category_id: 3,
+    category_id: 23,
+    category: SERVED_CATEGORIES[2],
     license: "Apache-2.0",
     tags: ["io"],
     is_verified: false,
@@ -526,6 +662,11 @@ describe("create and update map the served PackageRead", () => {
       `${PREFIX}/packages`,
       expect.objectContaining({ method: "POST" })
     );
+    // The write names the served category's id, not a table's.
+    const post = fetch.mock.calls.find(
+      (call) => (call as unknown[])[1] !== undefined
+    ) as unknown as [string, { body: string }];
+    expect(JSON.parse(post[1].body).category_id).toBe(23);
     expect(pkg).toMatchObject({
       id: "9",
       slug: "new-pkg",
@@ -541,8 +682,28 @@ describe("create and update map the served PackageRead", () => {
     expect(pkg).not.toHaveProperty("latest_version_number");
   });
 
-  it("updatePackage: no category_id leaves category absent, no licence stays absent", async () => {
-    const served = packageRead({ license: null });
+  it("createPackage refuses a category the API does not serve, rather than writing 'other'", async () => {
+    const { fetch, service } = stubClient(packageRead(), 201);
+
+    await expect(
+      service.createPackage({
+        name: "new-pkg",
+        description: "A new package",
+        category: "ai-ml",
+        tags: [],
+        license: "Apache-2.0",
+        code: "",
+        function_name: "run",
+        visibility: "public",
+      })
+    ).rejects.toThrow("Unknown package category: ai-ml");
+    expect(
+      fetch.mock.calls.some((call) => (call as unknown[])[1] !== undefined)
+    ).toBe(false);
+  });
+
+  it("updatePackage: no category leaves category absent, no licence stays absent", async () => {
+    const served = packageRead({ license: null, category: null });
     delete served.category_id;
     const { fetch, service } = stubClient(served);
 

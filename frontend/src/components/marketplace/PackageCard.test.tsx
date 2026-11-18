@@ -20,11 +20,6 @@ const base: CodePackage = {
   visibility: "public",
   created_at: "2026-11-01T10:00:00Z",
   updated_at: "2026-11-01T10:00:00Z",
-  weekly_downloads: 0,
-  average_rating: 0,
-  rating_count: 0,
-  fork_count: 0,
-  star_count: 0,
   verified: false,
   featured: false,
   deprecated: false,
@@ -39,6 +34,26 @@ describe("PackageCard", () => {
     expect(screen.queryByText("Other")).toBeNull();
     expect(screen.queryByText("by")).toBeNull();
     expect(document.querySelector('[title$="total downloads"]')).toBeNull();
+  });
+
+  it("shows an average without inventing a count, and the count when served", () => {
+    const { rerender } = render(
+      <PackageCard package={{ ...base, average_rating: 4.5 }} />
+    );
+    expect(document.querySelector('[title="Average rating"]')).not.toBeNull();
+    expect(document.querySelector('[title$="ratings"]')).toBeNull();
+
+    rerender(
+      <PackageCard
+        package={{ ...base, average_rating: 4.5, rating_count: 3 }}
+      />
+    );
+    expect(document.querySelector('[title="3 ratings"]')).not.toBeNull();
+  });
+
+  it("hides the rating when the payload serves no average", () => {
+    render(<PackageCard package={base} />);
+    expect(document.querySelector('[title="Average rating"]')).toBeNull();
   });
 
   it("shows them when served", () => {
