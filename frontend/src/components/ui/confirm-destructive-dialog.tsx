@@ -66,6 +66,12 @@ export interface ConfirmDestructiveDialogProps {
   busy?: boolean;
   /** Additional caller-owned reason to keep confirm disabled. */
   confirmDisabled?: boolean;
+  /**
+   * Disable Cancel — for a request in flight whose dialog cannot be closed
+   * (the caller's `onOpenChange` would ignore it), so Cancel does not look
+   * live while doing nothing. Defaults to `false`.
+   */
+  cancelDisabled?: boolean;
   onConfirm: () => void;
   /** Blast radius — what this action is about to affect. */
   children?: React.ReactNode;
@@ -85,6 +91,7 @@ export function ConfirmDestructiveDialog({
   confirmPhraseLabel,
   busy = false,
   confirmDisabled = false,
+  cancelDisabled = false,
   onConfirm,
   children,
   extra,
@@ -146,7 +153,10 @@ export function ConfirmDestructiveDialog({
         ) : null}
 
         <AlertDialogFooter>
-          <AlertDialogCancel data-testid={`${testId}-cancel`}>
+          <AlertDialogCancel
+            disabled={cancelDisabled}
+            data-testid={`${testId}-cancel`}
+          >
             Cancel
           </AlertDialogCancel>
           <DestructiveButton

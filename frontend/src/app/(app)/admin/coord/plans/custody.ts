@@ -11,6 +11,9 @@
  * |---|---|
  * | `sole` + `session_name` | "claimed by <name>, last seen <Xm> ago, expires <HH:MM>" |
  * | `sole` + `session_name: null` | "claimed by an unnamed session" |
+ * | `declared` + `session_name` | "claimed by <name>, last seen <Xm> ago, expires <HH:MM>" |
+ * | `declared` + `session_name: null` | "claimed by an unnamed session" |
+ * | `declared` without `session_id` | "custody UNKNOWN" |
  * | `ambiguous` | "N sessions active on this device" |
  * | `unresolved` | "custody UNKNOWN" |
  * | `live_sessions: []` | "no live claim" — ONLY here |
@@ -23,6 +26,10 @@
  * that reported no custody at all are four different UNKNOWNs. When coord did
  * not resolve names on every page the route nulls EVERY custody object, so
  * the "not resolved" label is true of the whole read, not just this row.
+ * A `declared` row is named EXACTLY even on a device hosting other sessions:
+ * coord read the declaring session off the row's own stamp, not off the
+ * device, so naming it is not a guess. coord emits it instead of `sole` /
+ * `ambiguous` whenever a row carries that stamp.
  * An ambiguous device is a COUNT — naming the most recent of its sessions
  * would address a peer by guess, which is exactly what coord's
  * `sole_live_session_for_device` refuses to do.
@@ -46,6 +53,8 @@ export const WHO_IS_WORKING_HINT =
 export type CustodyClaimKind =
   | "sole_named"
   | "sole_unnamed"
+  | "declared_named"
+  | "declared_unnamed"
   | "ambiguous"
   | "unresolved"
   | "unknown";
@@ -137,6 +146,33 @@ export function describeClaim(
       kind: "sole_unnamed",
       label: "claimed by an unnamed session",
       title: `The only live session on ${where}; it has no display name (not an unknown one). ${lastSeen(session, now)}, ${expires(session)}.`,
+      unknown: false,
+    };
+  }
+  if (custody.state === "declared") {
+    const id = custody.session_id;
+    if (!id) {
+      return {
+        kind: "unknown",
+        label: "custody UNKNOWN",
+        title: `coord sent a declared custody with no session id on ${where} — the stamp that would name the session is missing, so it is UNKNOWN.`,
+        unknown: true,
+      };
+    }
+    const stamped = `This live row is stamped with its declaring session (session ${id}), so it is named exactly even when ${where} hosts other sessions.`;
+    const name = custody.session_name;
+    if (name) {
+      return {
+        kind: "declared_named",
+        label: `claimed by ${name}, ${lastSeen(session, now)}, ${expires(session)}`,
+        title: stamped,
+        unknown: false,
+      };
+    }
+    return {
+      kind: "declared_unnamed",
+      label: "claimed by an unnamed session",
+      title: `${stamped} It has no display name (not an unknown one). ${lastSeen(session, now)}, ${expires(session)}.`,
       unknown: false,
     };
   }

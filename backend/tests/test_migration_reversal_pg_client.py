@@ -997,8 +997,10 @@ def test_apt_psql_with_no_candidate_names_the_package_and_exits_0(tmp_path, cand
     """T4, no candidate even with PGDG configured: `unavailable=1`, exit 0.
 
     Deterministic, not the mirror, so it must not conclude `failure`: the
-    explainer would call it an apt stall, and a setup failure that is re-run
-    would loop on it. "Name an unavailable postgresql client" reads the output.
+    explainer would call it an apt stall, and the job's setup-death declarer
+    would title it not a verdict, spending coord's one re-run of the head on a
+    red no re-run clears. "Name an unavailable postgresql client" reads the
+    output.
     """
     run = _run_apt_psql(tmp_path, candidate=candidate)
     assert run.returncode == 0, run.explain()
