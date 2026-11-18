@@ -2,8 +2,9 @@
 
 Plan ``2026-11-11-web-setup-step-deaths-declare-not-a-verdict``. Two declarers
 read a pull_request's own diff before they write the not-a-verdict phrase: the
-per-job ``.github/scripts/declare-setup-death.sh`` (its ``compute_guard``) and
-the aggregate ``scripts/ci/aggregate_setup_death.py`` (rule 5, a port of it).
+per-job ``.github/scripts/declare-setup-death.sh`` (its guard,
+``harness_guard_compute`` in ``.github/scripts/harness-diff-guard.sh``) and the
+aggregate ``scripts/ci/aggregate_setup_death.py`` (rule 5, a port of it).
 Both read the same thing -- the FIRST parent of the merge commit
 ``GITHUB_SHA`` names, fetched when a depth-1 checkout lacks it, and
 ``git diff --no-renames`` from it -- so both are tested here against the same
@@ -38,6 +39,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -256,6 +258,25 @@ def stub_git(
     )
     stub.chmod(0o755)
     return stub_dir
+
+
+def stub_timeout(stub_dir: Path, log: Path) -> None:
+    """A ``timeout`` in ``stub_dir`` that logs its arguments, then runs the real one.
+
+    Paired with ``stub_git(on_every=...)``: one line per bounded call, so a
+    test can pin each git call's ``-k 5 <bound>`` against a literal.
+    """
+    real = shutil.which("timeout")
+    assert real is not None
+    stub = stub_dir / "timeout"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$*" >> {shlex.quote(str(log))}\n'
+        f'exec {shlex.quote(real)} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    stub.chmod(0o755)
 
 
 def shallow_clone(repo: PrRepo, dest: Path) -> Path:

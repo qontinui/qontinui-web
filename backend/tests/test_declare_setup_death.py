@@ -84,12 +84,16 @@ from tests.setup_death_git import (
     run_pytest_probe,
     shallow_clone,
     stub_git,
+    stub_timeout,
 )
 from tests.setup_death_git import defang as _defang
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_REF = ".github/scripts/declare-setup-death.sh"
 SCRIPT = REPO_ROOT / SCRIPT_REF
+HELPER_REF = ".github/scripts/harness-diff-guard.sh"
+HELPER = REPO_ROOT / HELPER_REF
+WRAPPER = REPO_ROOT / ".github" / "scripts" / "harness-guarded.sh"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 BACKEND_CI = WORKFLOWS / "backend-ci.yml"
 
@@ -118,9 +122,14 @@ RESERVED_PHRASES = (
 )
 LINT_JOB = "Lint & Format Check"
 LINT_TITLE = "Lint & Format Check SETUP FAILED (not a verdict on this PR)"
+#: backend-ci `lint`'s own HARNESS_PATHS_RE, byte for byte; pinned by
+#: test_backend_ci_harness_is_the_lint_jobs_own_pattern so it cannot drift.
 BACKEND_CI_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
+    r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^\.github/scripts/fetch-pinned-binary\.sh$"
+    r"|^backend/poetry\.toml$"
 )
 
 SETUP_POETRY_DIED = (
@@ -234,9 +243,15 @@ def _assert_withheld(out: str) -> str:
 
 
 def _run(
-    env: dict[str, str], *, path_prefix: Path | None = None, timeout: float = 60
+    env: dict[str, str],
+    *,
+    path_prefix: Path | None = None,
+    timeout: float = 60,
+    script: Path = SCRIPT,
 ) -> tuple[int, str, float]:
     """Run the shipped script. Returns ``(exit code, stdout+stderr, seconds)``.
+
+    ``script`` runs a copy instead (one moved away from its helper, say).
 
     Output is CAPTURED, never inherited: see the module docstring.
     """
@@ -245,7 +260,7 @@ def _run(
         env = {**env, "PATH": f"{path_prefix}:{env['PATH']}"}
     started = time.monotonic()
     proc = subprocess.run(
-        [BASH, str(SCRIPT)],
+        [BASH, str(script)],
         env=env,
         capture_output=True,
         text=True,
@@ -681,21 +696,6 @@ def test_a_merge_commit_absent_from_the_checkout_is_unknown(clean_pr):
     assert "is not readable in this checkout" in _assert_withheld(out)
 
 
-def _stub_timeout(stub_dir: Path, log: Path) -> None:
-    """A ``timeout`` in ``stub_dir`` that logs its arguments, then runs the real one."""
-    real = shutil.which("timeout")
-    assert real is not None
-    stub = stub_dir / "timeout"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        f'echo "$*" >> {shlex.quote(str(log))}\n'
-        f'exec {shlex.quote(real)} "$@"\n',
-        encoding="utf-8",
-        newline="\n",
-    )
-    stub.chmod(0o755)
-
-
 @requires_bash_and_git
 def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
     tmp_path, clean_pr
@@ -713,7 +713,7 @@ def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
     timeout_log = tmp_path / "timeout-calls.log"
     record = 'echo "${GIT_NO_LAZY_FETCH-unset} ${GIT_TERMINAL_PROMPT-unset} $*" >> '
     stub = stub_git(tmp_path, on_every=record + shlex.quote(str(git_log)))
-    _stub_timeout(stub, timeout_log)
+    stub_timeout(stub, timeout_log)
     env = _pr_env(clean_pr, workspace=clone)
     env.pop("GIT_TERMINAL_PROMPT")
     assert "GIT_NO_LAZY_FETCH" not in env
@@ -778,6 +778,61 @@ def test_in_a_partial_clone_only_the_bounded_fetch_brings_the_parent_in(
         f"first parent {clean_pr.base} could not be fetched (git fetch exited 128"
     ) in reason, _defang(out)
     assert not has_commit(clone, clean_pr.base, clean_pr.home)
+
+
+@requires_bash_and_git
+def test_an_absent_guard_helper_is_unknown_and_withholds(tmp_path, clean_pr):
+    """The script alone, without harness-diff-guard.sh beside it.
+
+    A clean PR, so the helper would read `false` and declare. Absent, the guard
+    reads UNKNOWN, the claim is withheld with a notice naming the helper, the
+    exit is 0, and no undefined function is ever called.
+    """
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    copy = alone / "declare-setup-death.sh"
+    copy.write_bytes(SCRIPT.read_bytes())
+    code, out, _ = _run(_pr_env(clean_pr), script=copy)
+    assert code == 0
+    reason = _assert_withheld(out)
+    assert "harness-diff guard read UNKNOWN" in reason, _defang(out)
+    assert "harness-diff-guard.sh is absent or did not load" in reason, _defang(out)
+    assert "command not found" not in _defang(out), _defang(out)
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(
+    ("fetch_max", "git_bound"), [("abc", "30"), ("60", ""), ("0", "30")]
+)
+def test_the_helper_refuses_bounds_that_are_not_whole_seconds(
+    clean_pr, fetch_max, git_bound
+):
+    """A caller bug reads UNKNOWN, never `false`, under the callers' own `set`."""
+    assert BASH is not None
+    env = {
+        **_pr_env(clean_pr),
+        "HELPER": str(HELPER),
+        "FETCH_MAX": fetch_max,
+        "GIT_BOUND": git_bound,
+    }
+    proc = subprocess.run(
+        [
+            BASH,
+            "-c",
+            'set -uo pipefail; source "$HELPER"; '
+            'harness_guard_compute "$FETCH_MAX" "$GIT_BOUND" ""; '
+            'printf "%s|%s" "$GUARD" "$GUARD_REASON"',
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert proc.returncode == 0, _defang(proc.stdout + proc.stderr)
+    assert proc.stdout.startswith("UNKNOWN|"), _defang(proc.stdout)
+    assert "which are not whole seconds" in proc.stdout, _defang(proc.stdout)
+    assert proc.stderr == "", _defang(proc.stderr)
 
 
 # --- malformed input: always exit 0, never a phrase ------------------------------
@@ -881,10 +936,15 @@ RUST_TOOLCHAIN_CARRIERS = frozenset({"style-gate.yml"})
 # backend-ci's `Install safety` resolves its interpreter through poetry, which
 # reads the PR's own backend/poetry.toml (`create = false`, `no-pip = true`).
 POETRY_TOML_CARRIERS = frozenset({"backend-ci.yml"})
+#: The carriers whose SETUP rows run `.github/scripts/fetch-pinned-binary.sh`
+#: (plan 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage): a PR
+#: that edits that script is a harness edit, never declared not-a-verdict.
+FETCH_PINNED_CARRIERS = frozenset({"backend-ci.yml", "workflow-lint.yml"})
 
 
 def _harness_literal(workflow: str) -> str:
-    """The plan's pattern: own workflow file, local actions, the declarer.
+    """The plan's pattern: own workflow file, local actions, the declarer and
+    its guard helper.
 
     Plus the frontend lockfile for the FRONTEND_LOCKFILE_CARRIERS.
     """
@@ -892,7 +952,10 @@ def _harness_literal(workflow: str) -> str:
     pattern = (
         f"^\\.github/workflows/{escaped}$|^\\.github/actions/"
         "|^\\.github/scripts/declare-setup-death\\.sh$"
+        "|^\\.github/scripts/harness-diff-guard\\.sh$"
     )
+    if workflow in FETCH_PINNED_CARRIERS:
+        pattern += "|^\\.github/scripts/fetch-pinned-binary\\.sh$"
     if workflow in FRONTEND_LOCKFILE_CARRIERS:
         pattern += "|^frontend/package(-lock)?\\.json$"
     if workflow in RUST_TOOLCHAIN_CARRIERS:
@@ -1465,6 +1528,7 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         f".github/workflows/{workflow}",
         ".github/actions/self-hosted-host-provisioned/action.yml",
         SCRIPT_REF,
+        HELPER_REF,
     ):
         assert compiled.search(path), path
     for path in (
@@ -1472,6 +1536,7 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         f".github/workflows/{workflow}.orig",
         "frontend/.github/actions/x.yml",
         ".github/scripts/declare-setup-death.sh.bak",
+        ".github/scripts/harness-diff-guard.sh.bak",
         "frontend/src/package.json",
         "frontend/package-lock.json.orig",
         "backend/frontend/package.json",
@@ -1482,6 +1547,25 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         assert bool(compiled.search(path)) == (
             workflow in FRONTEND_LOCKFILE_CARRIERS
         ), f"{path}: harness only where a SETUP row reads it"
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_pr_that_touches_only_the_guard_helper_is_never_declared(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern: the helper can make the guard read `false`."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(tmp_path / "repo", home, changes={HELPER_REF: "edited\n"})
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    code, out, _ = _run(env)
+    assert code == 0
+    reason = _assert_withheld(out)
+    assert "harness-diff guard read true" in reason, _defang(out)
+    assert "('.github/scripts/harness-diff-guard.sh')" in reason, _defang(out)
 
 
 @requires_bash_and_git
@@ -1873,7 +1957,7 @@ def test_backend_ci_triggers_on_every_file_this_module_reads():
     tests that pin it. Both triggers, so a filter added to one and forgotten on
     the other is a failure.
     """
-    read = [SCRIPT_REF] + sorted(
+    read = [SCRIPT_REF, HELPER_REF] + sorted(
         {f".github/workflows/{workflow}" for workflow, _ in _carrier_jobs()}
     )
     for trigger in ("pull_request", "push"):
@@ -2044,6 +2128,39 @@ def test_the_script_is_executable_and_strict():
     )
     assert "eval " not in _defang(text)
     assert os.access(SCRIPT, os.X_OK)
+    # The guard helper it sources: executable like its siblings, and no `set`
+    # of its own at all (it inherits its caller's `set -uo pipefail`).
+    helper = HELPER.read_text(encoding="utf-8")
+    assert helper.startswith("#!/usr/bin/env bash\n")
+    assert "\nset " not in _defang(helper), "a sourced helper must not change `set`"
+    assert "eval " not in _defang(helper)
+    assert os.access(HELPER, os.X_OK)
+
+
+#: Lines only the guard's body carries: the merge-commit read, the
+#: first-parent fetch and the diff.
+GUARD_BODY_LINES = (
+    'cat-file -p "$merge"',
+    "fetch --no-tags --depth=1",
+    "diff -z --no-renames --name-only",
+)
+
+
+def test_the_guard_has_exactly_one_copy():
+    """The algorithm lives in the helper, and neither caller re-inlines it."""
+    helper = HELPER.read_text(encoding="utf-8")
+    for line in GUARD_BODY_LINES:
+        assert helper.count(line) == 1, line
+    for caller in (SCRIPT, WRAPPER):
+        text = caller.read_text(encoding="utf-8")
+        for line in GUARD_BODY_LINES:
+            assert line not in _defang(text), f"{caller.name} re-inlines {line!r}"
+        assert "compute_guard()" not in _defang(text), caller.name
+        assert (
+            'GUARD_HELPER="$(dirname -- "${BASH_SOURCE[0]}")/harness-diff-guard.sh"'
+            in text
+        )
+        assert "declare -F harness_guard_compute" in text, caller.name
 
 
 POETRY_INSTALLER_STEPS = [
@@ -2070,6 +2187,35 @@ def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id
     )
 
 
+def test_every_poetry_installer_pipe_in_any_workflow_fails_on_a_download_outage():
+    """Keyed on the pipe itself, not the `poetry_install` step id, and over every
+    workflow, carrier or not: an unguarded pipe reads green on a dead download."""
+    pipes = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_id, job in (_workflow(path.name).get("jobs") or {}).items():
+            for step in job.get("steps") or []:
+                lines = str(step.get("run") or "").splitlines()
+                for i, line in enumerate(lines):
+                    if "install.python-poetry.org" not in line:
+                        continue
+                    where = f"{path.name}:{job_id}:{step.get('name')}"
+                    pipes.append(where)
+                    assert any(
+                        prior.strip() == "set -o pipefail" for prior in lines[:i]
+                    ), f"{where}: pipefail must precede the installer pipe"
+                    assert "curl -fsSL https://install.python-poetry.org" in line, (
+                        f"{where}: curl must fail on an HTTP error (-f)"
+                    )
+    # The census must reach at least every carrier's installer.
+    assert len(pipes) >= len(POETRY_INSTALLER_STEPS), pipes
+
+
+def test_backend_ci_harness_is_the_lint_jobs_own_pattern():
+    """`_pr_env`'s default harness is the pattern the lint carrier really runs."""
+    step = _declarer(_job("backend-ci.yml", "lint"))
+    assert step["env"]["HARNESS_PATHS_RE"] == BACKEND_CI_HARNESS
+
+
 @requires_bash_and_git
 @pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
 def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
@@ -2091,6 +2237,30 @@ def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
         reason = _assert_withheld(out)
         assert "harness-diff guard read true" in reason, _defang(out)
         assert "('backend/poetry.toml')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_fetch_script_edit_withholds_only_where_setup_runs_it(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern, against a PR that adds only the fetch script."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={".github/scripts/fetch-pinned-binary.sh": "#!/usr/bin/env bash\n"},
+    )
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in FETCH_PINNED_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
     else:
         assert _titles(out) == [LINT_TITLE], _defang(out)
 

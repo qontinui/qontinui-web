@@ -68,6 +68,7 @@ vi.mock("sonner", () => ({
   },
 }));
 
+import { toast } from "sonner";
 import { GithubHostedCiPanel } from "./GithubHostedCiPanel";
 
 function tenantPolicy(
@@ -342,6 +343,10 @@ describe("GithubHostedCiPanel — tenant row", () => {
       "github-hosted-ci-tenant-readback-error"
     );
     expect(notice).toHaveTextContent(/coord returned 502/);
+    // The tenant dial names who resolves in its own verb: coord resolves.
+    expect(toast.warning).toHaveBeenCalledWith(
+      "The write went through, but the read-back failed — what coord resolves is unknown until this refreshes."
+    );
     expect(
       screen.getByTestId("github-hosted-ci-tenant-effective").textContent
     ).toBe("–");

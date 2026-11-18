@@ -20,6 +20,6 @@ export function usePermissionPromptCapturePolicy() {
   return useTenantFleetPolicyDial<PermissionPromptCaptureLevel>(
     PERMISSION_PROMPT_CAPTURE_DOMAIN,
     "permission-prompt capture",
-    "runners"
+    "runners resolve"
   );
 }

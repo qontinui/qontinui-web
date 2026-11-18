@@ -49,6 +49,7 @@ from app.api.v1.endpoints.plan_library import (
     _AXIS_C_OFF_PAGE,
     _DOC_ABSENT_CLASS,
     _adapter_reads_status_block,
+    _coord_custody,
     _document_classification,
     _reconcile_verdict,
     _reconciliation_contract_violations,
@@ -1187,6 +1188,40 @@ def _session(custody: dict[str, Any] | None = None, **extra: Any) -> dict[str, A
     return row
 
 
+_DECLARED_ID = "6f1c2a9e-4b7d-4e2a-9c3f-1a2b3c4d5e6f"
+
+
+class TestCoordCustodyDeclared:
+    """``declared`` — a live row stamped with its declaring session."""
+
+    def test_named_declared_carries_id_and_name(self) -> None:
+        custody = _coord_custody(
+            {"state": "declared", "session_id": _DECLARED_ID, "session_name": "p"}
+        )
+        assert custody is not None
+        assert custody.state == "declared"
+        assert custody.session_id == UUID(_DECLARED_ID)
+        assert custody.session_name == "p"
+        assert custody.live_session_count is None
+
+    def test_null_name_is_unnamed_not_unknown(self) -> None:
+        custody = _coord_custody(
+            {"state": "declared", "session_id": _DECLARED_ID, "session_name": None}
+        )
+        assert custody is not None
+        assert custody.state == "declared"
+        assert custody.session_name is None
+
+    @pytest.mark.parametrize(
+        "session_id", [None, "", "not-a-uuid", 42, ["x"], {"id": _DECLARED_ID}]
+    )
+    def test_without_a_valid_uuid_it_is_unknown(self, session_id: object) -> None:
+        raw: dict[str, object] = {"state": "declared", "session_name": "p"}
+        if session_id is not None:
+            raw["session_id"] = session_id
+        assert _coord_custody(raw) is None
+
+
 def _list_params(fake: AsyncMock) -> list[dict[str, str]]:
     return [
         call.kwargs.get("params") or {}
@@ -1233,6 +1268,13 @@ class TestCustody:
         unit["live_sessions"] = [
             _session({"state": "sole", "session_name": "plan-foo"}),
             _session({"state": "sole", "session_name": None}),
+            _session(
+                {
+                    "state": "declared",
+                    "session_id": _DECLARED_ID,
+                    "session_name": "plan-bar",
+                }
+            ),
             _session({"state": "ambiguous", "live_session_count": 3}),
             _session({"state": "unresolved"}),
             _session({"state": "something-new"}),
@@ -1255,10 +1297,36 @@ class TestCustody:
         assert axis["custody_resolved"] is True
         custodies = [s["custody"] for s in axis["live_sessions"]]
         assert custodies == [
-            {"state": "sole", "session_name": "plan-foo", "live_session_count": None},
-            {"state": "sole", "session_name": None, "live_session_count": None},
-            {"state": "ambiguous", "session_name": None, "live_session_count": 3},
-            {"state": "unresolved", "session_name": None, "live_session_count": None},
+            {
+                "state": "sole",
+                "session_name": "plan-foo",
+                "session_id": None,
+                "live_session_count": None,
+            },
+            {
+                "state": "sole",
+                "session_name": None,
+                "session_id": None,
+                "live_session_count": None,
+            },
+            {
+                "state": "declared",
+                "session_name": "plan-bar",
+                "session_id": _DECLARED_ID,
+                "live_session_count": None,
+            },
+            {
+                "state": "ambiguous",
+                "session_name": None,
+                "session_id": None,
+                "live_session_count": 3,
+            },
+            {
+                "state": "unresolved",
+                "session_name": None,
+                "session_id": None,
+                "live_session_count": None,
+            },
             # Unrecognised and missing states are UNKNOWN, never coerced.
             None,
             None,

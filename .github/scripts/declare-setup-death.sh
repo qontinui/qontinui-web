@@ -46,7 +46,8 @@
 #                       `!cancelled()`, `failure()`) carries a leading `!`:
 #                         !<step name>|<outcome>|<conclusion>
 #   HARNESS_PATHS_RE    an ERE over repo-relative paths: the job's own workflow
-#                       file, `^\.github/actions/` and this script.
+#                       file, `^\.github/actions/`, this script and its
+#                       guard helper, harness-diff-guard.sh.
 #   GITHUB_EVENT_NAME, GITHUB_WORKSPACE, GITHUB_SHA   (set by Actions)
 #   DECLARE_FETCH_BOUND_SECS  TEST LEVER, may only LOWER the 60 s bound on the
 #                       first-parent fetch (an empty, malformed or larger value
@@ -84,36 +85,26 @@
 #      on a codename PGDG does not serve, say), and the message says so.
 #   Rules 2 and 3 print one plain log line naming the decision.
 #
-# THE HARNESS-DIFF GUARD (mirrors qontinui-coord ci.yml's
-# `COORD_CI_HARNESS_CODE_TOUCHED`, and fails closed the same way). A PR that
-# edits a setup step, a local action or this script can cause the very setup
-# death it would then excuse, so such a PR is never declared. It reads `true`
-# when `git diff --no-renames --name-only <first parent> <merge commit>`
-# lists a path matching HARNESS_PATHS_RE, `false` when it lists none, and
-# UNKNOWN on any other event than `pull_request`, on a GITHUB_SHA that is not
-# a two-parent merge commit, on a first parent it cannot fetch within the
-# bound, on a failed diff and on an invalid pattern.
-#   * The merge commit is GITHUB_SHA, not HEAD: on `pull_request` it names the
-#     merge commit actions/checkout checked out, and a later step may move
-#     HEAD (migration-reversal.yml's `tested` job detaches it at the base tip).
-#   * Its parents are read from the raw commit object, because a depth-1
-#     checkout grafts them away (`rev-parse <merge>^1` fails there).
-#   * The first parent is fetched by sha, anonymously: qontinui-web is public.
-#   * Every git call runs with GIT_NO_LAZY_FETCH=1 and GIT_TERMINAL_PROMPT=0.
-#     In a partial clone, a read of an absent object (the `cat-file -e` check
-#     for the first parent, say) is otherwise a lazy fetch from the promisor
-#     remote: one outside the fetch's bound, which can fill in a parent the
-#     bounded fetch could not. A carrier's own checkout is not a partial
-#     clone (it sets no `sparse-checkout` and no `filter`, which the wiring
-#     test pins), so this is a backstop. git 2.45 added the variable; an older
-#     git ignores it, and the read's own bound still holds.
+# THE HARNESS-DIFF GUARD is `harness_guard_compute` in
+# .github/scripts/harness-diff-guard.sh, whose header holds the algorithm
+# (it mirrors qontinui-coord ci.yml's `COORD_CI_HARNESS_CODE_TOUCHED`, and
+# fails closed the same way). A PR that edits a setup step, a local action,
+# this script or the helper can cause the very setup death it would then
+# excuse, so such a PR is never declared. The helper is sourced from THIS
+# script's directory, so the base tip's copy of this script (migration-
+# reversal.yml's `tested` job, above) runs with the base tip's helper. A
+# helper that is absent or does not load reads UNKNOWN and withholds. A
+# carrier's own checkout is not a partial clone (it sets no
+# `sparse-checkout` and no `filter`, which the wiring test pins), so the
+# helper's GIT_NO_LAZY_FETCH is a backstop here.
 #
-# TIME BOUNDS. Every git call is bounded: the fetch by `timeout -k 5 60`, each
-# `cat-file` read and the diff by `timeout -k 5 30`. A timeout reads UNKNOWN
-# and withholds. The calls run one after another, so their bounds can add up
-# past the invoking step's 3-minute `timeout-minutes`; that bound then stops
-# the script before its verdict line, which declares nothing either. A hang
-# can neither hold a runner nor flip the check.
+# TIME BOUNDS. This script passes the helper its bounds: every git call is
+# bounded, the fetch by `timeout -k 5 60`, each `cat-file` read and the diff
+# by `timeout -k 5 30`. A timeout reads UNKNOWN and withholds. The calls run
+# one after another, so their bounds can add up past the invoking step's
+# 3-minute `timeout-minutes`; that bound then stops the script before its
+# verdict line, which declares nothing either. A hang can neither hold a
+# runner nor flip the check.
 #
 # TITLE ESCAPING. DECLARE_JOB is escaped as a workflow-command property value
 # (`%` `\r` `\n` `:` `,`) so a job name with a comma or colon cannot cut the
@@ -301,117 +292,28 @@ parse_rows() {
 
 GUARD="UNKNOWN"
 GUARD_REASON=""
+# Beside THIS copy of the script, never through GITHUB_WORKSPACE: each copy
+# runs with the helper from its own tree. The path is not symlink-resolved, so
+# a caller run through a symlink finds no helper and reads UNKNOWN (fail-closed;
+# every workflow runs `bash .github/scripts/<script>` directly).
+GUARD_HELPER="$(dirname -- "${BASH_SOURCE[0]}")/harness-diff-guard.sh"
+readonly GUARD_HELPER
+GUARD_HELPER_LOADED=0
+# shellcheck source=SCRIPTDIR/harness-diff-guard.sh
+if source "$GUARD_HELPER" 2> /dev/null; then
+  GUARD_HELPER_LOADED=1
+fi
 
-is_sha() {
-  [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
-}
-
-fetch_bound() {
-  local raw="${DECLARE_FETCH_BOUND_SECS:-}"
-  if [[ "$raw" =~ ^[0-9]{1,3}$ ]] && [ "$((10#$raw))" -ge 1 ] && [ "$((10#$raw))" -le "$FETCH_BOUND_MAX" ]; then
-    printf '%s' "$((10#$raw))"
+# run_guard: the helper's verdict, or UNKNOWN when it did not load. It never
+# calls an undefined function: under `set -u` without `-e` that is `command
+# not found` and a GUARD nobody computed.
+run_guard() {
+  if [ "$GUARD_HELPER_LOADED" = 1 ] && declare -F harness_guard_compute > /dev/null; then
+    harness_guard_compute "$FETCH_BOUND_MAX" "$GIT_BOUND" "${DECLARE_FETCH_BOUND_SECS:-}"
   else
-    printf '%s' "$FETCH_BOUND_MAX"
+    GUARD="UNKNOWN"
+    GUARD_REASON="the harness-diff guard helper ${GUARD_HELPER} is absent or did not load, so this PR's diff is unread"
   fi
-}
-
-# has_commit <workspace> <sha>: is the commit in the local object store?
-# Bounded, and on git 2.45 and later never a lazy fetch (compute_guard
-# exports GIT_NO_LAZY_FETCH).
-has_commit() {
-  timeout -k 5 "$GIT_BOUND" git -C "$1" cat-file -e "${2}^{commit}" 2> /dev/null
-}
-
-compute_guard() {
-  GUARD="UNKNOWN"
-  local event="${GITHUB_EVENT_NAME:-}"
-  if [ "$event" != "pull_request" ]; then
-    GUARD_REASON="the event is '${event:-unset}', not pull_request, so there is no PR diff to read"
-    return
-  fi
-  local re="${HARNESS_PATHS_RE:-}"
-  if [ -z "$re" ]; then
-    GUARD_REASON="HARNESS_PATHS_RE is empty, so there is no harness to compare the diff against"
-    return
-  fi
-  # grep exits 1 on a valid pattern that matches nothing, 2 on an invalid one.
-  local probe=0
-  grep -E -- "$re" < /dev/null > /dev/null 2>&1 || probe=$?
-  if [ "$probe" -ne 1 ]; then
-    GUARD_REASON="HARNESS_PATHS_RE is not a valid extended regular expression"
-    return
-  fi
-  local ws="${GITHUB_WORKSPACE:-}"
-  if [ -z "$ws" ] || [ ! -d "$ws" ]; then
-    GUARD_REASON="GITHUB_WORKSPACE ('${ws}') is not a directory, so the checkout cannot be read"
-    return
-  fi
-  local merge="${GITHUB_SHA:-}"
-  if ! is_sha "$merge"; then
-    GUARD_REASON="GITHUB_SHA ('${merge}') is not a commit id"
-    return
-  fi
-  # No credential prompt can hold a call, and on git 2.45 and later no object
-  # read becomes a lazy fetch (the header's harness-diff guard section says
-  # why).
-  export GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0
-  local raw
-  if ! raw="$(timeout -k 5 "$GIT_BOUND" git -C "$ws" cat-file -p "$merge" 2> /dev/null)"; then
-    GUARD_REASON="the merge commit ${merge} is not readable in this checkout"
-    return
-  fi
-  # Header lines only: a `parent ` line in the commit MESSAGE is not a parent.
-  local parents count first
-  parents="$(sed -n '/^$/q; s/^parent //p' <<< "$raw")"
-  count="$(grep -c . <<< "$parents")"
-  if [ "$count" != "2" ]; then
-    GUARD_REASON="${merge} has ${count} parent(s), not the two of a pull_request merge commit"
-    return
-  fi
-  first="$(sed -n 1p <<< "$parents")"
-  if ! is_sha "$first"; then
-    GUARD_REASON="the merge commit's first parent ('${first}') is not a commit id"
-    return
-  fi
-  if ! has_commit "$ws" "$first"; then
-    local bound rc
-    bound="$(fetch_bound)"
-    timeout -k 5 "$bound" git -C "$ws" fetch --no-tags --depth=1 origin "$first" > /dev/null 2>&1
-    rc=$?
-    if ! has_commit "$ws" "$first"; then
-      GUARD_REASON="the merge commit's first parent ${first} could not be fetched (git fetch exited ${rc}; 124 or 137 is the ${bound}s bound)"
-      return
-    fi
-  fi
-  local changed rc
-  changed="$(timeout -k 5 "$GIT_BOUND" git -C "$ws" diff -z --no-renames --name-only "$first" "$merge" 2> /dev/null | tr '\0' '\n')"
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    GUARD_REASON="git diff ${first} ${merge} exited ${rc}, so this PR's diff is unread"
-    return
-  fi
-  if [ -z "$changed" ]; then
-    GUARD="false"
-    GUARD_REASON="this PR's diff against its base is empty"
-    return
-  fi
-  local matched n
-  n="$(grep -c . <<< "$changed")"
-  matched="$(grep -E -- "$re" <<< "$changed")"
-  rc=$?
-  case "$rc" in
-    0)
-      GUARD="true"
-      GUARD_REASON="this PR's diff touches this job's own harness ('$(sed -n 1p <<< "$matched")'), so it can have caused the setup death it would excuse"
-      ;;
-    1)
-      GUARD="false"
-      GUARD_REASON="none of the ${n} paths in this PR's diff is this job's harness"
-      ;;
-    *)
-      GUARD_REASON="matching the diff against HARNESS_PATHS_RE failed (grep exited ${rc})"
-      ;;
-  esac
 }
 
 # --- the decision -------------------------------------------------------------
@@ -466,7 +368,7 @@ main() {
   fi
 
   # Rule 4.
-  compute_guard
+  run_guard
   if [ "$GUARD" != "false" ]; then
     withhold "Setup step '${setup_failed[0]}' failed, but the harness-diff guard read ${GUARD}: ${GUARD_REASON}. This red is left to read as a verdict on this change."
     return
