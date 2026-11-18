@@ -30,11 +30,11 @@ precedes this migration in production degrades to today's behaviour rather than
 failing.
 
 ``down_revision`` is the repo's single local alembic head at authoring time
-(``ScriptDirectory.get_heads()`` on ``origin/main`` ``e7282a57f``); coord
+(``ScriptDirectory.get_heads()`` on ``origin/main`` ``acb201fbc``); coord
 re-points it at land time if the chain moved.
 
 Revision ID: coord_ci_runs_workflow_path_01
-Revises: cirscope_02_devices_ci_runner_scope_index
+Revises: capmodel_02
 Create Date: 2026-11-17
 """
 
@@ -44,7 +44,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_ci_runs_workflow_path_01"
-down_revision: str | Sequence[str] | None = "cirscope_02_devices_ci_runner_scope_index"
+down_revision: str | Sequence[str] | None = "capmodel_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
