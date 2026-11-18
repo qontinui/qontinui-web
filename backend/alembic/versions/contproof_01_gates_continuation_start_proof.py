@@ -1,7 +1,7 @@
 """coord.gates — continuation start proof: proven_at, attempt, respawn terminal
 
 Revision ID: contproof_01_gates_continuation_start_proof
-Revises: capmodel_02
+Revises: coord_iops_idx_02
 Create Date: 2026-11-10
 
 Phase 1 (web slice) of plan
@@ -77,7 +77,7 @@ coord side probes the column's presence and treats an absent column as proof
 UNKNOWN, keeping today's claim-on-consume behaviour, so the two PRs are
 order-safe either way.
 
-Parent: ``capmodel_02`` (the ``down_revision``
+Parent: ``coord_iops_idx_02`` (the ``down_revision``
 below). coord re-points ``down_revision`` at land time if the head moves.
 """
 
@@ -87,7 +87,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "contproof_01_gates_continuation_start_proof"
-down_revision: str | Sequence[str] | None = "capmodel_02"
+down_revision: str | Sequence[str] | None = "coord_iops_idx_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
