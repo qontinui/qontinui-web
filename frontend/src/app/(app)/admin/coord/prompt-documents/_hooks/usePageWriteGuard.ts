@@ -49,6 +49,14 @@ export const NO_PIN_REFUSAL =
   "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
 
 /**
+ * Why a write is refused when coord refused to list the account's projects
+ * (`tenant_not_resolved`): reloading repeats the refusal, so it asks for none
+ * and points at the notice, which names the way out.
+ */
+export const LIST_REFUSED_REFUSAL =
+  "Nothing was sent: coord refused to list your projects, so this page has no project to send a change in. The notice on this page says what to do.";
+
+/**
  * Why a write, or a dialog, is refused while the page is still learning its
  * project (`usePageWriteGuard` `learning`): the stored project differs, or
  * the page has no project to pin a write to yet. Either may resolve by itself
@@ -160,11 +168,16 @@ export interface PageWriteGuardState {
  * itself when it lands. The guard refuses as always, but its refusal, of a
  * difference or of a write with no project to pin it to, says the page's
  * project is not known yet rather than asking for a reload.
+ *
+ * `listRefused` says coord refused to list the account's projects, which a
+ * reload repeats: a write with no project to pin it to then says that, and
+ * points at the notice, instead of asking for a reload.
  */
 export function usePageWriteGuard(
   reference: string | null,
   canPin: boolean,
-  learning = false
+  learning = false,
+  listRefused = false
 ): PageWriteGuardState {
   // The project the newest `storage` event left stored: what another tab is
   // PROVEN to have stored (`undefined`: no event yet). A state, so an event
@@ -203,6 +216,8 @@ export function usePageWriteGuard(
   canPinRef.current = canPin;
   const learningRef = useRef(learning);
   learningRef.current = learning;
+  const listRefusedRef = useRef(listRefused);
+  listRefusedRef.current = listRefused;
   // Re-renders the page, so the lock derived above reads the store again and
   // shows a change the call-time check found before its event arrived.
   const [, raise] = useReducer((renders: number) => renders + 1, 0);
@@ -227,7 +242,13 @@ export function usePageWriteGuard(
   const writeAllowed = useCallback((): boolean => {
     if (!projectUnchanged()) return false;
     if (canPinRef.current) return true;
-    toast.error(learningRef.current ? LEARNING_REFUSAL : NO_PIN_REFUSAL);
+    toast.error(
+      learningRef.current
+        ? LEARNING_REFUSAL
+        : listRefusedRef.current
+          ? LIST_REFUSED_REFUSAL
+          : NO_PIN_REFUSAL
+    );
     return false;
   }, [projectUnchanged]);
 

@@ -96,7 +96,7 @@ import {
   type PageWriteGuardValue,
 } from "../_components/PageWriteGuard";
 import { usePageSendGuard } from "./usePageWriteGuardContext";
-import { LEARNING_REFUSAL } from "./usePageWriteGuard";
+import { LEARNING_REFUSAL, LIST_REFUSED_REFUSAL } from "./usePageWriteGuard";
 import { REQUEST_TIMEOUT_MESSAGE } from "@/services/http-client";
 import { WaitingForProject } from "../_components/WaitingForProject";
 
@@ -238,6 +238,29 @@ describe("PageWriteGuardProvider", () => {
         );
       },
       NO_PIN,
+    ],
+    [
+      // Round 11b: a reload repeats coord's refusal to list, so the refusal
+      // asks for none and points at the notice.
+      "never known: coord refused to list the projects, nothing stored at mount",
+      async () => {
+        listTenantsMock.mockRejectedValue(
+          new Error(
+            "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)"
+          )
+        );
+        render(
+          <TenantProvider>
+            <PageWriteGuardProvider>
+              <Probe />
+            </PageWriteGuardProvider>
+          </TenantProvider>
+        );
+        await waitFor(() =>
+          expect(latest().tenantContext?.error).not.toBeNull()
+        );
+      },
+      LIST_REFUSED_REFUSAL,
     ],
     [
       // The read may give the page a project to pin to (finding 3 of round
@@ -668,6 +691,46 @@ describe("the project-list notice", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("prompt-documents-controls")).toBeEnabled();
     expect(everRed()).toBe(false);
+  });
+
+  it("returns focus to the control the operator was on once the learning lock lifts by itself", async () => {
+    // Round 11b: the amber line takes focus and goes with the lock, so focus
+    // falls to <body>; the control the operator was on gets it back.
+    const { answer } = mountWhileTheProviderReads(
+      null,
+      <button data-testid="edit">Edit</button>
+    );
+    act(() => screen.getByTestId("edit").focus());
+    await act(async () => anotherTabStores(B));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveFocus();
+
+    await answer();
+
+    expect(latest().locked).toBeNull();
+    expect(screen.getByTestId("edit")).toHaveFocus();
+  });
+
+  it("leaves focus alone once the learning lock lifts when the operator moved it elsewhere", async () => {
+    const { answer } = mountWhileTheProviderReads(
+      null,
+      <button data-testid="edit">Edit</button>
+    );
+    const elsewhere = document.createElement("button");
+    document.body.appendChild(elsewhere);
+    try {
+      act(() => screen.getByTestId("edit").focus());
+      await act(async () => anotherTabStores(B));
+      act(() => elsewhere.focus());
+
+      await answer();
+
+      expect(latest().locked).toBeNull();
+      expect(elsewhere).toHaveFocus();
+    } finally {
+      elsewhere.remove();
+    }
   });
 
   it("locked while still learning its project, turns red once the read lands and the change remains, naming the page's project, with focus on Reload", async () => {

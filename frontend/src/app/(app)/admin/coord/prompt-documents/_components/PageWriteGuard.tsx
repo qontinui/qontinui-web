@@ -251,8 +251,9 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   // a lock now may lift by itself when that read lands (see above).
   const learning =
     !projectKnown && tenantContext !== null && tenantContext.loading;
+  const listRefused = isTenantsListUnauthorized(tenantContext?.error ?? null);
   const { locked, stored, writeAllowed, projectUnchanged, crossTabInEffect } =
-    usePageWriteGuard(guardTenant, pin !== undefined, learning);
+    usePageWriteGuard(guardTenant, pin !== undefined, learning, listRefused);
   // Asked as each request is sent, through a ref: one identity for the page's
   // lifetime, so a hook mounted before the page's project resolves neither
   // re-fires its mount read nor rebuilds its callbacks when the pin changes.
@@ -293,7 +294,6 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
   // The red cross-tab notice: a lock that only the operator's Reload, or a
   // switch back in the other tab, clears.
   const crossTabNotice = isLocked && !learning;
-  const listRefused = isTenantsListUnauthorized(tenantContext?.error ?? null);
   const noticeId = useId();
   // The lock while the page learns its project: the amber line, no Reload.
   const learningLock = isLocked && learning;
@@ -319,6 +319,37 @@ export function PageWriteGuardProvider({ children }: { children: ReactNode }) {
     if (document.querySelector(OPEN_MODAL_DIALOG) !== null) return;
     (crossTabNotice ? reloadRef.current : learningLineRef.current)?.focus();
   }, [crossTabNotice, learningLock]);
+
+  // The learning lock can lift by itself when the read lands. The line that
+  // took focus goes with it, and focus falls to `<body>`. Give it back to the
+  // control the operator was on before the lock, if that control is still on
+  // the page and can take it, and only when focus is nowhere: anywhere else
+  // is the operator's, and a modal dialog's is left alone.
+  const lastFocusedRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        fieldsetRef.current?.contains(target)
+      )
+        lastFocusedRef.current = target;
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+  const wasLearningLockRef = useRef(false);
+  useEffect(() => {
+    const lifted = wasLearningLockRef.current && !isLocked;
+    wasLearningLockRef.current = learningLock;
+    if (!lifted) return;
+    const focused = document.activeElement;
+    if (focused !== null && focused !== document.body) return;
+    if (document.querySelector(OPEN_MODAL_DIALOG) !== null) return;
+    const held = lastFocusedRef.current;
+    if (held === null || !held.isConnected || held.matches(":disabled")) return;
+    held.focus();
+  }, [learningLock, isLocked]);
 
   return (
     <PageWriteGuardContext.Provider value={value}>
