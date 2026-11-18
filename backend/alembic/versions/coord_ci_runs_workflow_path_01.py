@@ -34,7 +34,7 @@ failing.
 re-points it at land time if the chain moved.
 
 Revision ID: coord_ci_runs_workflow_path_01
-Revises: coord_iops_idx_02
+Revises: reflection_rates_01_unknown_is_null
 Create Date: 2026-11-17
 """
 
@@ -44,7 +44,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_ci_runs_workflow_path_01"
-down_revision: str | Sequence[str] | None = "coord_iops_idx_02"
+down_revision: str | Sequence[str] | None = "reflection_rates_01_unknown_is_null"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
