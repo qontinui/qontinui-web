@@ -1158,7 +1158,7 @@ ReconciliationStatusClass = Literal[
 ]
 
 #: coord's ``work_unit_custody::Custody`` states, exactly as it emits them.
-ReconciliationCustodyState = Literal["sole", "ambiguous", "unresolved"]
+ReconciliationCustodyState = Literal["sole", "declared", "ambiguous", "unresolved"]
 
 
 class ReconciliationCustody(BaseModel):
@@ -1170,6 +1170,12 @@ class ReconciliationCustody(BaseModel):
     * ``sole`` — exactly one live session on the device in this tenant.
       ``session_name`` is its display name, and ``None`` there means the
       session has NO name — not that the name is unknown.
+    * ``declared`` — the live session's ``coord.agent_status`` row is STAMPED
+      with its writer's session, so ``session_id`` names the declarer exactly
+      — even on a device hosting several live sessions, since the stamp is
+      not a guess. coord emits it INSTEAD of ``sole``/``ambiguous`` for a
+      stamped row. ``session_name`` ``None`` is an UNNAMED session, as on
+      ``sole``.
     * ``ambiguous`` — ``live_session_count`` (≥ 2) sessions share the device,
       so naming any one would be a guess. Render "N sessions".
     * ``unresolved`` — coord could not establish custody (a failed count, a
@@ -1181,6 +1187,8 @@ class ReconciliationCustody(BaseModel):
 
     state: ReconciliationCustodyState
     session_name: str | None = None
+    #: The declaring session's id — set only on ``declared``.
+    session_id: UUID | None = None
     live_session_count: int | None = None
 
 
