@@ -244,6 +244,8 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   session_stuck: "A session is stuck",
   needs_operator: "Waiting on your answer",
   source_unreadable: "coord could not read part of the evidence",
+  finish_undeclared: "A member session ended without declaring it finished",
+  undetermined: "coord could not judge this subproject's state",
 };
 
 /** A reason kind in the operator's words. An unrecognised kind keeps coord's
@@ -533,11 +535,51 @@ const JOINED_VIA_WORDS: Readonly<Record<string, string>> = {
   split: "split from another subproject",
   backfill: "found by the backfill",
   merge: "merged in from another subproject",
+  anchor: "a continuation of a member's gate, PR or work unit",
+  work_evidence: "evidence that its commits or worktree belong here",
 };
 
 /** How a member joined (the ledger's `joined_via`), in words. */
 export function joinedViaWords(joinedVia: string): string {
   return own(JOINED_VIA_WORDS, joinedVia) ?? joinedVia.replace(/_/g, " ");
+}
+
+/**
+ * The raw-line text for a subproject's `title_basis` — which evidence coord
+ * took a `root_session` title from. Only a `root_session` title has a basis,
+ * so any other `title_source` yields `null` (nothing to say). `null` too when
+ * the field is ABSENT (a coord that predates it: say nothing rather than
+ * guess); `"not recorded"` when coord sent `null` (never read as `derived`).
+ */
+export function titleBasisText(
+  s: Pick<SubprojectSummary, "title_source" | "title_basis">
+): string | null {
+  if (s.title_source !== "root_session" || s.title_basis === undefined)
+    return null;
+  return s.title_basis === null ? "not recorded" : s.title_basis;
+}
+
+/** The claim prefix coord writes before an anchored PR (`claim:pr:owner/repo#N`). */
+const PR_CLAIM_PREFIX = "claim:pr:";
+
+/**
+ * The pull request an `anchor` / `work_evidence` member joined through, as
+ * `owner/repo#N` — or `null` when its `via_ref` names something else (a unit
+ * id, a `unit:<wu>:<phase>` anchor, another claim kind), which stays plain
+ * text. coord records the anchor string for `anchor` (`claim:pr:owner/repo#N`)
+ * and the PR itself for `work_evidence` (`owner/repo#N`); both are read.
+ */
+export function memberViaPr(
+  m: Pick<SubprojectMemberSession, "joined_via" | "via_ref">
+): string | null {
+  if (m.joined_via !== "anchor" && m.joined_via !== "work_evidence")
+    return null;
+  if (!m.via_ref) return null;
+  const ref = m.via_ref.trim();
+  const pr = ref.startsWith(PR_CLAIM_PREFIX)
+    ? ref.slice(PR_CLAIM_PREFIX.length)
+    : ref;
+  return PR_ID.test(pr) ? pr : null;
 }
 
 function sessionKindOf(
