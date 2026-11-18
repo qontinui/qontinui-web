@@ -4487,7 +4487,8 @@ async def list_coord_plans(
         description=(
             "With ``include_live_sessions``: attach coord's ``custody`` object "
             "(``sole`` + ``session_name`` / ``ambiguous`` + "
-            "``live_session_count`` / ``unresolved``) to every live session. "
+            "``live_session_count`` / ``unresolved`` / ``declared`` + "
+            "``session_id`` + ``session_name``) to every live session. "
             "coord echoes ``resolve_session_names: true`` only when it "
             "resolved them; no echo means an older coord (UNKNOWN)."
         ),

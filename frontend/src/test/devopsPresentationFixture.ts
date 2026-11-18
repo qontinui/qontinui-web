@@ -193,7 +193,8 @@ function ciSample(deviceId: string) {
   };
 }
 
-function rolesMachine(
+/** One `MachineView` row of coord's dispatch-roles read (a workstation by default). */
+export function rolesMachine(
   deviceId: string,
   name: string,
   over: Record<string, unknown> = {}

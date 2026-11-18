@@ -47947,7 +47947,7 @@
         "type": "object"
       },
       "ReconciliationCustody": {
-        "description": "Who holds a live session's device, as coord resolved it.\n\nForwarded from coord's ``custody`` object (``work_unit_custody.rs``); never\nderived here.\n\n* ``sole`` \u2014 exactly one live session on the device in this tenant.\n  ``session_name`` is its display name, and ``None`` there means the\n  session has NO name \u2014 not that the name is unknown.\n* ``ambiguous`` \u2014 ``live_session_count`` (\u2265 2) sessions share the device,\n  so naming any one would be a guess. Render \"N sessions\".\n* ``unresolved`` \u2014 coord could not establish custody (a failed count, a\n  race, or a session in another tenant). UNKNOWN, never \"nobody\".\n\nA custody object coord sent in a state this model does not recognise is\ndropped to ``None`` on the session row (UNKNOWN) rather than coerced.",
+        "description": "Who holds a live session's device, as coord resolved it.\n\nForwarded from coord's ``custody`` object (``work_unit_custody.rs``); never\nderived here.\n\n* ``sole`` \u2014 exactly one live session on the device in this tenant.\n  ``session_name`` is its display name, and ``None`` there means the\n  session has NO name \u2014 not that the name is unknown.\n* ``declared`` \u2014 the live session's ``coord.agent_status`` row is STAMPED\n  with its writer's session, so ``session_id`` names the declarer exactly\n  \u2014 even on a device hosting several live sessions, since the stamp is\n  not a guess. coord emits it INSTEAD of ``sole``/``ambiguous`` for a\n  stamped row. ``session_name`` ``None`` is an UNNAMED session, as on\n  ``sole``.\n* ``ambiguous`` \u2014 ``live_session_count`` (\u2265 2) sessions share the device,\n  so naming any one would be a guess. Render \"N sessions\".\n* ``unresolved`` \u2014 coord could not establish custody (a failed count, a\n  race, or a session in another tenant). UNKNOWN, never \"nobody\".\n\nA custody object coord sent in a state this model does not recognise is\ndropped to ``None`` on the session row (UNKNOWN) rather than coerced.",
         "properties": {
           "live_session_count": {
             "anyOf": [
@@ -47959,6 +47959,18 @@
               }
             ],
             "title": "Live Session Count"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "session_name": {
             "anyOf": [
@@ -47974,6 +47986,7 @@
           "state": {
             "enum": [
               "sole",
+              "declared",
               "ambiguous",
               "unresolved"
             ],
@@ -114061,7 +114074,7 @@
             }
           },
           {
-            "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+            "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved`` / ``declared`` + ``session_id`` + ``session_name``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
             "in": "query",
             "name": "resolve_session_names",
             "required": false,
@@ -114074,7 +114087,7 @@
                   "type": "null"
                 }
               ],
-              "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+              "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved`` / ``declared`` + ``session_id`` + ``session_name``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
               "title": "Resolve Session Names"
             }
           }
