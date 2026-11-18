@@ -18,7 +18,7 @@ function useEgressDial(flow: EgressFlow): EgressDial {
   return useTenantFleetPolicyDial<EgressLevel>(
     domain,
     label.toLowerCase(),
-    "runners"
+    "runners resolve"
   );
 }
 

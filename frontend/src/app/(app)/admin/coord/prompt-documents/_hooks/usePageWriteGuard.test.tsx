@@ -1,0 +1,1142 @@
+/**
+ * `PageWriteGuardProvider`'s contract with everything under it — the page's
+ * project (`usePageProject`) and its cross-tab guard (`usePageWriteGuard`),
+ * taken once for the list and the settings alike (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard` D1, D10):
+ *
+ * 1. **`pin` is the project the page shows.** While the page's project has
+ *    never been known (the layout's provider still reading), that is the
+ *    project stored at mount, which the list's mount read is pinned to and
+ *    so was answered in; once the provider answers, the page's project.
+ *    With nothing stored at mount, or none selected, nothing is pinned, and
+ *    every write is refused with the reason (while the provider still reads
+ *    the page's project, in words that ask for no reload); dialogs still
+ *    open.
+ * 2. **`resolvePin` and `writeAllowed` keep one identity for the page's
+ *    lifetime**, while the pin they answer changes. A hook that holds the
+ *    resolver through `useSendTimePin` would absorb a new identity silently,
+ *    so the page-level suites cannot see this; it is checked here. And the
+ *    resolver answers the pin as it is CALLED, not the one it was made with.
+ * 3. **Outside any provider there is no guard**, and a component or a
+ *    section hook that must send under one throws rather than sending
+ *    unguarded.
+ *
+ * And the guard itself (D3, D4, D5, #7, #9):
+ *
+ * 4. **The guard is never off.** While the page's project is UNKNOWN it
+ *    compares the stored project with the one stored at mount (H09), and a
+ *    `storage` event with no key — another tab's `localStorage.clear()` —
+ *    locks it like any other change of the selection (H22).
+ * 5. **The notice names only the cause it observed** (H08): another tab only
+ *    once a `storage` event delivered the change, and in red, naming the
+ *    page's project and the stored one.
+ * 6. **This tab's own switch never locks the page**, not even for the one
+ *    render a lock derived from a lagging page project would show.
+ * 7. **Focus moves to Reload when the page locks** (H07), from a control the
+ *    fieldset disabled or from `<body>`, and never out of an open dialog.
+ *    While locked, the fieldset is described by the notice.
+ * 8. **A membership read that failed is a red notice too** (rounds 7-9),
+ *    shown only while nothing pins the page (no project stored at mount),
+ *    the provider is not re-reading the list, and the page is not locked.
+ *    Nothing on this page reads the list again, so it is R3's red row,
+ *    outside the fieldset. It shows the provider's error text as "Details"
+ *    (the server's answer, or the client's own), and for coord's refusal to
+ *    list the account's projects (`tenant_not_resolved`) names the missing
+ *    operator role, with no Reload. Locked as well, the page shows ONE
+ *    alert, the cross-tab notice, naming the page's project unknown; and a
+ *    page whose project was never known says so, never "your home project".
+ *    `PageWriteGuardListRefusal` drives the same notice over the real
+ *    tenants client.
+ * 9. **A lock raised while the page is still learning its project is not
+ *    red** (round 10). The provider's read may name the project now stored,
+ *    and the lock then lifts by itself, so "until you reload" would be
+ *    false. Every write is still refused, in words that ask for no reload,
+ *    and one amber line says so, a status with no Reload, which takes the
+ *    focus a disabled control drops; when the read lands, the lock either lifts
+ *    with no red notice ever shown, or turns red, naming the page's project,
+ *    with focus on its Reload. When the read fails, the lock turns red,
+ *    naming the page's project unknown, with focus on its Reload.
+ *
+ * The suites that drive the page and the list through the real HTTP client
+ * (`PromptDocumentsCrossTab`, `PromptDocumentsPageCrossTab`,
+ * `PromptDocumentsPageSettingsCrossTab`) prove what the guard does to
+ * requests; this file pins what the provider hands its children and shows.
+ */
+
+import type { ReactNode } from "react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+
+const listTenantsMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api/operations/tenants", () => ({
+  listTenants: (...args: unknown[]) => listTenantsMock(...args),
+}));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
+
+import { toast } from "sonner";
+import { TenantProvider, useTenant } from "@/contexts/tenant-context";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  PageWriteGuardProvider,
+  usePageWriteGuardContext,
+  useRequiredPageWriteGuard,
+  type PageWriteGuardValue,
+} from "../_components/PageWriteGuard";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { LEARNING_REFUSAL, LIST_REFUSED_REFUSAL } from "./usePageWriteGuard";
+import { REQUEST_TIMEOUT_MESSAGE } from "@/services/http-client";
+import { WaitingForProject } from "../_components/WaitingForProject";
+
+const KEY = "qontinui.active_tenant_id";
+const B = "t-bravo";
+const SYS = "t-system";
+
+/** Every value the provider handed its child, one per render. */
+let seen: PageWriteGuardValue[] = [];
+function Probe() {
+  const guard = usePageWriteGuardContext();
+  if (guard) seen.push(guard);
+  return null;
+}
+
+/** The value the provider handed its child last. */
+function latest(): PageWriteGuardValue {
+  const value = seen[seen.length - 1];
+  if (!value) throw new Error("the provider handed its child nothing");
+  return value;
+}
+
+beforeEach(() => {
+  seen = [];
+  localStorage.clear();
+  listTenantsMock.mockReset();
+  vi.mocked(toast.error).mockClear();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
+
+/**
+ * Mount with `stored` stored (Bravo by default; `null`: a fresh browser,
+ * nothing stored) under the layout's tenant provider, whose membership read
+ * answers only when the returned `answer` is called, or fails with `message`
+ * when `fail` is: until then the page's project is UNKNOWN. It answers Bravo
+ * as the only membership and the home project. `children` render under the
+ * guard, inside its fieldset.
+ */
+function mountWhileTheProviderReads(
+  stored: string | null = B,
+  children: ReactNode = null
+): {
+  answer: () => Promise<void>;
+  fail: (message: string) => Promise<void>;
+} {
+  let release: () => void = () => {};
+  let refuse: (message: string) => void = () => {};
+  listTenantsMock.mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        release = () =>
+          resolve({
+            tenants: [{ id: B, slug: "b", name: "Bravo" }],
+            active_tenant_id: B,
+          });
+        refuse = (message) => reject(new Error(message));
+      })
+  );
+  if (stored !== null) localStorage.setItem(KEY, stored);
+  render(
+    <TenantProvider>
+      <PageWriteGuardProvider>
+        {children}
+        <Probe />
+      </PageWriteGuardProvider>
+    </TenantProvider>
+  );
+  return {
+    answer: () =>
+      act(async () => {
+        release();
+      }),
+    fail: (message) =>
+      act(async () => {
+        refuse(message);
+      }),
+  };
+}
+
+describe("PageWriteGuardProvider", () => {
+  it("pins the project stored at mount while the page's project is UNKNOWN, and the page's own once known", async () => {
+    // Corrected (review round 1, A2): this test asserted that NOTHING was
+    // pinned while the page's project was UNKNOWN, though a project was
+    // stored at mount. Every write sent then went unpinned, and a 429 retry
+    // or a token-refresh replay of it after another tab's switch landed in
+    // that tab's project. The list's mount read is pinned to the mount
+    // project, so it was answered there; writes are pinned there too, and the
+    // guard refuses them once another project is stored.
+    const { answer } = mountWhileTheProviderReads();
+
+    const unknown = latest();
+    expect(unknown.mountTenant).toBe(B);
+    expect(unknown.pageTenant).toBeUndefined();
+    expect(unknown.pin).toEqual({ tenant: B });
+    expect(unknown.resolvePin()).toEqual({ tenant: B });
+
+    await answer();
+
+    expect(latest().pageTenant).toBe(B);
+    expect(latest().pin).toEqual({ tenant: B });
+  });
+
+  /** The no-pin refusal, as the operator reads it. */
+  const NO_PIN =
+    "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
+
+  it.each([
+    [
+      "none selected: no provider, nothing stored",
+      async () => {
+        render(
+          <PageWriteGuardProvider>
+            <Probe />
+          </PageWriteGuardProvider>
+        );
+      },
+      NO_PIN,
+    ],
+    [
+      "never known: the provider's read failed, nothing stored at mount",
+      async () => {
+        listTenantsMock.mockRejectedValue(
+          new Error(
+            "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)"
+          )
+        );
+        render(
+          <TenantProvider>
+            <PageWriteGuardProvider>
+              <Probe />
+            </PageWriteGuardProvider>
+          </TenantProvider>
+        );
+        await waitFor(() =>
+          expect(latest().tenantContext?.error).not.toBeNull()
+        );
+      },
+      NO_PIN,
+    ],
+    [
+      // Round 11b: a reload repeats coord's refusal to list, so the refusal
+      // asks for none and points at the notice.
+      "never known: coord refused to list the projects, nothing stored at mount",
+      async () => {
+        listTenantsMock.mockRejectedValue(
+          new Error(
+            "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)"
+          )
+        );
+        render(
+          <TenantProvider>
+            <PageWriteGuardProvider>
+              <Probe />
+            </PageWriteGuardProvider>
+          </TenantProvider>
+        );
+        await waitFor(() =>
+          expect(latest().tenantContext?.error).not.toBeNull()
+        );
+      },
+      LIST_REFUSED_REFUSAL,
+    ],
+    [
+      // The read may give the page a project to pin to (finding 3 of round
+      // 11): the refusal asks for no reload.
+      "never known: the provider still reading, nothing stored at mount",
+      async () => {
+        mountWhileTheProviderReads(null);
+      },
+      LEARNING_REFUSAL,
+    ],
+  ] as const)(
+    "refuses every write while the page has no project to pin it to, and says why, but its dialogs still open (%s)",
+    async (_label, mount, refusal) => {
+      await mount();
+      expect(latest().pin).toBeUndefined();
+
+      let wrote = true;
+      let opened = false;
+      act(() => {
+        wrote = latest().writeAllowed();
+        opened = latest().projectUnchanged();
+      });
+
+      expect(wrote).toBe(false);
+      // The refusal, as the operator reads it.
+      expect(vi.mocked(toast.error).mock.calls).toEqual([[refusal]]);
+      if (refusal === LEARNING_REFUSAL) {
+        expect(refusal).not.toMatch(/reload/i);
+      }
+      expect(opened).toBe(true);
+      // Nothing changed under the page: it is not locked.
+      expect(latest().locked).toBeNull();
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument();
+    }
+  );
+
+  it("keeps one resolvePin and one writeAllowed while the pin changes, and the resolver answers the pin as it is called", async () => {
+    // A fresh browser: nothing is stored, so nothing is pinned until the
+    // provider answers and the page's project is the one it reconciles to.
+    const { answer } = mountWhileTheProviderReads(null);
+    const { resolvePin, writeAllowed } = latest();
+    expect(resolvePin()).toBeUndefined();
+
+    await answer();
+
+    // The provider handed down a new value — the page's project is known now
+    // — and the two functions are the ones it handed down first.
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(seen.length).toBeGreaterThan(1);
+    expect(new Set(seen.map((value) => value.resolvePin))).toEqual(
+      new Set([resolvePin])
+    );
+    expect(new Set(seen.map((value) => value.writeAllowed))).toEqual(
+      new Set([writeAllowed])
+    );
+    // Asked now, the first resolver answers the project it was not told of
+    // when it was made.
+    expect(resolvePin()).toEqual({ tenant: B });
+  });
+
+  it("is absent outside a provider, where a component that must send under one throws rather than sending unguarded", () => {
+    // React reports the render error it rethrows; that report is not under test.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(
+      renderHook(() => usePageWriteGuardContext()).result.current
+    ).toBeNull();
+    expect(() => renderHook(() => useRequiredPageWriteGuard())).toThrow(
+      /PageWriteGuardProvider/
+    );
+    // A settings section's guard has no unguarded mode either.
+    expect(() => renderHook(() => usePageSendGuard())).toThrow(
+      /PageWriteGuardProvider/
+    );
+  });
+});
+
+/** Another tab writes the stored project: the event only OTHER tabs get. */
+function anotherTabStores(tenant: string) {
+  localStorage.setItem(KEY, tenant);
+  window.dispatchEvent(
+    new StorageEvent("storage", { key: KEY, newValue: tenant })
+  );
+}
+
+/** Both projects, named, as the layout's provider serves them in Bravo. */
+const BOTH = {
+  tenants: [
+    { id: B, slug: "b", name: "Bravo" },
+    { id: SYS, slug: "s", name: "System" },
+  ],
+  active_tenant_id: B,
+};
+
+/** The notice, as the operator reads it. */
+const notice = () => screen.getByTestId("prompt-documents-cross-tab");
+
+/** A dialog the page opened: portalled out of its fieldset, as all of them are. */
+function OpenDialog() {
+  return (
+    <Dialog open>
+      <DialogContent>
+        <DialogTitle>History</DialogTitle>
+        <DialogDescription>A dialog the page opened.</DialogDescription>
+        <input data-testid="in-dialog" aria-label="Change note" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+describe("the guard is never off", () => {
+  it("while the page's project is UNKNOWN, a change from the mount project locks the page", async () => {
+    const { answer } = mountWhileTheProviderReads();
+    expect(latest().pageTenant).toBeUndefined();
+    expect(latest().locked).toBeNull();
+
+    await act(async () => anotherTabStores(SYS));
+
+    // Still UNKNOWN, and locked against the project stored at mount: the
+    // controls are disabled and every write refused, at once. The provider is
+    // still reading, so the lock is said in the amber line, not in red.
+    expect(latest().pageTenant).toBeUndefined();
+    expect(latest().locked).toBe("another_tab");
+    expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+    let allowed = true;
+    act(() => {
+      allowed = latest().writeAllowed();
+    });
+    expect(allowed).toBe(false);
+
+    // Known at last, as the mount project, and still locked: now red.
+    await answer();
+    expect(latest().pageTenant).toBe(B);
+    expect(latest().locked).toBe("another_tab");
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to Bravo, and the active project is now t-system (unknown project — not in this page's project list)."
+    );
+  });
+
+  it("locks on a storage clear() that empties the selection", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <Probe />
+      </PageWriteGuardProvider>
+    );
+    expect(latest().locked).toBeNull();
+
+    // Another tab clears its storage: the event names no key, and the
+    // selection goes with everything else.
+    await act(async () => {
+      localStorage.clear();
+      window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    });
+
+    expect(latest().locked).toBe("another_tab");
+    expect(notice()).toHaveTextContent(
+      "the active project is now your home project (none selected)."
+    );
+  });
+});
+
+describe("the notice", () => {
+  it("names another tab only when a storage event delivered the change", async () => {
+    listTenantsMock.mockResolvedValue(BOTH);
+    localStorage.setItem(KEY, B);
+    render(
+      <TenantProvider>
+        <PageWriteGuardProvider>
+          <Probe />
+        </PageWriteGuardProvider>
+      </TenantProvider>
+    );
+    await waitFor(() => expect(latest().pageTenant).toBe(B));
+
+    // Stored with no event yet: the call-time check finds the change, and
+    // cannot say who made it.
+    localStorage.setItem(KEY, SYS);
+    act(() => {
+      expect(latest().writeAllowed()).toBe(false);
+    });
+    expect(latest().locked).toBe("unattributed");
+    expect(notice()).toHaveTextContent(
+      "The active project changed since this page loaded — reload to continue. Until you reload, no change made on this page is sent: everything below belongs to Bravo, and the active project is now System."
+    );
+    expect(notice()).not.toHaveTextContent("another tab");
+    expect(toast.error).toHaveBeenLastCalledWith(
+      "The active project changed since this page loaded — reload to continue. Nothing was sent."
+    );
+
+    // Its event arrives, and only another document receives one.
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: KEY, newValue: SYS })
+      );
+    });
+    expect(latest().locked).toBe("another_tab");
+    expect(notice()).toHaveTextContent(
+      "The active project was changed in another tab — reload to continue. Until you reload, no change made on this page is sent: everything below belongs to Bravo, and the active project is now System."
+    );
+    act(() => {
+      expect(latest().writeAllowed()).toBe(false);
+    });
+    expect(toast.error).toHaveBeenLastCalledWith(
+      "The active project was changed in another tab — reload to continue. Nothing was sent."
+    );
+  });
+
+  it("is a red alert, its Reload outside the fieldset it disables", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(notice()).toHaveAttribute("role", "alert");
+    // Red (D5): only the operator's Reload, or a switch back, clears it.
+    expect(notice()).toHaveClass(
+      "border-red-500/40",
+      "bg-red-500/10",
+      "text-red-700",
+      "dark:text-red-400"
+    );
+    expect(screen.getByTestId("edit")).toBeDisabled();
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toBeEnabled();
+  });
+
+  it("is an amber status with no Reload while the page still learns its project", async () => {
+    // The lock may clear itself when the provider's read lands, and which
+    // way that read goes is not known: R3's amber on both grounds.
+    mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+
+    const line = screen.getByTestId("prompt-documents-cross-tab-learning");
+    expect(line).toHaveAttribute("role", "status");
+    expect(line).toHaveClass(
+      "border-amber-500/40",
+      "bg-amber-500/10",
+      "text-amber-800",
+      "dark:text-amber-200"
+    );
+    expect(line).not.toHaveClass("text-muted-foreground");
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /reload/i })).toHaveLength(
+      0
+    );
+  });
+});
+
+describe("the project-list notice", () => {
+  /** The tenants list's message for coord's refusal to list (`listTenants`). */
+  const REFUSED =
+    "GET /api/v1/operations/tenants failed: 403 (tenant_not_resolved)";
+  const UNREACHABLE =
+    "GET /api/v1/operations/tenants failed: 502 (coord is not reachable)";
+  /** The provider's `refresh`, captured from under it. */
+  let refresh: () => Promise<boolean> = async () => false;
+  function Refresher() {
+    refresh = useTenant().refresh;
+    return null;
+  }
+
+  /**
+   * The layout's provider, its membership read refused with `message`, under
+   * the page and one settings section waiting for the page's project.
+   */
+  function mountAfterTheListFailed(
+    stored: string | null,
+    message = UNREACHABLE
+  ) {
+    listTenantsMock.mockRejectedValue(new Error(message));
+    if (stored !== null) localStorage.setItem(KEY, stored);
+    render(
+      <TenantProvider>
+        <PageWriteGuardProvider>
+          <button data-testid="edit">Edit</button>
+          <WaitingForProject testId="section-waiting" />
+          <Probe />
+          <Refresher />
+        </PageWriteGuardProvider>
+      </TenantProvider>
+    );
+  }
+
+  it("is one red alert outside the fieldset, its Reload enabled, when the list failed and nothing pins the page", async () => {
+    mountAfterTheListFailed(null);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveAttribute("role", "alert");
+    // Red (R3): nothing on this page reads the list again.
+    expect(notice).toHaveClass(
+      "border-red-500/40",
+      "bg-red-500/10",
+      "text-red-700",
+      "dark:text-red-400"
+    );
+    expect(
+      screen.getByTestId("prompt-documents-controls")
+    ).not.toContainElement(notice);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
+    expect(latest().projectListFailed).toBe(true);
+    expect(latest().pin).toBeUndefined();
+    // Nothing is locked: the page's controls stay enabled, and refuse each
+    // write at call time for want of a pin.
+    expect(screen.getByTestId("edit")).toBeEnabled();
+    // Its details, so a failure a reload may clear reads as one.
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-error")
+    ).toHaveTextContent(UNREACHABLE);
+    expect(notice).toHaveTextContent(`Details: ${UNREACHABLE}`);
+    expect(notice).toHaveTextContent(/Until you reload/);
+    expect(screen.getByTestId("section-waiting")).toHaveTextContent(
+      "Not read until this page has a project: see the notice at the top of the page."
+    );
+  });
+
+  it("names coord's refusal, its cause with nothing stored, the operator role as the way out, and no Reload, when coord will not list the account's projects", async () => {
+    // `tenant_not_resolved` carries no reason. With nothing stored, the read
+    // went out scoped to the home project, which leaves two causes; every
+    // reload is refused alike.
+    mountAfterTheListFailed(null, REFUSED);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(notice).toHaveTextContent(
+      "Coord refused to list your projects (tenant_not_resolved), so no setting on this page is read and no change made on it is sent. Your account lacks the operator role in its home project, or belongs to no project; ask your project's admin for the role."
+    );
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-error")
+    ).toHaveTextContent(REFUSED);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed-reload")
+    ).not.toBeInTheDocument();
+    expect(notice).not.toHaveTextContent(/reload|\+ New/i);
+  });
+
+  it("labels a client timeout as details, never as a server's answer, and offers Reload", async () => {
+    // The client's own message: no server answered.
+    mountAfterTheListFailed(null, REQUEST_TIMEOUT_MESSAGE);
+
+    const notice = await screen.findByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notice).toHaveTextContent(`Details: ${REQUEST_TIMEOUT_MESSAGE}`);
+    expect(notice).not.toHaveTextContent(/server answered/i);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
+  });
+
+  /** Whether an element with `testId` is ever added to the page. */
+  function watchFor(testId: string): () => boolean {
+    let added = false;
+    const count = (records: MutationRecord[]) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (
+            node instanceof Element &&
+            (node.matches(`[data-testid="${testId}"]`) ||
+              node.querySelector(`[data-testid="${testId}"]`) !== null)
+          ) {
+            added = true;
+          }
+        }
+      }
+    };
+    const observer = new MutationObserver(count);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      // Records not yet delivered are counted too, never dropped.
+      count(observer.takeRecords());
+      observer.disconnect();
+      return added;
+    };
+  }
+
+  it("locked while still learning its project: no red notice, every write refused without asking a reload, and the lock lifts by itself when the read names the stored project", async () => {
+    // Two tabs in a fresh browser: the other tab's provider stores the home
+    // project while this one's is still reading, so this page locks.
+    const everRed = watchFor("prompt-documents-cross-tab");
+    const { answer } = mountWhileTheProviderReads(null);
+    await act(async () => anotherTabStores(B));
+
+    expect(latest().locked).not.toBeNull();
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveTextContent(
+      "The active project changed while this page was still learning its own: no change made on this page is sent until it knows its project. If this does not change, reload the page."
+    );
+    expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
+    let allowed = true;
+    act(() => {
+      allowed = latest().writeAllowed();
+    });
+    expect(allowed).toBe(false);
+    // The one refusal, and it asks for no reload.
+    expect(vi.mocked(toast.error).mock.calls).toEqual([[LEARNING_REFUSAL]]);
+    expect(LEARNING_REFUSAL).not.toMatch(/reload/i);
+
+    // The read lands on the project the other tab stored: the lock lifts,
+    // with no reload and no red notice ever shown.
+    await answer();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(latest().locked).toBeNull();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("prompt-documents-controls")).toBeEnabled();
+    expect(everRed()).toBe(false);
+  });
+
+  it("returns focus to the control the operator was on once the learning lock lifts by itself", async () => {
+    // Round 11b: the amber line takes focus and goes with the lock, so focus
+    // falls to <body>; the control the operator was on gets it back.
+    const { answer } = mountWhileTheProviderReads(
+      null,
+      <button data-testid="edit">Edit</button>
+    );
+    act(() => screen.getByTestId("edit").focus());
+    await act(async () => anotherTabStores(B));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveFocus();
+
+    await answer();
+
+    expect(latest().locked).toBeNull();
+    expect(screen.getByTestId("edit")).toHaveFocus();
+  });
+
+  it("leaves focus alone once the learning lock lifts when the operator moved it elsewhere", async () => {
+    const { answer } = mountWhileTheProviderReads(
+      null,
+      <button data-testid="edit">Edit</button>
+    );
+    const elsewhere = document.createElement("button");
+    document.body.appendChild(elsewhere);
+    try {
+      act(() => screen.getByTestId("edit").focus());
+      await act(async () => anotherTabStores(B));
+      act(() => elsewhere.focus());
+
+      await answer();
+
+      expect(latest().locked).toBeNull();
+      expect(elsewhere).toHaveFocus();
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
+  it("locked while still learning its project, turns red once the read lands and the change remains, naming the page's project, with focus on Reload", async () => {
+    // Bravo stored at mount, and the provider still reading: the page's
+    // project is not known yet. When the read lands it is Bravo, a member,
+    // while the other tab stored System: a real cross-tab change, which only
+    // a reload or a switch back clears. (With nothing stored at mount the
+    // read always lifts the lock: the provider stores the project it
+    // reconciled, as the case above shows.)
+    const { answer } = mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+
+    await answer();
+    expect(latest().locked).toBe("another_tab");
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to Bravo, and the active project is now t-system (unknown project — not in this page's project list)."
+    );
+    expect(notice()).not.toHaveTextContent(/home project/);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
+  });
+
+  it("locked while still learning its project, turns red when the read fails, naming the page's project unknown, with focus on Reload", async () => {
+    // Ported from the round-11 review's scenario. Bravo stored at mount, the
+    // provider still reading, and another tab stores System. The read then
+    // fails, so the page never learns its project: its first reads went out
+    // pinned to Bravo, but coord serves a stale id the home project, and the
+    // list that would tell the two apart was not read.
+    const { fail } = mountWhileTheProviderReads(B);
+    await act(async () => anotherTabStores(SYS));
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-learning")
+    ).toBeInTheDocument();
+
+    await fail(UNREACHABLE);
+    expect(latest().tenantContext?.error).toBe(UNREACHABLE);
+    expect(latest().locked).toBe("another_tab");
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab-learning")
+    ).not.toBeInTheDocument();
+    // One alert: Bravo pins the page, so the list notice stays down.
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toBe(notice());
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to an unknown project (the list of your projects could not be read), and the active project is now project t-system."
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
+  });
+
+  it("names a never-known project as unknown when the provider had read the list before this page loaded with no project selected", async () => {
+    // Ported from the round-10 review's reproduction. The layout's provider
+    // read the list before this page mounted, then another tab cleared the
+    // storage, and this tab navigated to the page client-side: nothing is
+    // stored at mount, no read is in flight, and nothing will name the page's
+    // project. Another tab then stores one.
+    listTenantsMock.mockResolvedValue({
+      tenants: [{ id: B, slug: "b", name: "Bravo" }],
+      active_tenant_id: B,
+    });
+    function Page({ show }: { show: boolean }) {
+      return show ? (
+        <PageWriteGuardProvider>
+          <Probe />
+        </PageWriteGuardProvider>
+      ) : null;
+    }
+    const { rerender } = render(
+      <TenantProvider>
+        <Page show={false} />
+      </TenantProvider>
+    );
+    await waitFor(() => expect(localStorage.getItem(KEY)).toBe(B));
+    localStorage.clear();
+    rerender(
+      <TenantProvider>
+        <Page show />
+      </TenantProvider>
+    );
+    await act(async () => anotherTabStores("t-other"));
+
+    expect(latest().tenantContext?.loading).toBe(false);
+    expect(listTenantsMock).toHaveBeenCalledTimes(1);
+    expect(notice()).toHaveTextContent(
+      "everything below belongs to an unknown project (no project was selected when this page loaded), and the active project is now"
+    );
+    expect(notice()).not.toHaveTextContent(/home project/);
+  });
+
+  it("is absent while a refresh re-reads the list after it failed", async () => {
+    // The provider outlives a client-side navigation, and its `refresh()` is
+    // called elsewhere in the app (the members page's rename dialog), so a
+    // re-read can be in flight while this page is mounted. While it is, the
+    // provider still holds the old error, and nothing has failed yet.
+    mountAfterTheListFailed(null);
+    await screen.findByTestId("prompt-documents-project-list-failed");
+    let answer: (list: unknown) => void = () => {};
+    listTenantsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    let refreshing: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      refreshing = refresh();
+    });
+    await waitFor(() => expect(latest().tenantContext?.loading).toBe(true));
+
+    expect(latest().tenantContext?.error).not.toBeNull();
+    expect(latest().projectListFailed).toBe(false);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+
+    // The re-read answers: the page has its project, and no notice.
+    await act(async () => {
+      answer({
+        tenants: [{ id: B, slug: "b", name: "Bravo" }],
+        active_tenant_id: B,
+      });
+      await refreshing;
+    });
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+  });
+
+  it("with the list failed, another tab storing a project raises ONE alert, coherent, its Reload enabled under the disabled fieldset", async () => {
+    // Ported from the round-8 review's reproduction: before, both notices
+    // showed, the cross-tab one naming "your home project (none selected)"
+    // beside one saying the page's project is unknown.
+    mountAfterTheListFailed(null);
+    await screen.findByTestId("prompt-documents-project-list-failed");
+
+    await act(async () => anotherTabStores("t-other"));
+
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    const crossTab = screen.getByTestId("prompt-documents-cross-tab");
+    expect(alerts[0]).toBe(crossTab);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+    expect(crossTab).toHaveTextContent(
+      "everything below belongs to an unknown project (the list of your projects could not be read), and the active project is now project t-other."
+    );
+    expect(crossTab).not.toHaveTextContent(/home project/);
+    // The one Reload, outside the fieldset the lock disabled.
+    expect(screen.getByTestId("edit")).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /reload/i })).toHaveLength(1);
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toBeEnabled();
+    // The section points to the notice that is up.
+    expect(screen.getByTestId("section-waiting")).toHaveTextContent(
+      "see the notice at the top of the page"
+    );
+  });
+
+  it("is absent while the membership read is in flight", async () => {
+    mountWhileTheProviderReads(null);
+    await act(async () => {});
+
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+    expect(latest().projectListFailed).toBe(false);
+  });
+
+  it("is absent when the list failed but the project stored at mount pins the page", async () => {
+    mountAfterTheListFailed(B);
+    await waitFor(() => expect(latest().tenantContext?.loading).toBe(false));
+
+    expect(latest().tenantContext?.error).not.toBeNull();
+    expect(latest().pin).toEqual({ tenant: B });
+    expect(latest().projectListFailed).toBe(false);
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("the disabled fieldset's description", () => {
+  it("names the fieldset as a group, locked or not", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    const group = screen.getByRole("group", {
+      name: "Prompt documents and their settings",
+    });
+    expect(group).toBe(screen.getByTestId("prompt-documents-controls"));
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(group).toBeDisabled();
+    expect(group).toHaveAccessibleName("Prompt documents and their settings");
+  });
+
+  it("is the notice while the page is locked, and nothing once it clears", async () => {
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    const fieldset = screen.getByTestId("prompt-documents-controls");
+    expect(fieldset).not.toHaveAttribute("aria-describedby");
+
+    await act(async () => anotherTabStores(SYS));
+
+    // A disabled control's reason is announced with it: the notice.
+    expect(fieldset).toHaveAttribute("aria-describedby", notice().id);
+    expect(notice().id).not.toBe("");
+    expect(fieldset).toHaveAccessibleDescription(
+      expect.stringContaining(
+        "The active project was changed in another tab — reload to continue."
+      )
+    );
+
+    await act(async () => anotherTabStores(B));
+
+    expect(fieldset).not.toHaveAttribute("aria-describedby");
+  });
+});
+
+describe("this tab's own switch through the provider", () => {
+  it("never locks the page, not even for one render", async () => {
+    listTenantsMock.mockResolvedValue(BOTH);
+    localStorage.setItem(KEY, B);
+    let switchTo: (id: string) => void = () => {};
+    function Switcher() {
+      switchTo = useTenant().setActiveTenantId;
+      return null;
+    }
+    render(
+      <TenantProvider>
+        <Switcher />
+        <PageWriteGuardProvider>
+          <Probe />
+        </PageWriteGuardProvider>
+      </TenantProvider>
+    );
+    await waitFor(() => expect(latest().pageTenant).toBe(B));
+    const from = seen.length;
+
+    // The provider stores the project first, then re-renders with it.
+    await act(async () => switchTo(SYS));
+
+    expect(latest().pageTenant).toBe(SYS);
+    const during = seen.slice(from);
+    expect(during.length).toBeGreaterThan(0);
+    // Every value handed down on the way, not only the last, was unlocked.
+    expect(during.map((value) => value.locked)).toEqual(during.map(() => null));
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("focus when the page locks", () => {
+  it("moves focus from a now-disabled control to Reload, and leaves focus inside an open dialog", async () => {
+    localStorage.setItem(KEY, B);
+    const page = render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    act(() => screen.getByTestId("edit").focus());
+    expect(screen.getByTestId("edit")).toHaveFocus();
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(screen.getByTestId("edit")).toBeDisabled();
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toHaveFocus();
+    page.unmount();
+
+    // The operator is typing in a dialog the page opened: that focus is theirs.
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <OpenDialog />
+      </PageWriteGuardProvider>
+    );
+    const field = await screen.findByTestId("in-dialog");
+    act(() => field.focus());
+    expect(field).toHaveFocus();
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(notice()).toBeInTheDocument();
+    expect(field).toHaveFocus();
+  });
+
+  it("moves focus to Reload from <body>, where a browser drops it as the fieldset disables the control", async () => {
+    // jsdom keeps focus on a control its fieldset disables; a browser
+    // (measured: Chromium) drops it to <body> at once. So the path a user
+    // takes is the one from <body>, and it is driven here.
+    localStorage.setItem(KEY, B);
+    render(
+      <PageWriteGuardProvider>
+        <button data-testid="edit">Edit</button>
+      </PageWriteGuardProvider>
+    );
+    act(() => screen.getByTestId("edit").focus());
+    act(() => screen.getByTestId("edit").blur());
+    expect(document.body).toHaveFocus();
+
+    await act(async () => anotherTabStores(SYS));
+
+    expect(notice()).toBeInTheDocument();
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toHaveFocus();
+  });
+
+  it.each([
+    ["a control the learning lock disables", false],
+    [
+      "<body>, where a browser drops it as the fieldset disables the control",
+      true,
+    ],
+  ] as const)(
+    "moves focus from %s to the amber line while the page learns its project, and on to Reload once the read lands and the change remains",
+    async (_label, dropped) => {
+      // The learning lock has no Reload to move focus to, and the line says
+      // why the operator's control went dead: it takes the focus.
+      const { answer } = mountWhileTheProviderReads(
+        B,
+        <button data-testid="edit">Edit</button>
+      );
+      act(() => screen.getByTestId("edit").focus());
+      if (dropped) act(() => screen.getByTestId("edit").blur());
+
+      await act(async () => anotherTabStores(SYS));
+
+      const line = screen.getByTestId("prompt-documents-cross-tab-learning");
+      expect(screen.getByTestId("edit")).toBeDisabled();
+      expect(line).toHaveAttribute("tabindex", "-1");
+      expect(line).toHaveFocus();
+
+      // Bravo is a member and System stays stored: the line gives way to the
+      // red notice, and focus moves on to its Reload.
+      await answer();
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab-learning")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      ).toHaveFocus();
+    }
+  );
+
+  it.each([
+    ["an app modal, which says so with aria-modal", "aria-modal"],
+    ["a Radix dialog, which traps focus without aria-modal", "radix"],
+  ] as const)(
+    "does not move focus from <body> behind %s",
+    async (_label, modal) => {
+      localStorage.setItem(KEY, B);
+      render(
+        <>
+          <PageWriteGuardProvider>
+            <button data-testid="edit">Edit</button>
+            {modal === "radix" ? <OpenDialog /> : null}
+          </PageWriteGuardProvider>
+          {modal === "aria-modal" ? (
+            <div role="dialog" aria-modal="true" aria-label="Navigation">
+              <input data-testid="in-dialog" aria-label="Search" />
+            </div>
+          ) : null}
+        </>
+      );
+      // The control the operator was on in the modal went away, and focus
+      // fell to <body>.
+      const field = await screen.findByTestId("in-dialog");
+      act(() => field.focus());
+      act(() => field.blur());
+      expect(document.body).toHaveFocus();
+
+      await act(async () => anotherTabStores(SYS));
+
+      expect(notice()).toBeInTheDocument();
+      expect(document.body).toHaveFocus();
+    }
+  );
+});
