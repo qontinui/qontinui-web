@@ -627,6 +627,95 @@ describe("/admin/coord/subprojects/[id]", () => {
     expect(row).toHaveTextContent(`via_ref ${GATE}`);
   });
 
+  it("links an anchor member's PR to GitHub", async () => {
+    const base = detail();
+    const ANCHOR = "claim:pr:qontinui/qontinui-claude-config#1441";
+    fetchSubproject.mockResolvedValue(
+      detail({
+        sessions: [
+          { ...base.sessions[0]!, joined_via: "anchor", via_ref: ANCHOR },
+        ],
+      })
+    );
+    render(<SubprojectDetailPage />);
+    const row = await screen.findByTestId("coord-subproject-session-row");
+    fireEvent.click(row.querySelector("[data-console-row]") as HTMLElement);
+    const why = await within(row).findByText(
+      /Joined as a continuation of a member's gate, PR or work unit/
+    );
+    expect(
+      within(why).getByRole("link", {
+        name: /qontinui\/qontinui-claude-config#1441/,
+      })
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/qontinui/qontinui-claude-config/pull/1441"
+    );
+    expect(row).toHaveTextContent(`via_ref ${ANCHOR}`);
+  });
+
+  it("shows a root-session title's basis on the raw line, and a null one as not recorded", async () => {
+    const base = detail();
+    const rootTitled = { ...base.subproject, title_source: "root_session" };
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...rootTitled, title_basis: "pr_title" } })
+    );
+    const { unmount } = render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain("title from root_session · title basis pr_title · status open");
+    unmount();
+
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...rootTitled, title_basis: null } })
+    );
+    render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain(
+      "title from root_session · title basis not recorded · status open"
+    );
+  });
+
+  it("says nothing about a title basis coord did not send, or for an explicit title", async () => {
+    const base = detail();
+    fetchSubproject.mockResolvedValue(detail());
+    const { unmount } = render(<SubprojectDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-subproject-raw")).textContent
+    ).toContain("title from explicit · status open");
+    unmount();
+
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...base.subproject, title_basis: null } })
+    );
+    render(<SubprojectDetailPage />);
+    const raw = await screen.findByTestId("coord-subproject-raw");
+    expect(raw.textContent).toContain("title from explicit · status open");
+    expect(raw).not.toHaveTextContent("title basis");
+  });
+
+  it("keeps a work-evidence unit via_ref as plain text", async () => {
+    const base = detail();
+    const UNIT = "0a1b2c3d-0000-4000-8000-000000000001";
+    fetchSubproject.mockResolvedValue(
+      detail({
+        sessions: [
+          { ...base.sessions[0]!, joined_via: "work_evidence", via_ref: UNIT },
+        ],
+      })
+    );
+    render(<SubprojectDetailPage />);
+    const row = await screen.findByTestId("coord-subproject-session-row");
+    fireEvent.click(row.querySelector("[data-console-row]") as HTMLElement);
+    const why = await within(row).findByText(
+      /Joined as evidence that its commits or worktree belong here/
+    );
+    expect(within(why).queryByRole("link")).toBeNull();
+    expect(why).not.toHaveTextContent(UNIT);
+    expect(row).toHaveTextContent(`via_ref ${UNIT}`);
+  });
+
   it("words a gate's verdict, with coord's own word only on the raw line", async () => {
     fetchSubproject.mockResolvedValue(detail());
     render(<SubprojectDetailPage />);
