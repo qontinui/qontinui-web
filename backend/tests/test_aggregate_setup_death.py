@@ -233,7 +233,9 @@ def _shard_title(n: int) -> str:
 #: pins the YAML to it).
 RUN_TESTS_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
-    r"|^\.github/scripts/declare-setup-death\.sh$|^backend/poetry\.toml$"
+    r"|^\.github/scripts/declare-setup-death\.sh$"
+    r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$"
     r"|^scripts/ci/"
 )
 BASH = shutil.which("bash")
@@ -992,6 +994,7 @@ def test_a_pr_whose_diff_misses_the_harness_is_declared(github, clean_pr):
         ".github/workflows/backend-ci.yml",
         ".github/actions/self-hosted-host-provisioned/action.yml",
         ".github/scripts/declare-setup-death.sh",
+        ".github/scripts/harness-diff-guard.sh",
         "scripts/ci/aggregate_setup_death.py",
         "scripts/ci/shard_headroom.py",
         # A module the PR ADDS: `python3 scripts/ci/aggregate_setup_death.py`
@@ -1003,6 +1006,7 @@ def test_a_pr_whose_diff_misses_the_harness_is_declared(github, clean_pr):
         "own-workflow",
         "local-action",
         "per-job-declarer",
+        "guard-helper",
         "itself",
         "headroom",
         "pr-added-module",
@@ -1318,7 +1322,7 @@ def _aggregate_reading(outcome) -> str:
 def test_the_aggregate_guard_reads_what_the_per_job_guard_reads(
     github, tmp_path, home, scenario, reading
 ):
-    """The port must not drift from `compute_guard`: same PR, same reading."""
+    """The port must not drift from `harness_guard_compute`: same PR, same reading."""
     _declared_failure(github)
     changes: dict[str, str | None] = {
         "clean": {"backend/app/main.py": "x\n"},
@@ -1638,7 +1642,8 @@ AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
         "EXPECTED_MEMBERS": "1",
         "HARNESS_PATHS_RE": (
             r"^\.github/workflows/e2e-tests\.yml$|^\.github/actions/"
-            r"|^\.github/scripts/declare-setup-death\.sh$" + AGGREGATE_CODE
+            r"|^\.github/scripts/declare-setup-death\.sh$"
+            r"|^\.github/scripts/harness-diff-guard\.sh$" + AGGREGATE_CODE
         ),
     },
     ("migration-reversal.yml", "gate"): {
@@ -1649,7 +1654,8 @@ AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
         "EXPECTED_MEMBERS": "1",
         "HARNESS_PATHS_RE": (
             r"^\.github/workflows/migration-reversal\.yml$|^\.github/actions/"
-            r"|^\.github/scripts/declare-setup-death\.sh$" + AGGREGATE_CODE
+            r"|^\.github/scripts/declare-setup-death\.sh$"
+            r"|^\.github/scripts/harness-diff-guard\.sh$" + AGGREGATE_CODE
         ),
     },
 }
@@ -1830,6 +1836,7 @@ def test_each_aggregates_harness_is_its_members_harness_plus_all_of_scripts_ci(
         f".github/workflows/{workflow}",
         ".github/actions/self-hosted-host-provisioned/action.yml",
         ".github/scripts/declare-setup-death.sh",
+        ".github/scripts/harness-diff-guard.sh",
         SCRIPT_REF,
         "scripts/ci/shard_headroom.py",
         "scripts/ci/json.py",

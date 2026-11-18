@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectPin } from "@/services/http-client";
 
 /**
@@ -38,4 +38,49 @@ export function useSendTimePin(resolvePin: ResolvePin | undefined): ResolvePin {
   const latest = useRef(resolvePin);
   latest.current = resolvePin;
   return useCallback(() => latest.current?.(), []);
+}
+
+/**
+ * A hook's first read, sent ONCE: at the first commit where `sendPin` names
+ * a project. Returns whether the hook is still waiting for one, as asked
+ * while it renders, so a section can say so rather than show empty data.
+ *
+ * A page that pins its requests reads nothing before it knows its project:
+ * with one stored at mount that is the mount commit, and on a first visit it
+ * is the commit where the page's project becomes known. No read is sent in,
+ * or answered from, a project the page does not show. Every later read is
+ * the hook's own (a Refresh, a filter, a write's read-back), sent only under
+ * a pin. The pin is asked after each commit, never depended on (D10), so
+ * nothing re-fires when it changes. A caller with no resolver never names a
+ * project, so this reads nothing for it.
+ *
+ * It says it is waiting until that read is SENT. The commit where a pin
+ * first appears sends it only in that commit's effect, so that commit still
+ * says waiting, and the read's own loading state shows from the next one:
+ * no commit shows a section with neither its waiting line nor its loading
+ * line. With a pin at mount the hook's own loading state covers the mount
+ * commit (each hook starts loading when it has a pin to read with), so it is
+ * not waiting then.
+ */
+export function useFirstPinnedRead(
+  sendPin: ResolvePin,
+  read: () => void
+): boolean {
+  const done = useRef(false);
+  const [readUnderway, setReadUnderway] = useState(
+    () => sendPin() !== undefined
+  );
+  const latestRead = useRef(read);
+  latestRead.current = read;
+  // Runs after every commit by design: the pin is asked here, never depended
+  // on (D10). `done` makes the read and its state update one-shot, so the
+  // update cannot chain renders.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot, see above
+  useEffect(() => {
+    if (done.current || sendPin() === undefined) return;
+    done.current = true;
+    setReadUnderway(true);
+    latestRead.current();
+  });
+  return sendPin() === undefined || !readUnderway;
 }

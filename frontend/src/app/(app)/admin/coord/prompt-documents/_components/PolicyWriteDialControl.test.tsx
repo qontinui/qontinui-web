@@ -16,7 +16,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { PINNED_PAGE, sectionRenderer } from "../__fixtures__/pageWriteGuard";
+
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
@@ -48,6 +50,11 @@ vi.mock("sonner", () => ({
 
 import { PolicyWriteDialControl } from "./PolicyWriteDialControl";
 
+// A section mounted on its own, under the page's guard once its project is
+// known: the hooks it uses require one, and a settings section reads only
+// under the page's pin (`__fixtures__`).
+const renderSection = sectionRenderer(PINNED_PAGE);
+
 function view(over: Partial<FleetPolicyView> = {}): FleetPolicyView {
   return {
     domain: "policy_write",
@@ -59,6 +66,15 @@ function view(over: Partial<FleetPolicyView> = {}): FleetPolicyView {
     keys_not_shown_source: null,
     ...over,
   };
+}
+
+/** A read the test holds in flight, and settles itself before it ends. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 function okWrite(effective: FleetPolicyView | null, readbackError = null) {
@@ -89,7 +105,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     // The wire says `off`; the fleet is on `tightening_only`. The readout must
     // show the second and say where it came from — scoped to the readout,
@@ -107,7 +123,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       view({ effective_level: "tightening-only", resolved_scope: "tenant" })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-unrecognized-level");
     // The raw stored value, so the operator knows which row to fix...
@@ -126,7 +142,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       view({ effective_level: "tightening-only", resolved_scope: "repo" })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-unrecognized-level");
     // The control writes the tenant band only. Telling the operator that
@@ -141,7 +157,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       async () => new Response("coord is not reachable", { status: 502 })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     // Nothing has ever been read, so there is no "value below" to call stale —
     // and the one claim the console must never make on no evidence is that
@@ -155,7 +171,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("warns when a repo-band row overrides the tenant row this control writes", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "repo" }));
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const banner = await screen.findByTestId("policy-write-overridden-by-repo");
     expect(banner).toHaveTextContent(/keeps.*overriding/i);
@@ -167,7 +183,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("says a write takes effect when only a system-band row is answering", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "system" }));
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const note = await screen.findByTestId("policy-write-system-fallback");
     expect(note).toHaveTextContent(/takes effect immediately/i);
@@ -181,7 +197,7 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
       })
     );
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     const note = await screen.findByTestId("policy-write-keys-not-shown");
     expect(note).toHaveTextContent("controls, drain");
@@ -191,14 +207,19 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
   });
 
   it("names what was written beside a read-back that failed", async () => {
-    getMock.mockResolvedValue(view({ effective_level: "off" }));
+    // The write's failed read-back sends a re-read; it is held, so the dial
+    // is seen while coord's level is still unknown.
+    const reread = deferred<FleetPolicyView>();
+    getMock
+      .mockResolvedValueOnce(view({ effective_level: "off" }))
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ...okWrite(null, "coord returned 502" as unknown as null),
       written_level: "propose_only",
     });
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/propose_only/));
@@ -207,6 +228,48 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
     // Both halves: the write that landed, and the resolution that is unknown.
     expect(banner).toHaveTextContent("propose_only");
     expect(banner).toHaveTextContent(/unknown/i);
+
+    // Coord answers the re-read: the banner goes, and its level is shown.
+    reread.resolve(view({ effective_level: "propose_only" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("policy-write-readback-error")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      "propose_only"
+    );
+  });
+
+  it("keeps the last level beside both warnings when the re-read after a failed read-back fails", async () => {
+    getMock
+      .mockResolvedValueOnce(view({ effective_level: "off" }))
+      .mockResolvedValueOnce(
+        new Response("coord is not reachable", { status: 502 })
+      );
+    putMock.mockResolvedValue({
+      ...okWrite(null, "coord returned 502" as unknown as null),
+      written_level: "propose_only",
+    });
+
+    const user = userEvent.setup();
+    renderSection(<PolicyWriteDialControl />);
+    await screen.findByTestId("policy-write-dial");
+
+    await user.click(screen.getByLabelText(/propose_only/));
+
+    // The re-read failed: the read error, the read-back warning, and the last
+    // level coord confirmed — never the written one.
+    expect(
+      await screen.findByText("Could not read the dial.")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("policy-write-readback-error")).toHaveTextContent(
+      "propose_only"
+    );
+    expect(screen.getByTestId("policy-write-in-force")).toHaveTextContent(
+      /\boff\b/
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -214,7 +277,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
   it("offers full at all — coord retired the clamp that justified hiding it", async () => {
     getMock.mockResolvedValue(view());
 
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
 
     await screen.findByTestId("policy-write-dial");
     expect(screen.getByLabelText(/full/)).toBeInTheDocument();
@@ -228,7 +291,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     getMock.mockResolvedValue(view());
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -241,7 +304,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     getMock.mockResolvedValue(view());
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -264,7 +327,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     putMock.mockResolvedValue(okWrite(view({ effective_level: "full" })));
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/full/));
@@ -283,7 +346,7 @@ describe("PolicyWriteDialControl — full is offered, and confirmed", () => {
     });
 
     const user = userEvent.setup();
-    render(<PolicyWriteDialControl />);
+    renderSection(<PolicyWriteDialControl />);
     await screen.findByTestId("policy-write-dial");
 
     await user.click(screen.getByLabelText(/^off/));

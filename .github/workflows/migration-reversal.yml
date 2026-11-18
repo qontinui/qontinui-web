@@ -832,7 +832,7 @@ jobs:
           VERDICT_STEPS: |
             Create named schemas + extension|${{ steps.schemas.outcome }}|${{ steps.schemas.conclusion }}
             Reversibility test (upgrade → downgrade -1 → upgrade)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -2418,7 +2418,7 @@ jobs:
             Head identity (one head, it is the overlaid file, not a merge)|${{ steps.head_identity.outcome }}|${{ steps.head_identity.conclusion }}
             Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
             Non-executable edits only (no migration to exercise)|${{ steps.doc_only.outcome }}|${{ steps.doc_only.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -2512,7 +2512,7 @@ jobs:
           # with scripts/ci first on sys.path, so a module a PR adds there
           # runs inside it. A PR touching any of it gets no title (rule 5,
           # the harness-diff guard).
-          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/'
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^scripts/ci/'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then

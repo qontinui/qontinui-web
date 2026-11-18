@@ -9,23 +9,28 @@
  * 1. **A settings write raced past the page's disabled fieldset is refused.**
  *    A confirmation renders outside the fieldset, and a click can land before
  *    the other tab's `storage` event does. Each test opens the control's
- *    confirmation — or, for the compliance settings, which have none, readies
- *    the save — while this page's project is stored, then another tab stores a
- *    different one (its event not yet arrived), then confirms. Nothing may be
- *    sent: the page's call-time guard, which the list hands up, refuses the
+ *    confirmation — or, for a control that has none (the compliance save, a
+ *    kind's Clear), readies it — while this page's project is stored, then
+ *    another tab stores a different one (its event not yet arrived), then
+ *    confirms. Nothing may be sent: the page's call-time guard, which each
+ *    section's hook asks beside its send (the page's provider), refuses the
  *    write and raises the notice.
  * 2. **A settings request in flight across the switch stays in the page's
  *    project.** Every section write re-issued after a 429, or replayed after a
  *    token refresh, with the other project stored meanwhile; the read-back each
  *    write takes; every section read retried after a 503; a read sent after the
  *    switch is stored; and the page's own auto-publish status re-take after a
- *    dial write. The page pins them to the project the list hands up with its
- *    guard, so each is told apart from an unpinned request by where it went —
- *    also when that project becomes known only after the page mounted, as on a
- *    hard load under the layout's tenant provider.
+ *    dial write. The page pins them to the project its provider pins the
+ *    list's rows to, so each is told apart from an unpinned request by where
+ *    it went — also when that project becomes known only after the page
+ *    mounted, as on a hard load under the layout's tenant provider. On a
+ *    first visit, with nothing stored, no settings read is sent at all until
+ *    the page's project is known: each section says it is waiting, then
+ *    reads once, pinned to it.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { StrictMode } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -108,6 +113,55 @@ function inAnswerTo(
   insides.push({ method, match, run, status });
 }
 
+/**
+ * A request held in flight, after its header was recorded, until the
+ * returned `release(status)` runs; it is then answered with that status (a
+ * 503, say), or for a 200 with coord's state as it stood when coord acted on
+ * it: on ARRIVAL, or on RELEASE.
+ */
+type Held = {
+  method: string;
+  match: RegExp;
+  status: Promise<number>;
+  actsOn: "arrival" | "release";
+};
+let helds: Held[] = [];
+function hold(
+  method: string,
+  match: RegExp,
+  actsOn: Held["actsOn"]
+): (status: number) => void {
+  let release: (status: number) => void = () => {};
+  const status = new Promise<number>((resolve) => {
+    release = resolve;
+  });
+  helds.push({ method, match, status, actsOn });
+  return (s) => release(s);
+}
+
+/**
+ * Hold the next request matching, answered at release with coord's state as
+ * it stood when the request ARRIVED: a read coord served before a write
+ * landed, delivered only after it.
+ */
+function holdNextSnapshot(
+  method: string,
+  match: RegExp
+): (status: number) => void {
+  return hold(method, match, "arrival");
+}
+
+/**
+ * Hold the next request matching, and let coord act on it only at release:
+ * a write still in flight, not yet landed, while a read beside it is served.
+ */
+function holdNextLanding(
+  method: string,
+  match: RegExp
+): (status: number) => void {
+  return hold(method, match, "release");
+}
+
 function view(domain: string, level: string) {
   return {
     domain,
@@ -132,8 +186,38 @@ const COMPLIANCE_CONFIG = {
   current_version: 3,
 };
 
-/** Kind-tier rows served beside `audience_profile`; a test adds one. */
-let extraKindRows: unknown[] = [];
+/**
+ * Coord's state, as the requests below read and change it, reset for every
+ * test: each dial's level, each kind's stored tier beside `audience_profile`
+ * (which has none; `null` once cleared), and the session-compliance settings
+ * and their history. A read answers from it; a write changes it.
+ */
+const DIAL_LEVELS: Record<string, string> = {
+  policy_write: "tightening_only",
+  policy_upstream: "notify",
+};
+let levels: Record<string, string> = { ...DIAL_LEVELS };
+let kindTiers: Record<string, string | null> = {};
+let complianceConfig: Record<string, unknown> = { ...COMPLIANCE_CONFIG };
+let complianceVersions: Record<string, unknown>[] = [];
+/** Dials whose next level write coord answers with a failed read-back. */
+let readBackFails = new Set<string>();
+
+const BUILTIN_TIER: Record<string, string> = {
+  audience_profile: "deny",
+  initiative: "allow_with_notification",
+};
+function kindRow(kind: string, tier: string | null) {
+  const builtin = BUILTIN_TIER[kind] ?? "deny";
+  return {
+    kind,
+    tier,
+    unreadable: false,
+    builtin_default_tier: builtin,
+    effective_tier: tier ?? builtin,
+    effective_source: tier ? "tenant" : "default",
+  };
+}
 
 function answer(url: string): unknown {
   if (url.includes("/auto-publish/status")) {
@@ -141,36 +225,24 @@ function answer(url: string): unknown {
   }
   if (url.includes("/fleet-policy")) {
     const domain = new URL(url, "http://x").searchParams.get("domain") ?? "";
-    const level =
-      domain === "policy_write"
-        ? "tightening_only"
-        : domain === "policy_upstream"
-          ? "notify"
-          : "off";
-    return view(domain, level);
+    return view(domain, levels[domain] ?? "off");
   }
   if (url.includes("/prompt-document-kind-tiers")) {
     return {
-      kinds: [
-        {
-          kind: "audience_profile",
-          tier: null,
-          unreadable: false,
-          builtin_default_tier: "deny",
-          effective_tier: "deny",
-          effective_source: "default",
-        },
-        ...extraKindRows,
-      ],
+      // `audience_profile` is always listed; a tier stored for it, or for any
+      // other kind, is the one its row carries.
+      kinds: Object.entries({ audience_profile: null, ...kindTiers }).map(
+        ([kind, tier]) => kindRow(kind, tier)
+      ),
       vocabulary: ["deny", "allow", "allow_with_notification"],
       notification_enforced: false,
       warning: "x",
     };
   }
   if (url.includes("/session-compliance/config/versions")) {
-    return { versions: [] };
+    return { versions: complianceVersions };
   }
-  if (url.includes("/session-compliance/config")) return COMPLIANCE_CONFIG;
+  if (url.includes("/session-compliance/config")) return complianceConfig;
   if (url.includes("/session-compliance/sessions")) return { sessions: [] };
   if (url.includes("/session-compliance/outstanding")) return { items: [] };
   if (/\/coord\/prompt-documents(\?|$)/.test(url)) {
@@ -180,14 +252,18 @@ function answer(url: string): unknown {
 }
 
 /**
- * Every write answers as accepted, in the shape its hook reads: the refusal
- * tests assert it was not SENT, the in-flight tests where it was sent.
+ * Every write is accepted, changes coord's state, and answers in the shape
+ * its hook reads: the refusal tests assert it was not SENT, the in-flight
+ * tests where it was sent.
  */
-function written(url: string, body: string | null): unknown {
+function written(method: string, url: string, body: string | null): unknown {
   const sentBody = JSON.parse(body ?? "{}") as Record<string, unknown>;
   if (url.endsWith("/fleet-policy")) {
     const domain = String(sentBody.domain);
     const level = String(sentBody.level);
+    levels[domain] = level;
+    // Written either way; only the read-back that answers it can fail.
+    const readBackFailed = readBackFails.delete(domain);
     return {
       ok: true,
       domain,
@@ -196,14 +272,41 @@ function written(url: string, body: string | null): unknown {
       versioned: true,
       version: 2,
       updated_by: "operator@example.com",
-      effective: view(domain, level),
-      readback_error: null,
+      effective: readBackFailed ? null : view(domain, level),
+      readback_error: readBackFailed ? "read-back timed out" : null,
     };
   }
+  const kind = /\/prompt-document-kind-tiers\/([^/?]+)$/.exec(url)?.[1];
+  if (kind !== undefined) {
+    kindTiers[kind] = method === "DELETE" ? null : String(sentBody.tier);
+    return { ok: true };
+  }
   if (url.endsWith("/session-compliance/config")) {
-    return { ...COMPLIANCE_CONFIG, ...sentBody, current_version: 4 };
+    complianceConfig = {
+      ...complianceConfig,
+      ...sentBody,
+      current_version: Number(complianceConfig.current_version) + 1,
+    };
+    complianceVersions = [
+      {
+        version_number: complianceConfig.current_version,
+        enabled: complianceConfig.enabled,
+        mode: complianceConfig.mode,
+        enforced_clause_ref: complianceConfig.enforced_clause_ref,
+        max_attempts: complianceConfig.max_attempts,
+        edited_by: "operator@example.com",
+        created_at: "2026-11-15T12:00:00Z",
+      },
+      ...complianceVersions,
+    ];
+    return complianceConfig;
   }
   return { ok: true };
+}
+
+/** What coord answers a request with, as its state stands now. */
+function respond(method: string, url: string, body: string | null): unknown {
+  return method === "GET" ? answer(url) : written(method, url, body);
 }
 
 const json = (status: number, body: unknown) =>
@@ -215,7 +318,12 @@ const json = (status: number, body: unknown) =>
 beforeEach(() => {
   sent = [];
   insides = [];
-  extraKindRows = [];
+  helds = [];
+  levels = { ...DIAL_LEVELS };
+  kindTiers = {};
+  complianceConfig = { ...COMPLIANCE_CONFIG };
+  complianceVersions = [];
+  readBackFails = new Set();
   listTenantsMock.mockReset();
   token.expiry = Date.now() + 3_600_000;
   token.onRefresh = null;
@@ -229,7 +337,26 @@ beforeEach(() => {
         ((init?.headers ?? {}) as Record<string, string>)[
           "X-Qontinui-Active-Tenant"
         ] ?? null;
+      const body = typeof init?.body === "string" ? init.body : null;
       sent.push({ method, url, tenant });
+      const held = helds.findIndex(
+        (h) => h.method === method && h.match.test(url)
+      );
+      if (held >= 0) {
+        const [entry] = helds.splice(held, 1);
+        // Coord's answer as it stood when the request arrived — unless coord
+        // acts on it only at release, when a held write lands then.
+        const actsOnArrival = entry?.actsOn !== "release";
+        const snapshot = actsOnArrival ? respond(method, url, body) : null;
+        const status = entry ? await entry.status : 200;
+        if (status !== 200) {
+          return json(status, {
+            error: "TRANSIENT",
+            message: `answered ${status}`,
+          });
+        }
+        return json(200, actsOnArrival ? snapshot : respond(method, url, body));
+      }
       const inside = insides.findIndex(
         (i) => i.method === method && i.match.test(url)
       );
@@ -243,12 +370,7 @@ beforeEach(() => {
           });
         }
       }
-      return json(
-        200,
-        method === "GET"
-          ? answer(url)
-          : written(url, typeof init?.body === "string" ? init.body : null)
-      );
+      return json(200, respond(method, url, body));
     })
   );
 });
@@ -349,6 +471,24 @@ describe("a settings write raced past the page's fieldset is refused", () => {
     await expectRefused(before);
   });
 
+  it("the kind-tier Clear sends nothing", async () => {
+    // A kind with a stored tier, so Clear is offered. It closes or reopens
+    // nothing it asks about first: it applies on one click.
+    kindTiers = { initiative: "allow" };
+    render(<PromptDocumentsPage />);
+    const row = await screen.findByTestId(
+      "kind-tier-row-initiative",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently();
+    const before = sent.length;
+
+    await user().click(within(row).getByRole("button", { name: "clear" }));
+
+    await expectRefused(before);
+  });
+
   it("the session-compliance save sends nothing", async () => {
     render(<PromptDocumentsPage />);
     const attempts = await screen.findByTestId(
@@ -373,6 +513,21 @@ const DIAL_WRITE = /\/fleet-policy$/;
 const KIND_TIERS = /\/prompt-document-kind-tiers$/;
 /** The page's one auto-publish status read. */
 const STATUS = /\/auto-publish\/status$/;
+
+/** Every read the settings sections send on mount, by section. */
+const SETTINGS_READS = [
+  ["kind tiers", KIND_TIERS],
+  ["the policy-write dial", /\/fleet-policy\?domain=policy_write$/],
+  ["the upstream dial", /\/fleet-policy\?domain=policy_upstream$/],
+  ["the auto-publish dial", /\/fleet-policy\?domain=policy_auto_publish$/],
+  ["session compliance's settings", /\/session-compliance\/config$/],
+  [
+    "session compliance's settings history",
+    /\/session-compliance\/config\/versions$/,
+  ],
+  ["session compliance's verdicts", /\/session-compliance\/sessions\?/],
+  ["session compliance's ledger", /\/session-compliance\/outstanding$/],
+] as const;
 
 /**
  * One settings write the page sends, and how to send it: `setup` runs before
@@ -419,16 +574,7 @@ const SECTION_WRITES: SectionWrite[] = [
     reread: KIND_TIERS,
     // A kind with a stored tier, so Clear is offered.
     setup: () => {
-      extraKindRows = [
-        {
-          kind: "initiative",
-          tier: "allow",
-          unreadable: false,
-          builtin_default_tier: "allow_with_notification",
-          effective_tier: "allow",
-          effective_source: "tenant",
-        },
-      ];
+      kindTiers = { initiative: "allow" };
     },
     arrange: async () => {
       await screen.findByTestId(
@@ -576,19 +722,7 @@ describe("a settings write sent before the switch and re-issued after it lands i
 });
 
 describe("a settings read in flight across the switch stays in the page's project", () => {
-  it.each([
-    ["kind tiers", KIND_TIERS],
-    ["the policy-write dial", /\/fleet-policy\?domain=policy_write$/],
-    ["the upstream dial", /\/fleet-policy\?domain=policy_upstream$/],
-    ["the auto-publish dial", /\/fleet-policy\?domain=policy_auto_publish$/],
-    ["session compliance's settings", /\/session-compliance\/config$/],
-    [
-      "session compliance's settings history",
-      /\/session-compliance\/config\/versions$/,
-    ],
-    ["session compliance's verdicts", /\/session-compliance\/sessions\?/],
-    ["session compliance's ledger", /\/session-compliance\/outstanding$/],
-  ] as const)(
+  it.each(SETTINGS_READS)(
     "%s: answered 503 with the switch inside the answer, retried in the page's project",
     async (_label, route) => {
       inAnswerTo("GET", route, anotherTabStoresSilently, 503);
@@ -667,34 +801,255 @@ describe("the page's auto-publish status read", () => {
   }, 20_000);
 });
 
-describe("the page's project known only after the page mounted", () => {
+/**
+ * A hard load on a first visit: nothing is stored, and the layout's provider
+ * is still reading the membership list when the page mounts, so the page's
+ * project is UNKNOWN at first and its provider pins nothing. The returned
+ * function answers that read; the provider then stores Bravo and the page's
+ * project is Bravo.
+ */
+function firstVisit(): () => void {
+  localStorage.clear();
+  return membershipPending();
+}
+
+/**
+ * A hard load: the layout's provider is still reading the membership list
+ * when the page mounts. The returned function answers it, with Bravo the
+ * server's choice: the provider keeps a stored member project, and stores
+ * Bravo when none is stored.
+ */
+function membershipPending(): () => void {
+  let answerMembership: () => void = () => {};
+  listTenantsMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answerMembership = () =>
+          resolve({
+            tenants: [
+              { id: B, slug: "b", name: "Bravo" },
+              { id: SYS, slug: "s", name: "System" },
+            ],
+            active_tenant_id: B,
+          });
+      })
+  );
+  return () => answerMembership();
+}
+
+function renderUnderTenantProvider() {
+  render(
+    <TenantProvider>
+      <PromptDocumentsPage />
+    </TenantProvider>
+  );
+}
+
+/** The line each settings section shows while the page has no project. */
+const WAITING = [
+  "kind-tier-waiting",
+  "policy-write-waiting",
+  "policy-upstream-waiting",
+  "policy-auto-publish-waiting",
+  "compliance-waiting",
+];
+/** What that line says while the page's project may yet arrive. */
+const WAITING_COPY =
+  "Waiting for this page's project to be known before reading these settings. If this does not change, select a project or reload the page.";
+/**
+ * What it says once the layout's provider has said its membership read
+ * failed: a pointer to the page's one red notice, which says the rest.
+ */
+const SEE_NOTICE_COPY =
+  "Not read until this page has a project: see the notice at the top of the page.";
+/** The page's red notice for that state. */
+const LIST_FAILED_NOTICE =
+  "The list of your projects could not be read, so this page's project is unknown. Until you reload, no setting on this page is read and no change made on it is sent.";
+
+/** Every settings read sent so far, as `[label, tenants]` per section read. */
+const settingsReadTenants = () =>
+  SETTINGS_READS.map(
+    ([label, route]) =>
+      [label, sentSince(0, "GET", route).map((s) => s.tenant)] as const
+  );
+/** The same, expecting `tenants` for every read. */
+const everyReadIn = (tenants: (string | null)[]) =>
+  SETTINGS_READS.map(([label]) => [label, tenants] as const);
+
+describe("the page's settings are read only under the page's project", () => {
+  it("with nothing stored at mount, no settings read is sent until the provider answers; then each goes out once, pinned to Bravo", async () => {
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    for (const id of WAITING) {
+      await screen.findByTestId(id, {}, { timeout: 5000 });
+    }
+    await settle(150);
+    expect(settingsReadTenants()).toEqual(everyReadIn([]));
+
+    await act(async () => answerMembership());
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route)).toHaveLength(1);
+        }
+      },
+      { timeout: 5000 }
+    );
+    await settle(150);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([B]));
+    for (const id of WAITING) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+  }, 20_000);
+
+  it("while the page has no project, a Refresh or a filter change sends nothing, and every section says it is waiting", async () => {
+    // The membership read is never answered here.
+    firstVisit();
+    renderUnderTenantProvider();
+    await screen.findByTestId("compliance-waiting", {}, { timeout: 5000 });
+    await settle(150);
+
+    await user().click(screen.getByTestId("compliance-refresh"));
+    await user().click(screen.getByTestId("compliance-verdict-filter"));
+    await user().click(await screen.findByRole("option", { name: "Verified" }));
+    await settle(150);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([]));
+    // Nothing has been read, so there is nothing to page through, and no
+    // section claims a read in flight.
+    expect(
+      screen.queryByTestId("compliance-sessions-next")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /^Loading…$|Reading the dial…|Loading enforcement settings…|Loading session verdicts…/
+      )
+    ).not.toBeInTheDocument();
+    // Each section names the way out if the project never comes, and the
+    // provider has said nothing failed, so the page raises no notice.
+    for (const id of WAITING) {
+      expect(screen.getByTestId(id)).toHaveTextContent(WAITING_COPY);
+    }
+    expect(
+      screen.queryByTestId("prompt-documents-project-list-failed")
+    ).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("a verdict filter chosen while the page has no project is the one its first verdict read sends, once and pinned", async () => {
+    const VERDICTS = /\/session-compliance\/sessions\?/;
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await screen.findByTestId("compliance-waiting", {}, { timeout: 5000 });
+    await settle(150);
+
+    await user().click(screen.getByTestId("compliance-verdict-filter"));
+    await user().click(await screen.findByRole("option", { name: "Verified" }));
+    await settle(80);
+    expect(sentSince(0, "GET", VERDICTS)).toEqual([]);
+
+    await act(async () => answerMembership());
+    await waitFor(() => expect(sentSince(0, "GET", VERDICTS)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    await settle(150);
+
+    const reads = sentSince(0, "GET", VERDICTS);
+    expect(reads.map((s) => s.tenant)).toEqual([B]);
+    expect(reads[0]?.url).toMatch(/[?&]verdict=verified(&|$)/);
+  }, 20_000);
+
+  it("if the provider never yields a project, nothing is read or written, and every section keeps saying it is waiting", async () => {
+    localStorage.clear();
+    listTenantsMock.mockRejectedValue(new Error("membership read failed"));
+    renderUnderTenantProvider();
+    await screen.findByTestId("compliance-waiting", {}, { timeout: 5000 });
+    await settle(300);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([]));
+    expect(writesSince(0)).toEqual([]);
+    // The provider said its read failed, and only a reload reads it again:
+    // ONE red notice says so, outside the fieldset with its Reload enabled,
+    // and each section points to it.
+    const notices = screen.getAllByTestId(
+      "prompt-documents-project-list-failed"
+    );
+    expect(notices).toHaveLength(1);
+    const [notice] = notices;
+    expect(notice).toHaveAttribute("role", "alert");
+    expect(notice).toHaveTextContent(LIST_FAILED_NOTICE);
+    expect(
+      screen.getByTestId("prompt-documents-controls")
+    ).not.toContainElement(notice ?? null);
+    expect(
+      screen.getByTestId("prompt-documents-project-list-failed-reload")
+    ).toBeEnabled();
+    for (const id of WAITING) {
+      expect(screen.getByTestId(id)).toHaveTextContent(SEE_NOTICE_COPY);
+    }
+  }, 20_000);
+
+  it("with a project stored at mount, each settings read goes out once, pinned, at mount", async () => {
+    // Bravo is stored, and the layout's provider is still reading.
+    const answerMembership = membershipPending();
+    renderUnderTenantProvider();
+    await waitFor(
+      () => {
+        for (const [, route] of SETTINGS_READS) {
+          expect(sentSince(0, "GET", route)).toHaveLength(1);
+        }
+      },
+      { timeout: 5000 }
+    );
+    for (const id of WAITING) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+
+    await act(async () => answerMembership());
+    await settle(200);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([B]));
+  }, 20_000);
+
+  it("with a project, a verdict filter change re-reads the verdicts once, pinned", async () => {
+    const VERDICTS = /\/session-compliance\/sessions\?/;
+    render(<PromptDocumentsPage />);
+    await waitFor(() => expect(sentSince(0, "GET", VERDICTS)).toHaveLength(1), {
+      timeout: 5000,
+    });
+    await settle(80);
+
+    await user().click(screen.getByTestId("compliance-verdict-filter"));
+    await user().click(await screen.findByRole("option", { name: "Verified" }));
+    await waitFor(() => expect(sentSince(0, "GET", VERDICTS)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    await settle(80);
+
+    const reads = sentSince(0, "GET", VERDICTS);
+    expect(reads.map((s) => s.tenant)).toEqual([B, B]);
+    expect(reads[1]?.url).toMatch(/verdict=/);
+  }, 20_000);
+
   it("a settings write sent once the provider has answered lands in the page's project", async () => {
-    // A hard load: the layout's provider is still reading the membership list
-    // when the page mounts, so the page's project is UNKNOWN at first and the
-    // list hands the page no pin. Once the provider answers, the page's
-    // project is the one it loaded in.
-    let answer: () => void = () => {};
-    listTenantsMock.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = () =>
-            resolve({
-              tenants: [
-                { id: B, slug: "b", name: "Bravo" },
-                { id: SYS, slug: "s", name: "System" },
-              ],
-              active_tenant_id: B,
-            });
-        })
-    );
-    render(
-      <TenantProvider>
-        <PromptDocumentsPage />
-      </TenantProvider>
-    );
-    await screen.findByTestId("policy-write-dial", {}, { timeout: 5000 });
+    // A first visit on a hard load: nothing is stored, and the layout's
+    // provider is still reading the membership list when the page mounts, so
+    // the page's project is UNKNOWN at first and its provider pins nothing.
+    // Once the provider answers it stores Bravo, and the page's project and
+    // pin are Bravo. A resolver that kept the pin it had at mount would never
+    // name a project, so the dial would never read or offer a level.
+    const PW = /\/fleet-policy\?domain=policy_write$/;
+    const answerMembership = firstVisit();
+    renderUnderTenantProvider();
+    await screen.findByTestId("policy-write-waiting", {}, { timeout: 5000 });
     await settle();
-    await act(async () => answer());
+    // No project at mount, so nothing was read.
+    expect(sentSince(0, "GET", PW)).toEqual([]);
+    await act(async () => answerMembership());
+    await waitFor(
+      () => expect(sentSince(0, "GET", PW).map((s) => s.tenant)).toEqual([B]),
+      { timeout: 5000 }
+    );
     await settle();
     await user().click(radio("policy-write-full"));
     await screen.findByTestId("policy-write-confirm");
@@ -712,5 +1067,270 @@ describe("the page's project known only after the page mounted", () => {
       B,
       B,
     ]);
+  }, 20_000);
+});
+
+/**
+ * A settings read in flight when a save lands, answered after the save's own
+ * result with coord's state as it stood when the read ARRIVED (before the
+ * save): session compliance drops it, as every settings hook drops a read a
+ * landed write superseded (round 4). The page offers this race through
+ * compliance's Refresh, and through each dial's Retry, which stays enabled
+ * while a level write is in flight (the describe after this one). A kind's
+ * tier buttons offer no read beside a tier write, so its hook holds that
+ * race in its own suite (`usePromptDocumentKindTiers`).
+ */
+describe("a settings read sent before a save and answered after it", () => {
+  const CONFIG = /\/session-compliance\/config$/;
+  const HISTORY = /\/session-compliance\/config\/versions$/;
+  /** Every PUT sent so far. */
+  const puts = () => sent.filter((s) => s.method === "PUT");
+
+  async function saveAttempts(value: string) {
+    const attempts = screen.getByTestId("compliance-max-attempts");
+    await user().clear(attempts);
+    await user().type(attempts, value);
+    await user().click(screen.getByTestId("compliance-save"));
+    await waitFor(() => expect(puts()).toHaveLength(1), { timeout: 5000 });
+    await settle(80);
+  }
+
+  it("session compliance: a saved setting stays shown", async () => {
+    render(<PromptDocumentsPage />);
+    await screen.findByTestId("compliance-max-attempts", {}, { timeout: 5000 });
+    await settle(80);
+    const releaseRefresh = holdNextSnapshot("GET", CONFIG);
+    await user().click(screen.getByTestId("compliance-refresh"));
+    await waitFor(() => expect(sentSince(0, "GET", CONFIG)).toHaveLength(2), {
+      timeout: 5000,
+    });
+
+    await saveAttempts("2");
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(2);
+
+    await act(async () => releaseRefresh(200));
+    await settle(80);
+    expect(screen.getByTestId("compliance-max-attempts")).toHaveValue(2);
+  }, 20_000);
+
+  it("session compliance: a saved version stays in the history", async () => {
+    render(<PromptDocumentsPage />);
+    await screen.findByTestId("compliance-max-attempts", {}, { timeout: 5000 });
+    await user().click(screen.getByTestId("compliance-config-history-toggle"));
+    await settle(80);
+    const releaseRefresh = holdNextSnapshot("GET", HISTORY);
+    await user().click(screen.getByTestId("compliance-refresh"));
+    await waitFor(() => expect(sentSince(0, "GET", HISTORY)).toHaveLength(2), {
+      timeout: 5000,
+    });
+
+    await saveAttempts("2");
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("compliance-config-history")
+        ).toHaveTextContent("v4"),
+      { timeout: 5000 }
+    );
+
+    await act(async () => releaseRefresh(200));
+    await settle(80);
+    expect(screen.getByTestId("compliance-config-history")).toHaveTextContent(
+      "v4"
+    );
+  }, 20_000);
+});
+
+/**
+ * A dial's Retry stays enabled while a level write is in flight, so the page
+ * can send a dial read beside a write (round 6). Coord serves that read
+ * before the write lands, and its answer arrives after the write's own
+ * result: the dial drops it, so the level the write put in force stays shown.
+ *
+ * The Retry is offered once a dial read has failed while a level is shown.
+ * Each row gets there as an operator would: a level write whose read-back
+ * fails, and the pinned re-read the dial sends then answered with an error,
+ * which keeps the last confirmed level beside both warnings.
+ *
+ * The auto-publish dial has no row here: it has two levels, so a level an
+ * operator can write beside its Retry is either the one already shown or the
+ * one a stale answer would show, and the page cannot tell the race apart.
+ * Its hook's suite holds that race through `reload`, which is what its Retry
+ * calls (`usePolicyAutoPublishPolicy`).
+ */
+describe("a dial read sent while a level write is in flight", () => {
+  type DialRace = {
+    label: string;
+    domain: string;
+    /** The dial's read. */
+    read: RegExp;
+    section: string;
+    inForce: string;
+    readBack: string;
+    /** The level shown before either write. */
+    shown: string;
+    /** A write whose read-back fails: `unconfirmed` is never shown. */
+    writeUnconfirmed: () => Promise<void>;
+    unconfirmed: string;
+    /** The write in flight beside the Retry: `raced` stays shown. */
+    writeRaced: () => Promise<void>;
+    raced: string;
+  };
+  const races: DialRace[] = [
+    {
+      label: "the policy-write dial",
+      domain: "policy_write",
+      read: /\/fleet-policy\?domain=policy_write$/,
+      section: "policy-write-dial",
+      inForce: "policy-write-in-force",
+      readBack: "policy-write-readback-error",
+      shown: "tightening_only",
+      writeUnconfirmed: () => user().click(radio("policy-write-propose_only")),
+      unconfirmed: "propose_only",
+      writeRaced: () => user().click(radio("policy-write-off")),
+      raced: "off",
+    },
+    {
+      label: "the upstream dial",
+      domain: "policy_upstream",
+      read: /\/fleet-policy\?domain=policy_upstream$/,
+      section: "policy-upstream-dial",
+      inForce: "policy-upstream-in-force",
+      readBack: "policy-upstream-readback-error",
+      shown: "notify",
+      writeUnconfirmed: () => user().click(radio("policy-upstream-off")),
+      unconfirmed: "off",
+      writeRaced: async () => {
+        await user().click(radio("policy-upstream-auto"));
+        await screen.findByTestId("policy-upstream-confirm");
+        await user().click(
+          screen.getByRole("button", { name: /set to auto/i })
+        );
+      },
+      raced: "auto",
+    },
+  ];
+  /** The in-force line showing `level`. */
+  const showing = (level: string) =>
+    new RegExp(String.raw`In force:\s*${level}\b`);
+
+  it.each(races.map((race) => [race.label, race] as const))(
+    "%s: a Retry pressed during a level write keeps the level written",
+    async (_label, race) => {
+      render(<PromptDocumentsPage />);
+      const section = await screen.findByTestId(
+        race.section,
+        {},
+        { timeout: 5000 }
+      );
+      await waitFor(
+        () =>
+          expect(screen.getByTestId(race.inForce)).toHaveTextContent(
+            showing(race.shown)
+          ),
+        { timeout: 5000 }
+      );
+      await settle(80);
+
+      // A write whose read-back fails; the dial's pinned re-read is held,
+      // then answered 400.
+      readBackFails.add(race.domain);
+      const answerReread = holdNextSnapshot("GET", race.read);
+      await race.writeUnconfirmed();
+      await waitFor(
+        () => expect(sentSince(0, "GET", race.read)).toHaveLength(2),
+        {
+          timeout: 5000,
+        }
+      );
+      await act(async () => answerReread(400));
+      expect(
+        await within(section).findByText("Could not read the dial.")
+      ).toBeInTheDocument();
+      expect(screen.getByTestId(race.inForce)).toHaveTextContent(
+        showing(race.shown)
+      );
+      expect(screen.getByTestId(race.readBack)).toHaveTextContent(
+        race.unconfirmed
+      );
+
+      // A level write in flight, not yet landed, and Retry pressed beside
+      // it: coord serves that read before the write lands.
+      const writes = sentSince(0, "PUT", DIAL_WRITE).length;
+      const landWrite = holdNextLanding("PUT", DIAL_WRITE);
+      await race.writeRaced();
+      await waitFor(
+        () => expect(sentSince(0, "PUT", DIAL_WRITE)).toHaveLength(writes + 1),
+        { timeout: 5000 }
+      );
+      const answerRetry = holdNextSnapshot("GET", race.read);
+      await user().click(
+        within(section).getByRole("button", { name: "Retry" })
+      );
+      await waitFor(
+        () => expect(sentSince(0, "GET", race.read)).toHaveLength(3),
+        {
+          timeout: 5000,
+        }
+      );
+
+      await act(async () => landWrite(200));
+      await waitFor(
+        () =>
+          expect(screen.getByTestId(race.inForce)).toHaveTextContent(
+            showing(race.raced)
+          ),
+        { timeout: 5000 }
+      );
+      await act(async () => answerRetry(200));
+      await settle(80);
+
+      expect(screen.getByTestId(race.inForce)).toHaveTextContent(
+        showing(race.raced)
+      );
+      expect(sentSince(0, "GET", race.read).map((s) => s.tenant)).toEqual([
+        B,
+        B,
+        B,
+      ]);
+    },
+    20_000
+  );
+});
+
+/**
+ * StrictMode, the app router's development default, mounts every effect
+ * twice. The round-4 review's demonstration, kept for the gated read.
+ */
+describe("StrictMode (the app router's dev default): the first read still goes out once", () => {
+  it("nothing is read before the page knows its project; then each read goes out exactly once, pinned", async () => {
+    const answerMembership = firstVisit();
+    render(
+      <StrictMode>
+        <TenantProvider>
+          <PromptDocumentsPage />
+        </TenantProvider>
+      </StrictMode>
+    );
+    await screen.findByTestId("compliance-waiting", {}, { timeout: 5000 });
+    await settle(150);
+    expect(settingsReadTenants()).toEqual(everyReadIn([]));
+
+    await act(async () => answerMembership());
+    await settle(300);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([B]));
+  }, 20_000);
+
+  it("with a project stored at mount, each read goes out exactly once, pinned", async () => {
+    render(
+      <StrictMode>
+        <PromptDocumentsPage />
+      </StrictMode>
+    );
+    await screen.findByTestId("compliance-max-attempts", {}, { timeout: 5000 });
+    await settle(300);
+
+    expect(settingsReadTenants()).toEqual(everyReadIn([B]));
   }, 20_000);
 });

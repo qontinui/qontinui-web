@@ -20,6 +20,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { PINNED_PAGE, withPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -49,6 +50,10 @@ vi.mock("sonner", () => ({
 
 import { usePolicyUpstreamPolicy } from "./usePolicyUpstreamPolicy";
 
+// The hook on its own, under the page's guard once its project is known: it
+// requires one, and reads only under the page's pin (`__fixtures__`).
+const SectionGuard = withPageGuard(PINNED_PAGE);
+
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_upstream",
@@ -71,7 +76,9 @@ const NOTIFY_TENANT = { ...OFF_TENANT, effective_level: "notify" };
 
 async function render(view: object) {
   getMock.mockResolvedValue(view);
-  const hook = renderHook(() => usePolicyUpstreamPolicy());
+  const hook = renderHook(() => usePolicyUpstreamPolicy(), {
+    wrapper: SectionGuard,
+  });
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return hook.result;
 }
@@ -127,7 +134,9 @@ describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
     getMock.mockImplementation(
       async () => new Response("coord is not reachable", { status: 502 })
     );
-    const { result } = renderHook(() => usePolicyUpstreamPolicy());
+    const { result } = renderHook(() => usePolicyUpstreamPolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Neither the default nor fail-closed off: nothing has been read.
