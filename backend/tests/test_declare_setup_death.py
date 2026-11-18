@@ -128,6 +128,7 @@ BACKEND_CI_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
     r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^\.github/scripts/fetch-pinned-binary\.sh$"
     r"|^backend/poetry\.toml$"
 )
 
