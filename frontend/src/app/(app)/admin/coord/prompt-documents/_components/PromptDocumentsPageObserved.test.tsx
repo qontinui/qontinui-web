@@ -9,7 +9,7 @@
  * stubbed: they read their own doors and are not under test here.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
@@ -92,10 +92,16 @@ function aliveStatus(code: string): AutoPublishStatusResponse {
 }
 
 beforeEach(() => {
+  // A page in a named project, as production's always is: a page with no
+  // project to pin a write to refuses every write (`usePageWriteGuard`).
+  localStorage.setItem("qontinui.active_tenant_id", "t-tenant");
   vi.clearAllMocks();
   policyGet.mockResolvedValue(view());
   // The document list and anything else the list reads: an empty corpus.
   otherGet.mockResolvedValue({ documents: [], degraded: null });
+});
+afterEach(() => {
+  localStorage.removeItem("qontinui.active_tenant_id");
 });
 
 describe("the page's one auto-publish status read", () => {

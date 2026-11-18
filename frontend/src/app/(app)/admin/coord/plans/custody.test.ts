@@ -61,6 +61,69 @@ describe("describeCustody", () => {
     expect(r.claims[0].label).toBe("claimed by an unnamed session");
   });
 
+  const DECLARED_ID = "6f1c2a9e-4b7d-4e2a-9c3f-1a2b3c4d5e6f";
+
+  it("declared + name → claimed by <name>, named exactly from the row's stamp", () => {
+    const r = describeCustody(
+      axis({
+        live_sessions: [
+          session({
+            custody: {
+              state: "declared",
+              session_id: DECLARED_ID,
+              session_name: "planlib-phase-6",
+            },
+          }),
+        ],
+      }),
+      NOW
+    );
+    expect(r.claims[0].kind).toBe("declared_named");
+    expect(r.claims[0].label).toBe(
+      `claimed by planlib-phase-6, last seen 5m ago, expires ${clockTime("2026-10-06T12:30:00Z")}`
+    );
+    expect(r.claims[0].title).toContain("stamped with its declaring session");
+    expect(r.claims[0].title).toContain(DECLARED_ID);
+    expect(r.claims[0].title).toContain("hosts other sessions");
+    expect(r.unknown).toBe(false);
+  });
+
+  it("declared + null name → claimed by an unnamed session (not unknown)", () => {
+    const r = describeCustody(
+      axis({
+        live_sessions: [
+          session({
+            custody: {
+              state: "declared",
+              session_id: DECLARED_ID,
+              session_name: null,
+            },
+          }),
+        ],
+      }),
+      NOW
+    );
+    expect(r.claims[0].kind).toBe("declared_unnamed");
+    expect(r.claims[0].label).toBe("claimed by an unnamed session");
+    expect(r.claims[0].title).toContain(DECLARED_ID);
+    expect(r.unknown).toBe(false);
+  });
+
+  it("a hand-built declared with no session_id is UNKNOWN, never a guessed name", () => {
+    const r = describeCustody(
+      axis({
+        live_sessions: [
+          session({ custody: { state: "declared", session_name: "x" } }),
+        ],
+      }),
+      NOW
+    );
+    expect(r.claims[0].kind).toBe("unknown");
+    expect(r.claims[0].label).toBe("custody UNKNOWN");
+    expect(r.claims[0].title).toContain("no session id");
+    expect(r.unknown).toBe(true);
+  });
+
   it("ambiguous → N sessions active on this device, never a guessed name", () => {
     const r = describeCustody(
       axis({

@@ -16,7 +16,8 @@ The properties pinned here:
 3. **A coord 401/403 aborts the batch** with HTTP 403 (coord's own status is
    kept in ``coord_status``; the abort never answers 401), carrying a result for
    every id: those recorded before it, the refused id as ``failed``, and the
-   rest as ``not_attempted``.
+   rest as ``not_attempted``, and ``partial`` saying whether anything before
+   the refusal changed (``unbound``) or may have (``unknown``).
 4. **``still_member_via_pointer`` is never defaulted**: coord's boolean passes
    through, and its absence (an older coord) is ``null``, never ``false``.
 5. **The operator bearer and the active-tenant selection are forwarded** on
@@ -505,6 +506,8 @@ class TestCallerRefusalAborts:
                 "coord_status": 401,
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_A,
+                # Nothing reached before the refusal: the 403 is the whole truth.
+                "partial": False,
                 "results": [
                     {
                         "device_id": DEVICE_A,
@@ -524,6 +527,26 @@ class TestCallerRefusalAborts:
         }
         # DEVICE_B was never sent to coord.
         assert len(stub.calls) == 1
+
+    def test_an_already_absent_row_before_the_refusal_is_not_partial(
+        self, auth_client: TestClient
+    ):
+        # An earlier id that was already gone changed nothing: the abort is
+        # not partial, though a row was recorded before it.
+        stub = _CoordStub(
+            {
+                DEVICE_A: [_not_found(DEVICE_A)],
+                DEVICE_B: [_mock_response(403, {"error": "admin_required"})],
+            }
+        )
+        resp = _post(auth_client, stub, {"device_ids": [DEVICE_A, DEVICE_B]})
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert [r["outcome"] for r in detail["results"]] == [
+            "already_absent",
+            "failed",
+        ]
+        assert detail["partial"] is False
 
     def test_an_aborted_batch_still_logs_its_earlier_lost_row(
         self, auth_client: TestClient
@@ -549,6 +572,9 @@ class TestCallerRefusalAborts:
         assert len(aborted) == 1
         assert aborted[0]["unknown"] == 1
         assert aborted[0]["failed"] == 1
+        # An earlier row MAY have been applied, so the abort says partial.
+        assert aborted[0]["partial"] is True
+        assert resp.json()["detail"]["partial"] is True
 
     def test_the_production_error_envelope_carries_the_abort_at_top_level(self):
         from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -572,6 +598,7 @@ class TestCallerRefusalAborts:
         assert body["error"] == "coord_refused_caller"
         assert body["coord_status"] == 401
         assert body["refused_device_id"] == DEVICE_B
+        assert body["partial"] is True
         assert [r["outcome"] for r in body["results"]] == [
             "unbound",
             "failed",
@@ -603,6 +630,8 @@ class TestCallerRefusalAborts:
                 "coord_status": 403,
                 "coord_error": coord_body,
                 "refused_device_id": DEVICE_C,
+                # DEVICE_A was removed before coord refused DEVICE_C.
+                "partial": True,
                 "results": [
                     {
                         "device_id": DEVICE_A,
