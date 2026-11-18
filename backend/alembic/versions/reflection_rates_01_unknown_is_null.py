@@ -1,7 +1,7 @@
 """let two reflection measurements hold an UNKNOWN (NULL)
 
 Revision ID: reflection_rates_01_unknown_is_null
-Revises: coord_spawn_launch_01_settings_and_session_effort
+Revises: coord_iops_idx_02
 Create Date: 2026-11-09
 
 Plan ``2026-11-09-reflection-reports-only-what-it-judged-and-the-dead-verifier-leaves-no-residue``,
@@ -48,7 +48,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "reflection_rates_01_unknown_is_null"
-down_revision: str = "coord_spawn_launch_01_settings_and_session_effort"
+down_revision: str = "coord_iops_idx_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
