@@ -74,10 +74,10 @@ describe("relay-bus status surfacing", () => {
   it("reports 'in-memory-degraded' and warns when bus init fails", async () => {
     vi.stubEnv(
       "UI_BRIDGE_RELAY_REDIS_URL",
-      "rediss://user:s3cr3t@cache.internal:6380/0"
+      "rediss://user:s3cr3t@cache.internal:6380/0",
     );
     createRedisRelayBusMock.mockRejectedValue(
-      new Error("ECONNREFUSED 10.0.0.5:6380")
+      new Error("ECONNREFUSED 10.0.0.5:6380"),
     );
 
     const mod = await importRelayFresh();
@@ -89,7 +89,7 @@ describe("relay-bus status surfacing", () => {
   it("logs the HOST ONLY on failure — never credentials or the full URL", async () => {
     vi.stubEnv(
       "UI_BRIDGE_RELAY_REDIS_URL",
-      "rediss://user:s3cr3t@cache.internal:6380/0"
+      "rediss://user:s3cr3t@cache.internal:6380/0",
     );
     createRedisRelayBusMock.mockRejectedValue(new Error("boom"));
 
@@ -108,7 +108,7 @@ describe("relay-bus status surfacing", () => {
     createRedisRelayBusMock.mockRejectedValue(new Error("down"));
 
     await expect(importRelayFresh()).rejects.toThrow(
-      /UI_BRIDGE_RELAY_REQUIRE_REDIS=1/
+      /UI_BRIDGE_RELAY_REQUIRE_REDIS=1/,
     );
   });
 

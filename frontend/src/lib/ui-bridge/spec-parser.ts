@@ -45,12 +45,10 @@ export function parseAssertion(
         ? raw.severity
         : "info",
     enabled: raw.enabled !== false,
-    target:
-      (raw.target as SpecTarget | undefined) ??
-      ({
-        type: "search",
-        criteria: {},
-      } as SpecTarget),
+    target: (raw.target as SpecTarget | undefined) ?? ({
+      type: "search",
+      criteria: {},
+    } as SpecTarget),
     assertionType:
       typeof raw.assertionType === "string"
         ? (raw.assertionType as AssertionType)
