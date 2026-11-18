@@ -77,6 +77,7 @@ import {
   gateVerdictWords,
   joinedViaWords,
   memberViaPr,
+  titleBasisText,
   memberEmptyText,
   memberList,
   memberSessionKey,
@@ -317,6 +318,7 @@ function SubprojectBody({
   onChanged: () => void;
 }) {
   const s = detail.subproject;
+  const titleBasis = titleBasisText(s);
   const status = deriveVerdictStatus(detail.verdict ?? null);
   const context: RefContext = { units: detail.work_units, prs: detail.prs };
   const unread = unreadSources(detail.verdict?.sources ?? []);
@@ -658,7 +660,9 @@ function SubprojectBody({
         data-testid="coord-subproject-raw"
       >
         id {s.id} · slug {s.slug} · origin {s.origin} · title from{" "}
-        {s.title_source} · status {s.status}
+        {s.title_source}
+        {titleBasis !== null ? ` · title basis ${titleBasis}` : ""} · status{" "}
+        {s.status}
         {s.root_agent_session_id
           ? ` · root session ${s.root_agent_session_id}`
           : ""}

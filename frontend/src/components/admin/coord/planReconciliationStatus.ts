@@ -106,15 +106,23 @@ export type ReconciliationStatusClass =
   | "unset";
 
 /** coord's `work_unit_custody::Custody` states, exactly as it emits them. */
-export type ReconciliationCustodyState = "sole" | "ambiguous" | "unresolved";
+export type ReconciliationCustodyState =
+  | "sole"
+  | "declared"
+  | "ambiguous"
+  | "unresolved";
 
 /**
  * Who holds a live session's device, as coord resolved it. `session_name:
- * null` on `sole` means the session has NO name — not that it is unknown.
+ * null` on `sole` or `declared` means the session has NO name — not that it
+ * is unknown. `declared` means the live row is STAMPED with its declaring
+ * session, so `session_id` names it exactly even on a multi-session device.
  */
 export interface ReconciliationCustody {
   state: ReconciliationCustodyState;
   session_name?: string | null;
+  /** The declaring session's id — set only on `declared`. */
+  session_id?: string | null;
   live_session_count?: number | null;
 }
 
