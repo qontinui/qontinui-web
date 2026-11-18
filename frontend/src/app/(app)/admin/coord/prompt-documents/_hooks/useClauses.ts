@@ -37,12 +37,6 @@ export interface UseClausesOptions {
    * document list) can re-read it.
    */
   onAttrsSaved?: () => void;
-  /**
-   * The caller's own say over a write, checked beside the page's guard before
-   * every write: a write is sent only when BOTH allow it. `false` sends
-   * nothing (the caller says why). Omitted, the page's guard alone decides.
-   */
-  canWrite?: () => boolean;
 }
 
 /**
@@ -61,8 +55,7 @@ export interface UseClausesOptions {
  * pin from it. A clause write raced past the page's notice, or sent while the
  * page has no project to pin it to, is refused here, beside its send, and the
  * clause read and every write go in the page's project on every attempt, a
- * write in flight when another tab switches project included. The caller's
- * `canWrite` narrows that further and never widens it: a write needs both.
+ * write in flight when another tab switches project included.
  * The pin is the page's, never the caller's. It is a VALUE, as for the list's
  * other hooks (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
  * D10): the clause read re-fires only when the page's project changes.
@@ -73,7 +66,7 @@ export function useClauses(
   enabled: boolean,
   options: UseClausesOptions = {}
 ) {
-  const { onAttrsSaved, canWrite } = options;
+  const { onAttrsSaved } = options;
   const page = useRequiredPageWriteGuard();
   // Keyed on the project, not on the page's object: the clause read below
   // re-fires only when the pinned project actually changes.
@@ -82,9 +75,8 @@ export function useClauses(
     () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
     [pinTenant]
   );
-  /** Whether a write must not be sent: the page's guard or the caller's says so. */
-  const blocked = () =>
-    !page.writeAllowed() || (canWrite !== undefined && !canWrite());
+  /** Whether a write must not be sent: the page's guard says so. */
+  const blocked = () => !page.writeAllowed();
   const [clauses, setClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

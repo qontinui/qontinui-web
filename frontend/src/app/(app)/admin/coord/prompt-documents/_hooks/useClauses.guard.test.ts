@@ -2,9 +2,8 @@
  * `useClauses`' write guard. The hook is always under the prompt-documents
  * page's provider, and takes the page's guard and pin from it:
  *
- * - A clause write is sent only when BOTH the page's guard and the caller's
- *   own `canWrite` allow it. Either answering `false` sends NOTHING and
- *   reports failure. The caller narrows the page's guard; it never widens it.
+ * - A clause write is sent only when the page's guard allows it. Answering
+ *   `false` sends NOTHING and reports failure.
  * - What is sent goes in the page's pin.
  * - Outside the provider the hook throws: there is no unguarded mode.
  *
@@ -99,28 +98,11 @@ describe("useClauses write guard", () => {
     for (const fn of writes) expect(fn).not.toHaveBeenCalled();
   });
 
-  it("sends nothing while the caller's canWrite answers false, though the page's guard allows", async () => {
-    const pageAsked = vi.fn(() => true);
-    const { result } = mount(
-      false,
-      { writeAllowed: pageAsked, pin: { tenant: "t-b" } },
-      { canWrite: () => false }
-    );
-
-    const outcomes = await writeEveryWay(result);
-
-    expect(outcomes).toEqual([false, false, false, false, 0, false]);
-    for (const fn of writes) expect(fn).not.toHaveBeenCalled();
-    // Both were asked: the caller narrows the page's guard.
-    expect(pageAsked).toHaveBeenCalled();
-  });
-
-  it("writes when both allow, in the page's pin", async () => {
-    const { result } = mount(
-      false,
-      { writeAllowed: () => true, pin: { tenant: "t-b" } },
-      { canWrite: () => true }
-    );
+  it("writes when the page's guard allows, in the page's pin", async () => {
+    const { result } = mount(false, {
+      writeAllowed: () => true,
+      pin: { tenant: "t-b" },
+    });
 
     await act(async () => {
       await result.current.deleteClause("x");
