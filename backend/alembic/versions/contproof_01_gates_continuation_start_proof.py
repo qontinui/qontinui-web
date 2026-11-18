@@ -1,4 +1,4 @@
-"""coord.gates — continuation_start_proven_at / continuation_start_attempt
+"""coord.gates — continuation start proof: proven_at, attempt, respawn terminal
 
 Revision ID: contproof_01_gates_continuation_start_proof
 Revises: capmodel_02
@@ -34,8 +34,14 @@ proof:
 - ``continuation_start_attempt INTEGER NULL`` — which attempt the last proof or
   respawn reset referred to, as reported by the runner. Lets a proof from an
   earlier pane be told apart from the current one.
+- ``continuation_respawn_terminal_id TEXT NULL`` — the runner terminal id named
+  by the last ``continuation-respawned`` report. A respawn re-pins the SAME
+  attempt onto a new pane, so the attempt alone cannot tell a new respawn from
+  a retried report of the last one; the terminal id can. A report naming a
+  different terminal clears the proof; one naming the stored terminal is an
+  idempotent repeat.
 
-## Why both are NULLABLE with no default
+## Why all three are NULLABLE with no default
 
 Unlike ``continuation_spawn_attempts`` (a counter read by ``<`` and therefore
 ``NOT NULL DEFAULT 0``), these are an EVENT stamp and the attempt that event
@@ -61,7 +67,7 @@ Raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` / ``DROP COLUMN IF EXISTS``
 only ``coord.*``, and every statement names its schema, which is what the
 ``alembic-schema-arg-gate`` pre-commit hook
 (``.pre-commit-hooks/check_alembic_schema_args.py``) audits for raw
-``op.execute`` SQL. Because both columns are nullable with no default, the
+``op.execute`` SQL. Because all three columns are nullable with no default, the
 ``IF NOT EXISTS`` idiom's known blind spot (it is idempotent in a column's
 existence, not its constraints) has nothing to miss here.
 
@@ -87,7 +93,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add the continuation start-proof stamp and its attempt to coord.gates."""
+    """Add the continuation start-proof columns to coord.gates."""
     # When coord accepted the launched CLI's start proof for the current
     # attempt. NULL = unproven (the honest value for every existing row); the
     # respawn receiver resets it to NULL so a re-pinned pane proves its own
@@ -101,10 +107,19 @@ def upgrade() -> None:
         ALTER TABLE coord.gates
             ADD COLUMN IF NOT EXISTS continuation_start_attempt INTEGER NULL
         """)
+    # The runner terminal id the last respawn report named — the respawn
+    # receiver's idempotency key.
+    op.execute("""
+        ALTER TABLE coord.gates
+            ADD COLUMN IF NOT EXISTS continuation_respawn_terminal_id TEXT NULL
+        """)
 
 
 def downgrade() -> None:
     """Drop the continuation start-proof columns."""
+    op.execute(
+        "ALTER TABLE coord.gates DROP COLUMN IF EXISTS continuation_respawn_terminal_id"
+    )
     op.execute(
         "ALTER TABLE coord.gates DROP COLUMN IF EXISTS continuation_start_attempt"
     )
