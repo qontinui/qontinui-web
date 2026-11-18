@@ -1,7 +1,8 @@
 "use client";
 
-import type { SendTimePinOptions } from "../../_shared/useSendTimePin";
+import { useCallback } from "react";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
 import {
   isPolicyWriteLevel,
   POLICY_WRITE_DEFAULT_LEVEL,
@@ -28,7 +29,10 @@ import {
  *
  * 2. **A failed read-back is UNKNOWN.** On `readback_error` the last known-good
  *    value stays on screen and the error is surfaced. Painting the written level
- *    on an unconfirmed write is how a dial starts lying about the fleet.
+ *    on an unconfirmed write is how a dial starts lying about the fleet. The
+ *    page pins this dial's requests, so the shared dial reads the level again
+ *    at once, pinned, and what is shown becomes coord's — with the read-back's
+ *    own warning when that is not the level written.
  *
  * Three things are specific to THIS domain:
  *
@@ -59,20 +63,37 @@ import {
  * than on a settings page: they are two halves of one question, and the answer
  * is the more restrictive of them.
  *
- * `resolvePin` pins the read and the write to the project it names, asked as
- * each is sent — the prompt-documents page passes the project its list shows.
+ * **Which project, and when nothing is written.** On the prompt-documents
+ * page the read and the write are sent in the page's project, asked as each
+ * goes out, and nothing is read before the page knows it: the shared dial
+ * reads first then, and says it is waiting until it does. A write is refused
+ * — nothing sent, the page says why — while another tab's project switch is
+ * in effect, or while the page has no project to pin it to. Both come from
+ * the page's provider (`usePageSendGuard`), and the refusal sits here, beside
+ * the send, so no caller can leave it out. It is never mounted outside that provider,
+ * and throws if it is: there is no unguarded mode.
  */
-export function usePolicyWritePolicy(options: SendTimePinOptions = {}) {
+export function usePolicyWritePolicy() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
   // Read, write and read-back — with the refresh-vs-write race guard and the
-  // send-time pin — are the shared tenant-band dial's; this hook adds only the
-  // domain's level vocabulary below.
+  // send-time pin — are the shared tenant-band dial's; this hook adds the
+  // page's write guard and the domain's level vocabulary below. The shared
+  // dial takes the pin as its optional `resolvePin`: it serves pages with no
+  // such provider too, and they pass nothing.
   const dial = useTenantFleetPolicyDial<PolicyWriteLevel>(
     POLICY_WRITE_DOMAIN,
     "agent policy-write autonomy",
-    "devices",
-    options
+    "devices resolve",
+    { resolvePin }
   );
-  const { policy } = dial;
+  const { policy, setLevel: sendLevel } = dial;
+
+  /** `dial.setLevel`, refused while the page's guard says no. */
+  const setLevel = useCallback(
+    (level: PolicyWriteLevel, changeNote?: string): Promise<boolean> =>
+      writeAllowed() ? sendLevel(level, changeNote) : Promise.resolve(false),
+    [writeAllowed, sendLevel]
+  );
 
   // `"none"` means no row matched, which for this domain is the code default —
   // NOT off. Mirrors coord's `resolve_policy_write_level`; if the two ever
@@ -108,6 +129,8 @@ export function usePolicyWritePolicy(options: SendTimePinOptions = {}) {
 
   return {
     ...dial,
+    /** Write `level` at the tenant band — unless the page's guard says no. */
+    setLevel,
     /**
      * The level actually in force: the no-row case resolved to the code
      * default, an unparseable row resolved fail-closed the way coord enforces

@@ -82,6 +82,10 @@ import IORedis, { type Redis } from "ioredis";
 
 import { createLogger } from "@/lib/logger";
 import { safeRedisErrorText } from "@/lib/ui-bridge/redis-redact";
+import {
+  isParseableRedisUrl,
+  REDIS_URL_UNPARSEABLE_MESSAGE,
+} from "@/lib/ui-bridge/redis-url";
 
 import {
   HEARTBEATS_PER_TAB_PER_MIN,
@@ -175,6 +179,15 @@ function getClient(): Redis | null {
   const url = resolveUrl();
   if (!url) {
     log.info("redis_url_unset_failing_open");
+    client = null;
+    return null;
+  }
+  if (!isParseableRedisUrl(url)) {
+    // Fixed line, no value: never construct a client (and so never an error
+    // object carrying the URL) for a URL ioredis cannot parse.
+    log.warn("redis_url_unparseable_failing_open", {
+      error: REDIS_URL_UNPARSEABLE_MESSAGE,
+    });
     client = null;
     return null;
   }

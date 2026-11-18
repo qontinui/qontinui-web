@@ -22,6 +22,6 @@ export function useCitationScopeBackfillPolicy() {
   return useTenantFleetPolicyDial<CitationScopeBackfillWriteLevel>(
     CITATION_SCOPE_BACKFILL_WRITE_DOMAIN,
     "citation-scope backfill write",
-    "agents"
+    "agents resolve"
   );
 }
