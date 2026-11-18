@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "coord_iops_idx_02"
+_PARENT_REVISION_ID = "reflection_rates_01_unknown_is_null"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
