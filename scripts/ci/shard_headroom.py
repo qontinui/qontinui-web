@@ -15,6 +15,12 @@ ONE lane invokes it:
   "Measure Run Tests shard headroom" — nightly (``schedule``) and on
   ``workflow_dispatch`` only, never on a PR.
 
+ONE script imports it, and that is not a lane: ``scripts/ci/aggregate_setup_death.py``
+(plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict) reuses
+``fetch_jobs`` (with ``attempt=`` for one run attempt's listing), ``get_json``,
+``SHARD_NAME`` and ``MeasurementError``, so the ``Run Tests`` aggregate reads
+the shard jobs exactly as this alarm does. Change their contracts together.
+
 Verdicts, in precedence order
 -----------------------------
 
@@ -92,8 +98,10 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from fractions import Fraction
@@ -122,6 +130,9 @@ DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
 PER_PAGE = 100
 MAX_PAGES = 10
+#: Under a ``deadline`` (``fetch_jobs``), a page whose read would start with
+#: less than this left is refused rather than started.
+MIN_PAGE_READ_S = 1.0
 
 #: The committed durations map the shard deal reads, and the nightly artifact
 #: that proposes its replacement -- named in a `skewed` reason as the remedy.
@@ -410,30 +421,90 @@ def evaluate(
     )
 
 
-def fetch_jobs(repo: str, run_id: str, token: str, api_root: str = API_ROOT) -> list[dict[str, Any]]:
-    """Every latest-attempt job row of one run. Raises ``MeasurementError`` on any failure."""
+def get_json(
+    url: str, token: str, *, timeout: float = 30, user_agent: str = "qontinui-web-shard-headroom"
+) -> Any:
+    """GET one GitHub API URL and parse it. Raises ``MeasurementError`` on any failure.
+
+    ``timeout`` bounds this one read's socket operations; a caller with a
+    wall-clock budget passes what it has left.
+    """
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": user_agent,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 -- fixed https host
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise MeasurementError(f"GET {url} failed: {exc}") from exc
+
+
+def _page_timeout(
+    timeout: float, deadline: float | None, monotonic: Callable[[], float], url: str
+) -> float:
+    """One page's read bound: ``timeout``, or less when ``deadline`` is nearer."""
+    if deadline is None:
+        return timeout
+    left = deadline - monotonic()
+    if left < MIN_PAGE_READ_S:
+        raise MeasurementError(
+            f"the deadline passed before GET {url} could start ({left:.1f} s left)"
+        )
+    return min(timeout, left)
+
+
+def fetch_jobs(
+    repo: str,
+    run_id: str,
+    token: str,
+    api_root: str = API_ROOT,
+    *,
+    attempt: int | None = None,
+    timeout: float = 30,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> list[dict[str, Any]]:
+    """Every job row of one run. Raises ``MeasurementError`` on any failure.
+
+    Without ``attempt`` the read is ``filter=latest`` (the latest attempt's
+    rows). With it, the read is that one attempt's listing,
+    ``/attempts/<n>/jobs``, which lists every job of the run under that
+    attempt, re-run or carried over (measured at the plan's authoring on
+    qontinui-web run 42466217222, attempt 2 of a ``--failed`` re-run: all six
+    shards, each with an attempt-2 job id).
+
+    ``timeout`` bounds each page's read. ``deadline``, a ``monotonic()``
+    instant, bounds the WHOLE listing: the clock is re-read before every page,
+    each page's read gets ``timeout`` or what is left if that is less, and a
+    page that would start with under ``MIN_PAGE_READ_S`` left raises instead.
+    Without one (the nightly alarm's call) every page gets ``timeout`` and the
+    clock is never read, as before.
+    """
     if not repo or not run_id or not token:
         raise MeasurementError("GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_TOKEN are all required")
+    if attempt is not None and attempt < 1:
+        raise MeasurementError(f"run attempt {attempt} is not an attempt number")
     jobs: list[dict[str, Any]] = []
     for page in range(1, MAX_PAGES + 1):
-        url = (
-            f"{api_root}/repos/{repo}/actions/runs/{run_id}/jobs"
-            f"?filter=latest&per_page={PER_PAGE}&page={page}"
+        if attempt is None:
+            url = (
+                f"{api_root}/repos/{repo}/actions/runs/{run_id}/jobs"
+                f"?filter=latest&per_page={PER_PAGE}&page={page}"
+            )
+        else:
+            url = (
+                f"{api_root}/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs"
+                f"?per_page={PER_PAGE}&page={page}"
+            )
+        payload = get_json(
+            url, token, timeout=_page_timeout(timeout, deadline, monotonic, url)
         )
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "qontinui-web-shard-headroom",
-            },
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 -- fixed https host
-                payload = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise MeasurementError(f"GET {url} failed: {exc}") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
             raise MeasurementError(f"GET {url} returned no 'jobs' list")
         page_jobs = payload["jobs"]
