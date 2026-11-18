@@ -18,7 +18,16 @@ These tests pin the shape this repo depends on:
 - the scan step runs with `--exit-code 3` and titles both of its outcomes;
 - the script, run against a stubbed `curl`, exits 75 with the titled line on a
   refused download and on a served error page, and yields an executable binary
-  on a good tarball.
+  on a good tarball;
+- a FAILING test here never writes that titled line into the log of the
+  `Run Tests` shard running this module. On CI (`CI=true`) pytest's `-ra`
+  summary prints every line of a failure's message unprefixed, and the
+  Actions runner reads a line opening with `::` as a workflow command, so a
+  message holding the script's raw output would annotate the shard
+  `Gitleaks DID NOT RUN (not a verdict on this PR)`. Every message built from
+  that output is `defang`-ed (tests/setup_death_git.py), and
+  `test_a_failing_fetch_test_writes_no_workflow_command` runs pytest itself,
+  with the repo's addopts, over two deliberately failing fetch tests.
 """
 
 from __future__ import annotations
@@ -36,6 +45,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.setup_death_git import command_lines, defang, run_pytest_probe
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "secret-scan.yml"
@@ -168,7 +179,8 @@ def test_a_failed_fetch_exits_75_with_the_no_verdict_title(
 ) -> None:
     sha = hashlib.sha256(_tarball(tmp_path).read_bytes()).hexdigest()
     proc = _run(tmp_path, scenario, sha)
-    assert proc.returncode == 75, proc.stdout + proc.stderr
+    # Defanged: on CI the message's lines reach the shard log unprefixed.
+    assert proc.returncode == 75, defang(proc.stdout + proc.stderr)
     assert TITLE in proc.stdout
     assert (tmp_path / "gho").read_text() == ""
 
@@ -177,7 +189,72 @@ def test_a_failed_fetch_exits_75_with_the_no_verdict_title(
 def test_a_good_tarball_yields_an_executable_binary(tmp_path: Path) -> None:
     sha = hashlib.sha256(_tarball(tmp_path).read_bytes()).hexdigest()
     proc = _run(tmp_path, "ok", sha)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.returncode == 0, defang(proc.stdout + proc.stderr)
     line = (tmp_path / "gho").read_text().strip()
     assert line.startswith("bin=")
     assert os.access(line[len("bin=") :], os.X_OK)
+
+
+#: A test module that fails this module's two fetch tests the way a regression
+#: would, each with the fetch's titled line BELOW a first line of output, where
+#: the `-ra` summary prints it unprefixed: a good tarball whose binary does not
+#: run (the script prints its progress lines, then the title, and exits 75),
+#: and a script that exits 1, not 75, after a progress line and the title.
+_SHARD_LOG_PROBE = r"""
+import io
+import subprocess
+import tarfile
+
+import tests.test_secret_scan_download_guard as guard
+
+
+def _dead_binary(dest):
+    payload = b"#!/bin/sh\nexit 1\n"
+    path = dest / "good.tgz"
+    with tarfile.open(path, "w:gz") as tf:
+        info = tarfile.TarInfo(name="gitleaks")
+        info.size = len(payload)
+        info.mode = 0o755
+        tf.addfile(info, io.BytesIO(payload))
+    return path
+
+
+def test_a_good_tarball_whose_binary_does_not_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard, "_tarball", _dead_binary)
+    guard.test_a_good_tarball_yields_an_executable_binary(tmp_path)
+
+
+def test_a_failed_fetch_that_exits_1(tmp_path, monkeypatch):
+    real = guard._run
+
+    def exits_1(*args):
+        proc = real(*args)
+        return subprocess.CompletedProcess(
+            proc.args, 1, "gitleaks: a progress line\n" + proc.stdout, proc.stderr
+        )
+
+    monkeypatch.setattr(guard, "_run", exits_1)
+    guard.test_a_failed_fetch_exits_75_with_the_no_verdict_title(tmp_path, "refused")
+"""
+
+
+@requires_linux_bash
+@pytest.mark.parametrize("extra", [(), ("-v",)], ids=["repo-addopts", "shard-flags"])
+def test_a_failing_fetch_test_writes_no_workflow_command(tmp_path, extra):
+    """pytest itself, with the repo's addopts, over two failing fetch tests.
+
+    `repo-addopts` is backend/pytest.ini alone (`-v -ra --showlocals`);
+    `shard-flags` adds the second `-v` the shard's command line passes. Both
+    run with `CI=true`, as on Actions, so the `-ra` summary carries every line
+    of every failure's message: the fetch's titled line among them, and it
+    must reach the log broken.
+    """
+    code, out = run_pytest_probe(tmp_path, _SHARD_LOG_PROBE, *extra)
+    shown = defang(out)
+    # The probe failed as designed, with the title in what it printed:
+    assert code == 1, shown
+    assert "2 failed" in shown, shown
+    assert "short test summary info" in shown, shown
+    assert "Gitleaks DID NOT RUN (not a verdict on this PR)" in shown, shown
+    # ... and still no line of it is a workflow command.
+    assert command_lines(out) == [], defang("\n".join(command_lines(out)))

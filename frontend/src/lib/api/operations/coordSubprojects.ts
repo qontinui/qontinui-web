@@ -89,6 +89,11 @@ export interface SubprojectSummary {
   slug: string;
   title: string;
   title_source: string;
+  /** Which evidence a `root_session` title was taken from: `intent` |
+   *  `unit_plan` | `pr_title` | `session_name` | `derived`. `null` is a basis
+   *  coord did not record (never "derived"); absent is a coord that predates
+   *  the field. */
+  title_basis?: string | null;
   goal: string | null;
   origin: string;
   status: string;
