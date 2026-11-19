@@ -886,8 +886,9 @@ jobs:
       # cannot read repo files — this CI job is the trust boundary, §3.4); the
       # correlation_id joins the deploy to the land that triggered it. Coord's
       # merge train writes a coord.land_signatures row carrying the land's
-      # proposal id for every land it performs, and coord's declare resolves
-      # the id from it server-side whenever the body carries none. This step
+      # proposal id when it lands a PR (not for a land a new leader reconciles
+      # after a takeover), and coord's declare resolves the id from it
+      # server-side whenever the body carries none. This step
       # also reads it first, via coord's ingest-authed
       # GET /coord/lands/correlation?repo=&to_sha=, which is the same reader:
       # the one distinct non-null id for this repo at GITHUB_SHA, or null when
