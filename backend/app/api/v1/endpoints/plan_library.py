@@ -1579,10 +1579,13 @@ def _coord_custody(raw: object) -> ReconciliationCustody | None:
 
     Faithful to ``work_unit_custody.rs`` ``Custody::to_value``: ``sole``
     carries ``session_name`` (a ``null`` there is an UNNAMED session, kept as
-    ``None``), ``ambiguous`` carries ``live_session_count``, ``unresolved``
-    carries nothing. A missing object, a state outside those three, or an
-    ``ambiguous`` with no integer count is NOT coerced into one of them — it is
-    ``None``, and the console renders it UNKNOWN.
+    ``None``), ``declared`` carries ``session_id`` plus ``session_name`` (same
+    null rule) for a row stamped with its declaring session, ``ambiguous``
+    carries ``live_session_count``, ``unresolved`` carries nothing. A missing
+    object, a state outside those four, an ``ambiguous`` with no integer count,
+    or a ``declared`` whose ``session_id`` is not a valid UUID string is NOT
+    coerced into one of them — it is ``None``, and the console renders it
+    UNKNOWN.
     """
     if not isinstance(raw, dict):
         return None
@@ -1591,6 +1594,20 @@ def _coord_custody(raw: object) -> ReconciliationCustody | None:
         name = raw.get("session_name")
         return ReconciliationCustody(
             state="sole", session_name=name if isinstance(name, str) else None
+        )
+    if state == "declared":
+        raw_id = raw.get("session_id")
+        if not isinstance(raw_id, str):
+            return None
+        try:
+            session_id = UUID(raw_id)
+        except ValueError:
+            return None
+        name = raw.get("session_name")
+        return ReconciliationCustody(
+            state="declared",
+            session_id=session_id,
+            session_name=name if isinstance(name, str) else None,
         )
     if state == "ambiguous":
         count = raw.get("live_session_count")

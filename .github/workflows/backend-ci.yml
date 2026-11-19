@@ -11,6 +11,7 @@ on:
       # harness-diff guard and the workflow that pins and runs them.
       - '.github/workflows/secret-scan.yml'
       - '.github/scripts/fetch-gitleaks.sh'
+      - '.github/scripts/fetch-pinned-binary.sh'
       - '.github/scripts/harness-guarded.sh'
       # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
       # reads: a pin bump must run the ratchet it re-seeds.
@@ -128,6 +129,7 @@ on:
       # harness-diff guard and the workflow that pins and runs them.
       - '.github/workflows/secret-scan.yml'
       - '.github/scripts/fetch-gitleaks.sh'
+      - '.github/scripts/fetch-pinned-binary.sh'
       - '.github/scripts/harness-guarded.sh'
       # The pinned fleet-noun vocabulary tests/test_fleet_nouns_ratchet.py
       # reads: a pin bump must run the ratchet it re-seeds.
@@ -394,7 +396,7 @@ jobs:
             Run ruff (linting)|${{ steps.ruff_check.outcome }}|${{ steps.ruff_check.conclusion }}
             Run ruff format (formatting)|${{ steps.ruff_format.outcome }}|${{ steps.ruff_format.conclusion }}
             Run mypy (type checking)|${{ steps.mypy.outcome }}|${{ steps.mypy.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1444,7 +1446,7 @@ jobs:
             Collect the test suite|${{ steps.collect.outcome }}|${{ steps.collect.conclusion }}
             Select this shard's test files|${{ steps.select_shard.outcome }}|${{ steps.select_shard.conclusion }}
             Run tests with coverage|${{ steps.pytest.outcome }}|${{ steps.pytest.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1471,16 +1473,30 @@ jobs:
         with:
           persist-credentials: false
 
-      # Trivy's binary goes under runner.temp, not setup-trivy's default
-      # $HOME/.local/bin: on the self-hosted light lane every runner shares one
-      # HOME. The same setup-trivy pin trivy-action v0.36.0 calls internally.
+      # Trivy's binary goes under runner.temp: on the self-hosted light lane
+      # every runner shares one HOME. It used to come from setup-trivy, which
+      # downloads from the release CDN on every run with no sha256 pin (a CDN 504
+      # on 2026-11-08 failed this check without ever scanning). Now
+      # .github/scripts/fetch-pinned-binary.sh resolves it from the runner's tool
+      # cache first and checks the pinned sha256 on every path; its failure is
+      # exit 75 with a `DID NOT RUN` annotation naming the cache state and the CDN
+      # status. This step stays a SETUP row of `Declare a setup death` below, the
+      # one writer of the not-a-verdict phrase, which skips a PR editing the script.
+      # The sha256 is the release's own trivy_0.75.0_checksums.txt entry for
+      # trivy_0.75.0_Linux-64bit.tar.gz. Plan
+      # 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage.
       - name: Install Trivy
         id: trivy_install
-        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
-        with:
-          version: v0.75.0
-          path: ${{ runner.temp }}/trivy
-          cache: false
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 8
+        env:
+          FPB_TOOL: trivy
+          FPB_VERSION: 0.75.0
+          FPB_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+          FPB_URL: https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          FPB_MEMBER: trivy
+          FPB_ADD_TO_PATH: '1'
+        run: bash .github/scripts/fetch-pinned-binary.sh
 
       - name: Run Trivy vulnerability scanner
         id: trivy_scan
@@ -1625,7 +1641,7 @@ jobs:
           VERDICT_STEPS: |
             Run Trivy vulnerability scanner|${{ steps.trivy_scan.outcome }}|${{ steps.trivy_scan.conclusion }}
             Run safety check (dependency vulnerabilities)|${{ steps.safety_check.outcome }}|${{ steps.safety_check.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
@@ -1814,7 +1830,7 @@ jobs:
           # with scripts/ci first on sys.path, so a module a PR adds there
           # runs inside it. A PR touching any of it gets no title (rule 5,
           # the harness-diff guard).
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$|^scripts/ci/'
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$|^scripts/ci/'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then

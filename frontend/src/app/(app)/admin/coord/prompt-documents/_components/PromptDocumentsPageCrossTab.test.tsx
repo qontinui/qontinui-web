@@ -2,7 +2,7 @@
  * The prompt-documents PAGE after another tab switches project: the settings
  * beside the list — kind tiers, the three dials, session compliance — write
  * through the same per-request project as the list's rows, so they are
- * disabled with them while the list's notice stands.
+ * disabled with them while the page's notice stands.
  *
  * Renders the real `PromptDocumentsPage` and the real list (through the real
  * `HttpClient`, `fetch` faked); the five settings sections are stubbed as one
@@ -140,5 +140,32 @@ describe("the page's settings after another tab switches project", () => {
       ).not.toBeInTheDocument()
     );
     for (const id of STUBS) expect(screen.getByTestId(id)).toBeEnabled();
+  }, 20_000);
+});
+
+describe("the page after the sidebar's project selector in another tab switches project", () => {
+  it("raises a red notice naming the tab as the cause, and moves focus to its Reload", async () => {
+    // The arming test of PR-B1: it enters where the operator does, the page
+    // itself, and the other tab's switch arrives as the `storage` event the
+    // selector's write causes (`ProjectSelector.tsx:76-82`).
+    localStorage.setItem(KEY, B);
+    render(<PromptDocumentsPage />);
+    await screen.findByTestId(
+      "doc-row-policy-bravo-only",
+      {},
+      { timeout: 5000 }
+    );
+    act(() => screen.getByTestId(STUBS[0]!).focus());
+
+    await act(async () => anotherTabStores(SYS));
+
+    const notice = await screen.findByTestId("prompt-documents-cross-tab");
+    expect(notice).toHaveClass("border-red-500/40", "bg-red-500/10");
+    expect(notice).toHaveTextContent(
+      "The active project was changed in another tab"
+    );
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab-reload")
+    ).toHaveFocus();
   }, 20_000);
 });

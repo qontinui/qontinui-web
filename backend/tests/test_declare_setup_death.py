@@ -122,10 +122,14 @@ RESERVED_PHRASES = (
 )
 LINT_JOB = "Lint & Format Check"
 LINT_TITLE = "Lint & Format Check SETUP FAILED (not a verdict on this PR)"
+#: backend-ci `lint`'s own HARNESS_PATHS_RE, byte for byte; pinned by
+#: test_backend_ci_harness_is_the_lint_jobs_own_pattern so it cannot drift.
 BACKEND_CI_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
     r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^\.github/scripts/fetch-pinned-binary\.sh$"
+    r"|^backend/poetry\.toml$"
 )
 
 SETUP_POETRY_DIED = (
@@ -932,6 +936,10 @@ RUST_TOOLCHAIN_CARRIERS = frozenset({"style-gate.yml"})
 # backend-ci's `Install safety` resolves its interpreter through poetry, which
 # reads the PR's own backend/poetry.toml (`create = false`, `no-pip = true`).
 POETRY_TOML_CARRIERS = frozenset({"backend-ci.yml"})
+#: The carriers whose SETUP rows run `.github/scripts/fetch-pinned-binary.sh`
+#: (plan 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage): a PR
+#: that edits that script is a harness edit, never declared not-a-verdict.
+FETCH_PINNED_CARRIERS = frozenset({"backend-ci.yml", "workflow-lint.yml"})
 
 
 def _harness_literal(workflow: str) -> str:
@@ -946,6 +954,8 @@ def _harness_literal(workflow: str) -> str:
         "|^\\.github/scripts/declare-setup-death\\.sh$"
         "|^\\.github/scripts/harness-diff-guard\\.sh$"
     )
+    if workflow in FETCH_PINNED_CARRIERS:
+        pattern += "|^\\.github/scripts/fetch-pinned-binary\\.sh$"
     if workflow in FRONTEND_LOCKFILE_CARRIERS:
         pattern += "|^frontend/package(-lock)?\\.json$"
     if workflow in RUST_TOOLCHAIN_CARRIERS:
@@ -2177,6 +2187,35 @@ def test_the_poetry_installer_pipe_fails_when_the_download_does(workflow, job_id
     )
 
 
+def test_every_poetry_installer_pipe_in_any_workflow_fails_on_a_download_outage():
+    """Keyed on the pipe itself, not the `poetry_install` step id, and over every
+    workflow, carrier or not: an unguarded pipe reads green on a dead download."""
+    pipes = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_id, job in (_workflow(path.name).get("jobs") or {}).items():
+            for step in job.get("steps") or []:
+                lines = str(step.get("run") or "").splitlines()
+                for i, line in enumerate(lines):
+                    if "install.python-poetry.org" not in line:
+                        continue
+                    where = f"{path.name}:{job_id}:{step.get('name')}"
+                    pipes.append(where)
+                    assert any(
+                        prior.strip() == "set -o pipefail" for prior in lines[:i]
+                    ), f"{where}: pipefail must precede the installer pipe"
+                    assert "curl -fsSL https://install.python-poetry.org" in line, (
+                        f"{where}: curl must fail on an HTTP error (-f)"
+                    )
+    # The census must reach at least every carrier's installer.
+    assert len(pipes) >= len(POETRY_INSTALLER_STEPS), pipes
+
+
+def test_backend_ci_harness_is_the_lint_jobs_own_pattern():
+    """`_pr_env`'s default harness is the pattern the lint carrier really runs."""
+    step = _declarer(_job("backend-ci.yml", "lint"))
+    assert step["env"]["HARNESS_PATHS_RE"] == BACKEND_CI_HARNESS
+
+
 @requires_bash_and_git
 @pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
 def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
@@ -2198,6 +2237,30 @@ def test_a_poetry_toml_edit_withholds_only_where_setup_reads_it(
         reason = _assert_withheld(out)
         assert "harness-diff guard read true" in reason, _defang(out)
         assert "('backend/poetry.toml')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_fetch_script_edit_withholds_only_where_setup_runs_it(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own pattern, against a PR that adds only the fetch script."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={".github/scripts/fetch-pinned-binary.sh": "#!/usr/bin/env bash\n"},
+    )
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in FETCH_PINNED_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
     else:
         assert _titles(out) == [LINT_TITLE], _defang(out)
 

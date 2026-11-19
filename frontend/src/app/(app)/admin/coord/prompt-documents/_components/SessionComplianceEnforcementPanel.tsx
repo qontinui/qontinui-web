@@ -176,35 +176,34 @@ export function SessionComplianceEnforcementPanel({
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-1.5">
-          <h3 className="text-sm font-semibold">
-            Session compliance check
-          </h3>
+          <h3 className="text-sm font-semibold">Session compliance check</h3>
           <p className="text-sm text-muted-foreground">
             At the end of every turn, your runner checks the session for the{" "}
             <strong>POLICY_COMPLIANCE report</strong> your session policy
             requires — the closing list of every piece of work the session took
-            on, marked landed, in&nbsp;train, gated, deferred or surfaced. If the
-            report is missing, the session is asked to produce it.
+            on, marked landed, in&nbsp;train, gated, deferred or surfaced. If
+            the report is missing, the session is asked to produce it.
           </p>
           <p className="text-sm text-muted-foreground">
-            Coord then <strong>reconciles what the report claims</strong> against
-            what it independently observed — which pull requests actually landed,
-            which gates are actually open — and records a verdict per session
-            below. That reconciliation is the point: a report that merely says
-            the right words is not evidence, and this is what makes the claims
-            checkable rather than believed.
+            Coord then <strong>reconciles what the report claims</strong>{" "}
+            against what it independently observed — which pull requests
+            actually landed, which gates are actually open — and records a
+            verdict per session below. That reconciliation is the point: a
+            report that merely says the right words is not evidence, and this is
+            what makes the claims checkable rather than believed.
           </p>
           <p className="text-sm text-muted-foreground">
             The three parts sit in different places, which is why the switch is
             here: <strong>the runner runs the check</strong> (a turn-end hook
-            shipped inside the runner binary and installed by it — you don&apos;t
-            wire anything up), <strong>coord reconciles and stores</strong> the
-            verdicts, and <strong>this page controls it</strong>.
+            shipped inside the runner binary and installed by it — you
+            don&apos;t wire anything up),{" "}
+            <strong>coord reconciles and stores</strong> the verdicts, and{" "}
+            <strong>this page controls it</strong>.
           </p>
           <p className="text-sm text-muted-foreground">
-            Two things it deliberately does <em>not</em> claim: it cannot prove a
-            session read your policy, only that a report exists and holds up; and
-            deferred or surfaced items are checked for shape only, because
+            Two things it deliberately does <em>not</em> claim: it cannot prove
+            a session read your policy, only that a report exists and holds up;
+            and deferred or surfaced items are checked for shape only, because
             nothing observable can confirm them.
           </p>
         </div>
@@ -225,9 +224,9 @@ export function SessionComplianceEnforcementPanel({
         <p className="text-sm text-muted-foreground">
           <strong className="text-foreground">What this covers.</strong>{" "}
           Compliance is checked for sessions started from this runner. Sessions
-          started by hand in an external terminal, on another machine, or under a
-          different runner instance are not covered — and, because the runner can
-          only see its own sessions, they do not appear below as uncovered
+          started by hand in an external terminal, on another machine, or under
+          a different runner instance are not covered — and, because the runner
+          can only see its own sessions, they do not appear below as uncovered
           either. Switching this on does not make them checked.
         </p>
       </div>
@@ -259,8 +258,9 @@ export function SessionComplianceEnforcementPanel({
           {applicability.detail}
         </p>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          This is worked out by coord, not set here: it checks whether the clause
-          named below is present in the active version of its prompt document
+          This is worked out by coord, not set here: it checks whether the
+          clause named below is present in the active version of its prompt
+          document
           {config.prompt_document_version != null
             ? ` (version ${config.prompt_document_version})`
             : ""}
@@ -369,8 +369,8 @@ export function SessionComplianceEnforcementPanel({
           <p className="text-xs text-muted-foreground">
             A <code>document#clause-id</code> reference, e.g.{" "}
             <code>{DEFAULT_ENFORCED_CLAUSE_REF}</code>. This is the rule the
-            check exists to hold sessions to, and it is also what decides whether
-            the check applies at all.
+            check exists to hold sessions to, and it is also what decides
+            whether the check applies at all.
           </p>
         </div>
 
@@ -423,7 +423,10 @@ export function SessionComplianceEnforcementPanel({
           {versions ? ` (${versions.length})` : ""}
         </button>
         {historyOpen && (
-          <div className="mt-2 space-y-2" data-testid="compliance-config-history">
+          <div
+            className="mt-2 space-y-2"
+            data-testid="compliance-config-history"
+          >
             {/* Read failures get their own sentence. "No recorded changes yet"
                 is a positive claim about this tenant's settings, and must never
                 be rendered off a route we could not read — a single-route 404
