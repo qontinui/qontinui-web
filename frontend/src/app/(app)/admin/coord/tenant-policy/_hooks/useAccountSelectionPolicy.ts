@@ -37,7 +37,7 @@ export function useAccountSelectionPolicy() {
   const dial = useTenantFleetPolicyDial<AccountSelectionLevel>(
     ACCOUNT_SELECTION_DOMAIN,
     "account selection",
-    "runners"
+    "runners resolve"
   );
   const { policy } = dial;
 

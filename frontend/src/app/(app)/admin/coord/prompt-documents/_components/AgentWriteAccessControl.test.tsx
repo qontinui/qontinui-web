@@ -31,7 +31,7 @@
  *    entirely by a build that predates them, and that window is real.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -108,8 +108,14 @@ async function itemTitle(d: PromptDocumentSummary, tier: AgentWriteTier) {
 }
 
 beforeEach(() => {
+  // A page in a named project, as production's always is: a page with no
+  // project to pin a write to refuses every write (`usePageWriteGuard`).
+  localStorage.setItem("qontinui.active_tenant_id", "t-tenant");
   getMock.mockReset();
   patchMock.mockReset();
+});
+afterEach(() => {
+  localStorage.removeItem("qontinui.active_tenant_id");
 });
 
 describe("AgentWriteAccessControl — which level decided", () => {

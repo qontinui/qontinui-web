@@ -47925,7 +47925,7 @@
         "type": "object"
       },
       "ReconciliationCustody": {
-        "description": "Who holds a live session's device, as coord resolved it.\n\nForwarded from coord's ``custody`` object (``work_unit_custody.rs``); never\nderived here.\n\n* ``sole`` \u2014 exactly one live session on the device in this tenant.\n  ``session_name`` is its display name, and ``None`` there means the\n  session has NO name \u2014 not that the name is unknown.\n* ``ambiguous`` \u2014 ``live_session_count`` (\u2265 2) sessions share the device,\n  so naming any one would be a guess. Render \"N sessions\".\n* ``unresolved`` \u2014 coord could not establish custody (a failed count, a\n  race, or a session in another tenant). UNKNOWN, never \"nobody\".\n\nA custody object coord sent in a state this model does not recognise is\ndropped to ``None`` on the session row (UNKNOWN) rather than coerced.",
+        "description": "Who holds a live session's device, as coord resolved it.\n\nForwarded from coord's ``custody`` object (``work_unit_custody.rs``); never\nderived here.\n\n* ``sole`` \u2014 exactly one live session on the device in this tenant.\n  ``session_name`` is its display name, and ``None`` there means the\n  session has NO name \u2014 not that the name is unknown.\n* ``declared`` \u2014 the live session's ``coord.agent_status`` row is STAMPED\n  with its writer's session, so ``session_id`` names the declarer exactly\n  \u2014 even on a device hosting several live sessions, since the stamp is\n  not a guess. coord emits it INSTEAD of ``sole``/``ambiguous`` for a\n  stamped row. ``session_name`` ``None`` is an UNNAMED session, as on\n  ``sole``.\n* ``ambiguous`` \u2014 ``live_session_count`` (\u2265 2) sessions share the device,\n  so naming any one would be a guess. Render \"N sessions\".\n* ``unresolved`` \u2014 coord could not establish custody (a failed count, a\n  race, or a session in another tenant). UNKNOWN, never \"nobody\".\n\nA custody object coord sent in a state this model does not recognise is\ndropped to ``None`` on the session row (UNKNOWN) rather than coerced.",
         "properties": {
           "live_session_count": {
             "anyOf": [
@@ -47937,6 +47937,18 @@
               }
             ],
             "title": "Live Session Count"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "session_name": {
             "anyOf": [
@@ -47952,6 +47964,7 @@
           "state": {
             "enum": [
               "sole",
+              "declared",
               "ambiguous",
               "unresolved"
             ],
@@ -114200,7 +114213,7 @@
             }
           },
           {
-            "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+            "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved`` / ``declared`` + ``session_id`` + ``session_name``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
             "in": "query",
             "name": "resolve_session_names",
             "required": false,
@@ -114213,7 +114226,7 @@
                   "type": "null"
                 }
               ],
-              "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
+              "description": "With ``include_live_sessions``: attach coord's ``custody`` object (``sole`` + ``session_name`` / ``ambiguous`` + ``live_session_count`` / ``unresolved`` / ``declared`` + ``session_id`` + ``session_name``) to every live session. coord echoes ``resolve_session_names: true`` only when it resolved them; no echo means an older coord (UNKNOWN).",
               "title": "Resolve Session Names"
             }
           }
@@ -115481,6 +115494,58 @@
           }
         ],
         "summary": "Post Pr Merge Onboarding Repo Binding",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/repos/{repo}": {
+      "delete": {
+        "description": "Stop governing an enrolled repo: un-enroll it with a recorded reason.\n\nProxies coord's ``DELETE /coord/canonical-repos?repo=<owner/name>``, the\ndoor ``coord_onboard_unenroll_repo`` shares one core with, and sends the\nreason beside it as ``reason`` (read by coord from plan Phase 7 on). The\n``owner/name`` path param carries a slash, so it is a ``{repo:path}`` here\n(the restore route's shape); it travels to coord as the ``repo`` query\nparameter. Backs the \"Stop governing\" action on an enrolled row of the\nConnected Organizations card; the row's undo is Re-enroll (the restore\nroute above), on the same card.\n\nAuthz \u2014 ``require_coord_tenant_admin_target``: admin IN THE ACTIVE TENANT,\nthe tenant the write lands in. Coord re-checks its own, stricter bar\n(``strategy_admin``) on the forwarded bearer and refuses with ``403\nstrategy_admin_required``.\n\nRefused HERE, with nothing sent to coord:\n  * ``400 {\"error\": \"invalid_repo\"}`` \u2014 the path is not ``owner/name``;\n  * ``400 {\"error\": \"reason_required\"}`` \u2014 no reason, or only whitespace.\n    Un-enrolling is sticky and silent (the repo stops appearing wherever\n    coord lists governed repos), so the WHY is required at this door, where\n    coord itself treats it as optional (``coord_onboard_unenroll_repo``\n    today, the HTTP door's ``reason`` from plan Phase 7);\n  * ``400 {\"error\": \"reason_too_long\", \"max_length\": <cap>}`` \u2014 over\n    :data:`UNENROLL_REASON_MAX` after trimming.\n\nCoord's answers:\n  * ``204`` \u2014 the tenant's governance rows were removed and the tombstone\n    written. Answered here as a BODILESS ``204``: not through\n    ``_proxy_coord_delete``, which turns a ``204`` into ``200 {\"status\":\n    \"ok\"}``, and not as the JSON response the verbatim helper builds for\n    it (``_proxy_coord_verbatim`` wraps coord's empty body as ``{\"detail\":\n    \"\"}``, a recorded oddity of that helper's characterization suite,\n    ``tests/test_coord_proxy_contract.py``), because a 204 carries no\n    content;\n  * ``404 {\"error\": \"repo not found: <repo>\", \"tombstoned\": bool, \"note\":\n    str}`` \u2014 nothing of the caller tenant's was removed. ``tombstoned``\n    says whether a suppression was written anyway and ``note`` says what\n    that means for the tenant; both pass through VERBATIM, whatever coord\n    sends, because their meaning moves with coord (plan Phase 7 answers\n    ``tombstoned: false`` for a tenant that does not govern the repo);\n  * any other refusal (``403 strategy_admin_required``, ``400``, ``500``)\n    \u2014 status and body verbatim.\n\nTransport failures are the web's own refusals (``_proxy_coord_verbatim``):\n``502 coord_unreachable`` (coord never saw the request), ``504\ncoord_write_timeout`` / ``answer_lost`` (the removal may have been\napplied \u2014 re-read before retrying).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repos_repo_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Why coord stops governing the repository, recorded on the un-enrollment tombstone. Required and non-blank; at most 500 characters after trimming.",
+            "in": "query",
+            "name": "reason",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Reason",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Pr Merge Onboarding Repo",
         "tags": [
           "operations"
         ]

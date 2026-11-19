@@ -7,6 +7,7 @@ import type {
   RegisteredDevice,
 } from "@/types/runner";
 import { HttpClient } from "./http-client";
+import { deviceApiErrorMessage } from "@/lib/api/device-error";
 
 /**
  * A device row as it arrives off the wire. `tenant_bindings` may be absent
@@ -78,10 +79,10 @@ export class RunnerService {
     );
 
     if (!response.ok) {
-      const error = await response
-        .json()
-        .catch(() => ({ detail: "Failed to deregister runner" }));
-      throw new Error(error.detail || "Failed to deregister runner");
+      const body: unknown = await response.json().catch(() => ({}));
+      throw new Error(
+        deviceApiErrorMessage(body, "Failed to deregister runner")
+      );
     }
   }
 

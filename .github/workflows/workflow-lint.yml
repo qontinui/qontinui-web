@@ -168,63 +168,31 @@ jobs:
       - name: Install zizmor and actionlint (pinned, sha256-verified, host-cached)
         id: install
         if: steps.arch.outcome == 'success'
-        # Cold fetch worst case: per tarball 2 attempts x 240 s + 5 s delay,
-        # 2 tarballs = 970 s, under this 18 min bound. A warm host-cache hit
-        # is a local copy + sha256 check.
+        # Two fetches, each bounded at 120 s x 4 attempts but capped at 240 s of
+        # retrying, so the worst cold case is about 12 min, under this 18 min
+        # bound. A warm host-cache hit is a local copy + sha256 check.
         timeout-minutes: 18
-        # HOST CACHE: verified release tarballs are kept in the runner's tool
-        # cache, keyed by their pinned sha256, so a host downloads each pinned
-        # version once instead of once per job. Before this, a saturated link
-        # timed the 9 MB zizmor download out at curl's 60 s bound (4 runs on
-        # 2026-10-13, e.g. qontinui-coord run 38463449752).
-        # The cache is NOT trusted and NEVER required: a hit is copied into this
-        # job's private $RUNNER_TEMP and its sha256 checked before use (so
-        # nothing can swap it between check and extract); a miss downloads
-        # straight into $RUNNER_TEMP and is checked there; populating the cache
-        # afterwards is best-effort (temp name + `mv -T` rename), so a planted
-        # file, a directory at the key or an unwritable cache only costs a
-        # download, never the install.
+        # Logic: .github/scripts/fetch-pinned-binary.sh (plan
+        # 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage). It
+        # keeps the HOST CACHE this step always had (verified release tarballs in
+        # the runner's tool cache, keyed by tool + version + pinned sha256; a
+        # hit is copied into $RUNNER_TEMP and its sha256 checked there, never
+        # trusted for its path), and on a failure prints one `DID NOT RUN`
+        # annotation naming the cache state AND the CDN status and exits 75.
+        # This step stays a SETUP row below, so the declarer is the one writer
+        # of the not-a-verdict phrase and skips it for a PR editing the script.
+        # There is no actions/cache seed on hosted runners: see the script.
         run: |
-          set -Eeuo pipefail  # -E: the ERR trap must also fire inside get()
-          trap 'echo "::error::workflow-lint: tool install failed (download, sha256 or extract); check failed"; echo "reason=install failed" >> "$GITHUB_OUTPUT"' ERR
-          tmp=""
-          trap 'rm -f "$tmp"' EXIT
-          bin="${RUNNER_TEMP}/workflow-lint-bin"
-          cache="${RUNNER_TOOL_CACHE:-${HOME}/.cache}/qontinui-workflow-lint"
-          mkdir -p "$bin"
-          mkdir -p "$cache" 2>/dev/null || true
-          verify() { printf '%s  %s\n' "$1" "$2" | sha256sum -c "${@:3}" -; }
-          # get <name> <sha256> <url>: leaves a verified copy at $bin/<name>.tar.gz
-          get() {
-            local name="$1" want="$2" url="$3"
-            local hit="${cache}/${want}.tar.gz" copy="${bin}/${name}.tar.gz"
-            if [[ -f "$hit" ]] && cp -f -- "$hit" "$copy" 2>/dev/null \
-                && verify "$want" "$copy" --status; then
-              echo "${name}: host-cache hit (${hit})"
-              return 0
-            fi
-            rm -f -- "$copy"
-            curl --fail --silent --show-error --location \
-              --connect-timeout 20 --max-time 240 --retry 1 --retry-delay 5 \
-              -o "$copy" "$url"
-            verify "$want" "$copy"
-            # best-effort cache fill; any failure here only means no cache
-            if tmp="$(mktemp "${cache}/.download.XXXXXX" 2>/dev/null)" \
-                && cp -f -- "$copy" "$tmp" && mv -fT -- "$tmp" "$hit" 2>/dev/null; then
-              tmp=""
-            else
-              rm -f -- "$tmp"; tmp=""
-              echo "${name}: host cache not updated (${cache} unusable); continuing"
-            fi
-          }
-          get zizmor "$ZIZMOR_SHA256" \
-            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-          tar xzf "${bin}/zizmor.tar.gz" -C "$bin" zizmor
-          get actionlint "$ACTIONLINT_SHA256" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          tar xzf "${bin}/actionlint.tar.gz" -C "$bin" actionlint
-          rm -f "${bin}/zizmor.tar.gz" "${bin}/actionlint.tar.gz"
-          echo "$bin" >> "$GITHUB_PATH"
+          set -Eeuo pipefail
+          trap 'echo "reason=install failed (see the DID NOT RUN annotation)" >> "$GITHUB_OUTPUT"' ERR
+          FPB_TOOL=zizmor FPB_VERSION="$ZIZMOR_VERSION" FPB_SHA256="$ZIZMOR_SHA256" \
+            FPB_URL="https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz" \
+            FPB_MEMBER=zizmor FPB_ADD_TO_PATH=1 \
+            bash .github/scripts/fetch-pinned-binary.sh
+          FPB_TOOL=actionlint FPB_VERSION="$ACTIONLINT_VERSION" FPB_SHA256="$ACTIONLINT_SHA256" \
+            FPB_URL="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            FPB_MEMBER=actionlint FPB_VERIFY_ARGS=-version FPB_ADD_TO_PATH=1 \
+            bash .github/scripts/fetch-pinned-binary.sh
       - name: zizmor
         id: zizmor
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -459,7 +427,7 @@ jobs:
           VERDICT_STEPS: |
             !zizmor|${{ steps.zizmor.outcome }}|${{ steps.zizmor.conclusion }}
             !actionlint|${{ steps.actionlint.outcome }}|${{ steps.actionlint.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
+          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
