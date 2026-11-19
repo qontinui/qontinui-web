@@ -234,7 +234,8 @@ def _shard_title(n: int) -> str:
 RUN_TESTS_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
     r"|^\.github/scripts/declare-setup-death\.sh$"
-    r"|^\.github/scripts/harness-diff-guard\.sh$|^backend/poetry\.toml$"
+    r"|^\.github/scripts/harness-diff-guard\.sh$"
+    r"|^\.github/scripts/fetch-pinned-binary\.sh$|^backend/poetry\.toml$"
     r"|^scripts/ci/"
 )
 BASH = shutil.which("bash")

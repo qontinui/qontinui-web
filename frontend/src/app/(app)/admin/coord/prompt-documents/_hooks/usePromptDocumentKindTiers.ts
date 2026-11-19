@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   clearKindTier,
@@ -9,9 +9,11 @@ import {
   type KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
 import {
+  useFirstPinnedRead,
   useSendTimePin,
-  type SendTimePinOptions,
 } from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import type { AgentWriteTier } from "../types";
 
 function message(err: unknown, fallback: string): string {
@@ -52,25 +54,37 @@ function message(err: unknown, fallback: string): string {
  * show them. A control whose NAME promises more than the deployed build
  * delivers — in the permissive direction — is worse than no control.
  *
- * ## Which project it reads and writes
+ * ## Which project it reads and writes, and when it writes nothing
  *
- * With `resolvePin`, every read — the read-back after each write included —
- * and every write is sent in the project it names, asked as each goes out and
- * kept on every attempt. The prompt-documents page passes the project its list
- * shows, so a tier write re-issued after another tab's switch cannot open or
- * close a kind in that tab's project, and its read-back cannot show that
- * project's tiers as this one's. Omitted, each is sent in the project stored
- * when it is made.
+ * On the prompt-documents page it reads the page's guard and pin from the
+ * page's provider (`usePageSendGuard`). Every read — the read-back after each
+ * write included — and every write is sent in the page's project, asked as
+ * each goes out and kept on every attempt, so a tier write re-issued after
+ * another tab's switch cannot open or close a kind in that tab's project, and
+ * its read-back cannot show that project's tiers as this one's. Nothing is
+ * read before the page knows its project: the first read goes out then
+ * (`useFirstPinnedRead`), and `waitingForProject` says the hook is waiting.
+ * And a write is refused — nothing sent, the page says why — while another
+ * tab's switch is in effect, or while the page has no project to pin it to:
+ * the check sits beside the send, which reads the pin it is sent in
+ * (`pinForWrite`), so no caller can leave it out. It is never
+ * mounted outside the page's provider, and throws if it is: there is no
+ * unguarded mode.
  */
-export function usePromptDocumentKindTiers({
-  resolvePin,
-}: SendTimePinOptions = {}) {
-  // One identity whatever the caller passes, so the mount read runs once.
+export function usePromptDocumentKindTiers() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the first read runs once.
   const sendPin = useSendTimePin(resolvePin);
   const [data, setData] = useState<KindTiersResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading only once a read goes out: not while waiting for a project.
+  const [loading, setLoading] = useState(() => sendPin() !== undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped when a write LANDS. A read that began before it may answer after
+  // the write's own read-back; applying it would paint the tiers as they were
+  // before the write. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`).
+  const writeGeneration = useRef(0);
 
   // Returns whether the read SUCCEEDED. `setTier`/`clearTier` need that answer:
   // this function swallows its own failure by design (the last known-good rows
@@ -78,13 +92,20 @@ export function usePromptDocumentKindTiers({
   // displayed state is current — and a success toast raised through a failed
   // read-back is the write's echo wearing a read's clothes.
   const load = useCallback(async (): Promise<boolean> => {
+    const pin = sendPin();
+    // No project to read in yet: nothing is sent, and what is shown stays.
+    if (pin === undefined) return false;
+    const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await fetchKindTiers(sendPin());
+      const view = await fetchKindTiers(pin);
+      // A write landed since: not what is shown, so not a success.
+      if (generation !== writeGeneration.current) return false;
       setData(view);
       setError(null);
       return true;
     } catch (err) {
+      if (generation !== writeGeneration.current) return false;
       // Keep the last known-good rows on screen. Blanking them would read as
       // "no kind has a setting", which is a claim about the operator's
       // configuration that a failed read is no evidence for.
@@ -95,9 +116,7 @@ export function usePromptDocumentKindTiers({
     }
   }, [sendPin]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const waitingForProject = useFirstPinnedRead(sendPin, () => void load());
 
   /**
    * Set one kind's tier, then RELOAD.
@@ -111,9 +130,12 @@ export function usePromptDocumentKindTiers({
    */
   const setTier = useCallback(
     async (kind: string, tier: AgentWriteTier): Promise<boolean> => {
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
-        await setKindTier(kind, tier, sendPin());
+        await setKindTier(kind, tier, pin);
+        writeGeneration.current += 1;
         const confirmed = await load();
         // `deny` goes through this same function, so one message for all three
         // tiers said "Agents may now write ... : deny" — the display asserting
@@ -140,15 +162,18 @@ export function usePromptDocumentKindTiers({
         setSaving(false);
       }
     },
-    [load, sendPin]
+    [load, sendPin, writeAllowed]
   );
 
   /** Clear one kind's tier, returning it to coord's compile-time default. */
   const clearTier = useCallback(
     async (kind: string): Promise<boolean> => {
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
-        await clearKindTier(kind, sendPin());
+        await clearKindTier(kind, pin);
+        writeGeneration.current += 1;
         const confirmed = await load();
         const what =
           `Cleared the tenant setting for \`${kind}\` — coord's built-in ` +
@@ -169,7 +194,7 @@ export function usePromptDocumentKindTiers({
         setSaving(false);
       }
     },
-    [load, sendPin]
+    [load, sendPin, writeAllowed]
   );
 
   return {
@@ -178,6 +203,8 @@ export function usePromptDocumentKindTiers({
     loading,
     saving,
     error,
+    /** No project to read in yet: nothing has been read, or is shown as read. */
+    waitingForProject,
     reload: load,
     setTier,
     clearTier,

@@ -19,6 +19,6 @@ export function useCommandSafetyRewritePolicy() {
   return useTenantFleetPolicyDial<CommandSafetyRewriteLevel>(
     COMMAND_SAFETY_REWRITE_DOMAIN,
     "command-safety rewrite",
-    "runners"
+    "runners resolve"
   );
 }
