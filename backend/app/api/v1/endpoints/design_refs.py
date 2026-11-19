@@ -119,9 +119,14 @@ from app.schemas.design_refs import (
     BalanceCell,
     BlobOut,
     CaptureCreate,
+    CaptureJobBatchCreate,
+    CaptureJobBatchOut,
+    CaptureJobBatchRefused,
     CaptureJobClaim,
+    CaptureJobComplete,
     CaptureJobCreate,
     CaptureJobOut,
+    CaptureJobRetry,
     CaptureJobUpdate,
     CaptureOut,
     CaptureSourceCreate,
@@ -1632,6 +1637,52 @@ _JOB_TRANSITIONS: Final[dict[tuple[str, str], str]] = {
 }
 
 
+def _check_job_source(principal: MemoryPrincipal, source: str) -> None:
+    if source == "operator" and not is_operator(principal):
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "source_operator_requires_operator",
+            "source=operator is recorded only for an operator's session.",
+        )
+
+
+async def _new_job(
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    *,
+    url: str,
+    body: CaptureJobCreate | CaptureJobBatchCreate,
+) -> CaptureJob:
+    """Validate one URL against the do-not-capture list and add its job (no
+    commit). The tier is NOT set here: the worker's pre-check derives it."""
+    blocked = await svc.blocked_by_do_not_capture(db, principal.tenant_id, url)
+    if blocked is not None:
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "do_not_capture",
+            "This URL is on the tenant's do-not-capture list.",
+            entry=blocked.domain + blocked.path_prefix,
+        )
+    domain, _path = svc.url_domain_and_path(url)
+    job = CaptureJob(
+        tenant_id=principal.tenant_id,
+        url=url,
+        domain=domain,
+        scope_kind=body.scope_kind,
+        crawl_depth=body.crawl_depth,
+        flow_goal=body.flow_goal,
+        notes=body.notes,
+        source=body.source,
+        submitter_kind=principal.actor,
+        submitter_id=_actor_id(principal),
+        is_reproduction=body.is_reproduction,
+        browser=body.browser,
+        state="proposed" if body.source == "discovery" else "queued",
+    )
+    db.add(job)
+    return job
+
+
 @router.post(
     "/capture-jobs", response_model=CaptureJobOut, status_code=status.HTTP_201_CREATED
 )
@@ -1641,40 +1692,52 @@ async def create_capture_job(
     """Queue a capture. A discovery proposal waits as ``proposed`` for the
     operator; anything else is ``queued``. The tier is NOT a field: the
     worker's pre-check derives it and writes it back."""
-    if body.source == "operator" and not is_operator(principal):
-        raise _refusal(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "source_operator_requires_operator",
-            "source=operator is recorded only for an operator's session.",
-        )
-    source = body.source
-    blocked = await svc.blocked_by_do_not_capture(db, principal.tenant_id, body.url)
-    if blocked is not None:
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "do_not_capture",
-            "This URL is on the tenant's do-not-capture list.",
-            entry=blocked.domain + blocked.path_prefix,
-        )
-    domain, _path = svc.url_domain_and_path(body.url)
-    job = CaptureJob(
-        tenant_id=principal.tenant_id,
-        url=body.url,
-        domain=domain,
-        scope_kind=body.scope_kind,
-        crawl_depth=body.crawl_depth,
-        flow_goal=body.flow_goal,
-        notes=body.notes,
-        source=source,
-        submitter_kind=principal.actor,
-        submitter_id=_actor_id(principal),
-        is_reproduction=body.is_reproduction,
-        state="proposed" if source == "discovery" else "queued",
-    )
-    db.add(job)
+    _check_job_source(principal, body.source)
+    job = await _new_job(db, principal, url=body.url, body=body)
     await db.commit()
     await db.refresh(job)
     return CaptureJobOut.model_validate(job)
+
+
+@router.post(
+    "/capture-jobs/batch",
+    response_model=CaptureJobBatchOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="One capture job per URL of a pasted list",
+)
+async def create_capture_jobs_batch(
+    body: CaptureJobBatchCreate, principal: Principal, db: Db
+) -> CaptureJobBatchOut:
+    """A do-not-capture URL is reported in ``refused`` and does not stop the
+    rest; every other URL gets its own job. Blank and repeated entries of the
+    list are skipped."""
+    _check_job_source(principal, body.source)
+    created: list[CaptureJob] = []
+    refused: list[CaptureJobBatchRefused] = []
+    seen: set[str] = set()
+    for raw in body.urls:
+        url = raw.strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        try:
+            created.append(await _new_job(db, principal, url=url, body=body))
+        except HTTPException as exc:
+            detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
+            refused.append(
+                CaptureJobBatchRefused(
+                    url=url,
+                    error=str(detail.get("error", "refused")),
+                    message=str(detail.get("message", exc.detail)),
+                )
+            )
+    await db.commit()
+    for job in created:
+        await db.refresh(job)
+    return CaptureJobBatchOut(
+        created=[CaptureJobOut.model_validate(job) for job in created],
+        refused=refused,
+    )
 
 
 @router.get("/capture-jobs", response_model=list[CaptureJobOut])
@@ -1789,6 +1852,80 @@ async def update_capture_job(
                 "Only a running job's lease is extended.",
             )
         job.claimed_until = datetime.now(UTC) + timedelta(seconds=body.lease_seconds)
+    await db.commit()
+    await db.refresh(job)
+    return CaptureJobOut.model_validate(job)
+
+
+@router.post("/capture-jobs/{job_id}/retry", response_model=CaptureJobOut)
+async def retry_capture_job(
+    job_id: UUID, body: CaptureJobRetry, principal: Principal, db: Db
+) -> CaptureJobOut:
+    """Re-queue a failed job (operator only), optionally as ``attached``. The
+    derived tier is cleared so the worker's pre-check derives it afresh."""
+    require_operator(principal, "retry a capture job")
+    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    if job is None:
+        raise _not_found("capture_job")
+    if job.state != "failed":
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "invalid_transition",
+            f"Only a failed capture job is retried; this one is {job.state}.",
+        )
+    db.add(
+        _correction(
+            principal.tenant_id,
+            principal,
+            "capture_job",
+            job.id,
+            "state",
+            "failed",
+            "queued",
+        )
+    )
+    if body.browser is not None and body.browser != job.browser:
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                "browser",
+                job.browser,
+                body.browser,
+            )
+        )
+        job.browser = body.browser
+    job.state = "queued"
+    job.error = None
+    job.derived_tier = None
+    job.tier_reason = None
+    job.claimed_by = None
+    job.claimed_until = None
+    await db.commit()
+    await db.refresh(job)
+    return CaptureJobOut.model_validate(job)
+
+
+@router.post("/capture-jobs/{job_id}/complete", response_model=CaptureJobOut)
+async def complete_capture_job(
+    job_id: UUID, body: CaptureJobComplete, principal: Principal, db: Db
+) -> CaptureJobOut:
+    """The worker's end of a running job: ``done``, or ``failed`` with the
+    reason the Jobs view shows."""
+    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    if job is None:
+        raise _not_found("capture_job")
+    if job.state != "running":
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "invalid_transition",
+            f"Only a running capture job is completed; this one is {job.state}.",
+        )
+    job.state = body.outcome
+    job.error = body.error if body.outcome == "failed" else None
+    job.claimed_until = None
     await db.commit()
     await db.refresh(job)
     return CaptureJobOut.model_validate(job)

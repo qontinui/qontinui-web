@@ -4354,6 +4354,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/design-refs/capture-jobs/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * One capture job per URL of a pasted list
+         * @description A do-not-capture URL is reported in ``refused`` and does not stop the
+         *     rest; every other URL gets its own job. Blank and repeated entries of the
+         *     list are skipped.
+         */
+        post: operations["api_v1_design_refs_capture_jobs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/design-refs/capture-jobs/claim": {
         parameters: {
             query?: never;
@@ -4391,6 +4413,48 @@ export interface paths {
         head?: never;
         /** Update Capture Job */
         patch: operations["api_v1_design_refs_capture_jobs_job_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/design-refs/capture-jobs/{job_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Capture Job
+         * @description The worker's end of a running job: ``done``, or ``failed`` with the
+         *     reason the Jobs view shows.
+         */
+        post: operations["api_v1_design_refs_capture_jobs_job_id_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/design-refs/capture-jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Capture Job
+         * @description Re-queue a failed job (operator only), optionally as ``attached``. The
+         *     derived tier is cleared so the worker's pre-check derives it afresh.
+         */
+        post: operations["api_v1_design_refs_capture_jobs_job_id_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/design-refs/capture-sources": {
@@ -30919,6 +30983,59 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * CaptureJobBatchCreate
+         * @description One job per URL: a pasted list. Scope, notes and flags are shared.
+         */
+        CaptureJobBatchCreate: {
+            /**
+             * Browser
+             * @default launched
+             * @enum {string}
+             */
+            browser: "launched" | "attached";
+            /** Crawl Depth */
+            crawl_depth?: number | null;
+            /** Flow Goal */
+            flow_goal?: string | null;
+            /**
+             * Is Reproduction
+             * @default false
+             */
+            is_reproduction: boolean;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Scope Kind
+             * @default page
+             * @enum {string}
+             */
+            scope_kind: "page" | "crawl" | "flow";
+            /**
+             * Source
+             * @default operator
+             * @enum {string}
+             */
+            source: "operator" | "cli" | "mcp" | "discovery";
+            /** Urls */
+            urls: string[];
+        };
+        /** CaptureJobBatchOut */
+        CaptureJobBatchOut: {
+            /** Created */
+            created: components["schemas"]["CaptureJobOut"][];
+            /** Refused */
+            refused: components["schemas"]["CaptureJobBatchRefused"][];
+        };
+        /** CaptureJobBatchRefused */
+        CaptureJobBatchRefused: {
+            /** Error */
+            error: string;
+            /** Message */
+            message: string;
+            /** Url */
+            url: string;
+        };
         /** CaptureJobClaim */
         CaptureJobClaim: {
             /**
@@ -30929,8 +31046,27 @@ export interface components {
             /** Worker */
             worker: string;
         };
+        /**
+         * CaptureJobComplete
+         * @description The worker's end of a job. ``failed`` carries the reason.
+         */
+        CaptureJobComplete: {
+            /** Error */
+            error?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "done" | "failed";
+        };
         /** CaptureJobCreate */
         CaptureJobCreate: {
+            /**
+             * Browser
+             * @default launched
+             * @enum {string}
+             */
+            browser: "launched" | "attached";
             /** Crawl Depth */
             crawl_depth?: number | null;
             /** Flow Goal */
@@ -30959,6 +31095,11 @@ export interface components {
         };
         /** CaptureJobOut */
         CaptureJobOut: {
+            /**
+             * Browser
+             * @enum {string}
+             */
+            browser: "launched" | "attached";
             /** Claimed By */
             claimed_by: string | null;
             /** Claimed Until */
@@ -31017,6 +31158,11 @@ export interface components {
             updated_at: string;
             /** Url */
             url: string;
+        };
+        /** CaptureJobRetry */
+        CaptureJobRetry: {
+            /** Browser */
+            browser?: ("launched" | "attached") | null;
         };
         /**
          * CaptureJobUpdate
@@ -50960,11 +51106,6 @@ export interface components {
              */
             panicMessage: string;
             /**
-             * Pid
-             * @description Pid of the crashed process, if the dump recorded one.
-             */
-            pid?: number | null;
-            /**
              * Reportedat
              * @description ISO 8601 timestamp when the crash was reported.
              */
@@ -68002,6 +68143,39 @@ export interface operations {
             };
         };
     };
+    api_v1_design_refs_capture_jobs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureJobBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureJobBatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_design_refs_capture_jobs_claim_post: {
         parameters: {
             query?: never;
@@ -68078,6 +68252,76 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CaptureJobUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_design_refs_capture_jobs_job_id_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureJobComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_design_refs_capture_jobs_job_id_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureJobRetry"];
             };
         };
         responses: {
