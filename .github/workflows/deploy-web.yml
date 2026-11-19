@@ -884,14 +884,17 @@ jobs:
       # transition, so the signature's startup window opens with the rollover.
       # The probe set comes from .qontinui/deploy.toml (coord runs in ECS and
       # cannot read repo files — this CI job is the trust boundary, §3.4); the
-      # correlation_id joins the deploy to the land that triggered it via
-      # coord's ingest-authed GET /coord/lands/correlation?repo=&to_sha=, which
-      # answers the newest non-null coord.land_signatures.correlation_id for
-      # this repo at GITHUB_SHA. That id is the caller's explicit id or the
-      # resolved multi-repo id, written once at INSERT by /coord/lands/declare
-      # or /coord/lands/predict-and-check, so most lands carry none (and see
-      # coord finding eb989ebd on land_signatures producers). Absent on
-      # schedule/dispatch runs too — correlation is best-effort.
+      # correlation_id joins the deploy to the land that triggered it. Coord's
+      # merge train writes a coord.land_signatures row carrying the land's
+      # proposal id for every land it performs, and coord's declare resolves
+      # the id from it server-side whenever the body carries none. This step
+      # also reads it first, via coord's ingest-authed
+      # GET /coord/lands/correlation?repo=&to_sha=, which is the same reader:
+      # the one distinct non-null id for this repo at GITHUB_SHA, or null when
+      # there is none or several (a bors batch's members share one tip). An
+      # explicit id wins, so the two never disagree. A land made outside the
+      # merge train (an admin or GitHub-UI merge) has no signature, and a
+      # schedule/dispatch run names no land — correlation is best-effort.
       #
       # Best-effort BY DESIGN: any failure here warns and the deploy proceeds
       # — the effect loop observes deploys, it does not gate them. The
@@ -943,9 +946,11 @@ jobs:
           # 1. Land correlation (best-effort, normal mode only): ask coord's
           #    ingest-authed GET /coord/lands/correlation for the correlation_id
           #    of the land at (repo, to_sha=GITHUB_SHA); {"correlation_id":
-          #    null} when no correlated land signature exists for it (coord
-          #    finding eb989ebd). `-f` turns any non-2xx (401/404/422/503) into empty,
-          #    so CORR stays empty and the deploy proceeds uncorrelated.
+          #    null} when no single correlated land signature exists for it.
+          #    `-f` turns any non-2xx (401/404/422/503) into empty. An empty
+          #    CORR is not the last word: the declare below then resolves the
+          #    same id server-side, and its `correlation_source` says which
+          #    way the id was decided.
           if [ -z "$CORR" ] && [ "$ROLLBACK" != "true" ]; then
             CORR=$(curl -sf --max-time 10 \
                 -H "Authorization: Bearer ${COORD_INGEST_TOKEN}" \
@@ -1022,6 +1027,7 @@ jobs:
           SIG=$(printf '%s' "$RESP" | jq -r '.signature_id // empty' 2>/dev/null || true)
           if [ -n "$SIG" ]; then
             echo "Declared deploy signature: $SIG"
+            echo "$RESP" | jq -c '{correlation_id: .signature.correlation_id, correlation_source}' || true
             echo "signature_id=$SIG" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::deploy declare did not persist a signature (best-effort, deploy proceeds): $(printf '%s' "$RESP" | head -c 300)"
