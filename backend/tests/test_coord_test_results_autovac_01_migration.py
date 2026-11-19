@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "coord_ci_runs_workflow_path_01"
+_PARENT_REVISION_ID = "contproof_01_gates_continuation_start_proof"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
