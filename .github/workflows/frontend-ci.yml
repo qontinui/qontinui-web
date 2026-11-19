@@ -169,7 +169,6 @@ jobs:
           IMAGE_SLOT_INVENTORY_REPORT: "1"
         run: npm run image-slots:inventory
 
-
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump
       # recipe — the pin exists so that a vocabulary edit is adopted by a
@@ -228,6 +227,7 @@ jobs:
     # nothing. Expected p50 ~3 min; cap 15 until measured.
     timeout-minutes: 15
     name: Generated style guide (compile --check + validate-guide)
+    # coord-pools: [ubuntu-latest]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout qontinui-web

@@ -2071,7 +2071,7 @@ writes the guide and its siblings (`tokens.css`, `tokens.ts`, `theme.css`,
 into `frontend/src/config/`. Edit the source and recompile; a hand edit to any
 of those files fails CI.
 
-Two of those siblings are not for this app to consume: `tokens.ts` and
+Three of those siblings are not for this app to consume: `tokens.ts` and
 `tokens.css` are inert unless imported, and **`theme.css` must not be imported
 here** — it opens `@theme inline { --*: initial; ... }`, which would wipe the
 app's whole Tailwind default theme. They are committed because `compile --check`
