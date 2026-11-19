@@ -2047,13 +2047,13 @@ made it unreadable and moved the cost onto the reader.
 mechanisms. Putting them all in one file would make three of them unenforceable —
 so each has one home, and this table says plainly which ones actually gate a PR.
 
-| Layer                                                                   | Artefact                                                                                                                     | Enforced by                                                                                                                               | Gates a PR?                                                                                                                       |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`)                                                                    | Human review; cited from every console component's module doc                                                                             | **No** — review only                                                                                                              |
-| **Executable** — the primitives every console page composes from        | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx`                                   | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't                            | **Yes** — `tsc` + `vitest`                                                                                                        |
-| **Declarative atoms** — density and palette as CSS-property rules       | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`), generated from `frontend/design/language.dtcg.json` | `design-kit compile --check` + `design-kit validate-guide` over two fixtures, in `frontend-ci.yml` (§6.1). Not over the app's routes      | **Yes, for drift and for the rules themselves** — not for a page's conformance. See §6.1                                          |
-| **CI-enforced atoms** — what actually bites                             | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json`                          | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock`               | **Yes, but indirectly** — the workflow is _not_ a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
-| **Lint** — the shapes that must not come back                           | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures)                                                  | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite | **Yes** — `npm run lint --max-warnings 0`                                                                                         |
+| Layer                                                                   | Artefact                                                                                                                     | Enforced by                                                                                                                                               | Gates a PR?                                                                                                                       |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`)                                                                    | Human review; cited from every console component's module doc                                                                                             | **No** — review only                                                                                                              |
+| **Executable** — the primitives every console page composes from        | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx`                                   | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't                                            | **Yes** — `tsc` + `vitest`                                                                                                        |
+| **Declarative atoms** — density and palette as CSS-property rules       | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`), generated from `frontend/design/language.dtcg.json` | `design-kit compile --check` + `design-kit validate-guide` over two fixtures, in `frontend-ci.yml`'s `design-guide` job (§6.1). Not over the app's routes | **Yes, for drift and for the rules themselves** — not for a page's conformance. See §6.1                                          |
+| **CI-enforced atoms** — what actually bites                             | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json`                          | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock`                               | **Yes, but indirectly** — the workflow is _not_ a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
+| **Lint** — the shapes that must not come back                           | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures)                                                  | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite                 | **Yes** — `npm run lint --max-warnings 0`                                                                                         |
 
 ### 6.1 The declarative layer is generated, and the `validate-guide` step evaluates it
 
@@ -2071,28 +2071,49 @@ writes the guide and its siblings (`tokens.css`, `tokens.ts`, `theme.css`,
 into `frontend/src/config/`. Edit the source and recompile; a hand edit to any
 of those files fails CI.
 
-The `Lint and TypeScript check` job in `.github/workflows/frontend-ci.yml`
-evaluates it, in one step:
+Two of those siblings are not for this app to consume: `tokens.ts` and
+`tokens.css` are inert unless imported, and **`theme.css` must not be imported
+here** — it opens `@theme inline { --*: initial; ... }`, which would wipe the
+app's whole Tailwind default theme. They are committed because `compile --check`
+compares every output.
+
+The `Generated style guide (compile --check + validate-guide)` job in
+`.github/workflows/frontend-ci.yml` (hosted runner) evaluates it:
 
 - `design-kit compile --check` fails when the committed outputs differ from a
   fresh compile of the source.
 - `design-kit validate-guide` runs every rule of the guide through the UI
   Bridge's published `validateElement` (via `@qontinui/ui-bridge-wrapper`'s
   `ui-bridge-inject`) over `frontend/design/fixtures/conforming.html`, which
-  must pass, and over `off-scale.html` (an off-palette colour and background, an
-  off-scale font size, a literal radius), which must fail with exit 1. The
-  second run is the negative control: a step that cannot redden proves nothing.
-  Exit 3 (the instrument could not measure) fails the step in both runs.
+  must pass, and over `off-scale.html`, which must fail with exit 1 and name each
+  of its four seeded violations (`palette-color`, `palette-background-color`,
+  `font-size-on-scale`, `border-radius-on-scale`). The second run is the
+  negative control: a step that cannot redden proves nothing. Exit 3 (the
+  instrument could not measure) fails the job in both runs.
 
-Know what this does NOT cover. The step evaluates the guide over the two
+Know what this does NOT cover. The job evaluates the guide over the two
 fixtures, **not over the app's routes**, so it shows that the guide's rules
-bite, not that a console page conforms. The generated rules are kit-shaped
-(palette, type scale, radius scale, kit state matrices); the hand-written
-per-class rules the file used to carry (`.btn-*`, `.card`, `.input`, `.badge`)
-are gone, and a page whose colours come from `src/config/theme.ts` rather than
-the package (its zinc text greys, for one) would fail `palette-color`. Running
-`validate-guide` over a route is the follow-up, not a claim this section makes.
-The UI Bridge SDK still discovers the file by its filename convention
+bite, not that a console page conforms — and today most pages would not:
+
+- **Type scale.** `fontSizes` is the package's `typeScale` times the source's
+  `type.unit` 0.5 (11, 12, 14, 22, 28, 32 px), not the app's Tailwind scale (12,
+  14, 16, 18, 20, 24, 30, 36 px). Text at 16 or 18 px fails `font-size-on-scale`.
+- **Colour.** The palette is the package's. A colour taken from
+  `src/config/theme.ts` instead (its zinc text greys `#E4E4E7`, `#A1A1AA`,
+  `#71717A`, `#52525B`) fails `palette-color`.
+- **Type family.** `fontFamilies` reads `system-ui` / `ui-monospace`: the kit's
+  platform fallbacks for an `undeclared` family, not the app's Geist faces.
+- **Rules no longer carried.** Every hand-written rule is gone: the per-class
+  `.btn-*`, `.card`, `.input` and `.badge` radius, background and font-size
+  rules, the h1–h3 size and weight rules, `btn-font-weight`,
+  `btn-cursor-pointer`, `interactive-cursor`, `body-text-size`,
+  `text-color-compliance` and `font-size-range`. The generated rules are
+  kit-shaped (palette, type scale, radius scale, kit state matrices), and the
+  source has no way to state a per-class rule.
+
+Running `validate-guide` over a route, and deciding the type scale and the
+greys, are follow-ups, not claims this section makes. The UI Bridge SDK still
+discovers the file by its filename convention
 (`STYLE_GUIDE_FILE_EXTENSION` in `ui-bridge/packages/ui-bridge/src/specs/style-types.ts`),
 so the path is load-bearing; `vision-audit` (`style-gate.yml`) still does not
 read it.

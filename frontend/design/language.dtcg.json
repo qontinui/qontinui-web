@@ -5,7 +5,7 @@
       "import": [
         {
           "package": "@qontinui/design-tokens",
-          "ref": "415be45",
+          "ref": "415be4535ac4deae2201ed4601084b4a948eef10",
           "groups": [
             "color",
             "typeScale",
