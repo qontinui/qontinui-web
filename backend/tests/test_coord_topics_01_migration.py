@@ -53,6 +53,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable, Iterator
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 
@@ -437,6 +438,10 @@ def _insert_id(conn: Connection, table: str, row: dict[str, object]) -> str:
     )
 
 
+def _delete_topic(conn: Connection, topic_id: str) -> None:
+    conn.execute(text("DELETE FROM coord.topics WHERE id = :id"), {"id": topic_id})
+
+
 def _topic_row(tenant: str, **overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
         "tenant_id": tenant,
@@ -509,9 +514,7 @@ def test_upgrade_creates_every_column_in_contract_order(
             {"q": f"coord.{table}"},
         ).all()
     assert [r.column_name for r in rows] == [c[0] for c in expected]
-    for row, (name, column_type, nullable, default) in zip(
-        rows, expected, strict=True
-    ):
+    for row, (name, column_type, nullable, default) in zip(rows, expected, strict=True):
         assert row.column_type == column_type, (name, row)
         assert row.nullable is nullable, (name, row)
         if default is None:
@@ -726,9 +729,10 @@ def test_the_weight_is_bounded_to_the_unit_interval(topics_db: Engine) -> None:
             _insert(conn, _MEMBERS, _member_row(tenant, topic, weight=weight))
     for weight in (-0.01, 1.01):
         member = _member_row(tenant, topic, weight=weight)
-        assert _refusal(
-            topics_db, lambda conn, m=member: _insert(conn, _MEMBERS, m)
-        ) == ("23514", "ck_topic_members_weight")
+        assert _refusal(topics_db, partial(_insert, table=_MEMBERS, row=member)) == (
+            "23514",
+            "ck_topic_members_weight",
+        )
 
 
 @_needs_pg
@@ -816,14 +820,20 @@ def test_an_alias_is_unique_per_tenant_whatever_its_case(topics_db: Engine) -> N
         other = _insert_id(conn, _TOPICS, _topic_row(tenant))
         foreign = _insert_id(conn, _TOPICS, _topic_row(other_tenant))
         _insert(
-            conn, _ALIASES, {"tenant_id": tenant, "topic_id": topic, "alias": "Overlord"}
+            conn,
+            _ALIASES,
+            {"tenant_id": tenant, "topic_id": topic, "alias": "Overlord"},
         )
         _insert(
             conn,
             _ALIASES,
             {"tenant_id": other_tenant, "topic_id": foreign, "alias": "overlord"},
         )
-    clash = {"tenant_id": tenant, "topic_id": other, "alias": "OVERLORD"}
+    clash: dict[str, object] = {
+        "tenant_id": tenant,
+        "topic_id": other,
+        "alias": "OVERLORD",
+    }
     assert _refusal(topics_db, lambda conn: _insert(conn, _ALIASES, clash)) == (
         "23505",
         "uq_topic_aliases_tenant_lower_alias",
@@ -873,9 +883,10 @@ def test_the_foreign_keys_refuse_a_dangling_topic(topics_db: Engine) -> None:
         (_TOPICS, _topic_row(tenant, merged_into=_uid()), "fk_topics_merged_into"),
     )
     for table, row, constraint in cases:
-        assert _refusal(
-            topics_db, lambda conn, t=table, r=row: _insert(conn, t, r)
-        ) == ("23503", constraint)
+        assert _refusal(topics_db, partial(_insert, table=table, row=row)) == (
+            "23503",
+            constraint,
+        )
 
 
 @_needs_pg
@@ -895,16 +906,16 @@ def test_a_topic_anything_names_is_not_deleted(topics_db: Engine) -> None:
         merge_target = _insert_id(conn, _TOPICS, _topic_row(tenant))
         _insert(conn, _TOPICS, _topic_row(tenant, merged_into=merge_target))
 
-    delete = text("DELETE FROM coord.topics WHERE id = :id")
     for topic, constraint in (
         (with_member, "fk_topic_members_topic"),
         (with_alias, "fk_topic_aliases_topic"),
         (with_child, "fk_topics_parent_topic"),
         (merge_target, "fk_topics_merged_into"),
     ):
-        assert _refusal(
-            topics_db, lambda conn, t=topic: conn.execute(delete, {"id": t})
-        ) == ("23503", constraint)
+        assert _refusal(topics_db, partial(_delete_topic, topic_id=topic)) == (
+            "23503",
+            constraint,
+        )
 
 
 @_needs_pg
