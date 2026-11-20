@@ -53,6 +53,8 @@ import {
   MergeDependencyGraph,
   graphErrorMessage,
   isLandable,
+  nodeCiState,
+  nodeTint,
   readinessTooltip,
   topoMergeReady,
 } from "./MergeDependencyGraph";
@@ -171,6 +173,69 @@ describe("readiness helpers", () => {
     expect(readinessTooltip({ block_reason_code: "ci-pending" })).toContain(
       "merge predicate blocked: ci-pending"
     );
+  });
+});
+
+// whitespace-engine#59 (2026-11-20): coord served CLEAN while the head's
+// checks were queued. A CLEAN node must not be green while the predicate
+// says CI is still running or red.
+describe("CLEAN node tint follows CI", () => {
+  const GREEN = "#86efac";
+  const AMBER = "#fde68a";
+  const RED = "#fca5a5";
+  const tint = (fields: Record<string, unknown>) =>
+    nodeTint(node(59, fields) as Parameters<typeof nodeTint>[0], false).border;
+
+  // Every CI code, spelled as coord's `BlockReason::code` emits it
+  // (qontinui-coord pr_merge/predicate.rs, as of 2026-11-20). This mirrors
+  // coord by hand: a code renamed in coord would NOT fail here.
+  const WAITING = [
+    "ci-pending",
+    "external-ci-pending",
+    "checks-incomplete",
+    "ci-unstarted",
+    "no-ci-on-head",
+    "ci-presence-unestablished",
+    "ci-abandoned",
+    "required-checks-missing",
+  ];
+  const FAILING = ["ci-not-green", "ci-not-green-stale-base"];
+
+  it("nodeCiState reads the predicate verdict", () => {
+    for (const code of WAITING) {
+      expect(nodeCiState({ block_reason_code: code }), code).toBe("waiting");
+    }
+    for (const code of FAILING) {
+      expect(nodeCiState({ block_reason_code: code }), code).toBe("failing");
+    }
+    expect(nodeCiState({ block_reason_code: "held" })).toBeNull();
+    expect(nodeCiState({ block_reason_code: "none" })).toBeNull();
+    expect(nodeCiState({ block_reason_code: null })).toBeNull();
+    expect(nodeCiState({})).toBeNull();
+  });
+
+  it("is never green while checks are waiting or failing", () => {
+    for (const code of WAITING) {
+      expect(tint({ block_reason_code: code }), code).toBe(AMBER);
+    }
+    for (const code of FAILING) {
+      expect(tint({ block_reason_code: code }), code).toBe(RED);
+    }
+  });
+
+  it("stays green for CLEAN with no CI block", () => {
+    expect(tint({ block_reason_code: "held" })).toBe(GREEN);
+    expect(tint({ block_reason_code: null })).toBe(GREEN);
+    expect(tint({})).toBe(GREEN);
+    // Landable keeps its own (brighter) green.
+    expect(
+      nodeTint(
+        node(59, { block_reason_code: "none" }) as Parameters<
+          typeof nodeTint
+        >[0],
+        false
+      ).bg
+    ).toBe("#14532d");
   });
 });
 
