@@ -47,7 +47,6 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   computerFx,
-  DEVICE_ID,
   detailFx,
   DEVICE_ID,
   OTHER_COMPUTER_ID,
@@ -707,7 +706,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     ).toBeNull();
   });
 
-  it("does not read as agreement for declared-host runners coord never compared", async () => {
+  it("does not read as agreement for runners coord never compared — declared-host and older-coord rows alike", async () => {
     const base = {
       device_id: DEVICE_ID,
       host_key: "merytshost",
@@ -750,7 +749,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(
       (await screen.findByTestId("coord-computer-divergence-none")).textContent
     ).toBe(
-      "No disagreement found among fresh registrar rows paired with a unit. 2 CI runners placed by declared host are not compared."
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners with no paired unit are not compared."
     );
     unmount();
 
@@ -774,7 +773,7 @@ describe("/admin/coord/computers/[computerId]", () => {
     ).toBeTruthy();
     expect(
       screen.getByTestId("coord-computer-divergence-not-compared").textContent
-    ).toBe("2 CI runners placed by declared host are not compared.");
+    ).toBe("3 CI runners with no paired unit are not compared.");
     expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
   });
 

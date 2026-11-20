@@ -31,7 +31,7 @@ import {
   ciRunnerAttributionText,
   ciRunnerStatusText,
   classifyComputersError,
-  declaredHostRunnerCount,
+  uncomparedRunnerCount,
   divergenceNoneText,
   divergenceNotComparedText,
   computerFreshness,
@@ -546,7 +546,7 @@ describe("ciRunnerAttributionText", () => {
   });
 });
 
-describe("divergence wording with declared-host rows", () => {
+describe("divergence wording with uncompared rows", () => {
   const row = {
     device_id: "d",
     hostname: "gh-runner-merytshost-1@qontinui/qontinui-web",
@@ -560,21 +560,24 @@ describe("divergence wording with declared-host rows", () => {
     service_active_state: null,
   };
 
-  it("counts only explicit declared_host rows — absent, null and runner_name are not", () => {
+  it("counts every row with no paired unit, whatever attributed_by says", () => {
+    const paired = { ...row, service_unit: "actions.runner.qontinui.x.service" };
     expect(
-      declaredHostRunnerCount([
+      uncomparedRunnerCount([
         { ...row, attributed_by: "declared_host" },
-        { ...row, attributed_by: "declared_host" },
+        // runner_name but coord could not pair a unit: not compared either.
         { ...row, attributed_by: "runner_name" },
-        { ...row, attributed_by: null },
+        // an older coord that omits the field: compared only if paired.
         row,
+        { ...paired, attributed_by: "runner_name" },
+        paired,
       ])
-    ).toBe(2);
-    expect(declaredHostRunnerCount([])).toBe(0);
-    expect(declaredHostRunnerCount(null)).toBe(0);
+    ).toBe(3);
+    expect(uncomparedRunnerCount([])).toBe(0);
+    expect(uncomparedRunnerCount(null)).toBe(0);
   });
 
-  it("keeps today's empty-list text exactly when no row was placed by declared host", () => {
+  it("keeps today's empty-list text exactly when every row was compared", () => {
     expect(divergenceNoneText(0)).toBe(
       "No disagreement found among fresh registrar rows."
     );
@@ -583,19 +586,19 @@ describe("divergence wording with declared-host rows", () => {
 
   it("narrows the empty-list text and counts one uncompared runner in the singular", () => {
     expect(divergenceNotComparedText(1)).toBe(
-      "1 CI runner placed by declared host is not compared."
+      "1 CI runner with no paired unit is not compared."
     );
     expect(divergenceNoneText(1)).toBe(
-      "No disagreement found among fresh registrar rows paired with a unit. 1 CI runner placed by declared host is not compared."
+      "No disagreement found among fresh registrar rows paired with a unit. 1 CI runner with no paired unit is not compared."
     );
   });
 
   it("counts several uncompared runners in the plural", () => {
     expect(divergenceNotComparedText(3)).toBe(
-      "3 CI runners placed by declared host are not compared."
+      "3 CI runners with no paired unit are not compared."
     );
     expect(divergenceNoneText(3)).toBe(
-      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners placed by declared host are not compared."
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners with no paired unit are not compared."
     );
   });
 });
@@ -849,6 +852,41 @@ describe("deriveComputerDetailHealth", () => {
       registrarReadOk: false,
     });
     expect(h.badges.map((b) => b.label)).toContain("divergence –");
+  });
+
+  it("qualifies the divergence badge when some rows were not compared", () => {
+    const base = {
+      computer: n,
+      freshness: f,
+      status: computerStatus(n, f, { fetchedAtMs: NOW, nowMs: NOW }),
+      issue: null,
+      services: [],
+      events: [],
+      divergence: [],
+      registrarReadOk: true,
+    };
+    const badge = (h: ReturnType<typeof deriveComputerDetailHealth>) =>
+      h.badges.find((b) => b.key === "divergence");
+    const qualified = badge(
+      deriveComputerDetailHealth({ ...base, uncomparedRunners: 2 })
+    );
+    expect(qualified?.label).toBe("divergence 0 (2 not compared)");
+    expect(qualified?.title).toContain(
+      "2 CI runners with no paired unit are not compared."
+    );
+    const plain = badge(deriveComputerDetailHealth(base));
+    expect(plain?.label).toBe("divergence 0");
+    expect(plain?.title).not.toContain("not compared");
+    // An unconfirmed registrar read stays a dash, never a qualified count.
+    expect(
+      badge(
+        deriveComputerDetailHealth({
+          ...base,
+          registrarReadOk: false,
+          uncomparedRunners: 2,
+        })
+      )?.label
+    ).toBe("divergence –");
   });
 
   it("headlines not-found even when a computer from an earlier read is passed in", () => {

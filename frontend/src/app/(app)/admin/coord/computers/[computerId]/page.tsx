@@ -43,7 +43,7 @@ import {
   SERVICE_KIND_LABEL,
   ciRunnerAttributionText,
   ciRunnerStatusText,
-  declaredHostRunnerCount,
+  uncomparedRunnerCount,
   divergenceNoneText,
   divergenceNotComparedText,
   serviceObservedText,
@@ -367,11 +367,11 @@ function RegistrarUnknown({ what, testId }: { what: string; testId: string }) {
 
 function DivergenceList({
   entries,
-  declaredHostCount,
+  uncomparedCount,
 }: {
   entries: DivergenceWire[];
-  /** Registrar rows placed by declared host alone — coord compares none of them. */
-  declaredHostCount: number;
+  /** Registrar rows with no paired unit — coord compares none of them. */
+  uncomparedCount: number;
 }) {
   if (entries.length === 0) {
     return (
@@ -379,11 +379,11 @@ function DivergenceList({
         className="text-sm text-muted-foreground"
         data-testid="coord-computer-divergence-none"
       >
-        {divergenceNoneText(declaredHostCount)}
+        {divergenceNoneText(uncomparedCount)}
       </p>
     );
   }
-  const notCompared = divergenceNotComparedText(declaredHostCount);
+  const notCompared = divergenceNotComparedText(uncomparedCount);
   return (
     <>
       {notCompared !== null && (
@@ -473,10 +473,10 @@ export default function CoordComputerDetailPage() {
     return list === null ? null : orderEvents(list);
   }, [detail?.events]);
   const divergence = listOrNull(detail?.divergence);
-  // Divergence is computed over the rows attributed to this computer
-  // (`ci_runners`); the declared-host ones among them are not compared.
-  const declaredHostCount = declaredHostRunnerCount(
-    listOrNull(detail?.ci_runners)
+  // Divergence is computed only for the attributed rows paired with a unit.
+  // Counted from the SAME list the runner section renders.
+  const uncomparedCount = uncomparedRunnerCount(
+    listOrNull(detail?.workloads?.ci_runners)
   );
   const history = useMemo(() => historyByLane(detail), [detail]);
   const health = useMemo(
@@ -490,6 +490,7 @@ export default function CoordComputerDetailPage() {
         events,
         divergence,
         registrarReadOk: detail?.registrar_read_ok === true,
+        uncomparedRunners: uncomparedCount,
       }),
     [
       computer,
@@ -500,6 +501,7 @@ export default function CoordComputerDetailPage() {
       events,
       divergence,
       detail?.registrar_read_ok,
+      uncomparedCount,
     ]
   );
   const workloadDevices = listOrNull(detail?.workloads?.devices);
@@ -732,7 +734,7 @@ export default function CoordComputerDetailPage() {
             ) : (
               <DivergenceList
                 entries={divergence}
-                declaredHostCount={declaredHostCount}
+                uncomparedCount={uncomparedCount}
               />
             )}
           </Section>
