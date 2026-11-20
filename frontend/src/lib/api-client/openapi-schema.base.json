@@ -10744,6 +10744,14 @@
       },
       "CompareHit": {
         "properties": {
+          "confirmation": {
+            "enum": [
+              "confirmed",
+              "proposed"
+            ],
+            "title": "Confirmation",
+            "type": "string"
+          },
           "differences": {
             "items": {
               "$ref": "#/components/schemas/TokenDifference"
@@ -10752,8 +10760,15 @@
             "type": "array"
           },
           "domain": {
-            "title": "Domain",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "labels": {
             "items": {
@@ -10804,7 +10819,8 @@
           "role",
           "token_distance",
           "differences",
-          "labels"
+          "labels",
+          "confirmation"
         ],
         "title": "CompareHit",
         "type": "object"
@@ -10850,11 +10866,16 @@
             },
             "title": "Results",
             "type": "array"
+          },
+          "unmeasured_candidates": {
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "fidelity_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "CompareResponse",
         "type": "object"
@@ -24351,6 +24372,7 @@
         "type": "object"
       },
       "ExampleOut": {
+        "description": "A full example record: served for a confirmed reference site (or to an\noperator's ``include_holdout`` read).",
         "properties": {
           "captures": {
             "items": {
@@ -24372,6 +24394,19 @@
             },
             "title": "Components",
             "type": "array"
+          },
+          "confirmation": {
+            "enum": [
+              "confirmed",
+              "proposed"
+            ],
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "content": {
+            "const": "full",
+            "title": "Content",
+            "type": "string"
           },
           "descriptions": {
             "items": {
@@ -24421,6 +24456,8 @@
           }
         },
         "required": [
+          "content",
+          "confirmation",
           "level",
           "record",
           "site",
@@ -35370,6 +35407,161 @@
         "title": "MatchLocation",
         "type": "object"
       },
+      "MeasuredCaptureOut": {
+        "description": "One capture reduced to machine-measured numbers. Every field is an\nidentity or a number; no blob key, no text. Built only by\n``services.design_refs.measured_capture``.",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "dropped_non_numeric": {
+            "title": "Dropped Non Numeric",
+            "type": "integer"
+          },
+          "facets": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Facets",
+            "type": "object"
+          },
+          "facets_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facets Method"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "layout_bands": {
+            "items": {},
+            "title": "Layout Bands",
+            "type": "array"
+          },
+          "motion_summary": {
+            "additionalProperties": true,
+            "title": "Motion Summary",
+            "type": "object"
+          },
+          "page_id": {
+            "format": "uuid",
+            "title": "Page Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "tokens_state": {
+            "enum": [
+              "measured",
+              "unknown"
+            ],
+            "title": "Tokens State",
+            "type": "string"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport"
+          }
+        },
+        "required": [
+          "id",
+          "page_id",
+          "run_id",
+          "viewport",
+          "captured_at",
+          "facets",
+          "facets_method",
+          "tokens",
+          "tokens_state",
+          "layout_bands",
+          "motion_summary",
+          "dropped_non_numeric"
+        ],
+        "title": "MeasuredCaptureOut",
+        "type": "object"
+      },
+      "MeasuredExampleOut": {
+        "description": "A page of an unconfirmed reference site: measured facts only. It has\nno ``descriptions``, ``ratings``, ``comparisons``, ``personality`` or\n``components`` field, so absence cannot be read as \"none exist\".",
+        "properties": {
+          "captures": {
+            "items": {
+              "$ref": "#/components/schemas/MeasuredCaptureOut"
+            },
+            "title": "Captures",
+            "type": "array"
+          },
+          "confirmation": {
+            "const": "proposed",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "content": {
+            "const": "measured_facts",
+            "title": "Content",
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "level": {
+            "const": "page",
+            "title": "Level",
+            "type": "string"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageIdentityOut"
+          },
+          "site": {
+            "$ref": "#/components/schemas/SiteIdentityOut"
+          }
+        },
+        "required": [
+          "content",
+          "confirmation",
+          "level",
+          "site",
+          "page",
+          "captures",
+          "labels"
+        ],
+        "title": "MeasuredExampleOut",
+        "type": "object"
+      },
       "MemoryAgeFacet": {
         "description": "Age distribution of the LIVE corpus, in days since ``created_at``.\n\nAll three are ``null`` on an empty corpus rather than a fabricated\n``0``: \"there is nothing to measure\" is a different statement from\n\"everything was written today\", and collapsing them is the same\nabsence-reads-as-a-value bug these facets exist to prevent.",
         "properties": {
@@ -40296,6 +40488,60 @@
           "title"
         ],
         "title": "PageCreate",
+        "type": "object"
+      },
+      "PageIdentityOut": {
+        "description": "What it takes to cite a page: no title, type, job or tags.",
+        "properties": {
+          "captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "viewports": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Viewports",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "site_id",
+          "url",
+          "captured_at",
+          "viewports"
+        ],
+        "title": "PageIdentityOut",
         "type": "object"
       },
       "PageItem": {
@@ -53853,9 +54099,24 @@
       },
       "SearchHit": {
         "properties": {
-          "domain": {
-            "title": "Domain",
+          "confirmation": {
+            "enum": [
+              "confirmed",
+              "proposed"
+            ],
+            "title": "Confirmation",
             "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "facet_exact": {
             "title": "Facet Exact",
@@ -53995,7 +54256,8 @@
           "personality_distance",
           "personality_basis",
           "labels",
-          "snippet"
+          "snippet",
+          "confirmation"
         ],
         "title": "SearchHit",
         "type": "object"
@@ -56763,11 +57025,16 @@
             ],
             "title": "Style Arm",
             "type": "string"
+          },
+          "unmeasured_candidates": {
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "style_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "SimilarByStyleResponse",
         "type": "object"
@@ -56891,6 +57158,42 @@
           "domain"
         ],
         "title": "SiteCreate",
+        "type": "object"
+      },
+      "SiteIdentityOut": {
+        "description": "What it takes to cite a site: no context, no tags.",
+        "properties": {
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "private",
+              "public"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "domain",
+          "tier"
+        ],
+        "title": "SiteIdentityOut",
         "type": "object"
       },
       "SiteOut": {
@@ -60654,9 +60957,24 @@
       },
       "StyleHit": {
         "properties": {
-          "domain": {
-            "title": "Domain",
+          "confirmation": {
+            "enum": [
+              "confirmed",
+              "proposed"
+            ],
+            "title": "Confirmation",
             "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "labels": {
             "items": {
@@ -60706,7 +61024,8 @@
           "domain",
           "role",
           "token_distance",
-          "labels"
+          "labels",
+          "confirmation"
         ],
         "title": "StyleHit",
         "type": "object"
@@ -87004,7 +87323,22 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExampleOut"
+                  "discriminator": {
+                    "mapping": {
+                      "full": "#/components/schemas/ExampleOut",
+                      "measured_facts": "#/components/schemas/MeasuredExampleOut"
+                    },
+                    "propertyName": "content"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ExampleOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MeasuredExampleOut"
+                    }
+                  ],
+                  "title": "Response Get Example Api V1 Design Refs Examples  Level   Target Id  Get"
                 }
               }
             },

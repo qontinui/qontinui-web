@@ -19,6 +19,19 @@ module holds what they share and what tests drive directly:
 * **Principle support** — :func:`reference_support`.
 * **Takedown** — :func:`takedown` (rows, judgement rows and reference-counted
   blobs).
+
+Known residual of the measured-facts reads (plan Phase 2): a device writes the
+KEYS of ``tokens``, ``layout_bands`` and ``motion_summary`` and the viewport
+words of a capture, and without a token vocabulary a grammar can bound their
+shape but not their meaning. What reaches an agent is therefore
+device-controlled snake_case identifiers: at most 32 characters each, at most
+:data:`MEASURED_MAX_KEYS` keys per object, :data:`MEASURED_MAX_LIST_ITEMS` items
+per list, :data:`MEASURED_NODE_BUDGET` nodes per field, 24-character viewport
+tokens and :data:`MEASURED_MAX_VIEWPORTS` of them. Never a string value, a
+blob key, a sentence-shaped key or a free-text URL part. Operator curation or
+confirmation removes a site's measured facts from this arm (the page leaves
+``similar-by-style`` and ``/examples``, or turns into the full confirmed
+record). ``tests/test_design_refs_api.py`` asserts each cap.
 """
 
 from __future__ import annotations
@@ -33,6 +46,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import structlog
@@ -60,6 +74,7 @@ from app.models.design_refs import (
     Site,
     SitePersonality,
 )
+from app.schemas.design_refs import MeasuredCaptureOut
 from app.services.storage import ObjectStorageService, content_addressed_key
 
 logger = structlog.get_logger(__name__)
@@ -534,11 +549,13 @@ def flagged_keys(report: Iterable[Correlation]) -> set[str]:
 
 
 def _flatten(tokens: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+    """Flatten nested tokens to ``a/b`` names. ``/`` is outside the measured
+    key grammar, so a dotted key (``a.b``) never collides with nesting."""
     flat: dict[str, Any] = {}
     for key, value in tokens.items():
         name = f"{prefix}{key}"
         if isinstance(value, dict):
-            flat.update(_flatten(value, f"{name}."))
+            flat.update(_flatten(value, f"{name}/"))
         else:
             flat[name] = value
     return flat
@@ -556,16 +573,241 @@ def token_distance(ours: dict[str, Any], theirs: dict[str, Any]) -> float:
     return round(1 - same / len(names), 6)
 
 
+#: What a difference says for a reference value this read withholds.
+WITHHELD: Final = "withheld"
+
+
 def token_differences(
-    ours: dict[str, Any], theirs: dict[str, Any]
+    ours: dict[str, Any],
+    theirs: dict[str, Any],
+    withheld_from: dict[str, Any] | None = None,
 ) -> list[tuple[str, Any, Any]]:
+    """``(name, ours, theirs)`` for every differing token. ``withheld_from`` is
+    the reference's UNFILTERED token set: a name the caller supplied that the
+    reference holds only as a withheld (non-numeric) value reads ``"withheld"``,
+    so a withheld value is never mistaken for an absent one. Only names the
+    caller itself named are ever reported this way."""
     a = _flatten(ours)
     b = _flatten(theirs)
-    return [
-        (name, a.get(name), b.get(name))
-        for name in sorted(set(a) | set(b))
-        if a.get(name) != b.get(name)
-    ]
+    raw = _flatten(withheld_from) if withheld_from is not None else {}
+    out: list[tuple[str, Any, Any]] = []
+    for name in sorted(set(a) | set(b)):
+        theirs_value = b.get(name)
+        if name not in b and name in a and name in raw:
+            theirs_value = WITHHELD
+        if a.get(name) != theirs_value:
+            out.append((name, a.get(name), theirs_value))
+    return out
+
+
+def is_measured_token_set(tokens: dict[str, Any]) -> bool:
+    """False for an empty set and for the worker's stated-unknown sentinel
+    (``{"state": "unknown", ...}``): comparing an unknown against anything is
+    not a distance."""
+    return bool(tokens) and tokens.get("state") != "unknown"
+
+
+# ═════════════════════════════ measured facts ═════════════════════════════
+
+#: Keys a measured-facts read may serve: a short identifier, never a sentence.
+_MEASURED_KEY_RE: Final = re.compile(r"\A[a-z0-9_.]{1,32}\Z")
+#: A viewport name or size a measured read may serve: ``desktop``, ``375x812``.
+_VIEWPORT_RE: Final = re.compile(r"\A(?:[a-z][a-z0-9_]{0,23}|[0-9]{2,5}x[0-9]{2,5})\Z")
+#: Integers beyond this are not measurements (and are not exactly a float).
+_MAX_MEASURED_INT: Final = 2**53
+_URL_MAX_CHARS: Final = 200
+#: ``facets.method`` is served only in this form.
+_FACETS_METHOD_RE: Final = re.compile(r"\Afacets@[0-9]{1,4}\Z")
+_DNS_LABEL: Final = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_DOMAIN_RE: Final = re.compile(rf"\A{_DNS_LABEL}(?:\.{_DNS_LABEL})*\Z")
+#: One URL path segment a measured read serves: no hyphen, no ``%`` escape.
+_PATH_SEGMENT_RE: Final = re.compile(r"\A[A-Za-z0-9_.~]{1,24}\Z")
+_URL_MAX_SEGMENTS: Final = 3
+#: Shape caps: a grammar bounds each token, these bound how many.
+MEASURED_MAX_KEYS: Final = 64
+MEASURED_MAX_LIST_ITEMS: Final = 256
+#: Nodes (containers and leaves) one measured field may spend in total.
+MEASURED_NODE_BUDGET: Final = 512
+MEASURED_MAX_VIEWPORTS: Final = 8
+MEASURED_MAX_CAPTURES: Final = 20
+_MEASURED_MAX_DEPTH: Final = 8
+
+
+def _is_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return abs(value) <= _MAX_MEASURED_INT  # never reaches math.isfinite
+    return isinstance(value, float) and math.isfinite(value)
+
+
+def measured_viewport(value: Any) -> str | None:
+    """``value`` when it is a short viewport token, else None."""
+    return value if isinstance(value, str) and _VIEWPORT_RE.match(value) else None
+
+
+def measured_viewports(values: Any) -> list[str]:
+    """The viewport tokens of a page's free-form ``viewports`` list."""
+    if not isinstance(values, list):
+        return []
+    kept = [v for v in values if measured_viewport(v) is not None]
+    return kept[:MEASURED_MAX_VIEWPORTS]
+
+
+def measured_domain(domain: Any) -> str | None:
+    """``domain`` when it is a DNS host name (lower-case labels), else None."""
+    if isinstance(domain, str) and len(domain) <= 253 and _DOMAIN_RE.match(domain):
+        return domain
+    return None
+
+
+def measured_url(url: Any, domain: str) -> str | None:
+    """``scheme://host`` of a page URL, plus its path only when the path is at
+    most :data:`_URL_MAX_SEGMENTS` segments of ``[A-Za-z0-9_.~]{1,24}``;
+    otherwise the host alone. None unless the host is the site's own domain.
+    Userinfo, port, query, fragment, percent escapes and hyphenated words are
+    free text and never served."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not host:
+        return None
+    shown = measured_domain(host)
+    if shown is None or normalise_domain(shown) != domain:
+        return None
+    head = f"{parts.scheme}://{shown}"
+    segments = parts.path.split("/")[1:] if parts.path.startswith("/") else []
+    if segments == [""]:
+        return head  # the site root
+    if (
+        not segments
+        or len(segments) > _URL_MAX_SEGMENTS
+        or not all(_PATH_SEGMENT_RE.match(seg) for seg in segments)
+    ):
+        return head
+    return head + "".join("/" + seg for seg in segments)
+
+
+def numeric_only(value: Any) -> tuple[Any, int]:
+    """``(filtered, dropped)``: ``value`` with only numeric leaves under keys
+    matching a short-identifier grammar. Every string, boolean, null, oddly
+    keyed, surplus (beyond the key, item and node caps) or too-deep node is
+    dropped and counted once. A list is kept WHOLE or not at all: dropping one
+    element would shift the positions of the rest, which a position-keyed list
+    (layout bands) cannot carry. A device can write anything into ``tokens``,
+    ``layout_bands`` and ``motion_summary``, so a numeric-only guarantee is
+    enforced here rather than assumed."""
+    return _numeric_walk(value, 0, [MEASURED_NODE_BUDGET])
+
+
+def _numeric_walk(value: Any, depth: int, budget: list[int]) -> tuple[Any, int]:
+    if budget[0] <= 0:
+        return _DROPPED, 1
+    budget[0] -= 1
+    if isinstance(value, dict):
+        if depth >= _MEASURED_MAX_DEPTH:
+            return _DROPPED, 1
+        out_d: dict[str, Any] = {}
+        dropped = 0
+        for key, child in value.items():
+            if not isinstance(key, str) or not _MEASURED_KEY_RE.match(key):
+                dropped += 1
+                continue
+            if len(out_d) >= MEASURED_MAX_KEYS:
+                dropped += 1
+                continue
+            kept, n = _numeric_walk(child, depth + 1, budget)
+            dropped += n
+            if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
+                continue  # a node nothing numeric survived in carries no fact
+            out_d[key] = kept
+        return out_d, dropped
+    if isinstance(value, list):
+        if depth >= _MEASURED_MAX_DEPTH:
+            return _DROPPED, 1
+        if len(value) > MEASURED_MAX_LIST_ITEMS:
+            return _DROPPED, len(value)
+        out_l: list[Any] = []
+        dropped = 0
+        failed = False
+        for child in value:
+            kept, n = _numeric_walk(child, depth + 1, budget)
+            dropped += n
+            if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
+                failed = True
+                continue
+            out_l.append(kept)
+        if failed:
+            return _DROPPED, dropped or 1
+        return out_l, dropped
+    if _is_number(value):
+        return value, 0
+    return _DROPPED, 1
+
+
+#: Sentinel for a leaf :func:`numeric_only` removed (a real ``None`` is also
+#: removed, but must not be confused with "kept").
+_DROPPED: Final = object()
+
+
+def measured_capture(capture: Any) -> MeasuredCaptureOut:
+    """THE allowlist of what a proposed (unconfirmed) capture reveals
+    (plan D4): identity, the numeric ``MEASURED_FACETS`` values, and
+    numeric-only tokens, layout bands and motion summary. No blob key, no
+    text."""
+    dropped = 0
+    raw_facets = capture.facets if isinstance(capture.facets, dict) else {}
+    facets: dict[str, float] = {}
+    method: str | None = None
+    for key, value in raw_facets.items():
+        if key in MEASURED_FACETS and _is_number(value):
+            facets[key] = float(value)
+        elif (
+            key == "method"
+            and isinstance(value, str)
+            and _FACETS_METHOD_RE.match(value)
+        ):
+            method = value
+        else:
+            dropped += 1
+    raw_tokens = capture.tokens if isinstance(capture.tokens, dict) else {}
+    tokens: dict[str, Any] | None = None
+    if is_measured_token_set(raw_tokens):
+        filtered, n = numeric_only(raw_tokens)
+        dropped += n
+        tokens = None if filtered is _DROPPED else (filtered or None)
+    else:
+        dropped += len(raw_tokens)
+    bands, n = numeric_only(
+        capture.layout_bands if isinstance(capture.layout_bands, list) else []
+    )
+    dropped += n
+    if bands is _DROPPED:
+        bands = []
+    motion, n = numeric_only(
+        capture.motion_summary if isinstance(capture.motion_summary, dict) else {}
+    )
+    dropped += n
+    if motion is _DROPPED:
+        motion = {}
+    return MeasuredCaptureOut(
+        id=capture.id,
+        page_id=capture.page_id,
+        run_id=capture.run_id,
+        viewport=measured_viewport(capture.viewport),
+        captured_at=capture.created_at,
+        facets=facets,
+        facets_method=method,
+        tokens=tokens,
+        tokens_state="measured" if tokens else "unknown",
+        layout_bands=bands,
+        motion_summary=motion,
+        dropped_non_numeric=dropped,
+    )
 
 
 # ═════════════════════════════ search ═════════════════════════════
@@ -619,6 +861,15 @@ def _entity_select(level: str) -> tuple[Any, Select[Any]]:
     return model, select(model, Site).join(Site, Site.id == model.site_id)
 
 
+def _proposed_group(stmt: Select[Any], include_anti_pattern: bool) -> Select[Any]:
+    """The unconfirmed reference pages: also never a page of a site the
+    operator marked ``anti_pattern`` (unless asked)."""
+    stmt = facts_visible(stmt).where(Site.context_state == "proposed")
+    if not include_anti_pattern:
+        stmt = stmt.where(or_(Site.quality.is_(None), Site.quality != "anti_pattern"))
+    return stmt
+
+
 async def candidate_entities(
     db: AsyncSession,
     tenant_id: UUID,
@@ -626,6 +877,7 @@ async def candidate_entities(
     *,
     include_holdout: bool,
     include_anti_pattern: bool = False,
+    proposed_facts: bool = False,
     tier: str | None = None,
     industry: str | None = None,
     business_type: str | None = None,
@@ -636,7 +888,13 @@ async def candidate_entities(
 ) -> list[tuple[Any, Site]]:
     """The tenant's records at ``level`` that an agent-facing read may see:
     never ``rejected``, ``anti_pattern`` only when asked, holdout only when
-    the (operator-gated) caller asked for it."""
+    the (operator-gated) caller asked for it.
+
+    ``proposed_facts`` widens PAGE level (and only page level) from confirmed
+    reference sites to every reference-split site, confirmed or not: the
+    measured-facts arms. Each row's confirmation is its site's
+    ``context_state``. Holdouts stay out at every confirmation state, and
+    component, site and flow levels stay confirmed-only (plan D4)."""
     model, stmt = _entity_select(level)
     stmt = stmt.where(
         model.tenant_id == tenant_id,
@@ -647,7 +905,8 @@ async def candidate_entities(
         stmt = stmt.where(Site.review_state != "rejected")
     if not include_anti_pattern:
         stmt = stmt.where(or_(model.quality.is_(None), model.quality != "anti_pattern"))
-    if not include_holdout:
+    two_groups = proposed_facts and level == "page" and not include_holdout
+    if not include_holdout and not two_groups:
         stmt = agent_visible(stmt)
     if tier is not None:
         stmt = stmt.where(model.tier == tier)
@@ -663,8 +922,21 @@ async def candidate_entities(
         stmt = stmt.where(Component.role == role)
     if ids is not None:
         stmt = stmt.where(model.id.in_(list(ids)))
-    stmt = stmt.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
-    return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+    if not two_groups:
+        stmt = stmt.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
+        return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+    # agent_visible OR (facts_visible AND proposed), each group under its OWN
+    # cap and newest-first order, so a flood of unconfirmed pages cannot crowd
+    # confirmed ones out of the candidates.
+    rows: list[tuple[Any, Site]] = []
+    for group in (
+        agent_visible(stmt),
+        _proposed_group(stmt, include_anti_pattern),
+    ):
+        group = group.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
+        rows.extend((row[0], row[1]) for row in (await db.execute(group)).all())
+    rows.sort(key=lambda pair: pair[0].created_at, reverse=True)
+    return rows
 
 
 async def latest_personality(
@@ -1430,6 +1702,13 @@ __all__ = [
     "is_agent_reference",
     "is_agent_reference_state",
     "is_hidden_holdout",
+    "is_measured_token_set",
+    "measured_capture",
+    "measured_domain",
+    "measured_url",
+    "measured_viewport",
+    "measured_viewports",
+    "numeric_only",
     "latest_personality",
     "normalise_domain",
     "parse_blob_key",
@@ -1443,6 +1722,7 @@ __all__ = [
     "site_labels",
     "site_splits",
     "target_sites",
+    "WITHHELD",
     "token_differences",
     "token_distance",
 ]
