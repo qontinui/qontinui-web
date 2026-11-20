@@ -43856,7 +43856,7 @@ export interface components {
              */
             tokens_state: "measured" | "unknown";
             /** Viewport */
-            viewport: string;
+            viewport: string | null;
         };
         /**
          * MeasuredExampleOut
@@ -46413,9 +46413,9 @@ export interface components {
              */
             site_id: string;
             /** Url */
-            url: string;
+            url: string | null;
             /** Viewports */
-            viewports: unknown[];
+            viewports: string[];
         };
         /** PageItem */
         PageItem: {

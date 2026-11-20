@@ -946,9 +946,11 @@ class PageIdentityOut(BaseModel):
 
     id: UUID
     site_id: UUID
-    url: str
+    #: ``scheme://host/path``, length-capped; null when not an http(s) URL.
+    url: str | None
     captured_at: datetime | None
-    viewports: list[Any]
+    #: Short viewport tokens only (``desktop``, ``375x812``).
+    viewports: list[str]
 
 
 class MeasuredCaptureOut(BaseModel):
@@ -959,7 +961,8 @@ class MeasuredCaptureOut(BaseModel):
     id: UUID
     page_id: UUID
     run_id: UUID
-    viewport: str
+    #: A short viewport token, else null.
+    viewport: str | None
     captured_at: datetime
     #: Numeric ``MEASURED_FACETS`` values only.
     facets: dict[str, float]

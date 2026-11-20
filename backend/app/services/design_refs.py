@@ -33,6 +33,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import structlog
@@ -579,18 +580,50 @@ def is_measured_token_set(tokens: dict[str, Any]) -> bool:
 # ═════════════════════════════ measured facts ═════════════════════════════
 
 #: Keys a measured-facts read may serve: a short identifier, never a sentence.
-_MEASURED_KEY_RE: Final = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}\Z")
+_MEASURED_KEY_RE: Final = re.compile(r"\A[a-z0-9_.]{1,32}\Z")
+#: A viewport name or size a measured read may serve: ``desktop``, ``375x812``.
+_VIEWPORT_RE: Final = re.compile(r"\A(?:[a-z][a-z0-9_]{0,23}|[0-9]{2,5}x[0-9]{2,5})\Z")
+#: Integers beyond this are not measurements (and are not exactly a float).
+_MAX_MEASURED_INT: Final = 2**53
+_URL_MAX_CHARS: Final = 200
 #: ``facets.method`` is served only in this form.
 _FACETS_METHOD_RE: Final = re.compile(r"\Afacets@\d+\Z")
 _MEASURED_MAX_DEPTH: Final = 8
 
 
 def _is_number(value: Any) -> bool:
-    return (
-        isinstance(value, int | float)
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-    )
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return abs(value) <= _MAX_MEASURED_INT  # never reaches math.isfinite
+    return isinstance(value, float) and math.isfinite(value)
+
+
+def measured_viewport(value: Any) -> str | None:
+    """``value`` when it is a short viewport token, else None."""
+    return value if isinstance(value, str) and _VIEWPORT_RE.match(value) else None
+
+
+def measured_viewports(values: Any) -> list[str]:
+    """The viewport tokens of a page's free-form ``viewports`` list."""
+    if not isinstance(values, list):
+        return []
+    return [v for v in values if measured_viewport(v) is not None]
+
+
+def measured_url(url: Any) -> str | None:
+    """``scheme://host/path`` of a page URL, length-capped: no userinfo, port,
+    query or fragment, which are free text."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not host:
+        return None
+    return f"{parts.scheme}://{host}{parts.path}"[:_URL_MAX_CHARS]
 
 
 def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
@@ -676,7 +709,7 @@ def measured_capture(capture: Any) -> MeasuredCaptureOut:
         id=capture.id,
         page_id=capture.page_id,
         run_id=capture.run_id,
-        viewport=capture.viewport,
+        viewport=measured_viewport(capture.viewport),
         captured_at=capture.created_at,
         facets=facets,
         facets_method=method,
@@ -774,13 +807,9 @@ async def candidate_entities(
         stmt = stmt.where(Site.review_state != "rejected")
     if not include_anti_pattern:
         stmt = stmt.where(or_(model.quality.is_(None), model.quality != "anti_pattern"))
-    if not include_holdout:
-        if proposed_facts and level == "page":
-            # agent_visible OR (facts_visible AND proposed): the union is
-            # every reference-split site.
-            stmt = facts_visible(stmt)
-        else:
-            stmt = agent_visible(stmt)
+    two_groups = proposed_facts and level == "page" and not include_holdout
+    if not include_holdout and not two_groups:
+        stmt = agent_visible(stmt)
     if tier is not None:
         stmt = stmt.where(model.tier == tier)
     for column, value in (
@@ -795,8 +824,21 @@ async def candidate_entities(
         stmt = stmt.where(Component.role == role)
     if ids is not None:
         stmt = stmt.where(model.id.in_(list(ids)))
-    stmt = stmt.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
-    return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+    if not two_groups:
+        stmt = stmt.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
+        return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+    # agent_visible OR (facts_visible AND proposed), each group under its OWN
+    # cap and newest-first order, so a flood of unconfirmed pages cannot crowd
+    # confirmed ones out of the candidates.
+    rows: list[tuple[Any, Site]] = []
+    for group in (
+        agent_visible(stmt),
+        facts_visible(stmt).where(Site.context_state == "proposed"),
+    ):
+        group = group.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
+        rows.extend((row[0], row[1]) for row in (await db.execute(group)).all())
+    rows.sort(key=lambda pair: pair[0].created_at, reverse=True)
+    return rows
 
 
 async def latest_personality(
@@ -1564,6 +1606,9 @@ __all__ = [
     "is_hidden_holdout",
     "is_measured_token_set",
     "measured_capture",
+    "measured_url",
+    "measured_viewport",
+    "measured_viewports",
     "numeric_only",
     "latest_personality",
     "normalise_domain",

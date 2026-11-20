@@ -35476,8 +35476,15 @@
             "type": "string"
           },
           "viewport": {
-            "title": "Viewport",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport"
           }
         },
         "required": [
@@ -40502,11 +40509,20 @@
             "type": "string"
           },
           "url": {
-            "title": "Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           },
           "viewports": {
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Viewports",
             "type": "array"
           }

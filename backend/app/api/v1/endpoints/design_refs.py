@@ -2031,9 +2031,9 @@ async def _measured_example(
         page=PageIdentityOut(
             id=page.id,
             site_id=page.site_id,
-            url=page.url,
+            url=svc.measured_url(page.url),
             captured_at=page.captured_at,
-            viewports=list(page.viewports or []),
+            viewports=svc.measured_viewports(page.viewports),
         ),
         captures=[svc.measured_capture(c) for c in captures],
         labels=labels,
@@ -2053,7 +2053,13 @@ async def _page_tokens(
         .order_by(Capture.created_at)
     )
     for page_id, value in rows.all():
-        tokens[page_id] = value or {}
+        value = value or {}
+        # The newest MEASURED capture wins (get_example serves every capture);
+        # a stated-unknown newest capture does not hide an older measured one.
+        if svc.is_measured_token_set(value) or not svc.is_measured_token_set(
+            tokens.get(page_id, {})
+        ):
+            tokens[page_id] = value
     return tokens
 
 
