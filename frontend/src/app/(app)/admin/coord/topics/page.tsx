@@ -49,6 +49,7 @@ import {
   deriveTopicStatus,
   describeEmptyTopics,
   inTopicTab,
+  lifecycleWords,
   topicReadFailureWords,
   topicTabCounts,
   topicTabOf,
@@ -201,7 +202,10 @@ export default function CoordTopicsPage() {
                 title: "coord did not date this read.",
               }}
             />
-            .
+            .{" "}
+            <span data-testid="coord-topics-lifecycle">
+              {lifecycleWords(state.list.topics)}
+            </span>
           </>
         ) : null}
       </p>
@@ -271,7 +275,7 @@ function deriveHealth(
   if (loud > 0) {
     return {
       level: "red",
-      headline: `${loud} topic${loud === 1 ? "" : "s"} need${loud === 1 ? "s" : ""} you or stalled`,
+      headline: `${loud} topic${loud === 1 ? " needs you or is" : "s need you or are"} stalled`,
       detail: failed
         ? "From the last good read; the latest failed."
         : undefined,
@@ -322,8 +326,14 @@ function TopicRow({
             at={t.last_activity_at}
             verb="Last activity"
             absent={{
-              label: "no activity",
-              title: "coord reports no member activity for this topic.",
+              label:
+                t.last_rollup_as_of === null
+                  ? "activity unknown"
+                  : "no activity reported",
+              title:
+                t.last_rollup_as_of === null
+                  ? "coord has not rolled this topic up, so its last activity is unknown."
+                  : "coord reported no member activity time for this topic.",
             }}
           />
           <RowTime
