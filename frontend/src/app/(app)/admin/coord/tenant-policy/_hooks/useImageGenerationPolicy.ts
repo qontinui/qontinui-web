@@ -53,7 +53,7 @@ export function useImageGenerationPolicy() {
     "image generation",
     // Who resolves the level, for the disagreement toast. Not "studio": no
     // Studio build reads this setting yet (Phase 12 step 3).
-    "readers"
+    "readers resolve"
   );
   const { policy, reload, noteWriteLanded } = dial;
   const repoWrite = useRepoFleetPolicyWrite<ImageGenerationRepoChoice>(

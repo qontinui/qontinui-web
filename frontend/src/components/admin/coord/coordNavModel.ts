@@ -12,7 +12,7 @@
  *
  *   Home · Pipeline · Pull Requests · Gates · Notifications · Action items ·
  *   Tour                                                               ← direct
- *   Work ▸    Plans / Work Units / Subprojects / Plan Library /
+ *   Work ▸    Plans / Work Units / Subprojects / Topics / Plan Library /
  *             Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
@@ -298,6 +298,16 @@ export const GROUPS: NavGroup[] = [
         label: "Subprojects",
         icon: FolderKanban,
         testId: "coord-nav-subprojects",
+      },
+      {
+        // Beside Subprojects because a topic GROUPS them: the subprojects that
+        // serve one goal, with a headline rolled up from theirs (plan
+        // `2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator`).
+        // Member-visible like Subprojects — both reads are tenant-member reads.
+        href: "/admin/coord/topics",
+        label: "Topics",
+        icon: Layers,
+        testId: "coord-nav-topics",
       },
       {
         // The plan library's two policy dials (`plan_capture`,

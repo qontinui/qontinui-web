@@ -115,6 +115,49 @@ export function isLandable(node: ReadinessFields): boolean {
   return node.ready === true;
 }
 
+/**
+ * Merge-predicate verdicts (`block_reason_code`, coord's `BlockReason::code`)
+ * that say the head's CI is not yet green: waiting (running, not yet
+ * reported, stuck until a re-run or a new head, or a required check absent),
+ * or failed. The graph wire carries no per-check fields (`pending_contexts`,
+ * `ci_lifecycle`, `failing_contexts`, `ci_conclusion`), so prPipeline's
+ * `hasPendingChecks` / `unstableHasFailure` have nothing to read here; the
+ * predicate's verdict is the node's only CI signal.
+ *
+ * Limitation: a node carries ONE verdict, so a CLEAN node blocked first by a
+ * non-CI reason (`held`, `not-reviewed`, ...) stays green even when its CI is
+ * also pending. Closing that needs coord to serve CI fields on graph nodes.
+ */
+const CI_WAITING_BLOCK_CODES: ReadonlySet<string> = new Set([
+  "ci-pending",
+  "external-ci-pending",
+  "checks-incomplete",
+  "ci-unstarted",
+  "no-ci-on-head",
+  "ci-presence-unestablished",
+  "ci-abandoned",
+  "required-checks-missing",
+]);
+const CI_FAILING_BLOCK_CODES: ReadonlySet<string> = new Set([
+  "ci-not-green",
+  "ci-not-green-stale-base",
+]);
+
+/**
+ * What the node's predicate verdict says about its CI: `"waiting"`,
+ * `"failing"`, or `null` when the verdict names no CI block (passed, a non-CI
+ * block, no verdict yet, or a coord that predates the field).
+ */
+export function nodeCiState(
+  node: Pick<GraphNode, "block_reason_code">
+): "waiting" | "failing" | null {
+  const code = node.block_reason_code;
+  if (code == null) return null;
+  if (CI_FAILING_BLOCK_CODES.has(code)) return "failing";
+  if (CI_WAITING_BLOCK_CODES.has(code)) return "waiting";
+  return null;
+}
+
 /** The topo-merge flag under either wire name; `undefined` when neither is served. */
 export function topoMergeReady(node: ReadinessFields): boolean | undefined {
   return node.topo_merge_ready ?? node.ready;
@@ -196,7 +239,7 @@ export function graphErrorMessage(text: string, status: number): string {
  * ``prStatusTint`` palette in MergeTrain.tsx so the colour language
  * is consistent across the two surfaces.
  */
-function nodeTint(
+export function nodeTint(
   node: GraphNode,
   isCycleMember: boolean
 ): {
@@ -218,16 +261,25 @@ function nodeTint(
       text: "#dcfce7",
     };
   }
+  const amber = { border: "#fde68a", bg: "#451a03", text: "#fef3c7" };
+  const red = { border: "#fca5a5", bg: "#450a0a", text: "#fee2e2" };
   switch (node.merge_state_status) {
-    case "CLEAN":
+    case "CLEAN": {
+      // CLEAN alone is not green: coord can serve CLEAN while the head's
+      // checks are still running or red (whitespace-engine#59). Same rule
+      // as prPipeline's CLEAN arm, read from the only CI signal a node has.
+      const ci = nodeCiState(node);
+      if (ci === "failing") return red;
+      if (ci === "waiting") return amber;
       return { border: "#86efac", bg: "#052e16", text: "#dcfce7" };
+    }
     case "UNSTABLE":
-      return { border: "#fde68a", bg: "#451a03", text: "#fef3c7" };
+      return amber;
     case "BEHIND":
       return { border: "#fdba74", bg: "#431407", text: "#ffedd5" };
     case "BLOCKED":
     case "DIRTY":
-      return { border: "#fca5a5", bg: "#450a0a", text: "#fee2e2" };
+      return red;
     case "DRAFT":
       return { border: "#94a3b8", bg: "#0f172a", text: "#cbd5e1" };
     default:

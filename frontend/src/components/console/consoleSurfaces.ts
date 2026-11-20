@@ -358,6 +358,14 @@ import {
   SUBPROJECT_SESSION_AUTHOR_GLYPH_KINDS,
   SUBPROJECT_SESSION_CLASS,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
+// Topics — plan
+// `2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator`
+// Phase 8. A topic's headline rolled up from its confirmed member subprojects.
+import {
+  TOPIC_ATTENTION_BY_HEADLINE,
+  TOPIC_AUTHOR_GLYPH_HEADLINES,
+  TOPIC_HEADLINE_CLASS,
+} from "@/components/admin/coord/topics/topicStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -984,6 +992,20 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: SUBPROJECT_GATE_CLASS,
       authorGlyphKinds:
         SUBPROJECT_GATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- topics -----------------------------------------------------------------
+  {
+    // The subprojects' headline vocabulary, rolled up: needs_you and stalled
+    // are red because a confirmed member needs a person; waiting names its
+    // movers; unknown is the ignorance floor (never rolled up, or resting on
+    // unread members). working and done are calm.
+    surface: "topics (/admin/coord/topics, /admin/coord/topics/[id])",
+    module: "components/admin/coord/topics/topicStatus.ts",
+    attentionByKind: TOPIC_ATTENTION_BY_HEADLINE,
+    palette: {
+      badgeClass: TOPIC_HEADLINE_CLASS,
+      authorGlyphKinds: TOPIC_AUTHOR_GLYPH_HEADLINES as ReadonlySet<string>,
     },
   },
 ];

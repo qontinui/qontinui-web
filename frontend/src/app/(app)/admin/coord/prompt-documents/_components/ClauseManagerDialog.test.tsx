@@ -12,7 +12,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
+import { sectionRenderer, testPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const patchMock = vi.fn();
@@ -35,6 +36,16 @@ vi.mock("sonner", () => ({
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import type { PromptDocument } from "../types";
 
+// A section mounted on its own, under a test page guard: the hooks it uses
+// require one. It answers as the page's provider does once the page's
+// project is known: a write is allowed, and pinned to that project
+// (`__fixtures__`). Not the fixture's default, which has no pin and so
+// refuses every write before it is sent: under it, "sends no clause write"
+// would hold whatever the dialog did.
+const renderSection = sectionRenderer(
+  testPageGuard({ pin: { tenant: "t-bravo" } })
+);
+
 function doc(attrs: PromptDocument["attrs"]): PromptDocument {
   return {
     id: "11111111-1111-1111-1111-111111111111",
@@ -53,7 +64,7 @@ function doc(attrs: PromptDocument["attrs"]): PromptDocument {
 }
 
 function renderDialog(document: PromptDocument) {
-  render(
+  renderSection(
     <ClauseManagerDialog
       open
       onOpenChange={vi.fn()}
