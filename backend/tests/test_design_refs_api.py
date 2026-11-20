@@ -16,8 +16,8 @@ has one here:
 * **Judgements** — score bounds, AI evidence, ``a == b``, unknown dimension,
   re-rating appends, the rater derived from the credential, no aggregate
   column anywhere (the schema walk).
-* **Holdout** — split assigned once at the first confirmation and never
-  changed (API 409 and the trigger), ±1 of 20% per family, holdout absent from
+* **Holdout** — split assigned at intake by the domain hash alone and never
+  changed (API 409 and the trigger), holdout absent from
   every agent-facing read but present in the operator's review read, holdout
   evidence refused, ``include_holdout`` operator-only.
 * **Principles** — only the operator approves, two distinct reference sites,
@@ -273,17 +273,20 @@ async def reference_site(
     split: str = "reference",
     tier: str = "private",
     family: str = "modern_saas",
+    confirmed: bool = True,
     **kw: Any,
 ) -> Site:
-    """A confirmed site with its split set directly (deterministic tests)."""
+    """A site (confirmed unless ``confirmed=False``) with its split set
+    directly (deterministic tests)."""
     site = Site(
         tenant_id=h.tenant,
         tier=tier,
         domain=domain or f"{uuid4().hex[:10]}.example",
         style_family=family,
-        context_state="confirmed",
-        context_confirmed_at=datetime.now(UTC),
+        context_state="confirmed" if confirmed else "proposed",
+        context_confirmed_at=datetime.now(UTC) if confirmed else None,
         split=split,
+        split_assigned_at=datetime.now(UTC),
         **kw,
     )
     h.db.add(site)
@@ -621,58 +624,81 @@ class TestStore:
 # ═════════════════════════════ sites, context, split ═════════════════════════════
 
 
+def _domain_with_bucket(zero: bool, prefix: str = "pick") -> str:
+    """A domain the hash holds out (``zero``) or keeps as a reference."""
+    for i in range(1000):
+        domain = f"{prefix}{i}.example"
+        if (svc.domain_bucket(domain) == 0) == zero:
+            return domain
+    raise AssertionError("no domain found")
+
+
 class TestSplit:
-    async def test_split_is_assigned_at_the_first_confirmation_and_never_changes(
-        self, a: Harness
-    ) -> None:
-        site = await a.ok(
-            "POST",
-            "/sites",
-            json={
-                "tier": "private",
-                "domain": "https://Studio.Example/",
-                "style_family": "modern_saas",
-            },
-        )
-        assert site["domain"] == "studio.example" and site["split"] is None
+    async def test_split_is_assigned_at_intake_by_domain_hash(self, a: Harness) -> None:
+        held_domain = _domain_with_bucket(True)
+        kept_domain = _domain_with_bucket(False)
+        made = {}
+        for domain, want in ((held_domain, "holdout"), (kept_domain, "reference")):
+            site = await a.ok(
+                "POST",
+                "/sites",
+                json={"tier": "private", "domain": f"https://{domain.upper()}/"},
+            )
+            assert site["domain"] == domain
+            assert site["context_state"] == "proposed"
+            assert (
+                site["split"]
+                == want
+                == ("holdout" if svc.domain_bucket(domain) == 0 else "reference")
+            )
+            assert site["split_assigned_at"] is not None
+            made[want] = site
         # A device cannot confirm a context.
         refused = await a.post(
-            f"/sites/{site['id']}/context/confirm", {"industry": "design"}
+            f"/sites/{made['reference']['id']}/context/confirm", {"industry": "design"}
         )
         assert refused.status_code == 403
+        # The operator confirms, with no style family at all: nothing needs one.
         a.as_("operator")
-        confirmed = await a.ok(
-            "POST", f"/sites/{site['id']}/context/confirm", json={"industry": "design"}
-        )
-        assert confirmed["context_state"] == "confirmed" and confirmed["split"] in (
-            "reference",
-            "holdout",
-        )
-        again = await a.ok(
-            "POST", f"/sites/{site['id']}/context/confirm", json={"industry": "studio"}
-        )
-        assert again["split"] == confirmed["split"]
+        for want, site in made.items():
+            confirmed = await a.ok(
+                "POST",
+                f"/sites/{site['id']}/context/confirm",
+                json={"industry": "design"},
+            )
+            assert confirmed["context_state"] == "confirmed"
+            assert confirmed["split"] == want
+            again = await a.ok(
+                "POST",
+                f"/sites/{site['id']}/context/confirm",
+                json={"industry": "studio"},
+            )
+            assert again["split"] == want
         corrections = await a.ok(
             "GET",
             "/corrections",
-            params={"target_kind": "site", "target_id": site["id"]},
+            params={
+                "target_kind": "site",
+                "target_id": made["reference"]["id"],
+            },
         )
         assert {c["field"] for c in corrections} >= {"industry", "context_state"}
         # The API refuses a split change ...
-        flipped = "holdout" if confirmed["split"] == "reference" else "reference"
-        resp = await a.http.patch(f"{API}/sites/{site['id']}", json={"split": flipped})
+        site = made["reference"]
+        resp = await a.http.patch(
+            f"{API}/sites/{site['id']}", json={"split": "holdout"}
+        )
         assert resp.status_code == 409 and resp.json()["error"] == "split_immutable"
+        assert "intake" in resp.json()["message"]
         # ... and so does the database.
         with pytest.raises(DBAPIError):
             async with a.db.begin_nested():
                 await a.db.execute(
                     text("UPDATE design_refs.site SET split = :s WHERE id = :id"),
-                    {"s": flipped, "id": site["id"]},
+                    {"s": "holdout", "id": site["id"]},
                 )
 
-    async def test_every_family_holds_out_twenty_percent_within_one(
-        self, a: Harness
-    ) -> None:
+    async def test_intake_split_is_the_domain_hash_alone(self, a: Harness) -> None:
         families = [
             "luxury_premium",
             "modern_saas",
@@ -680,49 +706,123 @@ class TestSplit:
             "corporate_professional",
             "creative_experimental",
         ]
-        held: dict[str, int] = dict.fromkeys(families, 0)
-        for i in range(50):
-            family = families[i % 5]
-            site = Site(
-                tenant_id=a.tenant,
-                tier="private",
-                domain=f"site{i}.example",
-                style_family=family,
-                context_state="confirmed",
-                context_confirmed_at=datetime.now(UTC),
+        domains = [f"site{i}.example" for i in range(1000)]
+        for i, domain in enumerate(domains):
+            await a.ok(
+                "POST",
+                "/sites",
+                json={
+                    "tier": "private",
+                    "domain": domain,
+                    "style_family": families[i % 5],
+                },
             )
-            a.db.add(site)
-            await a.db.flush()
-            await svc.assign_split(a.db, site)
-            await a.db.flush()
-            held[family] += site.split == "holdout"
-            n = i // 5 + 1
-            assert n // 5 <= held[family] <= -(-n // 5), (family, n, held[family])
-        assert held == dict.fromkeys(families, 2)
+        expected = {d for d in domains if svc.domain_bucket(d) == 0}
+        assert 0 < len(expected) < 1000
+        rows = (
+            await a.db.execute(
+                select(Site.domain, Site.split).where(Site.tenant_id == a.tenant)
+            )
+        ).all()
+        assert len(rows) == 1000
+        for domain, split in rows:
+            assert split == ("holdout" if domain in expected else "reference"), domain
+        assert sum(1 for _d, split in rows if split == "holdout") == len(expected)
 
     async def test_a_domain_keeps_its_split_across_tiers(self, a: Harness) -> None:
-        first = await reference_site(a, "both.example", split="holdout")
-        other = Site(
-            tenant_id=a.tenant,
-            tier="public",
-            domain="both.example",
-            style_family="modern_saas",
-            context_state="confirmed",
-            context_confirmed_at=datetime.now(UTC),
-        )
-        a.db.add(other)
-        await a.db.flush()
-        assert await svc.assign_split(a.db, other) == first.split == "holdout"
+        # A confirmed public row forced to a split the hash disagrees with
+        # (the retired forced-balance rule could do this).
+        domain = _domain_with_bucket(False, "both")
+        assert svc.domain_bucket(domain) != 0
+        first = await reference_site(a, domain, split="holdout", tier="public")
+        other = await a.ok("POST", "/sites", json={"tier": "private", "domain": domain})
+        assert other["split"] == first.split == "holdout"
+        assert await svc.intake_split(a.db, a.tenant, domain) == "holdout"
 
-    def test_choose_split_bounds(self) -> None:
-        for assigned in range(60):
-            n = assigned + 1
-            for holdouts in range(
-                assigned // 5, -(-assigned // 5) + 1 if assigned else 1
-            ):
-                got = svc.choose_split("d.example", assigned, holdouts)
-                after = holdouts + (got == "holdout")
-                assert n // 5 <= after <= -(-n // 5)
+    async def test_the_worker_can_upload_to_an_unconfirmed_holdout(
+        self, a: Harness
+    ) -> None:
+        domain = _domain_with_bucket(True, "worker")
+        site = await a.ok("POST", "/sites", json={"tier": "private", "domain": domain})
+        assert site["split"] == "holdout" and site["context_state"] == "proposed"
+        page = await a.page(site["id"])
+        capture = await a.ok(
+            "POST",
+            "/captures",
+            json={
+                "page_id": page["id"],
+                "run_id": str(uuid4()),
+                "viewport": "desktop",
+                "tokens": {"color": {"primary": "#111"}},
+            },
+        )
+        listed = await a.ok("GET", "/captures", params={"page_id": page["id"]})
+        assert [c["id"] for c in listed] == [capture["id"]]
+        assert [
+            s["id"] for s in await a.ok("GET", "/sites", params={"domain": domain})
+        ] == [site["id"]]
+        # Once the operator confirms it, the holdout leaves every CRUD read of a
+        # device, as an assigned holdout always has.
+        a.as_("operator")
+        await a.ok("POST", f"/sites/{site['id']}/context/confirm", json={})
+        a.as_("device")
+        assert (await a.http.get(f"{API}/sites/{site['id']}")).status_code == 404
+        assert (
+            await a.http.get(f"{API}/captures", params={"page_id": page["id"]})
+        ).status_code == 404
+        assert await a.ok("GET", "/sites", params={"domain": domain}) == []
+
+    async def test_an_operator_judgement_of_an_unconfirmed_reference_stays_hidden(
+        self, a: Harness
+    ) -> None:
+        site = await reference_site(a, confirmed=False)
+        a.as_("operator")
+        page = await a.page(site.id)
+        assert (await a.rate("site", site.id, 8)).status_code == 201
+        await a.ok(
+            "POST",
+            f"/sites/{site.id}/personality",
+            json={"trait_key": "warmth", "value": 40},
+        )
+        a.as_("device")
+        assert (await a.rate("site", site.id, 3)).status_code == 201
+        seen = await a.ok(
+            "GET", "/ratings", params={"target_kind": "site", "target_id": str(site.id)}
+        )
+        assert [r["rater_kind"] for r in seen["ratings"]] == ["ai"]
+        personality = await a.ok("GET", f"/sites/{site.id}/personality")
+        assert personality == []
+        example = await a.http.get(f"{API}/examples/page/{page['id']}")
+        if example.status_code == 200:
+            assert all(r["rater_kind"] == "ai" for r in example.json()["ratings"])
+        else:
+            assert example.status_code == 404
+        # Principle evidence touching it is refused.
+        principle = await _principle(a)
+        resp = await _attach(a, principle, await _rating_id(a, site))
+        assert (
+            resp.status_code == 409
+            and resp.json()["error"] == "holdout_evidence_refused"
+        )
+        assert await svc.reference_support(a.db, a.tenant, UUID(principle)) == set()
+        # The operator still sees all of it.
+        a.as_("operator")
+        seen = await a.ok(
+            "GET", "/ratings", params={"target_kind": "site", "target_id": str(site.id)}
+        )
+        assert "operator" in {r["rater_kind"] for r in seen["ratings"]}
+
+    async def test_corpus_balance_cells_carry_context_state(self, a: Harness) -> None:
+        await reference_site(a, "conf.example")
+        await reference_site(a, "prop.example", confirmed=False)
+        await reference_site(a, "prop2.example", split="holdout", confirmed=False)
+        cells = (await a.ok("GET", "/corpus-balance"))["cells"]
+        got = {(c["split"], c["context_state"]): c["n"] for c in cells}
+        assert got == {
+            ("reference", "confirmed"): 1,
+            ("reference", "proposed"): 1,
+            ("holdout", "proposed"): 1,
+        }
 
 
 # ═════════════════════════════ holdout reads ═════════════════════════════
@@ -1118,10 +1218,10 @@ class TestPrinciples:
         one = await reference_site(a)
         two = await reference_site(a)
         held = await reference_site(a, split="holdout")
-        unsplit = await reference_site(a, split=None)  # type: ignore[arg-type]
+        unconfirmed = await reference_site(a, confirmed=False)
         principle = await _principle(a)
-        # Holdout or not-yet-split evidence is refused at insert.
-        for site in (held, unsplit):
+        # Holdout or unconfirmed evidence is refused at insert.
+        for site in (held, unconfirmed):
             resp = await _attach(a, principle, await _rating_id(a, site))
             assert (
                 resp.status_code == 409

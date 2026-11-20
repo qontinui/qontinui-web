@@ -7,10 +7,12 @@ module holds what they share and what tests drive directly:
 * **Blob keys** — tier-prefixed, content-addressed
   (``design-refs/<tier>/<tenant>/sha256/<h[:2]>/<h><ext>``), through
   :func:`app.services.storage.content_addressed_key`.
-* **The holdout split** — :func:`choose_split` / :func:`assign_split`.
+* **The holdout split** — :func:`intake_split`: the domain hash alone,
+  assigned when the site is created.
 * **Read filters** — :func:`public_tier_select` (the public-tier filter: zero
-  private rows) and :func:`agent_visible` (holdout and unassigned sites
-  excluded).
+  private rows), :func:`agent_visible` / :func:`is_agent_reference` (confirmed
+  reference sites only), :func:`is_hidden_holdout` (confirmed holdouts, hidden
+  from CRUD) and :func:`facts_visible` (reference sites, any confirmation).
 * **Hybrid search** — :func:`search`.
 * **Style distance** — :func:`token_distance`.
 * **Correlations** — :func:`correlation_report` (Human judgement item 5).
@@ -177,73 +179,27 @@ def domain_bucket(domain: str) -> int:
     return int.from_bytes(digest[:8], "big") % HOLDOUT_BUCKETS
 
 
-def choose_split(domain: str, assigned: int, holdouts: int) -> str:
-    """The split for the next site of a family that already has ``assigned``
-    sites, ``holdouts`` of them held out.
+async def intake_split(db: AsyncSession, tenant_id: UUID, domain: str) -> str:
+    """The split a new site gets at intake (``POST /sites``).
 
-    Deterministic in ``(domain, assigned, holdouts)``. The hash decides
-    whenever both answers keep the family's holdout count within
-    ``[floor(n/5), ceil(n/5)]`` after the assignment; otherwise the one answer
-    that does is forced. So every family stays within ±1 of 20% at every
-    size, and the hash, not the arrival order, picks which sites are held out.
+    The domain hash alone: ``holdout`` when :func:`domain_bucket` is 0, else
+    ``reference``. A domain already split in this tenant (its other-tier
+    record, including a row assigned by the retired forced-balance rule) keeps
+    that split, so one site is never a reference in one tier and a holdout in
+    the other. The split is immutable once written (the DB trigger).
     """
-    n = assigned + 1
-    low = (n * 1) // HOLDOUT_BUCKETS
-    high = -((-n * 1) // HOLDOUT_BUCKETS)
-    if holdouts < low:
-        return "holdout"
-    if holdouts + 1 > high:
-        return "reference"
-    return "holdout" if domain_bucket(domain) == 0 else "reference"
-
-
-async def assign_split(db: AsyncSession, site: Site) -> str:
-    """Assign ``site.split`` (once) at its first context confirmation.
-
-    A domain already split in this tenant (its other-tier record) keeps that
-    split, so one site is never a reference in one tier and a holdout in the
-    other. Otherwise :func:`choose_split` over the tenant's family counts,
-    serialised per ``(tenant, family)`` by a transaction advisory lock.
-    """
-    if site.split is not None:
-        return site.split
-    family = site.style_family or "other"
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"design_refs.split:{site.tenant_id}:{family}"},
-    )
     sibling = (
         await db.execute(
             select(Site.split).where(
-                Site.tenant_id == site.tenant_id,
-                Site.domain == site.domain,
-                Site.id != site.id,
+                Site.tenant_id == tenant_id,
+                Site.domain == normalise_domain(domain),
                 Site.split.is_not(None),
             )
         )
     ).scalar()
     if sibling is not None:
-        chosen = str(sibling)
-    else:
-        # One vote per domain: a site held in both tiers counts once.
-        counts = (
-            await db.execute(
-                select(
-                    func.count(func.distinct(Site.domain)),
-                    func.count(func.distinct(Site.domain)).filter(
-                        Site.split == "holdout"
-                    ),
-                ).where(
-                    Site.tenant_id == site.tenant_id,
-                    func.coalesce(Site.style_family, "other") == family,
-                    Site.split.is_not(None),
-                )
-            )
-        ).one()
-        chosen = choose_split(site.domain, int(counts[0]), int(counts[1]))
-    site.split = chosen
-    site.split_assigned_at = _now()
-    return chosen
+        return str(sibling)
+    return "holdout" if domain_bucket(domain) == 0 else "reference"
 
 
 # ═════════════════════════════ read filters ═════════════════════════════
@@ -268,17 +224,41 @@ def apply_public_tier(stmt: Select[Any], model: Any) -> Select[Any]:
 
 
 def agent_visible(stmt: Select[Any]) -> Select[Any]:
-    """Exclude holdout AND not-yet-assigned sites (a statement joined to
-    :class:`Site`): until a site is split it is treated as holdout."""
+    """Exclude holdout sites and sites whose context is not yet confirmed (a
+    statement joined to :class:`Site`): an agent-facing read serves a
+    CONFIRMED REFERENCE site only."""
+    return stmt.where(Site.split == "reference", Site.context_state == "confirmed")
+
+
+def facts_visible(stmt: Select[Any]) -> Select[Any]:
+    """Keep reference-split sites whatever their confirmation state (a
+    statement joined to :class:`Site`). Used only by the measured-facts arms,
+    which serve machine-measured numbers of an unconfirmed reference site."""
     return stmt.where(Site.split == "reference")
+
+
+def is_agent_reference(site: Site) -> bool:
+    """:func:`agent_visible`, per row: a confirmed reference site."""
+    return is_agent_reference_state(site.split, site.context_state)
+
+
+def is_agent_reference_state(split: str, context_state: str) -> bool:
+    """:func:`is_agent_reference` over the ``(split, context_state)`` pair
+    :func:`site_splits` returns."""
+    return split == "reference" and context_state == "confirmed"
+
+
+def is_hidden_holdout(site: Site) -> bool:
+    """A confirmed holdout: hidden from every non-operator CRUD read. A
+    holdout whose context is not yet confirmed stays visible to CRUD (the
+    worker finds and uploads to it), and to no agent-facing read."""
+    return site.split == "holdout" and site.context_state == "confirmed"
 
 
 def site_labels(site: Site) -> list[str]:
     labels: list[str] = []
     if site.split == "holdout":
         labels.append("holdout")
-    elif site.split is None:
-        labels.append("split_unassigned")
     if site.context_state != "confirmed":
         labels.append("context_unconfirmed")
     return labels
@@ -353,14 +333,17 @@ async def evidence_site_ids(
 
 async def site_splits(
     db: AsyncSession, tenant_id: UUID, site_ids: Iterable[UUID]
-) -> dict[UUID, str | None]:
+) -> dict[UUID, tuple[str, str]]:
+    """``{site_id: (split, context_state)}`` for the tenant's sites."""
     ids = list(set(site_ids))
     if not ids:
         return {}
     rows = await db.execute(
-        select(Site.id, Site.split).where(Site.tenant_id == tenant_id, Site.id.in_(ids))
+        select(Site.id, Site.split, Site.context_state).where(
+            Site.tenant_id == tenant_id, Site.id.in_(ids)
+        )
     )
-    return {row[0]: row[1] for row in rows.all()}
+    return {row[0]: (row[1], row[2]) for row in rows.all()}
 
 
 async def reference_support(
@@ -380,7 +363,11 @@ async def reference_support(
     for ids in rows:
         sites.update(ids)
     splits = await site_splits(db, tenant_id, sites)
-    return {sid for sid, split in splits.items() if split == "reference"}
+    return {
+        sid
+        for sid, (split, state) in splits.items()
+        if is_agent_reference_state(split, state)
+    }
 
 
 # ═════════════════════════════ correlations ═════════════════════════════
@@ -427,7 +414,9 @@ async def correlation_report(db: AsyncSession, tenant_id: UUID) -> list[Correlat
         for row in (
             await db.execute(
                 select(Site.id).where(
-                    Site.tenant_id == tenant_id, Site.split == "reference"
+                    Site.tenant_id == tenant_id,
+                    Site.split == "reference",
+                    Site.context_state == "confirmed",
                 )
             )
         ).all()
@@ -1427,17 +1416,20 @@ __all__ = [
     "TakedownOutcome",
     "agent_visible",
     "apply_public_tier",
-    "assign_split",
     "blob_key",
     "blob_prefix",
     "blocked_by_do_not_capture",
     "candidate_entities",
-    "choose_split",
     "correlation_report",
     "delete_objects",
     "domain_bucket",
     "evidence_site_ids",
+    "facts_visible",
     "flagged_keys",
+    "intake_split",
+    "is_agent_reference",
+    "is_agent_reference_state",
+    "is_hidden_holdout",
     "latest_personality",
     "normalise_domain",
     "parse_blob_key",
