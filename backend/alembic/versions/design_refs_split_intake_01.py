@@ -34,6 +34,13 @@ CHECK. The intake splits of unconfirmed sites are discarded; re-upgrading
 reproduces them, because the hash is deterministic. Correct with zero rows or
 many.
 
+Deploy order
+============
+The ``NOT NULL`` lands with the new code. Code predating this revision creates
+a site with a NULL ``split`` (it assigned one at first confirmation), so it
+would fail its ``POST /sites`` against the migrated schema. Migrate and deploy
+together; do not leave the old application running against the new schema.
+
 ``down_revision`` is this repo's single alembic head at authoring time; if
 another revision lands first, re-point it at the new head. Do NOT author an
 ``alembic merge`` revision.
