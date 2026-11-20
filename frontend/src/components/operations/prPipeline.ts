@@ -1154,6 +1154,38 @@ function statusFromGitHub(
     };
   }
   if (pr.merge_state_status === "CLEAN") {
+    // "Ready" is a claim that CI is green, and `CLEAN` alone does not make
+    // it: coord can serve a CLEAN merge state alongside named failing or
+    // running checks (whitespace-engine#59 read CLEAN with both checks QUEUED
+    // on a just-pushed head). Never call such a row ready. An aggregate
+    // `failure` while the lifecycle is still `pending` may be the previous
+    // head's run, so only a NAMED failure outranks running checks there.
+    const aggregateFailure =
+      pr.ci_lifecycle !== "pending" && pr.ci_conclusion === "failure";
+    if ((pr.failing_contexts?.length ?? 0) > 0 || aggregateFailure) {
+      const failing = pr.failing_contexts ?? [];
+      return {
+        kind: "checks-failing",
+        label: "Checks failing",
+        reason:
+          failing.length > 0
+            ? `failing: ${formatContextNames(failing)} — push a fix`
+            : "branch CI reports a failing check — push a fix",
+        attention: "author",
+      };
+    }
+    if (hasPendingChecks(pr)) {
+      const pending = pr.pending_contexts ?? [];
+      return {
+        kind: "checks-pending",
+        label: "Checks in progress",
+        reason:
+          pending.length > 0
+            ? `still running: ${formatContextNames(pending)}`
+            : "checks still running — no action needed",
+        attention: "none",
+      };
+    }
     return {
       kind: "ready",
       label: "Ready",
