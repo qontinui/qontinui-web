@@ -1664,6 +1664,138 @@ class TestProposedFacts:
         assert unconf.page["id"] not in {r["target_id"] for r in similar["results"]}
 
 
+async def _lum_page(
+    h: Harness, site: Site, luminance: float | None, *, runs: tuple[float, ...] = ()
+) -> dict[str, Any]:
+    """A page of ``site`` whose newest run's captures carry ``luminance`` (and,
+    first, older runs carrying ``runs``). ``None`` stores no facet."""
+    page = await h.page(site.id)
+    for value in (*runs, luminance):
+        await h.ok(
+            "POST",
+            "/captures",
+            json={
+                "page_id": page["id"],
+                "run_id": str(uuid4()),
+                "viewport": "desktop",
+                "facets": {} if value is None else {"background_luminance": value},
+            },
+        )
+    return page
+
+
+class TestMeasuredSearch:
+    async def test_search_browse_returns_proposed_pages_labelled(
+        self, a: Harness
+    ) -> None:
+        unconf, hold, conf = await _proposed_world(a)
+        found = await a.ok("POST", "/search", json={"level": "page"})
+        by_id = {r["target_id"]: r for r in found["results"]}
+        assert hold.page["id"] not in by_id
+        proposed = by_id[unconf.page["id"]]
+        assert proposed["confirmation"] == "proposed"
+        assert proposed["measured"] == {"background_luminance": 0.31}
+        for field in (
+            "snippet",
+            "text_rank",
+            "vector_similarity",
+            "personality_distance",
+            "personality_basis",
+        ):
+            assert proposed[field] is None, field
+        assert "context_unconfirmed" in proposed["labels"]
+        assert by_id[conf.page["id"]]["confirmation"] == "confirmed"
+        assert found["candidates_capped"] is False
+        assert found["measured_unknown"] == 0
+        for secret in unconf.secrets:
+            assert secret not in json.dumps(found)
+
+    async def test_measured_range_filters_and_counts_unknown(self, a: Harness) -> None:
+        site = await reference_site(a)
+        low = await _lum_page(a, site, 0.1, runs=(0.9,))  # newest run decides
+        await _lum_page(a, site, 0.8)
+        await _lum_page(a, site, None)
+        found = await a.ok(
+            "POST",
+            "/search",
+            json={
+                "level": "page",
+                "measured": {"background_luminance": {"max": 0.2}},
+            },
+        )
+        assert [r["target_id"] for r in found["results"]] == [low["id"]]
+        assert found["results"][0]["measured"] == {"background_luminance": 0.1}
+        assert found["measured_unknown"] == 1
+
+    async def test_a_description_signal_or_context_filter_never_returns_a_proposed_page(
+        self, a: Harness
+    ) -> None:
+        unconf, hold, _conf = await _proposed_world(a)
+        browse = await a.ok("POST", "/search", json={"level": "page"})
+        assert unconf.page["id"] in {r["target_id"] for r in browse["results"]}
+        signals: list[dict[str, Any]] = [
+            {"text": "PROPOSEDMARK"},
+            {"facets": {"layout": "hero"}},
+            {"query_embedding": [0.1] * 384, "query_embedding_model": "minilm"},
+            {"personality_target": {"warmth": 41}, "include_unconfirmed": True},
+            {"industry": "design"},
+            {"business_type": "studio"},
+            {"price_tier": "unknown"},
+            {"style_family": "modern_saas"},
+        ]
+        for extra in signals:
+            resp = await a.post("/search", {"level": "page", **extra})
+            assert resp.status_code == 200, (extra, resp.text)
+            for fx in (unconf, hold):
+                for needle in (fx.page["id"], fx.site["id"], *fx.secrets):
+                    assert needle not in resp.text, (extra, needle)
+        # The same holds beside a measured range.
+        resp = await a.post(
+            "/search",
+            {
+                "level": "page",
+                "text": "PROPOSEDMARK",
+                "measured": {"background_luminance": {"min": 0.0}},
+            },
+        )
+        assert unconf.page["id"] not in resp.text
+
+    async def test_measured_rejects_an_unknown_facet(self, a: Harness) -> None:
+        assert set(get_args(schemas.MeasuredFacet)) == set(models.MEASURED_FACETS)
+        for measured, level in (
+            ({"font_weight": {"min": 1}}, "page"),
+            ({"background_luminance": {}}, "page"),
+            ({"background_luminance": {"min": 2, "max": 1}}, "page"),
+            ({}, "page"),
+            ({"background_luminance": {"min": 0}}, "site"),
+        ):
+            resp = await a.post("/search", {"level": level, "measured": measured})
+            assert resp.status_code == 422, (measured, level, resp.text)
+
+    async def test_measured_filter_runs_before_the_candidate_cap(
+        self, a: Harness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(svc, "SEARCH_CANDIDATE_CAP", 2)
+        site = await reference_site(a)
+        match = await _lum_page(a, site, 0.1)  # created first, so newest-first drops it
+        for _ in range(3):
+            await _lum_page(a, site, 0.9)
+        found = await a.ok(
+            "POST",
+            "/search",
+            json={
+                "level": "page",
+                "measured": {"background_luminance": {"max": 0.2}},
+            },
+        )
+        assert [r["target_id"] for r in found["results"]] == [match["id"]]
+        assert found["candidates_capped"] is False
+        # Without the filter the cap binds, and the response says so.
+        unfiltered = await a.ok("POST", "/search", json={"level": "page"})
+        assert unfiltered["candidates_capped"] is True
+        assert len(unfiltered["results"]) == 2
+
+
 # ═════════════════════════════ search ═════════════════════════════
 
 

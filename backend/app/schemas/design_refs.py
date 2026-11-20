@@ -543,6 +543,26 @@ class CaptureJobOut(_Out):
 # ═════════════════════════════ search ═════════════════════════════
 
 
+MeasuredFacet = Literal[
+    "background_luminance", "palette_saturation", "type_scale_ratio"
+]
+
+
+class MeasuredRange(_Strict):
+    """An inclusive range over a per-page median; at least one bound."""
+
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode="after")
+    def _bounds(self) -> MeasuredRange:
+        if self.min is None and self.max is None:
+            raise ValueError("a measured range needs a min or a max")
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("a measured range needs min <= max")
+        return self
+
+
 class DesignRefSearchRequest(_Strict):
     level: Level
     text: str | None = Field(default=None, max_length=1000)
@@ -562,9 +582,18 @@ class DesignRefSearchRequest(_Strict):
     #: Accepted only from an operator principal (the review UI's reads).
     include_holdout: bool = False
     limit: int = Field(default=20, ge=1, le=200)
+    #: Range filter over the per-page median of each named facet over the
+    #: page's newest run. Page level only; a key outside ``MEASURED_FACETS``
+    #: is a 422.
+    measured: dict[MeasuredFacet, MeasuredRange] | None = None
 
     @model_validator(mode="after")
     def _shape(self) -> DesignRefSearchRequest:
+        if self.measured is not None:
+            if not self.measured:
+                raise ValueError("measured names at least one facet")
+            if self.level != "page":
+                raise ValueError("measured applies to page-level search only")
         if (self.query_embedding is None) != (self.query_embedding_model is None):
             raise ValueError(
                 "query_embedding and query_embedding_model are sent together"
@@ -599,11 +628,18 @@ class SearchHit(BaseModel):
     #: The site's ``context_state``; required, so a caller cannot mistake a
     #: proposed fact for a confirmed one.
     confirmation: Confirmation
+    #: Per-facet median over the page's newest run: the facets a ``measured``
+    #: filter used and any others the page has. Empty off page level.
+    measured: dict[str, float]
 
 
 class SearchResponse(BaseModel):
     vector_arm: Literal["hybrid", "skipped_no_embedding"]
     results: list[SearchHit]
+    #: The candidate cap bound: the results may be an incomplete set.
+    candidates_capped: bool
+    #: Candidates dropped because a ``measured`` facet had no value.
+    measured_unknown: int
 
 
 class SimilarByStyleRequest(_Strict):

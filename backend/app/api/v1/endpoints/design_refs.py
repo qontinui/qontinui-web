@@ -1804,13 +1804,26 @@ async def search_examples(
     body: DesignRefSearchRequest, principal: Principal, db: Db
 ) -> SearchResponse:
     include_holdout = gate_include_holdout(principal, body.include_holdout)
-    vector_arm, hits = await svc.search(
+    dumped = body.model_dump()
+    measured = {
+        facet: (bounds["min"], bounds["max"])
+        for facet, bounds in (dumped.pop("measured") or {}).items()
+    }
+    outcome = await svc.search(
         db,
         principal.tenant_id,
-        svc.SearchQuery(**{**body.model_dump(), "include_holdout": include_holdout}),
+        svc.SearchQuery(
+            **{
+                **dumped,
+                "include_holdout": include_holdout,
+                "measured": measured or None,
+            }
+        ),
     )
     return SearchResponse(
-        vector_arm=vector_arm,  # type: ignore[arg-type]
+        vector_arm=outcome.vector_arm,  # type: ignore[arg-type]
+        candidates_capped=outcome.candidates_capped,
+        measured_unknown=outcome.measured_unknown,
         results=[
             SearchHit(
                 level=hit.level,  # type: ignore[arg-type]
@@ -1828,8 +1841,9 @@ async def search_examples(
                 labels=hit.labels,
                 snippet=hit.snippet,
                 confirmation=hit.site.context_state,  # type: ignore[arg-type]
+                measured=hit.measured,
             )
-            for hit in hits
+            for hit in outcome.hits
         ],
     )
 
