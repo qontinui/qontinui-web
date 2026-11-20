@@ -15,6 +15,7 @@ Source-level (never skip):
 * upgrade's predicate is exactly ``_HOLD_EVENTS``, downgrade's is lacap_01's
   single event, and both keep ``(device_id, occurred_at DESC)`` (drop an event,
   or change the key);
+* each direction drops the OTHER direction's temp after its rename;
 * each direction builds its temporary index BEFORE it drops the original and
   renames AFTER (drop first -> a window with no index);
 * the two directions use different temporary names, each renamed onto the
@@ -29,9 +30,15 @@ Live (skip without a reachable Postgres; a skip proves nothing — set
 
 * after upgrade the index is VALID under the original name, keyed
   ``(device_id, occurred_at DESC)``, with both events in its predicate, no
-  temporary index survives, and coord's IN-list hold read plans on it;
+  temporary index survives;
+* the SHAPE of coord's refusal-hold read (IN list, window, stamp filter,
+  computed leading ORDER BY key) plans on the index under a Sort -- the index
+  is the access path, it cannot supply that order;
 * downgrade restores lacap_01's predicate under the original name; up -> down
-  -> up re-applies cleanly; a stamp-back re-run converges.
+  -> up re-applies cleanly; a stamp-back re-run converges;
+* an INVALID temp index is rebuilt (both directions, superuser only), a VALID
+  one is reused, an already-dropped original with the temp present only
+  renames, and the other direction's abandoned temp is dropped.
 """
 
 from __future__ import annotations
@@ -56,7 +63,10 @@ from tests._alembic_harness import (
     ephemeral_database,
     index_definition,
     index_exists,
+    index_oid,
     index_state,
+    invalidate_index,
+    is_superuser,
     load_revision_module,
     run_alembic,
     upgrade_execute_calls,
@@ -141,6 +151,20 @@ def _recorded(
     return executed
 
 
+def _other_temp_name(step: str) -> str:
+    return _temp_name("downgrade" if step == "upgrade" else "upgrade")
+
+
+def _drop(name: str) -> str:
+    return f"DROP INDEX CONCURRENTLY IF EXISTS COORD.{name.upper()}"
+
+
+def _exactly(statements: list[str], statement: str) -> int:
+    hits = [i for i, s in enumerate(statements) if s == statement]
+    assert len(hits) == 1, (statement, statements)
+    return hits[0]
+
+
 def _one(statements: list[str], needle: str) -> int:
     hits = [i for i, s in enumerate(statements) if needle in s]
     assert len(hits) == 1, (needle, statements)
@@ -197,9 +221,7 @@ def test_the_swap_builds_before_it_drops_and_renames_last(
     statements = _recorded(monkeypatch, step)
     temp = _temp_name(step).upper()
     create = _one(statements, "CREATE INDEX")
-    drop = _one(
-        statements, f"DROP INDEX CONCURRENTLY IF EXISTS COORD.{_INDEX_NAME.upper()}"
-    )
+    drop = _exactly(statements, _drop(_INDEX_NAME))
     rename = _one(statements, "RENAME TO")
     assert create < drop < rename
     assert statements[rename] == (
@@ -223,11 +245,25 @@ def test_an_invalid_temporary_index_is_dropped_before_the_create(
     monkeypatch: pytest.MonkeyPatch, step: str
 ) -> None:
     """Mutation: delete the ``_index_is_invalid`` branch, or move it after the CREATE."""
-    temp_drop = f"DROP INDEX CONCURRENTLY IF EXISTS COORD.{_temp_name(step).upper()}"
+    temp_drop = _drop(_temp_name(step))
     invalid = _recorded(monkeypatch, step, index_invalid=True)
-    assert _one(invalid, temp_drop) < _one(invalid, "CREATE INDEX")
+    assert _exactly(invalid, temp_drop) < _one(invalid, "CREATE INDEX")
     healthy = _recorded(monkeypatch, step, index_invalid=False)
-    assert not any(temp_drop in s for s in healthy), "a VALID temp index is reused"
+    assert temp_drop not in healthy, "a VALID temp index is reused"
+
+
+@pytest.mark.parametrize("step", ["upgrade", "downgrade"])
+def test_each_direction_drops_the_other_directions_temp_after_the_rename(
+    monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """An abandoned interrupted run of the other direction leaves no orphan.
+
+    Mutation: delete the trailing drop, or move it before the rename.
+    """
+    for invalid in (False, True):
+        statements = _recorded(monkeypatch, step, index_invalid=invalid)
+        orphan = _exactly(statements, _drop(_other_temp_name(step)))
+        assert orphan > _one(statements, "RENAME TO")
 
 
 @pytest.mark.parametrize("step", ["upgrade", "downgrade"])
@@ -319,6 +355,30 @@ def _insert_tenant(conn: Connection) -> str:
     return tenant
 
 
+def _build_temp_by_hand(engine: Engine, step: str) -> None:
+    """Create ``step``'s temporary index as an interrupted run would leave it."""
+    temp = _temp_name(step)
+    predicate = (
+        "event IN ('spawn_deferred_load_retire', 'continuation_deferred_load')"
+        if step == "upgrade"
+        else "event = 'spawn_deferred_load_retire'"
+    )
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                f"CREATE INDEX {temp} ON coord.agent_logs "
+                f"(device_id, occurred_at DESC) WHERE {predicate}"
+            )
+        )
+        conn.commit()
+
+
+def _drop_by_hand(engine: Engine, index_name: str) -> None:
+    with engine.connect() as conn:
+        conn.execute(text(f"DROP INDEX coord.{index_name}"))
+        conn.commit()
+
+
 def test_live_up_down_up_and_rerun_converge() -> None:
     admin_url = _admin_url_or_skip()
     with ephemeral_database(admin_url, "cfo02r") as (engine, db_url):
@@ -339,7 +399,103 @@ def test_live_up_down_up_and_rerun_converge() -> None:
         _assert_index(engine, _HOLD_EVENTS)
 
 
-def test_live_the_in_list_hold_read_plans_on_the_index() -> None:
+@pytest.mark.parametrize("step", ["upgrade", "downgrade"])
+def test_live_an_invalid_temp_index_is_rebuilt(step: str) -> None:
+    """A killed CONCURRENTLY build of the temp index is dropped and rebuilt.
+
+    Mutation: delete the ``_index_is_invalid`` branch -- IF NOT EXISTS keeps
+    the INVALID temp, the rename moves it onto the original name, and the
+    final index is INVALID.
+    """
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, f"cfo02v{step[0]}") as (engine, db_url):
+        start, target, final = (
+            (_PARENT_REVISION_ID, _REVISION_ID, _HOLD_EVENTS)
+            if step == "upgrade"
+            else (_REVISION_ID, _PARENT_REVISION_ID, (_LACAP_01_EVENT,))
+        )
+        run_alembic(backend_root(), db_url, "upgrade", start)
+        if not is_superuser(engine):
+            pytest.skip("the test role cannot write pg_index to invalidate an index")
+        _build_temp_by_hand(engine, step)
+        invalidate_index(engine, _temp_name(step))
+        assert not index_state(engine, _temp_name(step))[0]
+
+        run_alembic(backend_root(), db_url, step, target)
+        _assert_index(engine, final)
+
+
+def test_live_a_valid_upgrade_temp_index_is_reused() -> None:
+    """A VALID temp index left by an interrupted upgrade is kept and renamed."""
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, "cfo02k") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        _build_temp_by_hand(engine, "upgrade")
+        before = index_oid(engine, _temp_name("upgrade"))
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _assert_index(engine, _HOLD_EVENTS)
+        assert index_oid(engine, _INDEX_NAME) == before, (
+            "a VALID temp index must be reused, not rebuilt"
+        )
+
+
+def test_live_original_already_dropped_with_the_temp_present() -> None:
+    """Interrupted between the drop and the rename: the re-run only renames."""
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, "cfo02d") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        _build_temp_by_hand(engine, "upgrade")
+        _drop_by_hand(engine, _INDEX_NAME)
+        assert not index_exists(engine, _INDEX_NAME)
+        before = index_oid(engine, _temp_name("upgrade"))
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _assert_index(engine, _HOLD_EVENTS)
+        assert index_oid(engine, _INDEX_NAME) == before
+
+
+def test_live_an_abandoned_downgrade_temp_is_dropped_by_the_upgrade() -> None:
+    """Mutation: delete the upgrade's trailing drop of the downgrade's temp."""
+    admin_url = _admin_url_or_skip()
+    with ephemeral_database(admin_url, "cfo02o") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        _build_temp_by_hand(engine, "downgrade")
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _assert_index(engine, _HOLD_EVENTS)
+
+
+# The SHAPE of coord's refusal-hold read (qontinui-coord
+# crates/coord/src/spawn_admission.rs REFUSAL_HOLD_SQL), with the event filter
+# widened to the IN list Phase 2 reads. Mirrors its window and its stamp
+# filter, and its computed leading ORDER BY key.
+_HOLD_READ_SHAPE = """
+    SELECT l.payload->>'stamp' AS stamp
+      FROM coord.agent_logs l
+     WHERE l.event IN ('spawn_deferred_load_retire', 'continuation_deferred_load')
+       AND l.device_id = :d
+       AND l.occurred_at > now() - make_interval(secs => 900::float8)
+       AND NOT starts_with(COALESCE(l.payload->>'stamp', ''), 'credential_door:')
+     ORDER BY (NOT starts_with(COALESCE(l.payload->>'stamp', ''), 'thread_pressure:')
+               AND NOT starts_with(COALESCE(l.payload->>'stamp', ''),
+                                   'commit_pressure:')) DESC,
+              l.occurred_at DESC
+     LIMIT 1
+"""
+
+
+def test_live_the_hold_read_shape_plans_on_the_index() -> None:
+    """The index is the ACCESS PATH for the hold read; it cannot supply order.
+
+    The leading ORDER BY key is computed from the payload, so no index can
+    return rows in that order: the plan must show the index (device equality
+    + occurred_at range over the refusal population) under a Sort. Asserting
+    the Sort is deliberate -- it states what the index does NOT do.
+    Mutation: revert the predicate to lacap_01's single event (the IN-list
+    read can no longer prove the predicate, so the index disappears from the
+    plan).
+    """
     admin_url = _admin_url_or_skip()
     with ephemeral_database(admin_url, "cfo02i") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
@@ -367,8 +523,13 @@ def test_live_the_in_list_hold_read_plans_on_the_index() -> None:
                             """
                             INSERT INTO coord.agent_logs
                                 (agent_id, tenant_id, device_id, level, event,
-                                 occurred_at)
+                                 payload, occurred_at)
                             SELECT gen_random_uuid(), :t, :d, 'warn', :e,
+                                   jsonb_build_object(
+                                       'stamp',
+                                       CASE WHEN g % 2 = 0
+                                            THEN 'thread_pressure:x'
+                                            ELSE 'deferred_load:x' END),
                                    now() - (g || ' minutes')::interval
                               FROM generate_series(1, 10) AS g
                             """
@@ -379,19 +540,28 @@ def test_live_the_in_list_hold_read_plans_on_the_index() -> None:
 
         with engine.connect() as conn:
             conn.execute(text("SET enable_seqscan = off"))
-            for where in (
-                "event IN ('spawn_deferred_load_retire', 'continuation_deferred_load')",
-                "event = 'spawn_deferred_load_retire'",
-            ):
-                plan = "\n".join(
-                    str(r[0])
-                    for r in conn.execute(
-                        text(
-                            "EXPLAIN SELECT occurred_at FROM coord.agent_logs "
-                            f"WHERE {where} AND device_id = :d "
-                            "ORDER BY occurred_at DESC LIMIT 1"
-                        ),
-                        {"d": str(devices[7])},
-                    )
+            plan = "\n".join(
+                str(r[0])
+                for r in conn.execute(
+                    text(f"EXPLAIN {_HOLD_READ_SHAPE}"), {"d": str(devices[7])}
                 )
-                assert _INDEX_NAME in plan, (where, plan)
+            )
+            assert _INDEX_NAME in plan, plan
+            assert "Sort" in plan, (
+                "the computed leading ORDER BY key cannot come from an index; "
+                f"a plan without a Sort means the shape changed: {plan}"
+            )
+
+            # The old single-event read still plans on the widened index.
+            single = "\n".join(
+                str(r[0])
+                for r in conn.execute(
+                    text(
+                        "EXPLAIN SELECT occurred_at FROM coord.agent_logs "
+                        "WHERE event = 'spawn_deferred_load_retire' "
+                        "AND device_id = :d ORDER BY occurred_at DESC LIMIT 1"
+                    ),
+                    {"d": str(devices[7])},
+                )
+            )
+            assert _INDEX_NAME in single, single
