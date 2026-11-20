@@ -182,4 +182,20 @@ describe("CoordTopicsPage", () => {
     );
     expect(within(tabCount("done")).getByText("0")).toBeInTheDocument();
   });
+
+  it("a topic never rolled up says its activity is unknown, not absent", async () => {
+    fetchTopics.mockResolvedValue(
+      list([
+        topic({
+          headline: null,
+          last_activity_at: null,
+          last_rollup_as_of: null,
+        }),
+      ])
+    );
+    render(<CoordTopicsPage />);
+    await screen.findByText("Subproject topics");
+    expect(screen.getByText("activity unknown")).toBeInTheDocument();
+    expect(screen.queryByText("no activity reported")).not.toBeInTheDocument();
+  });
 });

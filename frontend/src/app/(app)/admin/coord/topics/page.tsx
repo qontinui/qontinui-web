@@ -327,11 +327,11 @@ function TopicRow({
             verb="Last activity"
             absent={{
               label:
-                t.last_rollup_as_of === null
+                t.last_rollup_as_of == null
                   ? "activity unknown"
                   : "no activity reported",
               title:
-                t.last_rollup_as_of === null
+                t.last_rollup_as_of == null
                   ? "coord has not rolled this topic up, so its last activity is unknown."
                   : "coord reported no member activity time for this topic.",
             }}
