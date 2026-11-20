@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -208,6 +209,7 @@ export function PolicyAutoPublishDialControl({
   };
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
   // No observed-worker lines under a line that says nothing has been read:
   // while the dial waits for the page's project, it shows that alone.
@@ -405,7 +407,7 @@ export function PolicyAutoPublishDialControl({
       <RadioGroup
         value={displayLevel ?? undefined}
         onValueChange={(v) => onSelect(v as PolicyAutoPublishLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS.map((level) => (

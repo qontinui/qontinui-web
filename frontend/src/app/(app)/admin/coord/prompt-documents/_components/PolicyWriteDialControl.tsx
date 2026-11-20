@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -99,6 +100,7 @@ export function PolicyWriteDialControl() {
   );
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing the
@@ -274,7 +276,7 @@ export function PolicyWriteDialControl() {
       <RadioGroup
         value={displayLevel ?? undefined}
         onValueChange={(v) => onSelect(v as PolicyWriteLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_WRITE_SELECTABLE_LEVELS.map((level) => (

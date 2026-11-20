@@ -125,3 +125,13 @@ export interface PageSendGuard {
 export function usePageSendGuard(): PageSendGuard {
   return useRequiredPageWriteGuard();
 }
+
+/**
+ * Whether the enclosing page is cross-tab locked (D3), for a control that
+ * takes it into its OWN `disabled`: a Radix trigger or item does not see the
+ * page's disabled fieldset (#6). `false` outside a provider — such a control
+ * sends nothing on its own, and the hooks beside it refuse by themselves.
+ */
+export function usePageLocked(): boolean {
+  return useContext(PageWriteGuardContext)?.locked != null;
+}
