@@ -68,6 +68,10 @@ export default function CoordTopicsPage() {
   const [query, setQuery] = useState("");
   const state = useTopicsList();
   const topics = state.list?.topics ?? null;
+  /** coord answered, but says its topic tables are not ready: every count
+   *  and "none" it implies is unknown, not zero. */
+  const tablesNotReady = state.list?.tables_ready === false;
+  const countable = tablesNotReady ? null : topics;
 
   const setTab = useCallback(
     (next: TopicTab) => {
@@ -82,13 +86,14 @@ export default function CoordTopicsPage() {
     [router, pathname, searchParams]
   );
 
-  const counts = useMemo(() => topicTabCounts(topics), [topics]);
+  const counts = useMemo(() => topicTabCounts(countable), [countable]);
   const unknownCount = useMemo(
     () =>
-      topics === null
+      countable === null
         ? null
-        : topics.filter((t) => deriveTopicStatus(t).kind === "unknown").length,
-    [topics]
+        : countable.filter((t) => deriveTopicStatus(t).kind === "unknown")
+            .length,
+    [countable]
   );
 
   const needle = query.trim().toLowerCase();
@@ -113,7 +118,8 @@ export default function CoordTopicsPage() {
     counts,
     unknownCount,
     state.failure !== null,
-    state.loaded
+    state.loaded,
+    tablesNotReady
   );
   const badges: HealthBadge[] = [
     {
@@ -210,6 +216,17 @@ export default function CoordTopicsPage() {
         ) : null}
       </p>
 
+      {state.list?.tables_ready === false && (
+        <p
+          className="m-0 text-xs text-amber-200"
+          role="status"
+          data-testid="coord-topics-tables-not-ready"
+        >
+          coord reports its topic tables are not ready, so this list is not
+          authoritative — an empty view here is unknown, not none.
+        </p>
+      )}
+
       <FilterTabs
         tabs={tabs}
         active={tab}
@@ -247,6 +264,7 @@ export default function CoordTopicsPage() {
               failure: state.failure,
               query: needle,
               loadedRows: inView.length,
+              tablesReady: !tablesNotReady,
             })}
           </p>
         }
@@ -260,7 +278,8 @@ function deriveHealth(
   counts: Record<TopicTab, number | null>,
   unknown: number | null,
   failed: boolean,
-  loaded: boolean
+  loaded: boolean,
+  tablesNotReady: boolean
 ): { level: HealthStripLevel; headline: string; detail?: string } {
   if (!loaded) {
     return failed
@@ -270,6 +289,15 @@ function deriveHealth(
           detail: "Whether any topic needs you is unknown.",
         }
       : { level: "amber", headline: "Reading topics…" };
+  }
+  if (tablesNotReady) {
+    return {
+      level: "amber",
+      headline: "Topic tables not ready",
+      detail: failed
+        ? "Whether any topic needs you is unknown; the latest read also failed."
+        : "Whether any topic needs you is unknown.",
+    };
   }
   const loud = (counts.needs_you ?? 0) + (counts.stalled ?? 0);
   if (loud > 0) {

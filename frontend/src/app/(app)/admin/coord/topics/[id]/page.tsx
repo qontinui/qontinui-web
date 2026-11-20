@@ -45,6 +45,7 @@ import {
   decidedByWords,
   deriveMemberHeadline,
   deriveTopicStatus,
+  intentRefWords,
   memberStateWords,
   sortMembers,
   topicReadFailureWords,
@@ -185,6 +186,7 @@ function TopicBody({ detail }: { detail: TopicDetailResponse }) {
   const childList = memberList(detail.children);
   const historyList = memberList(detail.history);
   const members = sortMembers(memberRead.items);
+  const intentAnchor = intentRefWords(t.intent_ref);
 
   return (
     <>
@@ -233,6 +235,30 @@ function TopicBody({ detail }: { detail: TopicDetailResponse }) {
           </p>
         ) : (
           <p className="m-0 text-xs text-muted-foreground">No summary yet.</p>
+        )}
+        {t.parent_topic_id && (
+          <p
+            className="m-0 text-xs text-muted-foreground"
+            data-testid="coord-topic-parent"
+          >
+            Part of{" "}
+            <Link
+              href={`/admin/coord/topics/${encodeURIComponent(t.parent_topic_id)}`}
+              className="underline underline-offset-2"
+            >
+              its parent topic
+            </Link>
+            .
+          </p>
+        )}
+        {intentAnchor && (
+          <p
+            className="m-0 text-xs text-muted-foreground"
+            data-testid="coord-topic-intent"
+          >
+            Anchored to intent <span className="font-mono">{intentAnchor}</span>
+            .
+          </p>
         )}
         {t.merged_into && (
           <p className="m-0 text-xs text-muted-foreground">

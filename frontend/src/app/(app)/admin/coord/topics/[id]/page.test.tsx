@@ -117,6 +117,35 @@ describe("TopicDetailPage", () => {
     );
   });
 
+  it("links the parent topic and names the intent anchor when coord sends them", async () => {
+    const PARENT = "9b1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f";
+    fetchTopic.mockResolvedValue({
+      ...DETAIL,
+      topic: {
+        ...DETAIL.topic,
+        parent_topic_id: PARENT,
+        intent_ref: { kind: "product_intent", name: "roadmap", claim: "c-3" },
+      },
+    });
+    render(<TopicDetailPage />);
+    const parent = await screen.findByTestId("coord-topic-parent");
+    expect(within(parent).getByRole("link")).toHaveAttribute(
+      "href",
+      `/admin/coord/topics/${PARENT}`
+    );
+    expect(screen.getByTestId("coord-topic-intent")).toHaveTextContent(
+      'product_intent/roadmap, claim "c-3"'
+    );
+  });
+
+  it("says nothing about a parent or an anchor the topic does not have", async () => {
+    fetchTopic.mockResolvedValue(DETAIL);
+    render(<TopicDetailPage />);
+    await screen.findByTestId("coord-topic-summary");
+    expect(screen.queryByTestId("coord-topic-parent")).toBeNull();
+    expect(screen.queryByTestId("coord-topic-intent")).toBeNull();
+  });
+
   it("says coord's 404 as an answer", async () => {
     fetchTopic.mockRejectedValue(
       new Error(

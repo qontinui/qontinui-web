@@ -168,6 +168,32 @@ describe("CoordTopicsPage", () => {
     expect(line).toHaveTextContent("–");
   });
 
+  it("says coord's not-ready topic tables as unknown everywhere, never as none", async () => {
+    fetchTopics.mockResolvedValue({ ...list([]), tables_ready: false });
+    render(<CoordTopicsPage />);
+    expect(
+      await screen.findByTestId("coord-topics-tables-not-ready")
+    ).toHaveTextContent("unknown, not none");
+    const strip = screen.getByTestId("coord-topics-strip");
+    expect(strip).toHaveTextContent("Topic tables not ready");
+    expect(strip).not.toHaveTextContent("No topic needs you");
+    expect(within(tabCount("all")).getByText("–")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-topics-empty")).toHaveTextContent(
+      "unknown: coord's topic tables are not ready"
+    );
+  });
+
+  it("shows no not-ready notice when coord's topic tables are ready", async () => {
+    fetchTopics.mockResolvedValue(list([topic()]));
+    render(<CoordTopicsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-topics-unassigned")).toHaveTextContent(
+        "Topics as of"
+      )
+    );
+    expect(screen.queryByTestId("coord-topics-tables-not-ready")).toBeNull();
+  });
+
   it("a topic never rolled up is unknown and listed under All", async () => {
     fetchTopics.mockResolvedValue(
       list([

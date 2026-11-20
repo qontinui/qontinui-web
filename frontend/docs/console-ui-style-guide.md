@@ -1871,7 +1871,7 @@ Phase 8, D9) compose `HealthStrip`, `FilterTabs`, `RecordList`/`RecordRow`/
 `RecordDetail`, `StatusBadge`, `RowTime`, `CollapsiblePanel` and
 `RefreshButton`, and register one palette in `CONSOLE_PALETTES` from
 `components/admin/coord/topics/topicStatus.ts`: a topic's rolled-up headline,
-in the subprojects' own vocabulary and hues. It adds no primitive. Two things
+in the subprojects' own vocabulary and hues. It adds no primitive. Three things
 are recorded rather than shipped silently:
 
 - **Tab counts are counted from the one list coord serves.** coord's
@@ -1888,6 +1888,14 @@ are recorded rather than shipped silently:
   toggle is disabled, both titled "topic data not yet served" (the title sits
   on a wrapper, since a disabled button shows none). Both become live in the PR
   that teaches the list to serve the topic.
+- **A 200 with `tables_ready: false` is unknown everywhere on the page.**
+  An amber notice says the list is not authoritative, the strip reads "Topic
+  tables not ready", every tab count is `–` and an empty view says whether
+  any topic is in it is unknown — never "No topic yet." On the detail page a
+  `parent_topic_id` is a "Part of its parent topic" link and an `intent_ref`
+  is named ("Anchored to intent `kind/name`, claim …"); an absent parent or
+  anchor shows nothing, since an unparented or unanchored topic is a normal
+  state rather than an unknown one.
 
 ---
 
