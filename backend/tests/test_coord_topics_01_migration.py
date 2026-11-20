@@ -19,7 +19,7 @@ Without a database (always runs):
    only DROPs are in ``downgrade()``** — also checked with
    ``check_coord_column_drops``'s own scanner.
 3. **The tables, comments and uniques are built in ONE transaction**, in the
-   declared order, with no ``CONCURRENTLY``, no ``op.get_bind()`` read and no
+   declared order, with no ``CONCURRENTLY``, no ``op.get_bind()`` use (the classifier refuses SQL run through it) and no
    ``CREATE EXTENSION`` (coord's migration classifier refuses each; pgvector
    comes from the ancestor ``coord_memory_records``). The ONE exception is
    ``idx_topics_tenant_status``, built last, ``CONCURRENTLY IF NOT EXISTS`` in
@@ -426,7 +426,9 @@ def test_statement_shapes_avoid_what_coords_classifier_refuses() -> None:
     blocks = [n for n in ast.walk(upgrade) if isinstance(n, ast.With)]
     assert len(blocks) == 1, "one autocommit_block, for the concurrent index only"
     attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-    assert "get_bind" not in attrs, "coord's migration classifier rejects bind reads"
+    assert "get_bind" not in attrs, (
+        "coord's migration classifier refuses SQL run through a bind"
+    )
 
 
 # ---------------------------------------------------------------------------
