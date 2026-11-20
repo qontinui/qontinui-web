@@ -221,6 +221,22 @@ export function workingTitle(
   return `${t.subprojects_working} of ${t.subprojects_total} subproject${t.subprojects_total === 1 ? "" : "s"} working`;
 }
 
+/**
+ * Which lifecycle states the list holds. The page sends no `status`, so
+ * coord's default decides which topics are listed; this sentence says so and
+ * names what it served, so a filtered-out state is not mistaken for none.
+ */
+export function lifecycleWords(
+  topics: readonly Pick<TopicSummary, "status">[]
+): string {
+  const by = new Map<string, number>();
+  for (const t of topics) by.set(t.status, (by.get(t.status) ?? 0) + 1);
+  const parts = [...by.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([status, n]) => `${status} ${n}`);
+  return `Listed under coord's default lifecycle filter${parts.length > 0 ? ` (${parts.join(", ")})` : ""}; topics in other states may not be shown.`;
+}
+
 const EMPTY_VIEW: Record<TopicTab, string> = {
   needs_you: "No topic needs you",
   stalled: "No topic is stalled",

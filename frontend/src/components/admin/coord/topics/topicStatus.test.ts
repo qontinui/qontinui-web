@@ -3,6 +3,7 @@ import {
   basisSentence,
   deriveTopicStatus,
   inTopicTab,
+  lifecycleWords,
   sortMembers,
   topicReadFailureWords,
   topicTabCounts,
@@ -132,5 +133,17 @@ describe("members", () => {
 it("a pending migration says topics are not available yet", () => {
   expect(topicReadFailureWords({ kind: "migration_pending" })).toBe(
     "topics not available yet (migration pending)"
+  );
+});
+
+it("names the lifecycle filter and the states the list served", () => {
+  expect(
+    lifecycleWords([
+      { status: "proposed" },
+      { status: "active" },
+      { status: "active" },
+    ])
+  ).toBe(
+    "Listed under coord's default lifecycle filter (active 2, proposed 1); topics in other states may not be shown."
   );
 });
