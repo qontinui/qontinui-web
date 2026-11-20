@@ -87,7 +87,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 import check_coord_column_drops as guard  # noqa: E402
 
 _REVISION_ID = "coord_topics_01"
-_PARENT_REVISION_ID = "contproof_01_gates_continuation_start_proof"
+_PARENT_REVISION_ID = "design_refs_split_intake_01"
 _REVISION_FILENAME = "coord_topics_01_topics_members_aliases_vectors.py"
 
 _SCHEMA = "coord"

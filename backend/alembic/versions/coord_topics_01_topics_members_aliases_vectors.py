@@ -214,7 +214,7 @@ below, and ``_PARENT_REVISION_ID`` in
 ``tests/test_coord_topics_01_migration.py``.
 
 Revision ID: coord_topics_01
-Revises: contproof_01_gates_continuation_start_proof
+Revises: design_refs_split_intake_01
 Create Date: 2026-11-20
 
 """
@@ -225,7 +225,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_topics_01"
-down_revision: str | None = "contproof_01_gates_continuation_start_proof"
+down_revision: str | None = "design_refs_split_intake_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
