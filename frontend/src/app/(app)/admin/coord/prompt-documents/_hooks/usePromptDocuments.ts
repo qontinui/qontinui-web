@@ -44,15 +44,28 @@ function message(err: unknown, fallback: string): string {
  * into a confident "no documents" empty state.
  *
  * **Pinned.** `pin` is the project the page's rows belong to. Every read and
- * write below is sent in it on EVERY attempt (`pinActiveTenant`), and so is the
- * re-read each write takes, and `reload()` by default. The HTTP client
- * otherwise reads the stored project per attempt, so a request retried (429),
- * or replayed after a token refresh, after another tab switched project would
- * land in, or answer from, that project. The one exception is the mount read,
- * which goes out before the page's project is known and is superseded by a
- * pinned read once it is (`PromptDocumentList`). Each returned function keeps
- * one identity until the pinned project changes — the dialogs hold the readers
- * in their effect dependencies.
+ * write below is sent in it on EVERY attempt (`pinActiveTenant`). The HTTP
+ * client otherwise reads the stored project per attempt, so a request retried
+ * (429), or replayed after a token refresh, after another tab switched project
+ * would land in, or answer from, that project. The mount read is pinned too,
+ * to the pin the hook is handed on its first render: the page's provider
+ * names the project the page shows from that render on, the project stored at
+ * mount while the page's own is not yet known (`usePageProject`). Nothing
+ * else re-reads the rows when the page's project turns out to be that same
+ * project, so an unpinned mount read retried or replayed after another tab's
+ * switch would leave that tab's rows on the page as its own. With no pin on
+ * the first render (nothing stored, or none selected) it goes unpinned, and
+ * the page re-reads pinned once its project resolves, if this read went out
+ * in a different one (`PromptDocumentList`). Each returned function keeps one
+ * identity until the pinned project changes — the dialogs hold the readers in
+ * their effect dependencies.
+ *
+ * The re-read each write takes, and `reload()` by default, go in the pin as
+ * it stands when they are SENT, not the one the write was made in. Another
+ * tab's switch leaves the page's pin as it was, so they stay in the page's
+ * project. THIS tab's own switch moves it, and the page follows: a re-read in
+ * the write's old project would put that project's rows on the page now
+ * showing another. The write itself stays pinned to its own project.
  */
 export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
   // Keyed on the project, not on the caller's object: a new `{ tenant }` for
@@ -136,20 +149,27 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
     []
   );
 
-  // The mount read: UNPINNED, because it goes out before the page's project is
-  // known. The page re-reads pinned once that project resolves, if this read
-  // went out in a different one (`newestReadTenant`).
+  // The pin as it stands now: for the mount read, and for the re-reads sent
+  // after an answer arrives (see the hook's docs). One identity, read when
+  // each is sent.
+  const currentPin = useRef(projectPin);
+  currentPin.current = projectPin;
+
+  // The mount read, in the pin the hook has on its first render (see the
+  // hook's docs). The page re-reads pinned once its project resolves, if this
+  // read went out in a different one (`newestReadTenant`).
   useEffect(() => {
-    loadDocuments();
+    loadDocuments(currentPin.current);
   }, [loadDocuments]);
 
   /**
-   * Re-read the list — in the pinned project unless the caller names another
-   * (`loadDocuments`). Passing `undefined` takes the default too.
+   * Re-read the list — in the pin as it stands when the read is sent, unless
+   * the caller names another (`loadDocuments`). Passing `undefined` takes the
+   * default too. One identity for the hook's lifetime.
    */
   const reload = useCallback(
-    (readPin: TenantPin | undefined = projectPin) => loadDocuments(readPin),
-    [loadDocuments, projectPin]
+    (readPin?: TenantPin) => loadDocuments(readPin ?? currentPin.current),
+    [loadDocuments]
   );
 
   /** Fetch one document WITH its body (the list omits bodies). */
@@ -220,7 +240,7 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
         setSaving(true);
         const created = await createPromptDocument(kind, data, projectPin);
         toast.success(`Created "${created.description ?? created.name}"`);
-        await loadDocuments(projectPin);
+        await loadDocuments(currentPin.current);
         return created;
       } catch (err) {
         toast.error(message(err, "Failed to create document"));
@@ -248,7 +268,7 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
           projectPin
         );
         toast.success(`Saved as version ${updated.current_version}`);
-        await loadDocuments(projectPin);
+        await loadDocuments(currentPin.current);
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to save document"));
@@ -267,7 +287,7 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
         setSaving(true);
         await restorePromptDocumentDefault(kind, name, projectPin);
         toast.success("Restored to default");
-        await loadDocuments(projectPin);
+        await loadDocuments(currentPin.current);
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to restore default"));
@@ -309,7 +329,7 @@ export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
           projectPin
         );
         toast.success(`Restored version ${version} as a new version`);
-        await loadDocuments(projectPin);
+        await loadDocuments(currentPin.current);
         return true;
       } catch (err) {
         toast.error(message(err, "Failed to restore that version"));

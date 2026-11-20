@@ -228,3 +228,122 @@ describe.each(URL_CASES)("redis leak tripwire: $name", (urlCase) => {
     assertNoLeak(capture.text());
   });
 });
+
+/**
+ * Shapes ioredis 5.x reads as a UNIX SOCKET PATH (finding 57f04594, deployed
+ * 8f90977): only `redis://` / `rediss://` count as a scheme, so anything else
+ * gets `redis://` prepended and its pathname becomes `path`. Every failed
+ * connect is then `connect ENOENT <path>`, with the password INSIDE the
+ * message, and the limiter's `redis_error_failing_open` line carried it.
+ *
+ * Two independent layers are pinned, each on its own:
+ *  - "refused up front": the classifier refuses the URL, so no client exists;
+ *  - "classifier bypassed": the classifier is forced to accept, a real client
+ *    produces the real ENOENT error, and the REDACTOR alone must hold.
+ * The SDK's own default `onError` is not exercised here: qontinui-web always
+ * passes its own (relay.ts), which routes through `safeRedisErrorText`.
+ */
+const SOCKET_SECRET = "SEC/RET123";
+const SOCKET_PATH_CASES: Array<{
+  name: string;
+  make: (port: number) => string;
+}> = [
+  {
+    name: "a KEY= prefix before the scheme",
+    make: (p) =>
+      `UI_BRIDGE_RELAY_REDIS_URL=rediss://default:${SECRET}@127.0.0.1:${p}`,
+  },
+  {
+    name: "a quoted value",
+    make: (p) => `"rediss://default:${SECRET}@127.0.0.1:${p}"`,
+  },
+  {
+    name: "a non-redis scheme",
+    make: (p) => `https://default:${SECRET}@127.0.0.1:${p}`,
+  },
+  {
+    name: "a password whose first /-segment is a port",
+    make: (p) => `default:1234/${SECRET}@127.0.0.1:${p}`,
+  },
+  {
+    name: "a / password behind a KEY= prefix",
+    make: (p) => `X=rediss://default:${SOCKET_SECRET}@127.0.0.1:${p}`,
+  },
+];
+
+function assertNoSocketLeak(text: string) {
+  assertNoLeak(text);
+  expect(text).not.toContain("RET123");
+}
+
+describe.each(SOCKET_PATH_CASES)(
+  "redis leak tripwire, socket-path shape: $name",
+  (urlCase) => {
+    let server: Server;
+    let capture: ReturnType<typeof installCapture>;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      server = await startWrongPassServer();
+      vi.stubEnv("UI_BRIDGE_RELAY_REDIS_URL", urlCase.make(server.port));
+      vi.stubEnv("UI_BRIDGE_RELAY_REQUIRE_REDIS", "");
+      capture = installCapture();
+    });
+    afterEach(async () => {
+      created.clients.splice(0).forEach((c) => c.disconnect());
+      capture.restore();
+      vi.doUnmock("./redis-url");
+      vi.unstubAllEnvs();
+      await server.close();
+    });
+
+    it("refused up front: the limiter constructs no client and logs the fixed line", async () => {
+      const mod = await import("../../app/api/ui-bridge/[...path]/_rate-limit");
+      const result = await mod.checkRateLimit("tripwire-user", "read");
+      await settle(capture.lines, 300);
+      expect(result.redisOffline).toBe(true);
+      expect(created.clients).toHaveLength(0);
+      expect(capture.text()).toContain(REDIS_URL_UNPARSEABLE_MESSAGE); // control
+      assertNoSocketLeak(capture.text());
+    });
+
+    it("refused up front: the relay degrades without constructing a client", async () => {
+      const mod = await import("./relay");
+      await settle(capture.lines, 300);
+      expect(mod.getRelayBusStatus()).toBe("in-memory-degraded");
+      expect(created.clients).toHaveLength(0);
+      expect(capture.text()).toContain(REDIS_URL_UNPARSEABLE_MESSAGE); // control
+      assertNoSocketLeak(capture.text());
+    });
+
+    it("classifier bypassed: the limiter's redis_error_failing_open line is redacted", async () => {
+      vi.doMock("./redis-url", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("./redis-url")>()),
+        isParseableRedisUrl: () => true,
+      }));
+      const mod = await import("../../app/api/ui-bridge/[...path]/_rate-limit");
+      const result = await mod.checkRateLimit("tripwire-user", "read");
+      await settle(capture.lines);
+      expect(result.redisOffline).toBe(true);
+      // Control: the real ioredis error reached the deployed log site.
+      expect(capture.text()).toMatch(/redis_error_failing_open/);
+      // ENOENT on Linux (Vercel, CI); a `//x/y` socket path is a UNC path on
+      // Windows, where the same failure reads `connect UNKNOWN`.
+      expect(capture.text()).toMatch(/connect (ENOENT|UNKNOWN)/);
+      assertNoSocketLeak(capture.text());
+    });
+
+    it("classifier bypassed: the relay's onError line is redacted", async () => {
+      vi.doMock("./redis-url", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("./redis-url")>()),
+        isParseableRedisUrl: () => true,
+      }));
+      await import("./relay");
+      await settle(capture.lines);
+      // Control: the real ioredis error reached relay.ts's onError site.
+      expect(capture.text()).toMatch(/Redis relay bus (pub|sub) error/);
+      expect(capture.text()).toMatch(/connect (ENOENT|UNKNOWN)/);
+      assertNoSocketLeak(capture.text());
+    });
+  }
+);

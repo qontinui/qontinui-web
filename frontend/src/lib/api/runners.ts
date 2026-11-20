@@ -12,6 +12,7 @@
 import type { Runner } from "@qontinui/shared-types";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import { deviceApiErrorMessage } from "@/lib/api/device-error";
 import type {
   RunnerSessionFilters,
   RunnerSessionsResponse,
@@ -26,12 +27,8 @@ async function handleResponse<T>(
   fallback: string
 ): Promise<T> {
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const message =
-      (body as { detail?: string }).detail ||
-      (body as { message?: string }).message ||
-      fallback;
-    throw new Error(message);
+    const body: unknown = await response.json().catch(() => ({}));
+    throw new Error(deviceApiErrorMessage(body, fallback));
   }
   if (response.status === 204) {
     return undefined as T;
@@ -73,10 +70,13 @@ export async function dispatchToRunner(
   runnerId: string,
   body: DispatchPayload
 ): Promise<DispatchResult> {
-  const response = await httpClient.fetch(`${API}/devices/${runnerId}/dispatch`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  const response = await httpClient.fetch(
+    `${API}/devices/${runnerId}/dispatch`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  );
   return handleResponse<DispatchResult>(
     response,
     "Failed to dispatch workflow"

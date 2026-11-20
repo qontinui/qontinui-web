@@ -86,7 +86,7 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const tenant = useTenantFleetPolicyDial<HostedCiLevel>(
     GITHUB_HOSTED_CI_DOMAIN,
     LABEL,
-    "coord"
+    "coord resolves"
   );
   const { reload: reloadCi, appliedTicket, issuedTicket } = ci;
   const { reload: reloadTenant, setLevel, lastWrite } = tenant;

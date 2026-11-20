@@ -24,6 +24,10 @@
  *   The row expands in place and carries "Open subproject ↗" (the detail page
  *   is a workspace: actions, history).
  * - **R3** — colours only through `subprojectStatus.ts`'s registered palette.
+ * - **Topic** (topics plan D9) — each row names its topic as `–` and the
+ *   "Group by topic" toggle is disabled, both titled "topic data not yet
+ *   served": the list response carries no topic field yet, and fetching every
+ *   topic's detail to build the map on each poll is not cheap.
  *
  * A read that never answered is UNKNOWN with its reason — a pending migration
  * (`schema_migration_pending`) and an undeployed door are said as what they
@@ -66,6 +70,10 @@ import {
 } from "@/components/admin/coord/subprojects/subprojectStatus";
 import type { SubprojectSummary } from "@/lib/api/operations/coordSubprojects";
 import { useSubprojectsList } from "./_hooks/useSubprojectsList";
+
+/** Why the Topic column is a dash and grouping is off: coord's subprojects
+ *  list carries no topic field yet. */
+const TOPIC_NOT_SERVED = "topic data not yet served";
 
 /** The tabs whose rows leave one-offs, scheduled and merged ones to All. */
 function foldsIntoAll(tab: SubprojectTab): boolean {
@@ -223,6 +231,30 @@ export default function CoordSubprojectsPage() {
               : ""}
       </p>
 
+      {/* Group by topic (topics plan D9). Disabled until coord's subprojects
+          list serves each row's topic: building the grouping client-side
+          would take one topic-detail read per topic on every poll, so the
+          toggle says why it is off instead of grouping on a guess. */}
+      <span
+        className="inline-flex"
+        title={TOPIC_NOT_SERVED}
+        data-testid="coord-subprojects-group-by-topic-wrap"
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          disabled
+          aria-pressed={false}
+          aria-describedby="coord-subprojects-group-by-topic-why"
+          data-testid="coord-subprojects-group-by-topic"
+        >
+          Group by topic
+        </Button>
+        <span id="coord-subprojects-group-by-topic-why" className="sr-only">
+          {TOPIC_NOT_SERVED}
+        </span>
+      </span>
+
       <FilterTabs
         tabs={tabs}
         active={tab}
@@ -368,6 +400,14 @@ function SubprojectRow({
       attention={status.attention}
       time={
         <span className="flex items-center gap-1.5">
+          {/* The Topic column: unknown, not "none", until coord serves it. */}
+          <span
+            className="font-mono text-xs text-muted-foreground"
+            title={TOPIC_NOT_SERVED}
+            data-testid="coord-subproject-row-topic"
+          >
+            topic –
+          </span>
           <RowTime
             at={s.last_activity_at}
             verb="Last activity"
