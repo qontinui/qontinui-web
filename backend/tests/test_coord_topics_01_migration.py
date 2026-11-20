@@ -18,10 +18,15 @@ Without a database (always runs):
 2. **Every statement is ONE static, ``coord.``-qualified SQL literal, and the
    only DROPs are in ``downgrade()``** — also checked with
    ``check_coord_column_drops``'s own scanner.
-3. **Everything is built in ONE transaction**, in the declared order: no
-   ``autocommit_block()``, no ``CONCURRENTLY``, no ``op.get_bind()`` read and no
+3. **The tables, comments and uniques are built in ONE transaction**, in the
+   declared order, with no ``CONCURRENTLY``, no ``op.get_bind()`` read and no
    ``CREATE EXTENSION`` (coord's migration classifier refuses each; pgvector
-   comes from the ancestor ``coord_memory_records``).
+   comes from the ancestor ``coord_memory_records``). The ONE exception is
+   ``idx_topics_tenant_status``, built last, ``CONCURRENTLY IF NOT EXISTS`` in
+   an ``autocommit_block()``, so ``coord.topics`` is never a new-table claim
+   (coord's trunk proof greps the bare word ``topics``, which trunk already
+   contains). This mirrors the classifier's rules; it does not run the
+   classifier or the trunk proof.
 
 Against a real Postgres (skipped when none is reachable):
 
@@ -93,7 +98,8 @@ _VECTORS = "subproject_vectors"
 _TABLES = (_TOPICS, _MEMBERS, _ALIASES, _VECTORS)
 _TIMESTAMPTZ = "timestamp with time zone"
 
-# (name, format_type, nullable, default substring or None), in contract order.
+# (name, format_type, nullable, default exactly as pg_get_expr renders it or
+# None), in contract order.
 _COLUMNS: dict[str, tuple[tuple[str, str, bool, str | None], ...]] = {
     _TOPICS: (
         ("id", "uuid", False, "gen_random_uuid()"),
@@ -102,7 +108,7 @@ _COLUMNS: dict[str, tuple[tuple[str, str, bool, str | None], ...]] = {
         ("title", "text", False, None),
         ("summary", "text", True, None),
         ("next_steps", "text", True, None),
-        ("status", "text", False, "'proposed'"),
+        ("status", "text", False, "'proposed'::text"),
         ("parent_topic_id", "uuid", True, None),
         ("intent_ref", "jsonb", True, None),
         ("created_by", "text", False, None),
@@ -120,7 +126,7 @@ _COLUMNS: dict[str, tuple[tuple[str, str, bool, str | None], ...]] = {
         ("subproject_id", "uuid", False, None),
         ("weight", "real", False, "0"),
         ("state", "text", False, None),
-        ("basis", "jsonb", False, "'[]'"),
+        ("basis", "jsonb", False, "'[]'::jsonb"),
         ("decided_by", "text", False, None),
         ("decided_by_session", "uuid", True, None),
         ("created_at", _TIMESTAMPTZ, False, "now()"),
@@ -246,14 +252,24 @@ _UPGRADE_STATEMENTS: tuple[str, ...] = (
     "COMMENT ON TABLE coord.topic_members IS",
     "COMMENT ON TABLE coord.topic_aliases IS",
     "COMMENT ON TABLE coord.subproject_vectors IS",
-    "CREATE INDEX IF NOT EXISTS idx_topics_tenant_status ON coord.topics (",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_topic_members_live_topic_subproject "
     "ON coord.topic_members (",
     "CREATE INDEX IF NOT EXISTS idx_topic_members_live_subproject "
     "ON coord.topic_members (",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_topic_aliases_tenant_lower_alias "
     "ON coord.topic_aliases (",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_topics_tenant_status "
+    "ON coord.topics (",
 )
+
+# The one statement that runs in an autocommit_block, after the table
+# transaction commits.
+_CONCURRENT_STATEMENT = _UPGRADE_STATEMENTS[-1]
+
+# The only tables an in-transaction (non-concurrent) index may be built on: a
+# new-table claim coord's trunk proof can discharge, because trunk names
+# neither bare word. ``topics`` is NOT among them.
+_CLAIMABLE_TABLES = ("coord.topic_members", "coord.topic_aliases")
 
 _DOWNGRADE_STATEMENTS: tuple[str, ...] = (
     "DROP INDEX IF EXISTS coord.uq_topic_aliases_tenant_lower_alias",
@@ -382,25 +398,33 @@ def test_every_statement_is_static_coord_sql_and_drops_live_in_downgrade() -> No
     assert not scan.violations, scan.violations
 
 
-def test_everything_is_built_in_one_transaction_with_admitted_statements() -> None:
+def test_statement_shapes_avoid_what_coords_classifier_refuses() -> None:
     calls = upgrade_execute_calls(_revision_path())
     assert len(calls) == len(_UPGRADE_STATEMENTS), [_collapsed(c.sql) for c in calls]
     for call, head in zip(calls, _UPGRADE_STATEMENTS, strict=True):
         sql = _collapsed(call.sql)
         assert sql.startswith(head), (head, call.sql)
-        assert "CONCURRENTLY" not in sql.upper(), sql
         assert "EXTENSION" not in sql.upper(), (
             "coord's migration classifier refuses CREATE EXTENSION; pgvector "
             "comes from the ancestor coord_memory_records"
         )
-        assert call.in_autocommit_block is False, head
+        concurrent = head == _CONCURRENT_STATEMENT
+        assert ("CONCURRENTLY" in sql.upper()) is concurrent, sql
+        assert call.in_autocommit_block is concurrent, (
+            f"{head!r}: only the coord.topics index leaves the table transaction"
+        )
+        if sql.startswith("CREATE") and " INDEX " in sql and not concurrent:
+            target = sql.split(" ON ", 1)[1].split(" ", 1)[0]
+            assert target in _CLAIMABLE_TABLES, (
+                f"{head!r} makes {target} a new-table claim coord cannot prove"
+            )
 
     tree = ast.parse(_revision_source())
     upgrade = next(
         n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
     )
     blocks = [n for n in ast.walk(upgrade) if isinstance(n, ast.With)]
-    assert not blocks, "no autocommit_block: one transaction holds every statement"
+    assert len(blocks) == 1, "one autocommit_block, for the concurrent index only"
     attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     assert "get_bind" not in attrs, "coord's migration classifier rejects bind reads"
 
@@ -521,7 +545,7 @@ def test_upgrade_creates_every_column_in_contract_order(
             assert row.column_default is None, (name, row)
         else:
             assert row.column_default is not None, (name, row)
-            assert default in row.column_default, (name, row)
+            assert row.column_default == default, (name, row)
 
 
 @_needs_pg
@@ -860,13 +884,15 @@ def test_one_vector_per_subproject_of_exactly_384_dimensions(
         topics_db, lambda conn: _insert(conn, _VECTORS, {**row, "doc_digest": "d2"})
     ) == ("23505", "subproject_vectors_pkey")
 
-    with pytest.raises(DataError):
+    with pytest.raises(DataError) as excinfo:
         with topics_db.begin() as conn:
             _insert(
                 conn,
                 _VECTORS,
                 {**row, "subproject_id": _uid(), "vector": _vector(383)},
             )
+    assert getattr(excinfo.value.orig, "pgcode", None) == "22000"
+    assert "expected 384 dimensions" in str(excinfo.value.orig)
 
 
 @_needs_pg
