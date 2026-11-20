@@ -84,7 +84,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -160,6 +160,8 @@ from app.schemas.design_refs import (
     FlowUpdate,
     JudgeBenchRunCreate,
     JudgeBenchRunOut,
+    MeasuredExampleOut,
+    PageIdentityOut,
     PageOut,
     PersonalityConfirm,
     PersonalityCreate,
@@ -179,6 +181,7 @@ from app.schemas.design_refs import (
     SimilarByStyleRequest,
     SimilarByStyleResponse,
     SiteCreate,
+    SiteIdentityOut,
     SiteOut,
     SiteUpdate,
     StyleFamilyOut,
@@ -1824,6 +1827,7 @@ async def search_examples(
                 personality_basis=hit.personality_basis,  # type: ignore[arg-type]
                 labels=hit.labels,
                 snippet=hit.snippet,
+                confirmation=hit.site.context_state,  # type: ignore[arg-type]
             )
             for hit in hits
         ],
@@ -1895,7 +1899,11 @@ def _record_dict(level: str, row: Any) -> dict[str, Any]:
 
 
 @router.get(
-    "/examples/{level}/{target_id}", response_model=ExampleOut, summary="get_example"
+    "/examples/{level}/{target_id}",
+    response_model=Annotated[
+        ExampleOut | MeasuredExampleOut, Field(discriminator="content")
+    ],
+    summary="get_example",
 )
 async def get_example(
     level: Literal["site", "page", "flow", "component"],
@@ -1903,7 +1911,7 @@ async def get_example(
     principal: Principal,
     db: Db,
     include_holdout: bool = False,
-) -> ExampleOut:
+) -> ExampleOut | MeasuredExampleOut:
     include = gate_include_holdout(principal, include_holdout)
     found = await svc.candidate_entities(
         db,
@@ -1911,11 +1919,19 @@ async def get_example(
         level,
         include_holdout=include,
         include_anti_pattern=True,
+        proposed_facts=True,
         ids=[target_id],
     )
     if not found:
         raise _not_found(level)
     record, site = found[0]
+    if not include and site.context_state != "confirmed":
+        # Only a page of an unconfirmed REFERENCE site reaches here (page
+        # level is the only one proposed_facts widens): measured facts only,
+        # and never one marked anti_pattern.
+        if record.quality == "anti_pattern":
+            raise _not_found(level)
+        return await _measured_example(db, principal, record, site)
     descriptions = list(
         (
             await db.execute(
@@ -1977,6 +1993,8 @@ async def get_example(
     if record.review_state == "pending":
         labels.append("unreviewed")
     return ExampleOut(
+        content="full",
+        confirmation=site.context_state,  # type: ignore[arg-type]
         level=level,
         record=_record_dict(level, record),
         site=SiteOut.model_validate(site),
@@ -1987,6 +2005,38 @@ async def get_example(
         ratings=[RatingOut.model_validate(r) for r in ratings],
         comparisons=[ComparisonOut.model_validate(c) for c in comparisons],
         personality=[PersonalityOut.model_validate(p) for p in personality],
+    )
+
+
+async def _measured_example(
+    db: AsyncSession, principal: MemoryPrincipal, page: Any, site: Site
+) -> MeasuredExampleOut:
+    """A proposed page: identity plus :func:`svc.measured_capture` of each of
+    its captures. Nothing else of the page or its site is read."""
+    captures = (
+        await db.execute(
+            select(Capture)
+            .where(Capture.tenant_id == principal.tenant_id, Capture.page_id == page.id)
+            .order_by(Capture.created_at)
+        )
+    ).scalars()
+    labels = svc.site_labels(site)
+    if page.review_state == "pending":
+        labels.append("unreviewed")
+    return MeasuredExampleOut(
+        content="measured_facts",
+        confirmation="proposed",
+        level="page",
+        site=SiteIdentityOut(id=site.id, domain=site.domain, tier=site.tier),  # type: ignore[arg-type]
+        page=PageIdentityOut(
+            id=page.id,
+            site_id=page.site_id,
+            url=page.url,
+            captured_at=page.captured_at,
+            viewports=list(page.viewports or []),
+        ),
+        captures=[svc.measured_capture(c) for c in captures],
+        labels=labels,
     )
 
 
@@ -2013,14 +2063,51 @@ async def _style_candidates(
     level: str,
     role: str | None,
     include_holdout: bool,
-) -> list[tuple[Any, Site, dict[str, Any]]]:
+) -> tuple[list[tuple[Any, Site, dict[str, Any]]], int]:
+    """``(comparable candidates, unmeasured count)``. A candidate whose token
+    set is the stated-unknown sentinel is never ranked, and is counted. Page
+    level also serves unconfirmed reference sites, through the numeric-only
+    filter: what is compared of them is measured numbers, never text."""
     found = await svc.candidate_entities(
-        db, principal.tenant_id, level, include_holdout=include_holdout, role=role
+        db,
+        principal.tenant_id,
+        level,
+        include_holdout=include_holdout,
+        proposed_facts=level == "page",
+        role=role,
     )
     if level == "component":
-        return [(row, site, row.tokens or {}) for row, site in found]
-    tokens = await _page_tokens(db, principal.tenant_id, [row.id for row, _ in found])
-    return [(row, site, tokens.get(row.id, {})) for row, site in found]
+        raw = [(row, site, row.tokens or {}) for row, site in found]
+    else:
+        tokens = await _page_tokens(
+            db, principal.tenant_id, [row.id for row, _ in found]
+        )
+        raw = [(row, site, tokens.get(row.id, {})) for row, site in found]
+    usable: list[tuple[Any, Site, dict[str, Any]]] = []
+    unmeasured = 0
+    for row, site, tokens_ in raw:
+        if not tokens_:
+            continue  # no capture yet: nothing to compare, nothing stated
+        if not svc.is_measured_token_set(tokens_):
+            unmeasured += 1
+            continue
+        if site.context_state != "confirmed" and not include_holdout:
+            tokens_, _dropped = svc.numeric_only(tokens_)
+            if not tokens_:
+                unmeasured += 1
+                continue
+        usable.append((row, site, tokens_))
+    return usable, unmeasured
+
+
+def _refuse_unknown_tokens(tokens: dict[str, Any]) -> None:
+    if not svc.is_measured_token_set(tokens) and tokens:
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "unknown_token_set",
+            'tokens is the stated-unknown sentinel ({"state": "unknown"}): '
+            "comparing an unknown against anything is not a distance.",
+        )
 
 
 @router.post(
@@ -2035,16 +2122,19 @@ async def similar_by_style(
     The UI Bridge ``/design/style-fingerprint`` primitive does not exist yet,
     so the arm is ``tokens_only`` and the response says so."""
     include = gate_include_holdout(principal, body.include_holdout)
-    candidates = await _style_candidates(db, principal, body.level, body.role, include)
+    _refuse_unknown_tokens(body.tokens)
+    candidates, unmeasured = await _style_candidates(
+        db, principal, body.level, body.role, include
+    )
     ranked = sorted(
         (
             (svc.token_distance(body.tokens, tokens), row, site)
             for row, site, tokens in candidates
-            if tokens
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
     return SimilarByStyleResponse(
+        unmeasured_candidates=unmeasured,
         style_arm="tokens_only",
         results=[
             StyleHit(
@@ -2055,6 +2145,7 @@ async def similar_by_style(
                 role=getattr(row, "role", None),
                 token_distance=distance,
                 labels=svc.site_labels(site),
+                confirmation=site.context_state,  # type: ignore[arg-type]
             )
             for distance, row, site in ranked
         ],
@@ -2076,18 +2167,19 @@ async def compare_to_references(
     level: Literal["page", "component"] = (
         "component" if body.snapshot.role is not None else "page"
     )
-    candidates = await _style_candidates(
+    _refuse_unknown_tokens(body.snapshot.tokens)
+    candidates, unmeasured = await _style_candidates(
         db, principal, level, body.snapshot.role, include
     )
     ranked = sorted(
         (
             (svc.token_distance(body.snapshot.tokens, tokens), row, site, tokens)
             for row, site, tokens in candidates
-            if tokens
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
     return CompareResponse(
+        unmeasured_candidates=unmeasured,
         fidelity_arm="tokens_only",
         results=[
             CompareHit(
@@ -2104,6 +2196,7 @@ async def compare_to_references(
                     )
                 ],
                 labels=svc.site_labels(site),
+                confirmation=site.context_state,  # type: ignore[arg-type]
             )
             for distance, row, site, tokens in ranked
         ],

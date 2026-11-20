@@ -60,6 +60,7 @@ from app.models.design_refs import (
     Site,
     SitePersonality,
 )
+from app.schemas.design_refs import MeasuredCaptureOut
 from app.services.storage import ObjectStorageService, content_addressed_key
 
 logger = structlog.get_logger(__name__)
@@ -568,6 +569,125 @@ def token_differences(
     ]
 
 
+def is_measured_token_set(tokens: dict[str, Any]) -> bool:
+    """False for an empty set and for the worker's stated-unknown sentinel
+    (``{"state": "unknown", ...}``): comparing an unknown against anything is
+    not a distance."""
+    return bool(tokens) and tokens.get("state") != "unknown"
+
+
+# ═════════════════════════════ measured facts ═════════════════════════════
+
+#: Keys a measured-facts read may serve: a short identifier, never a sentence.
+_MEASURED_KEY_RE: Final = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}\Z")
+#: ``facets.method`` is served only in this form.
+_FACETS_METHOD_RE: Final = re.compile(r"\Afacets@\d+\Z")
+_MEASURED_MAX_DEPTH: Final = 8
+
+
+def _is_number(value: Any) -> bool:
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
+def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
+    """``(filtered, dropped)``: ``value`` with only numeric leaves under keys
+    matching a short-identifier grammar. Every string, boolean, null, oddly
+    keyed or too-deep node is dropped and counted once. A device can write
+    anything into ``tokens``, ``layout_bands`` and ``motion_summary``, so a
+    numeric-only guarantee is enforced here rather than assumed."""
+    if isinstance(value, dict):
+        if _depth >= _MEASURED_MAX_DEPTH:
+            return {}, 1
+        out_d: dict[str, Any] = {}
+        dropped = 0
+        for key, child in value.items():
+            if not isinstance(key, str) or not _MEASURED_KEY_RE.match(key):
+                dropped += 1
+                continue
+            kept, n = numeric_only(child, _depth + 1)
+            dropped += n
+            if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
+                continue  # a node nothing numeric survived in carries no fact
+            out_d[key] = kept
+        return out_d, dropped
+    if isinstance(value, list):
+        if _depth >= _MEASURED_MAX_DEPTH:
+            return [], 1
+        out_l: list[Any] = []
+        dropped = 0
+        for child in value:
+            kept, n = numeric_only(child, _depth + 1)
+            dropped += n
+            if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
+                continue
+            out_l.append(kept)
+        return out_l, dropped
+    if _is_number(value):
+        return value, 0
+    return _DROPPED, 1
+
+
+#: Sentinel for a leaf :func:`numeric_only` removed (a real ``None`` is also
+#: removed, but must not be confused with "kept").
+_DROPPED: Final = object()
+
+
+def measured_capture(capture: Any) -> MeasuredCaptureOut:
+    """THE allowlist of what a proposed (unconfirmed) capture reveals
+    (plan D4): identity, the numeric ``MEASURED_FACETS`` values, and
+    numeric-only tokens, layout bands and motion summary. No blob key, no
+    text."""
+    dropped = 0
+    raw_facets = capture.facets if isinstance(capture.facets, dict) else {}
+    facets: dict[str, float] = {}
+    method: str | None = None
+    for key, value in raw_facets.items():
+        if key in MEASURED_FACETS and _is_number(value):
+            facets[key] = float(value)
+        elif (
+            key == "method"
+            and isinstance(value, str)
+            and _FACETS_METHOD_RE.match(value)
+        ):
+            method = value
+        else:
+            dropped += 1
+    raw_tokens = capture.tokens if isinstance(capture.tokens, dict) else {}
+    tokens: dict[str, Any] | None = None
+    if is_measured_token_set(raw_tokens):
+        filtered, n = numeric_only(raw_tokens)
+        dropped += n
+        tokens = filtered or None
+    else:
+        dropped += len(raw_tokens)
+    bands, n = numeric_only(
+        capture.layout_bands if isinstance(capture.layout_bands, list) else []
+    )
+    dropped += n
+    motion, n = numeric_only(
+        capture.motion_summary if isinstance(capture.motion_summary, dict) else {}
+    )
+    dropped += n
+    return MeasuredCaptureOut(
+        id=capture.id,
+        page_id=capture.page_id,
+        run_id=capture.run_id,
+        viewport=capture.viewport,
+        captured_at=capture.created_at,
+        facets=facets,
+        facets_method=method,
+        tokens=tokens,
+        tokens_state="measured" if tokens else "unknown",
+        layout_bands=bands,
+        motion_summary=motion,
+        dropped_non_numeric=dropped,
+    )
+
+
 # ═════════════════════════════ search ═════════════════════════════
 
 
@@ -626,6 +746,7 @@ async def candidate_entities(
     *,
     include_holdout: bool,
     include_anti_pattern: bool = False,
+    proposed_facts: bool = False,
     tier: str | None = None,
     industry: str | None = None,
     business_type: str | None = None,
@@ -636,7 +757,13 @@ async def candidate_entities(
 ) -> list[tuple[Any, Site]]:
     """The tenant's records at ``level`` that an agent-facing read may see:
     never ``rejected``, ``anti_pattern`` only when asked, holdout only when
-    the (operator-gated) caller asked for it."""
+    the (operator-gated) caller asked for it.
+
+    ``proposed_facts`` widens PAGE level (and only page level) from confirmed
+    reference sites to every reference-split site, confirmed or not: the
+    measured-facts arms. Each row's confirmation is its site's
+    ``context_state``. Holdouts stay out at every confirmation state, and
+    component, site and flow levels stay confirmed-only (plan D4)."""
     model, stmt = _entity_select(level)
     stmt = stmt.where(
         model.tenant_id == tenant_id,
@@ -648,7 +775,12 @@ async def candidate_entities(
     if not include_anti_pattern:
         stmt = stmt.where(or_(model.quality.is_(None), model.quality != "anti_pattern"))
     if not include_holdout:
-        stmt = agent_visible(stmt)
+        if proposed_facts and level == "page":
+            # agent_visible OR (facts_visible AND proposed): the union is
+            # every reference-split site.
+            stmt = facts_visible(stmt)
+        else:
+            stmt = agent_visible(stmt)
     if tier is not None:
         stmt = stmt.where(model.tier == tier)
     for column, value in (
@@ -1430,6 +1562,9 @@ __all__ = [
     "is_agent_reference",
     "is_agent_reference_state",
     "is_hidden_holdout",
+    "is_measured_token_set",
+    "measured_capture",
+    "numeric_only",
     "latest_personality",
     "normalise_domain",
     "parse_blob_key",

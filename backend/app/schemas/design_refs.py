@@ -28,6 +28,10 @@ Quality = Literal["exemplar", "ok", "anti_pattern"]
 PriceTier = Literal["budget", "mid", "premium", "luxury", "unknown"]
 ContextState = Literal["proposed", "confirmed"]
 Split = Literal["reference", "holdout"]
+#: The site's ``context_state`` as an agent-facing record states it: a
+#: ``proposed`` record is a machine-measured fact of a site the operator has
+#: not yet confirmed.
+Confirmation = Literal["confirmed", "proposed"]
 Level = Literal["site", "page", "flow", "component"]
 JudgementTargetKind = Literal["site", "page", "component"]
 RaterKind = Literal["operator", "ai"]
@@ -592,6 +596,9 @@ class SearchHit(BaseModel):
     #: ``unreviewed``, ``personality_unconfirmed``.
     labels: list[str]
     snippet: str | None
+    #: The site's ``context_state``; required, so a caller cannot mistake a
+    #: proposed fact for a confirmed one.
+    confirmation: Confirmation
 
 
 class SearchResponse(BaseModel):
@@ -615,11 +622,16 @@ class StyleHit(BaseModel):
     role: str | None
     token_distance: float
     labels: list[str]
+    confirmation: Confirmation
 
 
 class SimilarByStyleResponse(BaseModel):
     style_arm: Literal["fingerprint", "tokens_only"]
     results: list[StyleHit]
+    #: Candidates left out because their token set is the stated-unknown
+    #: sentinel (or held no number): how much of the corpus could not be
+    #: compared.
+    unmeasured_candidates: int
 
 
 class CompareSnapshot(_Strict):
@@ -649,11 +661,14 @@ class CompareHit(BaseModel):
     token_distance: float
     differences: list[TokenDifference]
     labels: list[str]
+    confirmation: Confirmation
 
 
 class CompareResponse(BaseModel):
     fidelity_arm: Literal["design_compare", "tokens_only"]
     results: list[CompareHit]
+    #: As on :class:`SimilarByStyleResponse`.
+    unmeasured_candidates: int
 
 
 # ═════════════════════════════ judgements ═════════════════════════════
@@ -901,6 +916,11 @@ class JudgeBenchRunOut(_Out):
 
 
 class ExampleOut(BaseModel):
+    """A full example record: served for a confirmed reference site (or to an
+    operator's ``include_holdout`` read)."""
+
+    content: Literal["full"]
+    confirmation: Confirmation
     level: Level
     record: dict[str, Any]
     site: SiteOut
@@ -911,6 +931,62 @@ class ExampleOut(BaseModel):
     ratings: list[RatingOut]
     comparisons: list[ComparisonOut]
     personality: list[PersonalityOut]
+
+
+class SiteIdentityOut(BaseModel):
+    """What it takes to cite a site: no context, no tags."""
+
+    id: UUID
+    domain: str
+    tier: Tier
+
+
+class PageIdentityOut(BaseModel):
+    """What it takes to cite a page: no title, type, job or tags."""
+
+    id: UUID
+    site_id: UUID
+    url: str
+    captured_at: datetime | None
+    viewports: list[Any]
+
+
+class MeasuredCaptureOut(BaseModel):
+    """One capture reduced to machine-measured numbers. Every field is an
+    identity or a number; no blob key, no text. Built only by
+    ``services.design_refs.measured_capture``."""
+
+    id: UUID
+    page_id: UUID
+    run_id: UUID
+    viewport: str
+    captured_at: datetime
+    #: Numeric ``MEASURED_FACETS`` values only.
+    facets: dict[str, float]
+    #: ``facets@<n>`` when the worker stated one, else null.
+    facets_method: str | None
+    #: Numeric leaves only; null when the stored set is the stated-unknown
+    #: sentinel or held no number.
+    tokens: dict[str, Any] | None
+    tokens_state: Literal["measured", "unknown"]
+    layout_bands: list[Any]
+    motion_summary: dict[str, Any]
+    #: Leaves and keys the numeric filter removed from this capture.
+    dropped_non_numeric: int
+
+
+class MeasuredExampleOut(BaseModel):
+    """A page of an unconfirmed reference site: measured facts only. It has
+    no ``descriptions``, ``ratings``, ``comparisons``, ``personality`` or
+    ``components`` field, so absence cannot be read as "none exist"."""
+
+    content: Literal["measured_facts"]
+    confirmation: Literal["proposed"]
+    level: Literal["page"]
+    site: SiteIdentityOut
+    page: PageIdentityOut
+    captures: list[MeasuredCaptureOut]
+    labels: list[str]
 
 
 # ═════════════════════════════ takedown ═════════════════════════════

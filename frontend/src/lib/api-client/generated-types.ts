@@ -32370,6 +32370,11 @@ export interface components {
         };
         /** CompareHit */
         CompareHit: {
+            /**
+             * Confirmation
+             * @enum {string}
+             */
+            confirmation: "confirmed" | "proposed";
             /** Differences */
             differences: components["schemas"]["TokenDifference"][];
             /** Domain */
@@ -32419,6 +32424,8 @@ export interface components {
             fidelity_arm: "design_compare" | "tokens_only";
             /** Results */
             results: components["schemas"]["CompareHit"][];
+            /** Unmeasured Candidates */
+            unmeasured_candidates: number;
         };
         /** CompareSnapshot */
         CompareSnapshot: {
@@ -38407,7 +38414,11 @@ export interface components {
             /** Note */
             note?: string | null;
         };
-        /** ExampleOut */
+        /**
+         * ExampleOut
+         * @description A full example record: served for a confirmed reference site (or to an
+         *     operator's ``include_holdout`` read).
+         */
         ExampleOut: {
             /** Captures */
             captures: components["schemas"]["CaptureOut"][];
@@ -38415,6 +38426,16 @@ export interface components {
             comparisons: components["schemas"]["ComparisonOut"][];
             /** Components */
             components: components["schemas"]["ComponentOut"][];
+            /**
+             * Confirmation
+             * @enum {string}
+             */
+            confirmation: "confirmed" | "proposed";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            content: "full";
             /** Descriptions */
             descriptions: components["schemas"]["DescriptionOut"][];
             /** Labels */
@@ -43785,6 +43806,88 @@ export interface components {
             y: number;
         };
         /**
+         * MeasuredCaptureOut
+         * @description One capture reduced to machine-measured numbers. Every field is an
+         *     identity or a number; no blob key, no text. Built only by
+         *     ``services.design_refs.measured_capture``.
+         */
+        MeasuredCaptureOut: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Dropped Non Numeric */
+            dropped_non_numeric: number;
+            /** Facets */
+            facets: {
+                [key: string]: number;
+            };
+            /** Facets Method */
+            facets_method: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Layout Bands */
+            layout_bands: unknown[];
+            /** Motion Summary */
+            motion_summary: {
+                [key: string]: unknown;
+            };
+            /**
+             * Page Id
+             * Format: uuid
+             */
+            page_id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Tokens */
+            tokens: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Tokens State
+             * @enum {string}
+             */
+            tokens_state: "measured" | "unknown";
+            /** Viewport */
+            viewport: string;
+        };
+        /**
+         * MeasuredExampleOut
+         * @description A page of an unconfirmed reference site: measured facts only. It has
+         *     no ``descriptions``, ``ratings``, ``comparisons``, ``personality`` or
+         *     ``components`` field, so absence cannot be read as "none exist".
+         */
+        MeasuredExampleOut: {
+            /** Captures */
+            captures: components["schemas"]["MeasuredCaptureOut"][];
+            /**
+             * Confirmation
+             * @constant
+             */
+            confirmation: "proposed";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            content: "measured_facts";
+            /** Labels */
+            labels: string[];
+            /**
+             * Level
+             * @constant
+             */
+            level: "page";
+            page: components["schemas"]["PageIdentityOut"];
+            site: components["schemas"]["SiteIdentityOut"];
+        };
+        /**
          * MemoryAgeFacet
          * @description Age distribution of the LIVE corpus, in days since ``created_at``.
          *
@@ -46291,6 +46394,28 @@ export interface components {
             source_sha?: string | null;
             /** Title */
             title: string;
+        };
+        /**
+         * PageIdentityOut
+         * @description What it takes to cite a page: no title, type, job or tags.
+         */
+        PageIdentityOut: {
+            /** Captured At */
+            captured_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Site Id
+             * Format: uuid
+             */
+            site_id: string;
+            /** Url */
+            url: string;
+            /** Viewports */
+            viewports: unknown[];
         };
         /** PageItem */
         PageItem: {
@@ -52082,6 +52207,11 @@ export interface components {
         };
         /** SearchHit */
         SearchHit: {
+            /**
+             * Confirmation
+             * @enum {string}
+             */
+            confirmation: "confirmed" | "proposed";
             /** Domain */
             domain: string;
             /** Facet Exact */
@@ -53124,6 +53254,8 @@ export interface components {
              * @enum {string}
              */
             style_arm: "fingerprint" | "tokens_only";
+            /** Unmeasured Candidates */
+            unmeasured_candidates: number;
         };
         /** SiteCreate */
         SiteCreate: {
@@ -53151,6 +53283,24 @@ export interface components {
             style_family?: string | null;
             /** Tags */
             tags?: string[];
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "private" | "public";
+        };
+        /**
+         * SiteIdentityOut
+         * @description What it takes to cite a site: no context, no tags.
+         */
+        SiteIdentityOut: {
+            /** Domain */
+            domain: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /**
              * Tier
              * @enum {string}
@@ -54666,6 +54816,11 @@ export interface components {
         };
         /** StyleHit */
         StyleHit: {
+            /**
+             * Confirmation
+             * @enum {string}
+             */
+            confirmation: "confirmed" | "proposed";
             /** Domain */
             domain: string;
             /** Labels */
@@ -68722,7 +68877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExampleOut"];
+                    "application/json": components["schemas"]["ExampleOut"] | components["schemas"]["MeasuredExampleOut"];
                 };
             };
             /** @description Validation Error */
