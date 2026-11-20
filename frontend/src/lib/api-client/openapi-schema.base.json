@@ -118854,6 +118854,120 @@
         ]
       }
     },
+    "/api/v1/operations/topics": {
+      "get": {
+        "description": "List the tenant's topics \u2014 proxy coord's ``GET /coord/topics``.\n\ncoord answers ``{\"as_of\", \"tables_ready\", \"unassigned_subprojects\",\n\"topics\": [...]}``; each topic carries its cached rollup (``headline``,\n``top_reason``, ``subprojects_total``, ``subprojects_working``,\n``unknown_members``, ``last_activity_at``, ``last_rollup_as_of``), any of\nwhich may be ``null`` \u2014 unknown, never zero. ``status`` and ``limit`` are\nforwarded only when set. A coord whose migration has not applied answers\n``503 {\"error\": \"schema_migration_pending\"}``, which reaches the browser as\nthat object.",
+        "operationId": "api_v1_operations_topics_get",
+        "parameters": [
+          {
+            "description": "Lifecycle filter, forwarded as sent: `proposed`, `active`, `dormant`, `retired` (coord's vocabulary; coord decides the default).",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lifecycle filter, forwarded as sent: `proposed`, `active`, `dormant`, `retired` (coord's vocabulary; coord decides the default).",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Topics Api V1 Operations Topics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Topics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/topics/{topic_id}": {
+      "get": {
+        "description": "One topic with its members \u2014 proxy coord's ``GET /coord/topics/{id}``.\n\nThe body is coord's verbatim: ``topic`` (the list fields plus\n``next_steps``, ``intent_ref``, ``aliases``, ``created_by`` and\n``merged_into``), ``members`` (each subproject with its ``weight``,\n``state``, ``decided_by`` and the ``basis`` entries that put it there),\n``children`` and ``history``. coord answers 404 for an id that is unknown\nin the caller's tenant, and 503 ``schema_migration_pending`` before its\nmigration applies; both pass through as objects.",
+        "operationId": "api_v1_operations_topics_topic_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "topic_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Topic Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Topic Api V1 Operations Topics  Topic Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Topic",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/trees/by-device/{device_id}": {
       "get": {
         "description": "Return primary-tree rows for a device (tenant-scoped).",

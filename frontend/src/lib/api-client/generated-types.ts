@@ -18469,6 +18469,63 @@ export interface paths {
         patch: operations["api_v1_operations_tenants_tenant_id_patch"];
         trace?: never;
     };
+    "/api/v1/operations/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Topics
+         * @description List the tenant's topics — proxy coord's ``GET /coord/topics``.
+         *
+         *     coord answers ``{"as_of", "tables_ready", "unassigned_subprojects",
+         *     "topics": [...]}``; each topic carries its cached rollup (``headline``,
+         *     ``top_reason``, ``subprojects_total``, ``subprojects_working``,
+         *     ``unknown_members``, ``last_activity_at``, ``last_rollup_as_of``), any of
+         *     which may be ``null`` — unknown, never zero. ``status`` and ``limit`` are
+         *     forwarded only when set. A coord whose migration has not applied answers
+         *     ``503 {"error": "schema_migration_pending"}``, which reaches the browser as
+         *     that object.
+         */
+        get: operations["api_v1_operations_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/topics/{topic_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Topic
+         * @description One topic with its members — proxy coord's ``GET /coord/topics/{id}``.
+         *
+         *     The body is coord's verbatim: ``topic`` (the list fields plus
+         *     ``next_steps``, ``intent_ref``, ``aliases``, ``created_by`` and
+         *     ``merged_into``), ``members`` (each subproject with its ``weight``,
+         *     ``state``, ``decided_by`` and the ``basis`` entries that put it there),
+         *     ``children`` and ``history``. coord answers 404 for an id that is unknown
+         *     in the caller's tenant, and 503 ``schema_migration_pending`` before its
+         *     migration applies; both pass through as objects.
+         */
+        get: operations["api_v1_operations_topics_topic_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/trees/by-device/{device_id}": {
         parameters: {
             query?: never;
@@ -86802,6 +86859,70 @@ export interface operations {
                 "application/json": components["schemas"]["TenantRenameIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_topics_get: {
+        parameters: {
+            query?: {
+                /** @description Lifecycle filter, forwarded as sent: `proposed`, `active`, `dormant`, `retired` (coord's vocabulary; coord decides the default). */
+                status?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_topics_topic_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
