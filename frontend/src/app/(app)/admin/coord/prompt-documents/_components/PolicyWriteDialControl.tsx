@@ -374,6 +374,7 @@ export function PolicyWriteDialControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pendingLevel) void setLevel(pendingLevel);
                 setPendingLevel(null);

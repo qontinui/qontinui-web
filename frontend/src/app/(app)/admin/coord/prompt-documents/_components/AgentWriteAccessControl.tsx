@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Check, Lock, LockOpen } from "lucide-react";
 import { tierHelp, tierLabel } from "../_lib/agentWriteTier";
-import { usePageWriteGuardContext } from "../_hooks/usePageWriteGuardContext";
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import {
   AGENT_WRITE_TIERS,
   isAgentWriteTier,
@@ -492,7 +492,7 @@ export function AgentWriteAccessControl({
 }: AgentWriteAccessControlProps) {
   // The cross-tab lock (D3): an explicit `disabled`, so the Radix trigger does
   // not depend on the page's fieldset reaching it (#6).
-  const pageLocked = usePageWriteGuardContext()?.locked != null;
+  const pageLocked = usePageLocked();
   /** The tier awaiting confirmation, or `null` when nothing is pending. */
   const [pending, setPending] = useState<AgentWriteTier | null>(null);
   const resolved = resolveAccess(doc);

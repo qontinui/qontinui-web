@@ -575,6 +575,7 @@ export function KindAuthorshipTierControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pending) void setTier(pending.kind, pending.tier);
                 setPending(null);

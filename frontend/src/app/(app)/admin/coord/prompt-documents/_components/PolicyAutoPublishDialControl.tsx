@@ -504,6 +504,7 @@ export function PolicyAutoPublishDialControl({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               data-testid="policy-auto-publish-confirm-accept"
               onClick={() => {
                 if (pendingLevel) void applyLevel(pendingLevel);

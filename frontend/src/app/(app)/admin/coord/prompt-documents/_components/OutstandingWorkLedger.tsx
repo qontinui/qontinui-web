@@ -200,6 +200,7 @@ export function OutstandingWorkLedger({
             <Select
               value={sortKey}
               onValueChange={(v) => setSortKey(v as SortKey)}
+              disabled={pageLocked}
             >
               <SelectTrigger
                 className="h-8 w-40"
