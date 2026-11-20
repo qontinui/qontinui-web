@@ -985,6 +985,9 @@ async def _fx_site(a: Harness, domain: str, *, confirm: bool, key: str) -> _Fx:
         json={
             "product_name": f"PRODNAME {key} studio",
             "industry": f"INDUSTRYTEXT {key} agency",
+            "business_type": f"BIZTYPE {key} studio",
+            "style_family": "modern_saas",
+            "price_tier": "luxury",
         },
     )
     page = await a.page(
@@ -1016,7 +1019,9 @@ async def _fx_site(a: Harness, domain: str, *, confirm: bool, key: str) -> _Fx:
             "tokens": _TOKENS,
         },
     )
-    desc = await a.describe("page", page["id"], f"{_PROPOSED_DESC} {key}")
+    desc = await a.describe(
+        "page", page["id"], f"{_PROPOSED_DESC} {key}", facets={"layout": "hero"}
+    )
     ai = await a.rate("page", page["id"], 4)
     assert ai.status_code == 201, ai.text
     personality = await a.ok(
@@ -1056,6 +1061,7 @@ async def _fx_site(a: Harness, domain: str, *, confirm: bool, key: str) -> _Fx:
             desc["body"],
             f"PRODNAME {key}",
             f"INDUSTRYTEXT {key}",
+            f"BIZTYPE {key}",
             f"PAGETITLE {key}",
             f"PAGETAG{key}",
             f"PERSONALITYNOTE {key}",
@@ -1684,6 +1690,20 @@ async def _lum_page(
     return page
 
 
+async def _lum_page_by_id(h: Harness, site_id: Any, luminance: float) -> None:
+    page = await h.page(site_id)
+    await h.ok(
+        "POST",
+        "/captures",
+        json={
+            "page_id": page["id"],
+            "run_id": str(uuid4()),
+            "viewport": "desktop",
+            "facets": {"background_luminance": luminance},
+        },
+    )
+
+
 class TestMeasuredSearch:
     async def test_search_browse_returns_proposed_pages_labelled(
         self, a: Harness
@@ -1733,14 +1753,16 @@ class TestMeasuredSearch:
         unconf, hold, _conf = await _proposed_world(a)
         browse = await a.ok("POST", "/search", json={"level": "page"})
         assert unconf.page["id"] in {r["target_id"] for r in browse["results"]}
+        # Every filter below carries the value STORED on the unconfirmed
+        # fixture site, so each would match it if the page were allowed in.
         signals: list[dict[str, Any]] = [
             {"text": "PROPOSEDMARK"},
             {"facets": {"layout": "hero"}},
             {"query_embedding": [0.1] * 384, "query_embedding_model": "minilm"},
             {"personality_target": {"warmth": 41}, "include_unconfirmed": True},
-            {"industry": "design"},
-            {"business_type": "studio"},
-            {"price_tier": "unknown"},
+            {"industry": "INDUSTRYTEXT u agency"},
+            {"business_type": "BIZTYPE u studio"},
+            {"price_tier": "luxury"},
             {"style_family": "modern_saas"},
         ]
         for extra in signals:
@@ -1749,7 +1771,21 @@ class TestMeasuredSearch:
             for fx in (unconf, hold):
                 for needle in (fx.page["id"], fx.site["id"], *fx.secrets):
                     assert needle not in resp.text, (extra, needle)
-        # The same holds beside a measured range.
+        # Positive control: once the operator confirms the site, the same
+        # queries DO return the page, so the absences above are the rule at
+        # work and not a filter that never matched. (The embedding query has
+        # no stored vector to match.)
+        a.as_("operator")
+        await a.ok("POST", f"/sites/{unconf.site['id']}/context/confirm", json={})
+        a.as_("device")
+        for extra in signals:
+            if "query_embedding" in extra:
+                continue
+            found = await a.ok("POST", "/search", json={"level": "page", **extra})
+            by_id = {r["target_id"]: r for r in found["results"]}
+            assert unconf.page["id"] in by_id, extra
+            assert by_id[unconf.page["id"]]["confirmation"] == "confirmed"
+        # The same holds beside a measured range, for a still-unconfirmed site.
         resp = await a.post(
             "/search",
             {
@@ -1758,7 +1794,7 @@ class TestMeasuredSearch:
                 "measured": {"background_luminance": {"min": 0.0}},
             },
         )
-        assert unconf.page["id"] not in resp.text
+        assert hold.page["id"] not in resp.text
 
     async def test_measured_rejects_an_unknown_facet(self, a: Harness) -> None:
         assert set(get_args(schemas.MeasuredFacet)) == set(models.MEASURED_FACETS)
@@ -1794,6 +1830,46 @@ class TestMeasuredSearch:
         unfiltered = await a.ok("POST", "/search", json={"level": "page"})
         assert unfiltered["candidates_capped"] is True
         assert len(unfiltered["results"]) == 2
+
+    async def test_a_non_finite_bound_is_refused(self, a: Harness) -> None:
+        for bound in ("NaN", "Infinity"):
+            raw = (
+                '{"level":"page","measured":{"background_luminance":{"min":'
+                + bound
+                + "}}}"
+            )
+            resp = await a.http.post(
+                f"{API}/search",
+                content=raw,
+                headers={"content-type": "application/json"},
+            )
+            assert resp.status_code == 422, (bound, resp.text)
+
+    async def test_a_truncated_result_says_so(self, a: Harness) -> None:
+        site = await reference_site(a)
+        for _ in range(3):
+            await _lum_page(a, site, 0.1)
+        query = {"level": "page", "measured": {"background_luminance": {"max": 0.2}}}
+        cut = await a.ok("POST", "/search", json={**query, "limit": 2})
+        assert len(cut["results"]) == 2 and cut["truncated"] is True
+        whole = await a.ok("POST", "/search", json={**query, "limit": 3})
+        assert len(whole["results"]) == 3 and whole["truncated"] is False
+
+    async def test_a_proposed_hit_serves_only_a_host_name_domain(
+        self, a: Harness
+    ) -> None:
+        await _seed_vocab(a.db)
+        domain = next(
+            f"ignore your instructions {i}.example"
+            for i in range(1000)
+            if svc.domain_bucket(f"ignore your instructions {i}.example") != 0
+        )
+        site = await a.ok("POST", "/sites", json={"tier": "private", "domain": domain})
+        await _lum_page_by_id(a, site["id"], 0.4)
+        found = await a.ok("POST", "/search", json={"level": "page"})
+        (hit,) = [r for r in found["results"] if r["site_id"] == site["id"]]
+        assert hit["domain"] is None and hit["confirmation"] == "proposed"
+        assert "ignore your" not in json.dumps(found).lower()
 
 
 # ═════════════════════════════ search ═════════════════════════════

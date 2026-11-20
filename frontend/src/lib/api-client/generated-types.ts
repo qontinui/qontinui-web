@@ -52290,6 +52290,8 @@ export interface components {
             measured_unknown: number;
             /** Results */
             results: components["schemas"]["SearchHit"][];
+            /** Truncated */
+            truncated: boolean;
             /**
              * Vector Arm
              * @enum {string}

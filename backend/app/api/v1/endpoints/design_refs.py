@@ -1824,6 +1824,7 @@ async def search_examples(
         vector_arm=outcome.vector_arm,  # type: ignore[arg-type]
         candidates_capped=outcome.candidates_capped,
         measured_unknown=outcome.measured_unknown,
+        truncated=outcome.truncated,
         results=[
             SearchHit(
                 level=hit.level,  # type: ignore[arg-type]

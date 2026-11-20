@@ -551,8 +551,8 @@ MeasuredFacet = Literal[
 class MeasuredRange(_Strict):
     """An inclusive range over a per-page median; at least one bound."""
 
-    min: float | None = None
-    max: float | None = None
+    min: float | None = Field(default=None, allow_inf_nan=False)
+    max: float | None = Field(default=None, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _bounds(self) -> MeasuredRange:
@@ -638,8 +638,16 @@ class SearchResponse(BaseModel):
     results: list[SearchHit]
     #: The candidate cap bound: the results may be an incomplete set.
     candidates_capped: bool
-    #: Candidates dropped because a ``measured`` facet had no value.
+    #: With ``measured``: the candidates that passed every other filter and
+    #: the visibility rules but have no value for at least one named facet
+    #: (so they could be neither matched nor excluded). It is counted over
+    #: the whole candidate set, not just the page of results, and a page
+    #: missing one facet counts here even when another facet would exclude
+    #: it. Zero without ``measured``.
     measured_unknown: int
+    #: ``results`` was cut at ``limit``: more candidates matched than are
+    #: returned.
+    truncated: bool
 
 
 class SimilarByStyleRequest(_Strict):

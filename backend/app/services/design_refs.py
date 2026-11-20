@@ -854,8 +854,10 @@ class SearchOutcome:
     hits: list[Hit]
     #: The candidate cap bound, so the result may be incomplete.
     candidates_capped: bool = False
-    #: Candidates dropped because a ``measured`` facet had no value.
+    #: See ``SearchResponse.measured_unknown``.
     measured_unknown: int = 0
+    #: More hits matched than ``limit`` returned.
+    truncated: bool = False
 
 
 @dataclass
@@ -1288,21 +1290,25 @@ async def search(
             -hit.record.created_at.timestamp(),
         )
 
-    ordered = sorted(hits.values(), key=rank_key)[: query.limit]
+    ranked = sorted(hits.values(), key=rank_key)
+    truncated = len(ranked) > query.limit
+    ordered = ranked[: query.limit]
     if query.level == "page":
         medians = await page_medians(db, tenant_id, [hit.target_id for hit in ordered])
         for hit in ordered:
             hit.measured = medians.get(hit.target_id, {})
     for hit in ordered:
         if hit.site.context_state != "confirmed" and not query.include_holdout:
-            # A proposed hit carries measured facts and nothing a description
-            # or a person wrote.
+            # A proposed hit carries measured facts and the curation state;
+            # nothing a description or a person wrote about the site.
             hit.snippet = None
             hit.text_rank = None
             hit.vector_similarity = None
             hit.personality_distance = None
             hit.personality_basis = None
-    return SearchOutcome(vector_arm, ordered, found.capped, found.measured_unknown)
+    return SearchOutcome(
+        vector_arm, ordered, found.capped, found.measured_unknown, truncated
+    )
 
 
 # ═════════════════════════════ takedown ═════════════════════════════

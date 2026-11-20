@@ -55121,6 +55121,10 @@
             "title": "Results",
             "type": "array"
           },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
           "vector_arm": {
             "enum": [
               "hybrid",
@@ -55134,7 +55138,8 @@
           "vector_arm",
           "results",
           "candidates_capped",
-          "measured_unknown"
+          "measured_unknown",
+          "truncated"
         ],
         "title": "SearchResponse",
         "type": "object"
