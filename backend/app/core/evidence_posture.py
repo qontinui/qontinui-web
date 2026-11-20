@@ -1069,8 +1069,8 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             (
                 "split",
                 AppendOnlyByDesign(
-                    "the holdout split is assigned once, at the first "
-                    "confirmation, and never changes on purpose: a site an "
+                    "the holdout split is assigned once, at intake, by a hash of "
+                    "the domain, and never changes on purpose: a site an "
                     "agent has already seen can never become a clean holdout, "
                     "and a database trigger refuses the change"
                 ),

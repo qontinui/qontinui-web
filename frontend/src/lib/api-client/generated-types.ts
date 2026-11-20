@@ -4835,7 +4835,7 @@ export interface paths {
         /**
          * Attach Evidence
          * @description Cite a rating or comparison. ``site_ids`` are derived server-side
-         *     from its targets; evidence touching a holdout (or not-yet-split) site is
+         *     from its targets; evidence touching a holdout or unconfirmed site is
          *     refused here, at insert.
          */
         post: operations["api_v1_design_refs_principles_principle_id_evidence_post"];
@@ -5004,8 +5004,8 @@ export interface paths {
         /**
          * Confirm Context
          * @description The operator confirms (and may edit) the site context. Every edited
-         *     field goes to the correction log; the first confirmation assigns
-         *     ``split``.
+         *     field goes to the correction log. The split was assigned at intake and is
+         *     not touched here.
          */
         post: operations["api_v1_design_refs_sites_site_id_context_confirm_post"];
         delete?: never;
@@ -29545,6 +29545,11 @@ export interface components {
         };
         /** BalanceCell */
         BalanceCell: {
+            /**
+             * Context State
+             * @enum {string}
+             */
+            context_state: "proposed" | "confirmed";
             /** Industry */
             industry: string | null;
             /** N */
@@ -29554,8 +29559,11 @@ export interface components {
              * @enum {string}
              */
             price_tier: "budget" | "mid" | "premium" | "luxury" | "unknown";
-            /** Split */
-            split: ("reference" | "holdout") | null;
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "reference" | "holdout";
             /** Style Family */
             style_family: string | null;
         };
@@ -53196,10 +53204,16 @@ export interface components {
              * @enum {string}
              */
             review_state: "pending" | "approved" | "rejected";
-            /** Split */
-            split: ("reference" | "holdout") | null;
-            /** Split Assigned At */
-            split_assigned_at: string | null;
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "reference" | "holdout";
+            /**
+             * Split Assigned At
+             * Format: date-time
+             */
+            split_assigned_at: string;
             /** Style Family */
             style_family: string | null;
             /** Tags */

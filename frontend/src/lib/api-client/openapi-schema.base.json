@@ -4280,6 +4280,14 @@
       },
       "BalanceCell": {
         "properties": {
+          "context_state": {
+            "enum": [
+              "proposed",
+              "confirmed"
+            ],
+            "title": "Context State",
+            "type": "string"
+          },
           "industry": {
             "anyOf": [
               {
@@ -4307,19 +4315,12 @@
             "type": "string"
           },
           "split": {
-            "anyOf": [
-              {
-                "enum": [
-                  "reference",
-                  "holdout"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "reference",
+              "holdout"
             ],
-            "title": "Split"
+            "title": "Split",
+            "type": "string"
           },
           "style_family": {
             "anyOf": [
@@ -4338,6 +4339,7 @@
           "industry",
           "price_tier",
           "split",
+          "context_state",
           "n"
         ],
         "title": "BalanceCell",
@@ -57042,31 +57044,17 @@
             "type": "string"
           },
           "split": {
-            "anyOf": [
-              {
-                "enum": [
-                  "reference",
-                  "holdout"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "reference",
+              "holdout"
             ],
-            "title": "Split"
+            "title": "Split",
+            "type": "string"
           },
           "split_assigned_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Split Assigned At"
+            "format": "date-time",
+            "title": "Split Assigned At",
+            "type": "string"
           },
           "style_family": {
             "anyOf": [
@@ -87855,7 +87843,7 @@
     },
     "/api/v1/design-refs/principles/{principle_id}/evidence": {
       "post": {
-        "description": "Cite a rating or comparison. ``site_ids`` are derived server-side\nfrom its targets; evidence touching a holdout (or not-yet-split) site is\nrefused here, at insert.",
+        "description": "Cite a rating or comparison. ``site_ids`` are derived server-side\nfrom its targets; evidence touching a holdout or unconfirmed site is\nrefused here, at insert.",
         "operationId": "api_v1_design_refs_principles_principle_id_evidence_post",
         "parameters": [
           {
@@ -88605,7 +88593,7 @@
     },
     "/api/v1/design-refs/sites/{site_id}/context/confirm": {
       "post": {
-        "description": "The operator confirms (and may edit) the site context. Every edited\nfield goes to the correction log; the first confirmation assigns\n``split``.",
+        "description": "The operator confirms (and may edit) the site context. Every edited\nfield goes to the correction log. The split was assigned at intake and is\nnot touched here.",
         "operationId": "api_v1_design_refs_sites_site_id_context_confirm_post",
         "parameters": [
           {
