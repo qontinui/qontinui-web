@@ -343,6 +343,13 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
  * deploys omit them entirely). Shared by prPipeline, PrsTable, and
  * MergePipeline so "failed" vs "still running" never drifts between
  * surfaces.
+ *
+ * One deliberate exception: the CLEAN arm of the status classifier does NOT
+ * use this helper. A CLEAN row whose lifecycle is still `pending` is the
+ * just-pushed-head shape (whitespace-engine#59), where an aggregate `failure`
+ * may be the previous head's run; there only a NAMED failure counts. Whether
+ * that rule should become this helper's is a separate change across the
+ * surfaces that share it.
  */
 export function unstableHasFailure(
   pr: Pick<PrRow, "failing_contexts" | "ci_conclusion">
