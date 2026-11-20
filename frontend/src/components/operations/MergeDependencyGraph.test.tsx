@@ -187,7 +187,8 @@ describe("CLEAN node tint follows CI", () => {
     nodeTint(node(59, fields) as Parameters<typeof nodeTint>[0], false).border;
 
   // Every CI code, spelled as coord's `BlockReason::code` emits it
-  // (qontinui-coord pr_merge/predicate.rs). A renamed code fails here.
+  // (qontinui-coord pr_merge/predicate.rs, as of 2026-11-20). This mirrors
+  // coord by hand: a code renamed in coord would NOT fail here.
   const WAITING = [
     "ci-pending",
     "external-ci-pending",
