@@ -22,12 +22,21 @@ reads the newest retire row without scanning the fleet-wide log.
 
 Phase 2 makes coord's ``post_continuation_deferred`` write a second refusal
 event, ``continuation_deferred_load`` (typed ``device_id`` = the verified
-poster), and the capacity model's refusal hold then reads both::
+poster), and the capacity model's refusal hold then reads both. This is the
+SHAPE the predicate must serve, not a copy of coord's query::
 
-    SELECT occurred_at FROM coord.agent_logs
+    SELECT ... FROM coord.agent_logs
      WHERE event IN ('spawn_deferred_load_retire', 'continuation_deferred_load')
        AND device_id = $1
-     ORDER BY occurred_at DESC LIMIT 1
+       AND occurred_at > now() - <window>
+     ...
+
+coord's real hold read (``spawn_admission.rs`` ``REFUSAL_HOLD_SQL``) adds a
+``payload->>'stamp'`` filter and orders first by a computed expression over the
+stamp, then by ``occurred_at DESC``. No index can supply that ordering, so the
+index's job there is the ACCESS PATH: an equality on ``device_id`` plus a range
+on ``occurred_at`` over the refusal population only, followed by a small sort
+of one device's in-window rows. The migration test EXPLAINs that shape.
 
 A partial index serves a query only when the planner can prove the query's
 WHERE implies the index's predicate. ``event IN (a, b)`` does not imply
@@ -60,6 +69,9 @@ restoring lacap_01's ``event = 'spawn_deferred_load_retire'`` predicate under
 the original name. The two temporary names differ on purpose: a temporary
 index left VALID by an interrupted run of one direction then always carries
 the predicate of that direction, so ``IF NOT EXISTS`` keeping it is correct.
+After its rename, each direction also drops the OTHER direction's temporary
+name (``DROP INDEX CONCURRENTLY IF EXISTS``), so an interrupted run that was
+abandoned rather than re-run leaves no orphan partial index on the log table.
 
 Build posture (same as ``lacap_01``)
 ====================================
@@ -88,7 +100,9 @@ after step 2, the drop is a no-op and the rename completes; during step 2, an
 INVALID half-dropped old index is dropped by the re-run's ``IF EXISTS``. A
 re-run after a COMPLETE upgrade (``alembic stamp coord_topics_01`` then
 ``upgrade``) builds the temporary index afresh and swaps again: correct, at the
-cost of one more build.
+cost of one more build. A run that finds the original already dropped and the
+temporary index present (interrupted between steps 2 and 3) builds nothing and
+only renames.
 
 Every ``op.execute`` takes a static string literal. That does NOT make this
 revision auto-landable: coord's merge-train migration classifier
@@ -190,6 +204,11 @@ def upgrade() -> None:
             "ALTER INDEX IF EXISTS coord.idx_agent_logs_deferred_load_device_cfo02 "
             "RENAME TO idx_agent_logs_deferred_load_retire_device"
         )
+        # An abandoned interrupted downgrade's temporary index, if any.
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS "
+            "coord.idx_agent_logs_deferred_load_retire_device_lacap01"
+        )
         op.execute("RESET statement_timeout")
         op.execute("RESET lock_timeout")
 
@@ -220,6 +239,11 @@ def downgrade() -> None:
             "ALTER INDEX IF EXISTS "
             "coord.idx_agent_logs_deferred_load_retire_device_lacap01 "
             "RENAME TO idx_agent_logs_deferred_load_retire_device"
+        )
+        # An abandoned interrupted upgrade's temporary index, if any.
+        op.execute(
+            "DROP INDEX CONCURRENTLY IF EXISTS "
+            "coord.idx_agent_logs_deferred_load_device_cfo02"
         )
         op.execute("RESET statement_timeout")
         op.execute("RESET lock_timeout")
