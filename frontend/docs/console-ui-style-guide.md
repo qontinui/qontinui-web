@@ -1863,6 +1863,32 @@ shipped silently:
 | **A reference opens where it lives, or says why it cannot**                                  | `subprojects/RefLink.tsx` over `subprojectStatus.ts` (`refTarget`)                                                                                | A console link (a session, gate, question, work unit or other subproject), a new tab for a GitHub PR (an `https:` url only), or plain text whose `title` — and screen-reader text — names why it is not linked: a work unit whose slug is not known, since its page is slug-keyed. A session that joined through a gate's continuation links "its gate" in its sentence; the raw `via_ref` is on the raw line (R8). A reason whose cause lies in another subproject shows that subproject's headline — its badge, in its attention colour — beside the ref to it (D6), and nothing when coord sent no headline this build knows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §3.12's "a control with nowhere to go … says why", applied to a reason's reference list.                                                                                                                                                                                                                                                                                                                      |
 | **A link about a row lives in its expansion, not on its line**                               | `subprojects/SubprojectChip.tsx` (`SubprojectChipText`, `SubprojectChipCell`), `sessions/SessionsConsole.tsx`, `sessions/SessionRowExpansion.tsx` | A `/sessions` row names its subproject on the line as TEXT, in the LAST column and only from `xl` (the line's fixed columns already fill it at `md` and `lg`); the link is beside "Open full view ↗" in the expanded row, at every width. A row's line is one `<button>` (R5), and a link inside it would be nested interactive content that toggles the row as well. Sessions are looked up in batches of at most 200, the rows on screen first: a new one at once, a failed lookup after a minute, and every other answer — a membership included, since a session can be moved and a headline changes — after about three. An answer stays on screen while it is re-read, and a failed re-read keeps it, said to be not current; only a session never answered is a "lookup failed" dash. The console's one list poll is that lookup's slow poll, so it adds no timer. Its accessible names are short ("subproject: dashboards, stalled"; "subproject: none"); the full sentence is the title.                                                                                                                                                                                                                                                                                 | R2 fixes the line's slots and R5 makes the line the toggle; neither said where a per-row link goes once the line carries a column that names something linkable.                                                                                                                                                                                                                                              |
 
+### 3.17 The topics console — recorded under §6.4
+
+`/admin/coord/topics` and its `[id]` detail (plan
+`2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator`
+Phase 8, D9) compose `HealthStrip`, `FilterTabs`, `RecordList`/`RecordRow`/
+`RecordDetail`, `StatusBadge`, `RowTime`, `CollapsiblePanel` and
+`RefreshButton`, and register one palette in `CONSOLE_PALETTES` from
+`components/admin/coord/topics/topicStatus.ts`: a topic's rolled-up headline,
+in the subprojects' own vocabulary and hues. It adds no primitive. Two things
+are recorded rather than shipped silently:
+
+- **Tab counts are counted from the one list coord serves.** coord's
+  `GET /coord/topics` is unpaginated, so each tab's count is the loaded list
+  filtered by headline — `–` on every tab until a read answered, and a `*`
+  note on every tab when the latest read failed and the list is the last good
+  one. A topic never rolled up (`headline: null`) is listed under All only and
+  counted by the strip's `unknown` badge. A `503 schema_migration_pending` is
+  said as "topics not available yet (migration pending)", never as no topics.
+- **The subprojects list's Topic column is a dash, and "Group by topic" is a
+  disabled control that says why.** coord's subprojects list carries no topic
+  field yet, and building the map client-side would cost one topic-detail read
+  per topic on every poll. So each row's time slot leads with `topic –` and the
+  toggle is disabled, both titled "topic data not yet served" (the title sits
+  on a wrapper, since a disabled button shows none). Both become live in the PR
+  that teaches the list to serve the topic.
+
 ---
 
 ## 4. The attention palette
