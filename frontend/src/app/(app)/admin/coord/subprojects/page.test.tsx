@@ -699,6 +699,19 @@ describe("/admin/coord/subprojects", () => {
     );
   });
 
+  it("names each row's topic as unknown and keeps group-by-topic off until coord serves topics", async () => {
+    route(CALM, { open: [summary()] });
+    render(<CoordSubprojectsPage />);
+    const topicCell = await screen.findByTestId("coord-subproject-row-topic");
+    expect(topicCell).toHaveTextContent("topic –");
+    expect(topicCell).toHaveAttribute("title", "topic data not yet served");
+    const toggle = screen.getByTestId("coord-subprojects-group-by-topic");
+    expect(toggle).toBeDisabled();
+    expect(
+      screen.getByTestId("coord-subprojects-group-by-topic-wrap")
+    ).toHaveAttribute("title", "topic data not yet served");
+  });
+
   it("dashes every count before any read answers, and never claims an empty list", async () => {
     fetchSubprojects.mockReturnValue(new Promise(() => {}));
     render(<CoordSubprojectsPage />);
