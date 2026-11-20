@@ -536,11 +536,13 @@ def flagged_keys(report: Iterable[Correlation]) -> set[str]:
 
 
 def _flatten(tokens: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+    """Flatten nested tokens to ``a/b`` names. ``/`` is outside the measured
+    key grammar, so a dotted key (``a.b``) never collides with nesting."""
     flat: dict[str, Any] = {}
     for key, value in tokens.items():
         name = f"{prefix}{key}"
         if isinstance(value, dict):
-            flat.update(_flatten(value, f"{name}."))
+            flat.update(_flatten(value, f"{name}/"))
         else:
             flat[name] = value
     return flat
@@ -587,7 +589,16 @@ _VIEWPORT_RE: Final = re.compile(r"\A(?:[a-z][a-z0-9_]{0,23}|[0-9]{2,5}x[0-9]{2,
 _MAX_MEASURED_INT: Final = 2**53
 _URL_MAX_CHARS: Final = 200
 #: ``facets.method`` is served only in this form.
-_FACETS_METHOD_RE: Final = re.compile(r"\Afacets@\d+\Z")
+_FACETS_METHOD_RE: Final = re.compile(r"\Afacets@[0-9]{1,4}\Z")
+_DNS_LABEL: Final = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_DOMAIN_RE: Final = re.compile(rf"\A{_DNS_LABEL}(?:\.{_DNS_LABEL})*\Z")
+#: RFC 3986 path characters a measured read serves (no space, no query).
+_PATH_RE: Final = re.compile(r"\A(?:/(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})*)*\Z")
+#: Shape caps: a grammar bounds each token, these bound how many.
+MEASURED_MAX_KEYS: Final = 64
+MEASURED_MAX_LIST_ITEMS: Final = 64
+MEASURED_MAX_VIEWPORTS: Final = 8
+MEASURED_MAX_CAPTURES: Final = 20
 _MEASURED_MAX_DEPTH: Final = 8
 
 
@@ -608,12 +619,22 @@ def measured_viewports(values: Any) -> list[str]:
     """The viewport tokens of a page's free-form ``viewports`` list."""
     if not isinstance(values, list):
         return []
-    return [v for v in values if measured_viewport(v) is not None]
+    kept = [v for v in values if measured_viewport(v) is not None]
+    return kept[:MEASURED_MAX_VIEWPORTS]
 
 
-def measured_url(url: Any) -> str | None:
-    """``scheme://host/path`` of a page URL, length-capped: no userinfo, port,
-    query or fragment, which are free text."""
+def measured_domain(domain: Any) -> str | None:
+    """``domain`` when it is a DNS host name (lower-case labels), else None."""
+    if isinstance(domain, str) and len(domain) <= 253 and _DOMAIN_RE.match(domain):
+        return domain
+    return None
+
+
+def measured_url(url: Any, domain: str) -> str | None:
+    """``scheme://host/path`` of a page URL, only when the host is the site's
+    own domain and the path is RFC 3986 characters; else None. Userinfo, port,
+    query and fragment are free text and never served. The path is cut on a
+    segment boundary, so a ``%XX`` escape is never split."""
     if not isinstance(url, str):
         return None
     try:
@@ -623,22 +644,40 @@ def measured_url(url: Any) -> str | None:
         return None
     if parts.scheme not in ("http", "https") or not host:
         return None
-    return f"{parts.scheme}://{host}{parts.path}"[:_URL_MAX_CHARS]
+    shown = measured_domain(host)
+    if shown is None or normalise_domain(shown) != domain:
+        return None
+    path = parts.path
+    if not _PATH_RE.match(path):
+        return None
+    head = f"{parts.scheme}://{shown}"
+    out = head
+    for segment in path.split("/")[1:]:
+        if len(out) + 1 + len(segment) > _URL_MAX_CHARS:
+            break
+        out += "/" + segment
+    return out
 
 
 def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
     """``(filtered, dropped)``: ``value`` with only numeric leaves under keys
     matching a short-identifier grammar. Every string, boolean, null, oddly
-    keyed or too-deep node is dropped and counted once. A device can write
-    anything into ``tokens``, ``layout_bands`` and ``motion_summary``, so a
-    numeric-only guarantee is enforced here rather than assumed."""
+    keyed, surplus (beyond the key and item caps) or too-deep node is dropped
+    and counted once. A list is kept WHOLE or not at all: dropping one element
+    would shift the positions of the rest, which a position-keyed list (layout
+    bands) cannot carry. A device can write anything into ``tokens``,
+    ``layout_bands`` and ``motion_summary``, so a numeric-only guarantee is
+    enforced here rather than assumed."""
     if isinstance(value, dict):
         if _depth >= _MEASURED_MAX_DEPTH:
-            return {}, 1
+            return _DROPPED, 1
         out_d: dict[str, Any] = {}
         dropped = 0
         for key, child in value.items():
             if not isinstance(key, str) or not _MEASURED_KEY_RE.match(key):
+                dropped += 1
+                continue
+            if len(out_d) >= MEASURED_MAX_KEYS:
                 dropped += 1
                 continue
             kept, n = numeric_only(child, _depth + 1)
@@ -649,15 +688,21 @@ def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
         return out_d, dropped
     if isinstance(value, list):
         if _depth >= _MEASURED_MAX_DEPTH:
-            return [], 1
+            return _DROPPED, 1
+        if len(value) > MEASURED_MAX_LIST_ITEMS:
+            return _DROPPED, len(value)
         out_l: list[Any] = []
         dropped = 0
+        failed = False
         for child in value:
             kept, n = numeric_only(child, _depth + 1)
             dropped += n
             if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
+                failed = True
                 continue
             out_l.append(kept)
+        if failed:
+            return _DROPPED, dropped or 1
         return out_l, dropped
     if _is_number(value):
         return value, 0
@@ -694,17 +739,21 @@ def measured_capture(capture: Any) -> MeasuredCaptureOut:
     if is_measured_token_set(raw_tokens):
         filtered, n = numeric_only(raw_tokens)
         dropped += n
-        tokens = filtered or None
+        tokens = None if filtered is _DROPPED else (filtered or None)
     else:
         dropped += len(raw_tokens)
     bands, n = numeric_only(
         capture.layout_bands if isinstance(capture.layout_bands, list) else []
     )
     dropped += n
+    if bands is _DROPPED:
+        bands = []
     motion, n = numeric_only(
         capture.motion_summary if isinstance(capture.motion_summary, dict) else {}
     )
     dropped += n
+    if motion is _DROPPED:
+        motion = {}
     return MeasuredCaptureOut(
         id=capture.id,
         page_id=capture.page_id,
@@ -1606,6 +1655,7 @@ __all__ = [
     "is_hidden_holdout",
     "is_measured_token_set",
     "measured_capture",
+    "measured_domain",
     "measured_url",
     "measured_viewport",
     "measured_viewports",

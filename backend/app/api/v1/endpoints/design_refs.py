@@ -1816,7 +1816,7 @@ async def search_examples(
                 level=hit.level,  # type: ignore[arg-type]
                 target_id=hit.target_id,
                 site_id=hit.site.id,
-                domain=hit.site.domain,
+                domain=_shown_domain(hit.site, include_holdout),
                 tier=hit.record.tier,
                 review_state=hit.record.review_state,
                 quality=hit.record.quality,
@@ -2008,6 +2008,17 @@ async def get_example(
     )
 
 
+def _shown_domain(site: Site, raw: bool) -> str | None:
+    """A site's domain as an agent read serves it: verbatim once the operator
+    confirmed the site (or to an operator's own review read), else only when it
+    is a DNS host name, since an unconfirmed site's domain is device-written."""
+    return (
+        site.domain
+        if raw or site.context_state == "confirmed"
+        else (svc.measured_domain(site.domain))
+    )
+
+
 async def _measured_example(
     db: AsyncSession, principal: MemoryPrincipal, page: Any, site: Site
 ) -> MeasuredExampleOut:
@@ -2017,7 +2028,8 @@ async def _measured_example(
         await db.execute(
             select(Capture)
             .where(Capture.tenant_id == principal.tenant_id, Capture.page_id == page.id)
-            .order_by(Capture.created_at)
+            .order_by(Capture.created_at.desc())
+            .limit(svc.MEASURED_MAX_CAPTURES)
         )
     ).scalars()
     labels = svc.site_labels(site)
@@ -2027,15 +2039,19 @@ async def _measured_example(
         content="measured_facts",
         confirmation="proposed",
         level="page",
-        site=SiteIdentityOut(id=site.id, domain=site.domain, tier=site.tier),  # type: ignore[arg-type]
+        site=SiteIdentityOut(
+            id=site.id,
+            domain=svc.measured_domain(site.domain),
+            tier=site.tier,  # type: ignore[arg-type]
+        ),
         page=PageIdentityOut(
             id=page.id,
             site_id=page.site_id,
-            url=svc.measured_url(page.url),
+            url=svc.measured_url(page.url, site.domain),
             captured_at=page.captured_at,
             viewports=svc.measured_viewports(page.viewports),
         ),
-        captures=[svc.measured_capture(c) for c in captures],
+        captures=[svc.measured_capture(c) for c in reversed(list(captures))],
         labels=labels,
     )
 
@@ -2147,7 +2163,7 @@ async def similar_by_style(
                 level=body.level,
                 target_id=row.id,
                 site_id=site.id,
-                domain=site.domain,
+                domain=_shown_domain(site, include),
                 role=getattr(row, "role", None),
                 token_distance=distance,
                 labels=svc.site_labels(site),
@@ -2192,7 +2208,7 @@ async def compare_to_references(
                 target_id=row.id,
                 level=level,
                 site_id=site.id,
-                domain=site.domain,
+                domain=_shown_domain(site, include),
                 role=getattr(row, "role", None),
                 token_distance=distance,
                 differences=[

@@ -581,7 +581,7 @@ class SearchHit(BaseModel):
     level: Level
     target_id: UUID
     site_id: UUID
-    domain: str
+    domain: str | None
     tier: Tier
     review_state: ReviewState
     quality: Quality | None
@@ -618,7 +618,7 @@ class StyleHit(BaseModel):
     level: Literal["page", "component"]
     target_id: UUID
     site_id: UUID
-    domain: str
+    domain: str | None
     role: str | None
     token_distance: float
     labels: list[str]
@@ -656,7 +656,7 @@ class CompareHit(BaseModel):
     target_id: UUID
     level: Literal["page", "component"]
     site_id: UUID
-    domain: str
+    domain: str | None
     role: str | None
     token_distance: float
     differences: list[TokenDifference]
@@ -937,7 +937,7 @@ class SiteIdentityOut(BaseModel):
     """What it takes to cite a site: no context, no tags."""
 
     id: UUID
-    domain: str
+    domain: str | None
     tier: Tier
 
 

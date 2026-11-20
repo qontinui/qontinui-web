@@ -11085,8 +11085,15 @@
             "type": "array"
           },
           "domain": {
-            "title": "Domain",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "labels": {
             "items": {
@@ -54870,8 +54877,15 @@
             "type": "string"
           },
           "domain": {
-            "title": "Domain",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "facet_exact": {
             "title": "Facet Exact",
@@ -58091,8 +58105,15 @@
         "description": "What it takes to cite a site: no context, no tags.",
         "properties": {
           "domain": {
-            "title": "Domain",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "id": {
             "format": "uuid",
@@ -61886,8 +61907,15 @@
             "type": "string"
           },
           "domain": {
-            "title": "Domain",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "labels": {
             "items": {

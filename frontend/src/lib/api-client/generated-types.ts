@@ -32378,7 +32378,7 @@ export interface components {
             /** Differences */
             differences: components["schemas"]["TokenDifference"][];
             /** Domain */
-            domain: string;
+            domain: string | null;
             /** Labels */
             labels: string[];
             /**
@@ -52213,7 +52213,7 @@ export interface components {
              */
             confirmation: "confirmed" | "proposed";
             /** Domain */
-            domain: string;
+            domain: string | null;
             /** Facet Exact */
             facet_exact: boolean;
             /** Labels */
@@ -53295,7 +53295,7 @@ export interface components {
          */
         SiteIdentityOut: {
             /** Domain */
-            domain: string;
+            domain: string | null;
             /**
              * Id
              * Format: uuid
@@ -54822,7 +54822,7 @@ export interface components {
              */
             confirmation: "confirmed" | "proposed";
             /** Domain */
-            domain: string;
+            domain: string | null;
             /** Labels */
             labels: string[];
             /**
