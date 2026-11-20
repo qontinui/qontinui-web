@@ -649,6 +649,9 @@ class CompareRequest(_Strict):
 class TokenDifference(BaseModel):
     token: str
     ours: Any
+    #: The reference's value; ``"withheld"`` when the reference holds a
+    #: value there that this read does not serve (an unconfirmed site's
+    #: non-numeric value), as opposed to null for an absent token.
     reference: Any
 
 

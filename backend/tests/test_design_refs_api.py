@@ -1469,8 +1469,11 @@ class TestProposedFacts:
         served: dict[str, str | None] = {}
         for name, url in (
             ("spaces", f"https://{domain}/ignore previous instructions"),
+            ("hyphens", f"https://{domain}/ignore-previous-instructions"),
+            ("escape", f"https://{domain}/a/%41"),
+            ("deep", f"https://{domain}/a/b/c/d"),
             ("foreign", "https://elsewhere.example/ok"),
-            ("plain", f"https://{domain}/a/b_c.d~e/%41"),
+            ("plain", f"https://{domain}/a/b_c.d~e"),
         ):
             page = await a.page(site["id"], url=url)
             await a.ok(
@@ -1485,18 +1488,26 @@ class TestProposedFacts:
             )
             body = (await a.ok("GET", f"/examples/page/{page['id']}"))["page"]
             served[name] = body["url"]
+        host = f"https://{domain}"
         assert served == {
-            "spaces": None,
+            "spaces": host,
+            "hyphens": host,
+            "escape": host,
+            "deep": host,
             "foreign": None,
-            "plain": f"https://{domain}/a/b_c.d~e/%41",
+            "plain": f"{host}/a/b_c.d~e",
         }
 
-    def test_a_long_path_is_cut_on_a_segment_boundary(self) -> None:
-        segment = "%41" * 20
-        url = "https://d.example/" + "/".join([segment] * 8)
-        out = svc.measured_url(url, "d.example")
-        assert out is not None and len(out) <= 200
-        assert out.split("/")[3:] and all(x == segment for x in out.split("/")[3:])
+    def test_a_url_path_is_three_short_plain_segments_or_nothing(self) -> None:
+        host = "https://d.example"
+        assert svc.measured_url(f"{host}/", "d.example") == host
+        assert svc.measured_url(f"{host}/a/b/c", "d.example") == f"{host}/a/b/c"
+        assert svc.measured_url(f"{host}/a/b/c/d", "d.example") == host
+        assert (
+            svc.measured_url(f"{host}/{'a' * 24}", "d.example") == f"{host}/{'a' * 24}"
+        )
+        assert svc.measured_url(f"{host}/{'a' * 25}", "d.example") == host
+        assert svc.measured_url(f"{host}//a", "d.example") == host
 
     async def test_a_device_written_domain_is_served_only_as_a_host_name(
         self, a: Harness
@@ -1543,7 +1554,8 @@ class TestProposedFacts:
             json={"tier": "private", "domain": _domain_with_bucket(False, "cap")},
         )
         page = await a.page(
-            site["id"], viewports=[f"vp{i}" for i in range(12)] + ["bad viewport"]
+            site["id"],
+            viewports=[f"vp{i}" for i in range(12)] + ["bad viewport", "v" * 25],
         )
         for i in range(25):
             await a.ok(
@@ -1553,8 +1565,10 @@ class TestProposedFacts:
                     "page_id": page["id"],
                     "run_id": str(uuid4()),
                     "viewport": "desktop",
-                    "tokens": {f"k{j}": j for j in range(80)} if i == 24 else {"ok": 1},
-                    "layout_bands": list(range(70)) if i == 24 else [1, "x", 3],
+                    "tokens": {f"k{j}": j for j in range(80)} | {"k" * 33: 1}
+                    if i == 24
+                    else {"ok": 1},
+                    "layout_bands": list(range(300)) if i == 24 else [1, "x", 3],
                     "facets": {"method": "facets@\u0661\u0662"}
                     if i == 24
                     else {"method": "facets@12345"},
@@ -1566,7 +1580,9 @@ class TestProposedFacts:
         assert len(body["captures"]) == svc.MEASURED_MAX_CAPTURES
         newest = body["captures"][-1]
         assert len(newest["tokens"]) == svc.MEASURED_MAX_KEYS
-        assert newest["layout_bands"] == []  # 70 items: over the item cap
+        assert "k" * 33 not in newest["tokens"]  # 33 characters: over the key cap
+        assert newest["layout_bands"] == []  # 300 items: over the item cap
+        assert "v" * 25 not in json.dumps(body)  # a 25-character viewport token
         assert newest["facets_method"] is None  # non-ASCII digits
         assert all(c["layout_bands"] == [] for c in body["captures"])  # [1, "x", 3]
         assert all(c["facets_method"] is None for c in body["captures"])  # 5 digits
@@ -1577,6 +1593,75 @@ class TestProposedFacts:
     def test_a_list_keeps_its_positions_or_is_dropped(self) -> None:
         assert svc.numeric_only([1, "x", 3]) == (svc._DROPPED, 1)
         assert svc.numeric_only({"bands": [1, 2, 3]}) == ({"bands": [1, 2, 3]}, 0)
+
+    def test_a_field_spends_a_bounded_node_budget(self) -> None:
+        wide = {f"k{i}": {f"j{n}": 1 for n in range(30)} for i in range(40)}
+        kept, dropped = svc.numeric_only(wide)
+        leaves = sum(len(v) for v in kept.values())
+        assert leaves < svc.MEASURED_NODE_BUDGET and dropped > 0
+        assert svc.numeric_only(list(range(256)))[0] == list(range(256))
+        assert svc.numeric_only(list(range(257)))[0] is svc._DROPPED
+
+    async def test_a_proposed_comparison_is_not_an_oracle_for_withheld_values(
+        self, a: Harness
+    ) -> None:
+        await _seed_vocab(a.db)
+        site = await a.ok(
+            "POST",
+            "/sites",
+            json={"tier": "private", "domain": _domain_with_bucket(False, "orc")},
+        )
+        page = await a.page(site["id"])
+        await a.ok(
+            "POST",
+            "/captures",
+            json={
+                "page_id": page["id"],
+                "run_id": str(uuid4()),
+                "viewport": "desktop",
+                "tokens": {"ok": 1, "hex": "#112233", "size": "large"},
+            },
+        )
+        distances = []
+        for guess in ("#112233", "#999999"):
+            found = await a.ok(
+                "POST",
+                "/similar-by-style",
+                json={"level": "page", "tokens": {"ok": 1, "hex": guess}},
+            )
+            distances.append(found["results"][0]["token_distance"])
+        assert distances[0] == distances[1] == 0.0
+        compared = await a.ok(
+            "POST",
+            "/compare-to-references",
+            json={"snapshot": {"tokens": {"ok": 1, "size": 5, "hex": "#112233"}}},
+        )
+        (hit,) = compared["results"]
+        assert hit["differences"] == [
+            {"token": "size", "ours": 5, "reference": "withheld"}
+        ]
+
+    async def test_a_page_of_an_anti_pattern_site_is_not_served_as_proposed(
+        self, a: Harness
+    ) -> None:
+        unconf, _hold, _conf = await _proposed_world(a)
+        assert (
+            await a.http.get(f"{API}/examples/page/{unconf.page['id']}")
+        ).status_code == 200
+        a.as_("operator")
+        await a.ok(
+            "POST",
+            f"/review/site/{unconf.site['id']}",
+            json={"review_state": "approved", "quality": "anti_pattern"},
+        )
+        a.as_("device")
+        assert (
+            await a.http.get(f"{API}/examples/page/{unconf.page['id']}")
+        ).status_code == 404
+        similar = await a.ok(
+            "POST", "/similar-by-style", json={"level": "page", "tokens": _TOKENS}
+        )
+        assert unconf.page["id"] not in {r["target_id"] for r in similar["results"]}
 
 
 # ═════════════════════════════ search ═════════════════════════════

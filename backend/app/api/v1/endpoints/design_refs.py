@@ -1929,7 +1929,7 @@ async def get_example(
         # Only a page of an unconfirmed REFERENCE site reaches here (page
         # level is the only one proposed_facts widens): measured facts only,
         # and never one marked anti_pattern.
-        if record.quality == "anti_pattern":
+        if record.quality == "anti_pattern" or site.quality == "anti_pattern":
             raise _not_found(level)
         return await _measured_example(db, principal, record, site)
     descriptions = list(
@@ -2085,8 +2085,9 @@ async def _style_candidates(
     level: str,
     role: str | None,
     include_holdout: bool,
-) -> tuple[list[tuple[Any, Site, dict[str, Any]]], int]:
-    """``(comparable candidates, unmeasured count)``. A candidate whose token
+) -> tuple[list[tuple[Any, Site, dict[str, Any], dict[str, Any]]], int]:
+    """``(comparable candidates, unmeasured count)``; each candidate carries
+    the tokens to compare and the reference's raw tokens. A candidate whose token
     set is the stated-unknown sentinel is never ranked, and is counted. Page
     level also serves unconfirmed reference sites, through the numeric-only
     filter: what is compared of them is measured numbers, never text."""
@@ -2105,7 +2106,7 @@ async def _style_candidates(
             db, principal.tenant_id, [row.id for row, _ in found]
         )
         raw = [(row, site, tokens.get(row.id, {})) for row, site in found]
-    usable: list[tuple[Any, Site, dict[str, Any]]] = []
+    usable: list[tuple[Any, Site, dict[str, Any], dict[str, Any]]] = []
     unmeasured = 0
     for row, site, tokens_ in raw:
         if not tokens_:
@@ -2113,13 +2114,25 @@ async def _style_candidates(
         if not svc.is_measured_token_set(tokens_):
             unmeasured += 1
             continue
+        shown = tokens_
         if site.context_state != "confirmed" and not include_holdout:
-            tokens_, _dropped = svc.numeric_only(tokens_)
-            if not tokens_:
+            shown, _dropped = svc.numeric_only(tokens_)
+            if shown is svc._DROPPED or not shown:
                 unmeasured += 1
                 continue
-        usable.append((row, site, tokens_))
+        usable.append((row, site, shown, tokens_))
     return usable, unmeasured
+
+
+def _ours_for(
+    site: Site, raw: bool, ours: dict[str, Any], ours_numeric: Any
+) -> dict[str, Any]:
+    """The caller's tokens as compared against ``site``: for an unconfirmed site
+    only their numeric part, so a distance cannot be used to test guesses of a
+    withheld (string) value."""
+    if raw or site.context_state == "confirmed":
+        return ours
+    return ours_numeric if isinstance(ours_numeric, dict) else {}
 
 
 def _refuse_unknown_tokens(tokens: dict[str, Any]) -> None:
@@ -2148,10 +2161,17 @@ async def similar_by_style(
     candidates, unmeasured = await _style_candidates(
         db, principal, body.level, body.role, include
     )
+    ours_numeric = svc.numeric_only(body.tokens)[0]
     ranked = sorted(
         (
-            (svc.token_distance(body.tokens, tokens), row, site)
-            for row, site, tokens in candidates
+            (
+                svc.token_distance(
+                    _ours_for(site, include, body.tokens, ours_numeric), tokens
+                ),
+                row,
+                site,
+            )
+            for row, site, tokens, _raw in candidates
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
@@ -2193,10 +2213,20 @@ async def compare_to_references(
     candidates, unmeasured = await _style_candidates(
         db, principal, level, body.snapshot.role, include
     )
+    ours_numeric = svc.numeric_only(body.snapshot.tokens)[0]
     ranked = sorted(
         (
-            (svc.token_distance(body.snapshot.tokens, tokens), row, site, tokens)
-            for row, site, tokens in candidates
+            (
+                svc.token_distance(
+                    _ours_for(site, include, body.snapshot.tokens, ours_numeric),
+                    tokens,
+                ),
+                row,
+                site,
+                tokens,
+                raw,
+            )
+            for row, site, tokens, raw in candidates
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
@@ -2214,13 +2244,15 @@ async def compare_to_references(
                 differences=[
                     TokenDifference(token=name, ours=ours, reference=theirs)
                     for name, ours, theirs in svc.token_differences(
-                        body.snapshot.tokens, tokens
+                        _ours_for(site, include, body.snapshot.tokens, ours_numeric),
+                        tokens,
+                        raw,
                     )
                 ],
                 labels=svc.site_labels(site),
                 confirmation=site.context_state,  # type: ignore[arg-type]
             )
-            for distance, row, site, tokens in ranked
+            for distance, row, site, tokens, raw in ranked
         ],
     )
 

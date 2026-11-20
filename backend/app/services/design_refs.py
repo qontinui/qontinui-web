@@ -19,6 +19,19 @@ module holds what they share and what tests drive directly:
 * **Principle support** — :func:`reference_support`.
 * **Takedown** — :func:`takedown` (rows, judgement rows and reference-counted
   blobs).
+
+Known residual of the measured-facts reads (plan Phase 2): a device writes the
+KEYS of ``tokens``, ``layout_bands`` and ``motion_summary`` and the viewport
+words of a capture, and without a token vocabulary a grammar can bound their
+shape but not their meaning. What reaches an agent is therefore
+device-controlled snake_case identifiers: at most 32 characters each, at most
+:data:`MEASURED_MAX_KEYS` keys per object, :data:`MEASURED_MAX_LIST_ITEMS` items
+per list, :data:`MEASURED_NODE_BUDGET` nodes per field, 24-character viewport
+tokens and :data:`MEASURED_MAX_VIEWPORTS` of them. Never a string value, a
+blob key, a sentence-shaped key or a free-text URL part. Operator curation or
+confirmation removes a site's measured facts from this arm (the page leaves
+``similar-by-style`` and ``/examples``, or turns into the full confirmed
+record). ``tests/test_design_refs_api.py`` asserts each cap.
 """
 
 from __future__ import annotations
@@ -560,16 +573,31 @@ def token_distance(ours: dict[str, Any], theirs: dict[str, Any]) -> float:
     return round(1 - same / len(names), 6)
 
 
+#: What a difference says for a reference value this read withholds.
+WITHHELD: Final = "withheld"
+
+
 def token_differences(
-    ours: dict[str, Any], theirs: dict[str, Any]
+    ours: dict[str, Any],
+    theirs: dict[str, Any],
+    withheld_from: dict[str, Any] | None = None,
 ) -> list[tuple[str, Any, Any]]:
+    """``(name, ours, theirs)`` for every differing token. ``withheld_from`` is
+    the reference's UNFILTERED token set: a name the caller supplied that the
+    reference holds only as a withheld (non-numeric) value reads ``"withheld"``,
+    so a withheld value is never mistaken for an absent one. Only names the
+    caller itself named are ever reported this way."""
     a = _flatten(ours)
     b = _flatten(theirs)
-    return [
-        (name, a.get(name), b.get(name))
-        for name in sorted(set(a) | set(b))
-        if a.get(name) != b.get(name)
-    ]
+    raw = _flatten(withheld_from) if withheld_from is not None else {}
+    out: list[tuple[str, Any, Any]] = []
+    for name in sorted(set(a) | set(b)):
+        theirs_value = b.get(name)
+        if name not in b and name in a and name in raw:
+            theirs_value = WITHHELD
+        if a.get(name) != theirs_value:
+            out.append((name, a.get(name), theirs_value))
+    return out
 
 
 def is_measured_token_set(tokens: dict[str, Any]) -> bool:
@@ -592,11 +620,14 @@ _URL_MAX_CHARS: Final = 200
 _FACETS_METHOD_RE: Final = re.compile(r"\Afacets@[0-9]{1,4}\Z")
 _DNS_LABEL: Final = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _DOMAIN_RE: Final = re.compile(rf"\A{_DNS_LABEL}(?:\.{_DNS_LABEL})*\Z")
-#: RFC 3986 path characters a measured read serves (no space, no query).
-_PATH_RE: Final = re.compile(r"\A(?:/(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})*)*\Z")
+#: One URL path segment a measured read serves: no hyphen, no ``%`` escape.
+_PATH_SEGMENT_RE: Final = re.compile(r"\A[A-Za-z0-9_.~]{1,24}\Z")
+_URL_MAX_SEGMENTS: Final = 3
 #: Shape caps: a grammar bounds each token, these bound how many.
 MEASURED_MAX_KEYS: Final = 64
-MEASURED_MAX_LIST_ITEMS: Final = 64
+MEASURED_MAX_LIST_ITEMS: Final = 256
+#: Nodes (containers and leaves) one measured field may spend in total.
+MEASURED_NODE_BUDGET: Final = 512
 MEASURED_MAX_VIEWPORTS: Final = 8
 MEASURED_MAX_CAPTURES: Final = 20
 _MEASURED_MAX_DEPTH: Final = 8
@@ -631,10 +662,11 @@ def measured_domain(domain: Any) -> str | None:
 
 
 def measured_url(url: Any, domain: str) -> str | None:
-    """``scheme://host/path`` of a page URL, only when the host is the site's
-    own domain and the path is RFC 3986 characters; else None. Userinfo, port,
-    query and fragment are free text and never served. The path is cut on a
-    segment boundary, so a ``%XX`` escape is never split."""
+    """``scheme://host`` of a page URL, plus its path only when the path is at
+    most :data:`_URL_MAX_SEGMENTS` segments of ``[A-Za-z0-9_.~]{1,24}``;
+    otherwise the host alone. None unless the host is the site's own domain.
+    Userinfo, port, query, fragment, percent escapes and hyphenated words are
+    free text and never served."""
     if not isinstance(url, str):
         return None
     try:
@@ -647,29 +679,37 @@ def measured_url(url: Any, domain: str) -> str | None:
     shown = measured_domain(host)
     if shown is None or normalise_domain(shown) != domain:
         return None
-    path = parts.path
-    if not _PATH_RE.match(path):
-        return None
     head = f"{parts.scheme}://{shown}"
-    out = head
-    for segment in path.split("/")[1:]:
-        if len(out) + 1 + len(segment) > _URL_MAX_CHARS:
-            break
-        out += "/" + segment
-    return out
+    segments = parts.path.split("/")[1:] if parts.path.startswith("/") else []
+    if segments == [""]:
+        return head  # the site root
+    if (
+        not segments
+        or len(segments) > _URL_MAX_SEGMENTS
+        or not all(_PATH_SEGMENT_RE.match(seg) for seg in segments)
+    ):
+        return head
+    return head + "".join("/" + seg for seg in segments)
 
 
-def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
+def numeric_only(value: Any) -> tuple[Any, int]:
     """``(filtered, dropped)``: ``value`` with only numeric leaves under keys
     matching a short-identifier grammar. Every string, boolean, null, oddly
-    keyed, surplus (beyond the key and item caps) or too-deep node is dropped
-    and counted once. A list is kept WHOLE or not at all: dropping one element
-    would shift the positions of the rest, which a position-keyed list (layout
-    bands) cannot carry. A device can write anything into ``tokens``,
+    keyed, surplus (beyond the key, item and node caps) or too-deep node is
+    dropped and counted once. A list is kept WHOLE or not at all: dropping one
+    element would shift the positions of the rest, which a position-keyed list
+    (layout bands) cannot carry. A device can write anything into ``tokens``,
     ``layout_bands`` and ``motion_summary``, so a numeric-only guarantee is
     enforced here rather than assumed."""
+    return _numeric_walk(value, 0, [MEASURED_NODE_BUDGET])
+
+
+def _numeric_walk(value: Any, depth: int, budget: list[int]) -> tuple[Any, int]:
+    if budget[0] <= 0:
+        return _DROPPED, 1
+    budget[0] -= 1
     if isinstance(value, dict):
-        if _depth >= _MEASURED_MAX_DEPTH:
+        if depth >= _MEASURED_MAX_DEPTH:
             return _DROPPED, 1
         out_d: dict[str, Any] = {}
         dropped = 0
@@ -680,14 +720,14 @@ def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
             if len(out_d) >= MEASURED_MAX_KEYS:
                 dropped += 1
                 continue
-            kept, n = numeric_only(child, _depth + 1)
+            kept, n = _numeric_walk(child, depth + 1, budget)
             dropped += n
             if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
                 continue  # a node nothing numeric survived in carries no fact
             out_d[key] = kept
         return out_d, dropped
     if isinstance(value, list):
-        if _depth >= _MEASURED_MAX_DEPTH:
+        if depth >= _MEASURED_MAX_DEPTH:
             return _DROPPED, 1
         if len(value) > MEASURED_MAX_LIST_ITEMS:
             return _DROPPED, len(value)
@@ -695,7 +735,7 @@ def numeric_only(value: Any, _depth: int = 0) -> tuple[Any, int]:
         dropped = 0
         failed = False
         for child in value:
-            kept, n = numeric_only(child, _depth + 1)
+            kept, n = _numeric_walk(child, depth + 1, budget)
             dropped += n
             if kept is _DROPPED or (isinstance(kept, dict | list) and not kept):
                 failed = True
@@ -821,6 +861,15 @@ def _entity_select(level: str) -> tuple[Any, Select[Any]]:
     return model, select(model, Site).join(Site, Site.id == model.site_id)
 
 
+def _proposed_group(stmt: Select[Any], include_anti_pattern: bool) -> Select[Any]:
+    """The unconfirmed reference pages: also never a page of a site the
+    operator marked ``anti_pattern`` (unless asked)."""
+    stmt = facts_visible(stmt).where(Site.context_state == "proposed")
+    if not include_anti_pattern:
+        stmt = stmt.where(or_(Site.quality.is_(None), Site.quality != "anti_pattern"))
+    return stmt
+
+
 async def candidate_entities(
     db: AsyncSession,
     tenant_id: UUID,
@@ -882,7 +931,7 @@ async def candidate_entities(
     rows: list[tuple[Any, Site]] = []
     for group in (
         agent_visible(stmt),
-        facts_visible(stmt).where(Site.context_state == "proposed"),
+        _proposed_group(stmt, include_anti_pattern),
     ):
         group = group.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
         rows.extend((row[0], row[1]) for row in (await db.execute(group)).all())
@@ -1673,6 +1722,7 @@ __all__ = [
     "site_labels",
     "site_splits",
     "target_sites",
+    "WITHHELD",
     "token_differences",
     "token_distance",
 ]
