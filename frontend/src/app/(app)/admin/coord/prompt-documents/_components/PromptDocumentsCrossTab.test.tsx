@@ -11,11 +11,15 @@
  *
  * 1. **Another tab's switch disables the list's controls and says so, with a
  *    Reload** (the `storage` event, or the stored project already differing
- *    when the page's project becomes known); switching back clears it.
+ *    when the page's project becomes known); switching back clears it. The
+ *    notice names another tab only when a `storage` event delivered the
+ *    change, which only another document can receive; a change found ahead
+ *    of its event is one that "changed since this page loaded".
  * 2. **Every write door raced past that — no event yet, or a dialog already
  *    open — is refused at call time**: nothing is sent. One test per door,
  *    each reaching it past every other guard, so removing any ONE guard fails
- *    a test here. So is opening a row's dialog.
+ *    a test here. So is opening every dialog, New document's and Publish
+ *    all changed's included.
  * 3. **A dialog's READS are not refused but pinned**: one sent while another
  *    project is stored is answered by the page's project and renders its data
  *    (a refused read would render as an empty one).
@@ -23,11 +27,16 @@
  *    a read retried after a 503, every write re-issued after a 429 or replayed
  *    after a token refresh, and the re-read each write takes.
  * 5. **THIS tab's own switch through the provider raises nothing**: the page
- *    follows it, and its writes go to the project it followed.
+ *    follows it, and its writes go to the project it followed. A write in
+ *    flight across that switch re-reads in the page's new project.
  * 6. **The dialogs' doors and readers keep one identity across renders**: a
  *    re-render of the list — a parent's, or the `saving` flag toggling through
  *    a restore — does not re-fetch the history dialog's versions or reset the
  *    version the operator selected.
+ * 7. **A write goes only where a pin can hold it**: while the page's project
+ *    is UNKNOWN, in the project stored at mount, its 429 retry included; with
+ *    no project to pin it to (none selected), not at all, and the page says
+ *    why.
  *
  * Every pin assertion is made while a DIFFERENT project is stored than the one
  * the request was pinned to, so an unpinned request is told apart from a
@@ -93,8 +102,15 @@ vi.mock("@/components/ui/destructive-button", () => ({
   ),
 }));
 
+import { toast } from "sonner";
 import { PromptDocumentList } from "./PromptDocumentList";
+import { usePublishAll } from "../_hooks/usePublishAll";
 import { TenantProvider, useTenant } from "@/contexts/tenant-context";
+// The refusal's user-visible copy, asserted as the operator reads it rather
+// than through the hook's constant, so this suite also builds against a tree
+// without that module (the arming proof reverts production hunks).
+const NO_PIN_REFUSAL =
+  "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
 
 const KEY = "qontinui.active_tenant_id";
 const SYS = "t-system";
@@ -481,12 +497,22 @@ async function mountIn(page: string = B) {
   };
 }
 
-/** The refusal is said — the notice is raised by the guard itself. */
-async function expectNotice() {
+/**
+ * The refusal is said — the notice is raised by the guard itself — naming
+ * only the cause the page observed (plan
+ * `2026-11-09-prompt-documents-cross-tab-write-guard` D4). A door raced past
+ * the switch finds it ahead of its `storage` event, so by default the notice
+ * cannot name another tab; a test whose event arrived says `another_tab`.
+ */
+async function expectNotice(
+  cause: "another_tab" | "unattributed" = "unattributed"
+) {
   expect(
     await screen.findByTestId("prompt-documents-cross-tab")
   ).toHaveTextContent(
-    "The active project was changed in another tab — reload to continue."
+    cause === "another_tab"
+      ? "The active project was changed in another tab — reload to continue."
+      : "The active project changed since this page loaded — reload to continue."
   );
 }
 
@@ -545,7 +571,7 @@ describe("another tab switches project", () => {
 
     await act(async () => anotherTabStores(SYS));
 
-    await expectNotice();
+    await expectNotice("another_tab");
     expect(
       screen.getByTestId("prompt-documents-cross-tab-reload")
     ).toBeEnabled();
@@ -573,8 +599,17 @@ describe("another tab switches project", () => {
 
   it("is raised when the stored project already differs as the page's project becomes known", async () => {
     // The provider is still loading when the page mounts in Bravo; another
-    // tab stores the system tenant before it answers, and that tab's event
-    // reached this page while it had no project to compare against.
+    // tab stores the system tenant before it answers, and its event has not
+    // arrived. Nothing else re-reads the store, so it is the page's project
+    // becoming known — the render that compares the two — that raises it.
+    //
+    // Corrected (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+    // #7): this test used to deliver the event while the page's project was
+    // UNKNOWN and assert that NO notice was raised then — the guard off while
+    // the page had no project to compare against, recorded as behaviour. Such
+    // an event now locks the page at once, against the project stored at
+    // mount (`usePageWriteGuard.test.tsx`, "while the page's project is
+    // UNKNOWN, a change from the mount project locks the page").
     let answer: () => void = () => {};
     listTenantsMock.mockImplementation(
       () =>
@@ -593,16 +628,66 @@ describe("another tab switches project", () => {
       {},
       { timeout: 5000 }
     );
-    await act(async () => anotherTabStores(SYS));
+    await act(async () => anotherTabStoresSilently(SYS));
     await settle();
+
+    await act(async () => answer());
+
+    await expectNotice("unattributed");
+    expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
+  }, 20_000);
+
+  it("locks the list while its project is still UNKNOWN when another tab switches away from the mount project", async () => {
+    // The provider never answers, so the page's project is never known. The
+    // guard compares against the project stored at mount (#7): another tab's
+    // switch away from it locks the list at once, instead of leaving the
+    // guard off until a project the page may never learn. While the
+    // provider is still reading, that read may name the project now stored
+    // and lift the lock by itself, so the page says so in an amber line
+    // rather than a red notice promising only a reload clears it.
+    listTenantsMock.mockImplementation(() => new Promise(() => {}));
+    localStorage.setItem(KEY, B);
+    render(
+      <TenantProvider>
+        <PromptDocumentList />
+      </TenantProvider>
+    );
+    await screen.findByTestId(
+      "doc-row-policy-bravo-only",
+      {},
+      { timeout: 5000 }
+    );
     expect(
       screen.queryByTestId("prompt-documents-cross-tab")
     ).not.toBeInTheDocument();
 
-    await act(async () => answer());
+    await act(async () => anotherTabStores(SYS));
 
-    await expectNotice();
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab-learning")
+    ).toHaveTextContent(
+      "The active project changed while this page was still learning its own: no change made on this page is sent until it knows its project. If this does not change, reload the page."
+    );
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
+  }, 20_000);
+
+  it("moves focus from a list control the lock disables to Reload", async () => {
+    await mountIn();
+    const edit = screen.getByTestId("doc-edit-policy-bravo-only");
+    edit.focus();
+    expect(document.activeElement).toBe(edit);
+
+    await act(async () => anotherTabStores(SYS));
+
+    await expectNotice("another_tab");
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("prompt-documents-cross-tab-reload")
+      )
+    );
   }, 20_000);
 });
 
@@ -610,7 +695,7 @@ describe("while the provider refreshes", () => {
   it("keeps the notice up: the page's project is not forgotten while UNKNOWN", async () => {
     const { refreshHeld } = await mountIn();
     await act(async () => anotherTabStores(SYS));
-    await expectNotice();
+    await expectNotice("another_tab");
 
     const release = await refreshHeld();
     await settle();
@@ -624,9 +709,12 @@ describe("while the provider refreshes", () => {
 
   it("refuses a write raced past the notice", async () => {
     const { refreshHeld } = await mountIn();
-    anotherTabStoresSilently(SYS);
+    // The refresh first, then the switch: the lock is derived at every render
+    // (D3), so a switch stored before the refresh would be on screen by the
+    // refresh's own render, and this write would no longer race past it.
     const release = await refreshHeld();
     await settle();
+    anotherTabStoresSilently(SYS);
     const before = sent.length;
 
     await user().click(
@@ -670,8 +758,9 @@ describe("this tab switches project through the provider", () => {
 });
 
 describe("a door raced past the notice is refused at call time", () => {
-  describe("opening a row's dialog", () => {
+  describe("opening a dialog", () => {
     it.each([
+      ["New document", "new-document", "prompt-document-create"],
       ["Edit", "doc-edit-policy-bravo-only", "prompt-document-editor"],
       ["History", "doc-history-policy-bravo-only", "prompt-document-history"],
       ["Clauses", "doc-clauses-policy-bravo-only", "clause-manager"],
@@ -858,6 +947,25 @@ describe("a door raced past the notice is refused at call time", () => {
     expect(sentSince(before, "POST", /./)).toEqual([]);
   }, 20_000);
 
+  it("Publish all changed, raced: no dry-run POST and no dialog", async () => {
+    // Offered on the system tenant's rows only.
+    await mountIn(SYS);
+    const publishAll = await screen.findByTestId(
+      "publish-all",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(publishAll);
+
+    await expectNotice();
+    await settle();
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(sentSince(before, "POST", /\/publish-all$/)).toEqual([]);
+  }, 20_000);
+
   it("the publish-all dialog, already open, arms no run", async () => {
     await mountIn(SYS);
     await user().click(
@@ -887,6 +995,72 @@ describe("a door raced past the notice is refused at call time", () => {
     await expectNotice();
     await settle();
     expect(after(before).filter((s) => s.method !== "GET")).toEqual([]);
+  }, 20_000);
+});
+
+/**
+ * Mount in `page` with a publish-all state of the list's own whose guard
+ * refuses nothing: a `usePublishAll` handed a permissive guard. Only the
+ * list's own refusals then stand between a raced press and the send, so each
+ * can be seen on its own; on the page, `usePublishAll` refuses beside its
+ * sends as well.
+ */
+async function mountWithAPermissivePublishAll(page: string) {
+  listTenantsMock.mockResolvedValue(membership(page));
+  localStorage.setItem(KEY, page);
+  function ListOverItsOwnPublishAll() {
+    const publishAllState = usePublishAll({
+      writeAllowed: () => true,
+      resolvePin: () => ({ tenant: page }),
+    });
+    return <PromptDocumentList publishAllState={publishAllState} />;
+  }
+  render(
+    <TenantProvider>
+      <ListOverItsOwnPublishAll />
+    </TenantProvider>
+  );
+  const name = page === SYS ? "sys1" : "bravo-only";
+  await screen.findByTestId(`doc-row-policy-${name}`, {}, { timeout: 5000 });
+  await settle();
+}
+
+describe("the list refuses publish-all's writes itself, beside a usePublishAll that would send them", () => {
+  it("a row's publish mode sends no PATCH", async () => {
+    await mountWithAPermissivePublishAll(SYS);
+    await screen.findByTestId(
+      "doc-publish-mode-policy-sys1",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("doc-publish-mode-policy-sys1"));
+    await user().click(
+      await screen.findByTestId("doc-publish-mode-never-policy-sys1")
+    );
+
+    await expectNotice();
+    await settle();
+    expect(sentSince(before, "PATCH", /./)).toEqual([]);
+  }, 20_000);
+
+  it("the publish-all dialog, already open, arms no run", async () => {
+    await mountWithAPermissivePublishAll(SYS);
+    await user().click(
+      await screen.findByTestId("publish-all", {}, { timeout: 5000 })
+    );
+    const confirm = await screen.findByTestId("publish-all-confirm");
+    await waitFor(() => expect(confirm).toBeEnabled());
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(confirm);
+
+    await expectNotice();
+    await settle();
+    expect(sentSince(before, "POST", /./)).toEqual([]);
   }, 20_000);
 });
 
@@ -1106,6 +1280,312 @@ describe("while the page's project is null, a dialog's read is refused once anot
   }, 20_000);
 });
 
+/**
+ * Mount in `page` under the layout's tenant provider, whose membership read
+ * is held: the page's project is UNKNOWN until the returned `answer` is
+ * called. The list's own mount read is answered meanwhile, in the project
+ * stored at mount.
+ */
+async function mountWhileTheProviderReads(page: string = B) {
+  let release: () => void = () => {};
+  listTenantsMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve(membership(page));
+      })
+  );
+  localStorage.setItem(KEY, page);
+  render(
+    <TenantProvider>
+      <PromptDocumentList />
+    </TenantProvider>
+  );
+  const name = page === SYS ? "sys1" : "bravo-only";
+  await screen.findByTestId(`doc-row-policy-${name}`, {}, { timeout: 5000 });
+  await settle();
+  return { answer: () => act(async () => release()) };
+}
+
+describe("a write while the page's project is not a known, named one", () => {
+  it("none selected: Publish all changed opens nothing and sends no dry run, since its opening sends one", async () => {
+    vi.mocked(toast.error).mockClear();
+    await mountInNoProject();
+    const publishAll = await screen.findByTestId(
+      "publish-all",
+      {},
+      { timeout: 5000 }
+    );
+    const before = sent.length;
+
+    await user().click(publishAll);
+    await settle();
+
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(sentSince(before, "POST", /./)).toEqual([]);
+    expect(toast.error).toHaveBeenCalledWith(NO_PIN_REFUSAL);
+  }, 20_000);
+
+  it("never known: a write retried after a 429 stays in the project stored at mount while another is stored", async () => {
+    // The membership read never answers in this test: the page's project is
+    // UNKNOWN throughout. Its mount read was answered in Bravo, so its writes
+    // are pinned to Bravo; another tab switches project inside the write's
+    // 429, so the client's re-issue is built with the system tenant stored.
+    await mountWhileTheProviderReads();
+    inAnswerTo("PATCH", BODY, () => anotherTabStoresSilently(SYS), 429);
+    const before = sent.length;
+
+    await setBravoTier();
+
+    await waitFor(
+      () => expect(sentSince(before, "PATCH", BODY)).toHaveLength(2),
+      { timeout: 5000 }
+    );
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    expect(sentSince(before, "PATCH", BODY).map((s) => s.tenant)).toEqual([
+      B,
+      B,
+    ]);
+    // Its re-read too.
+    await waitFor(
+      () => expect(sentSince(before, "GET", LIST)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+    expect(sentSince(before, "GET", LIST).map((s) => s.tenant)).toEqual([B]);
+  }, 20_000);
+
+  it("none selected: a write is refused and nothing is sent, so no retry or replay of it can land in another project", async () => {
+    // No pin can hold a write to "no project": `pinActiveTenant(null)` sends
+    // no header and gives up its 429 retries, but a token-refresh replay still
+    // re-reads the stored project. So the page refuses it and says why. The
+    // page's own documents still open.
+    vi.mocked(toast.error).mockClear();
+    await mountInNoProject();
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("doc-access-toggle-policy-sys1"));
+    await user().click(
+      await screen.findByTestId("doc-access-tier-policy-sys1-deny")
+    );
+    await settle();
+
+    expect(after(before).filter((s) => s.method !== "GET")).toEqual([]);
+    expect(toast.error).toHaveBeenCalledWith(NO_PIN_REFUSAL);
+    // Nothing changed under the page, so it is not locked, and it still
+    // shows its own documents.
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+    await user().click(screen.getByTestId("doc-edit-policy-sys1"));
+    await waitFor(() =>
+      expect(screen.getByTestId("doc-body")).toHaveValue(`body in ${SYS}`)
+    );
+  }, 20_000);
+});
+
+/** The page's re-reads since `from`: its rows and its publish-all status. */
+const rereadsSince = (from: number) =>
+  after(from).filter(
+    (s) =>
+      s.method === "GET" &&
+      /\/coord\/prompt-documents(\?|$|\/auto-publish\/status)/.test(s.url)
+  );
+/** The page's publish-all status reads since `from`. */
+const statusReadsSince = (from: number) =>
+  sentSince(from, "GET", /\/auto-publish\/status/);
+
+/**
+ * Hold the write `method` to `match`, `send` it, switch project in another tab
+ * (its event delivered) while it is in flight, then release it. Resolves to
+ * where the request count stood at the release: every re-read the write
+ * takes is sent after it. Ported from qontinui-web#2212, onto the provider.
+ */
+async function writeInFlightAcrossASwitch(
+  other: string,
+  method: string,
+  match: RegExp,
+  send: () => Promise<void>
+): Promise<number> {
+  const write = hold(match, method);
+  await send();
+  await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+  await act(async () => anotherTabStores(other));
+  await expectNotice("another_tab");
+  const before = sent.length;
+  write.release();
+  await waitFor(() => expect(rereadsSince(before).length).toBeGreaterThan(0), {
+    timeout: 5000,
+  });
+  await settle();
+  return before;
+}
+
+describe("a write in flight when another tab switches: what it re-reads stays in the page's project", () => {
+  it("publish-all re-reads the rows and the status there, and the page is its own once the other tab switches back", async () => {
+    await mountIn(SYS);
+    await user().click(
+      await screen.findByTestId("publish-all", {}, { timeout: 5000 })
+    );
+    const confirm = await screen.findByTestId("publish-all-confirm");
+    await waitFor(() => expect(confirm).toBeEnabled());
+
+    const before = await writeInFlightAcrossASwitch(
+      B,
+      "POST",
+      /\/publish-all$/,
+      () => user().click(confirm)
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(sentSince(before, "GET", LIST)).not.toHaveLength(0);
+    // The other tab switches back: the notice lifts over the page's own rows,
+    // and its publish surface is not retired by another project's answer.
+    await act(async () => anotherTabStores(SYS));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("doc-publish-mode-policy-sys1")
+    ).toBeInTheDocument();
+  }, 20_000);
+
+  it("a single publish re-reads the rows and the status there", async () => {
+    await mountIn();
+    await user().click(screen.getByTestId("doc-publish-policy-bravo-only"));
+    const confirm = await screen.findByTestId("publish-confirm");
+
+    const before = await writeInFlightAcrossASwitch(
+      SYS,
+      "POST",
+      /bravo-only\/publish$/,
+      () => user().click(confirm)
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => B));
+    expect(sentSince(before, "GET", LIST)).not.toHaveLength(0);
+  }, 20_000);
+
+  it("a publish-mode write re-takes the status there", async () => {
+    await mountIn(SYS);
+    await screen.findByTestId(
+      "doc-publish-mode-policy-sys1",
+      {},
+      { timeout: 5000 }
+    );
+
+    const before = await writeInFlightAcrossASwitch(
+      B,
+      "PATCH",
+      /policy\/sys1$/,
+      async () => {
+        await user().click(screen.getByTestId("doc-publish-mode-policy-sys1"));
+        await user().click(
+          await screen.findByTestId("doc-publish-mode-never-policy-sys1")
+        );
+      }
+    );
+    await waitFor(() => expect(statusReadsSince(before)).toHaveLength(1), {
+      timeout: 5000,
+    });
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+  }, 20_000);
+
+  it("a version restore re-reads the rows and the open document there", async () => {
+    await mountIn();
+    await openHistoryDialog();
+    await user().click(await screen.findByTestId("restore-version"));
+    const confirm = await screen.findByTestId("restore-version-confirm-button");
+
+    const before = await writeInFlightAcrossASwitch(
+      SYS,
+      "POST",
+      /\/versions\/\d+\/restore$/,
+      () => user().click(confirm)
+    );
+    await waitFor(
+      () => expect(sentSince(before, "GET", BODY)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+
+    const reads = [...rereadsSince(before), ...sentSince(before, "GET", BODY)];
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => B));
+  }, 20_000);
+
+  it("THIS tab switching project while a write is in flight: the re-read goes in the page's new project, not the write's", async () => {
+    const { switchTo } = await mountIn();
+    const write = hold(/policy\/bravo-only$/, "PATCH");
+    await setBravoTier();
+    await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+    await switchTo(SYS);
+    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+    await settle();
+    const before = sent.length;
+
+    write.release();
+    await waitFor(
+      () => expect(rereadsSince(before).length).toBeGreaterThan(0),
+      {
+        timeout: 5000,
+      }
+    );
+    await settle();
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("THIS tab switching project while a publish is in flight: the list's re-read after it goes in the page's new project", async () => {
+    // The re-read after a publish is the list's `reload()`, not a write's own:
+    // its default is the pin as it stands when the re-read is sent.
+    const { switchTo } = await mountIn();
+    await user().click(screen.getByTestId("doc-publish-policy-bravo-only"));
+    const confirm = await screen.findByTestId("publish-confirm");
+    const write = hold(/bravo-only\/publish$/, "POST");
+    await user().click(confirm);
+    await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+    await switchTo(SYS);
+    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+    await settle();
+    const before = sent.length;
+
+    write.release();
+    await waitFor(
+      () => expect(sentSince(before, "GET", LIST)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+    await settle();
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+  }, 20_000);
+});
+
 describe("the dialogs' doors' and readers' identity", () => {
   it("survives a re-render: the history dialog keeps its selected version and re-fetches nothing", async () => {
     const { rerender } = await mountIn();
@@ -1185,6 +1665,50 @@ describe("the dialogs' doors' and readers' identity", () => {
 });
 
 describe("a read in flight across the switch", () => {
+  it("the mount read, answered 503 with the switch inside the answer, retries in the page's project, and the page's rows and writes stay its own", async () => {
+    // Ported from the review-round-2 probe. The page mounts in Bravo, and its
+    // project resolves to Bravo, so nothing re-reads the rows after the mount
+    // read: that read's own retry must stay in Bravo.
+    listTenantsMock.mockResolvedValue(membership(B));
+    localStorage.setItem(KEY, B);
+    inAnswerTo("GET", LIST, () => anotherTabStoresSilently(SYS), 503);
+    render(
+      <TenantProvider>
+        <PromptDocumentList />
+      </TenantProvider>
+    );
+    await waitFor(() => expect(sentSince(0, "GET", LIST)).toHaveLength(2), {
+      timeout: 5000,
+    });
+    await settle();
+
+    // Both attempts went in Bravo, though the system tenant was stored before
+    // the retry, and the rows on screen are Bravo's.
+    expect(localStorage.getItem(KEY)).toBe(SYS);
+    expect(sentSince(0, "GET", LIST).map((s) => s.tenant)).toEqual([B, B]);
+    expect(
+      await screen.findByTestId("doc-row-policy-bravo-only")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-row-policy-sys1")).not.toBeInTheDocument();
+
+    // The other tab switches back; the notice lifts over the page's own rows,
+    // and a write on the row it shows goes in its project.
+    await act(async () => anotherTabStores(B));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("doc-row-policy-bravo-only")).toBeInTheDocument();
+    const before = sent.length;
+    await setBravoTier();
+    await waitFor(() =>
+      expect(sentSince(before, "PATCH", BODY)).toHaveLength(1)
+    );
+    expect(sentSince(before, "PATCH", BODY)[0]?.tenant).toBe(B);
+    expect(sentSince(before, "PATCH", /policy\/sys1$/)).toEqual([]);
+  }, 20_000);
+
   it("a body read answered 503 with the switch inside the answer retries in the page's project", async () => {
     await mountIn();
     inAnswerTo("GET", BODY, () => anotherTabStoresSilently(SYS), 503);

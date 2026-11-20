@@ -9,6 +9,9 @@
  * 2. **The preview is a FRESH read of the newest open, pinned in versions AND
  *    tenant.** A late read from an earlier open cannot replace it, and a
  *    project switched in another tab stops the run before its next request.
+ *    Every refusal for a changed project — at open, mid-run, or during the
+ *    post-run re-read — also locks the page beside it, so nothing else on the
+ *    page writes into the project now stored.
  * 3. **Unticked rows are not sent.** Everything is ticked by default.
  * 4. **The run is sequential, continues past a refusal, and calls a row
  *    "refused" only on coord's 4xx.** A row nobody can confirm is reconciled
@@ -32,17 +35,35 @@ const toastMock = vi.hoisted(() => ({
   error: vi.fn(),
   warning: vi.fn(),
 }));
+/**
+ * The project the request being answered was SENT in, for a fake server that
+ * answers as coord would: the active-tenant header a pinned request carries on
+ * every attempt, else the project stored when it is sent, which the real
+ * client fills in per attempt. `withVerbFetch` drops request options, so this
+ * is read where they still exist. It calls the verb mocks synchronously inside
+ * that call, so a mock that reads this reads its own request.
+ */
+const request = vi.hoisted(() => ({ project: null as string | null }));
 
 vi.mock("@/services/service-factory", async () => {
   const { withVerbFetch } = await import("@/test/verbFetch");
+  const client = withVerbFetch({
+    get: (...args: unknown[]) => getMock(...args),
+    post: (...args: unknown[]) => postMock(...args),
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  });
   return {
-    httpClient: withVerbFetch({
-      get: (...args: unknown[]) => getMock(...args),
-      post: (...args: unknown[]) => postMock(...args),
-      patch: vi.fn(),
-      put: vi.fn(),
-      delete: vi.fn(),
-    }),
+    httpClient: {
+      ...client,
+      fetch: (url: string, init: RequestInit = {}) => {
+        request.project =
+          new Headers(init.headers).get("X-Qontinui-Active-Tenant") ??
+          localStorage.getItem("qontinui.active_tenant_id");
+        return client.fetch(url, init);
+      },
+    },
   };
 });
 vi.mock("sonner", () => ({ toast: toastMock }));
@@ -272,10 +293,13 @@ describe("when the Adopt all updates button is offered", () => {
     }
   );
 
-  it("is not offered on an answer another tab's project earned", async () => {
-    // The page is in the system tenant. Another tab switches to B, and THIS
-    // page's publish-all dry run goes to B and is answered not_system_tenant.
-    localStorage.setItem(TENANT_KEY, "t-system");
+  /**
+   * A server that answers each request in the project it was SENT in
+   * (`request.project`): the system tenant serves the status read and the dry
+   * run, and every other project is refused `not_system_tenant`, as coord
+   * refuses it.
+   */
+  function serveBySentProject() {
     const notSystemFor = (verb: string, url: string) =>
       new Error(
         `${verb} ${url} failed: 403 - ${JSON.stringify({
@@ -283,9 +307,11 @@ describe("when the Adopt all updates button is offered", () => {
           message: JSON.stringify({ error: "not_system_tenant", detail: "x" }),
         })}`
       );
+    const statusSentIn: (string | null)[] = [];
     getMock.mockImplementation((url: string) => {
       if (url === STATUS) {
-        return localStorage.getItem(TENANT_KEY) === "t-system"
+        statusSentIn.push(request.project);
+        return request.project === "t-system"
           ? Promise.resolve({ candidates: [], count: 1 })
           : Promise.reject(notSystemFor("GET", STATUS));
       }
@@ -299,40 +325,47 @@ describe("when the Adopt all updates button is offered", () => {
       }
       return Promise.reject(new Error(url));
     });
-    // B's refusal is HELD, and answered only after the other tab has switched
-    // back: the stamp must be the project the request was PINNED to (its
-    // header on every attempt), not whatever is stored when the answer lands.
-    let answerDryRun: (() => void) | undefined;
     postMock.mockImplementation((url: string) => {
       if (!url.endsWith("/publish-all")) {
         return Promise.resolve(adoptedBody("policy", "coordination", 8));
       }
-      if (localStorage.getItem(TENANT_KEY) === "t-system") {
-        return Promise.resolve({ dry_run: true, candidates: [] });
-      }
-      return new Promise((_, reject) => {
-        answerDryRun = () => reject(notSystemFor("POST", url));
-      });
+      return request.project === "t-system"
+        ? Promise.resolve({ dry_run: true, candidates: [] })
+        : Promise.reject(notSystemFor("POST", url));
     });
+    return { statusSentIn };
+  }
+
+  it("is not offered, and earns no answer in another tab's project, when Publish all changed is pressed after that tab switched", async () => {
+    // Corrected (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+    // G07): this test used to have THIS page's publish-all dry run SENT in the
+    // project another tab had switched to, and answered not_system_tenant
+    // there — the raced dry run the plan closes, recorded as behaviour. The
+    // press is now refused before anything is sent, so no project's answer is
+    // earned, and nothing about the system tenant changes.
+    localStorage.setItem(TENANT_KEY, "t-system");
+    serveBySentProject();
     render(<PromptDocumentList />);
     const user = userEvent.setup();
     const publishAll = await screen.findByTestId("publish-all");
     localStorage.setItem(TENANT_KEY, "t-other");
+
     await user.click(publishAll);
-    await waitFor(() => expect(answerDryRun).toBeDefined());
-    // The other tab switches back; then B's answer lands and is latched.
+
+    // Refused at call time: the page says why, and nothing was sent.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(
+      postMock.mock.calls.filter(([u]) => String(u).endsWith("/publish-all"))
+    ).toEqual([]);
+    // The other tab switches back. Nothing was latched, so the system
+    // tenant's publish controls stay, and Adopt all is not offered on it.
     localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerDryRun?.();
-    });
-    await user.keyboard("{Escape}");
-    // Let the refusal land and latch.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    // It is stamped with the project it was sent in, so it says nothing about
-    // the system tenant: that tenant's publish controls stay, and Adopt all is
-    // not offered on it.
     expect(
       screen.getByTestId("doc-publish-mode-policy-coordination")
     ).toBeInTheDocument();
@@ -342,52 +375,37 @@ describe("when the Adopt all updates button is offered", () => {
     ).toEqual([]);
   });
 
-  it("stamps a refreshed status read with the project it was PINNED to, not the one stored when it answers", async () => {
+  it("re-takes a refreshed status read in the page's project, not the one stored when it is sent", async () => {
+    // Corrected (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+    // D10): this test used to have the re-take SENT in the project another
+    // tab had stored and refused there, after which the page withheld the
+    // system tenant's publish controls, because its newest status answer was
+    // about that project. That was a re-take landing in the other project,
+    // recorded as behaviour. The list mounted on its own now asks its
+    // provider which project to send in, as the page does, so the re-take
+    // goes in the page's project and that project answers it.
     localStorage.setItem(TENANT_KEY, "t-system");
-    let answerRefresh: (() => void) | undefined;
-    getMock.mockImplementation((url: string) => {
-      if (url === STATUS) {
-        if (localStorage.getItem(TENANT_KEY) === "t-system") {
-          return Promise.resolve({ candidates: [], count: 1 });
-        }
-        // Sent in B; answered after the other tab switches back.
-        return new Promise((_, reject) => {
-          answerRefresh = () => reject(NOT_SYSTEM_TENANT);
-        });
-      }
-      if (url === LIST) {
-        return Promise.resolve({
-          documents: [
-            flagged("policy", "coordination", { current_version: 7 }),
-          ],
-          degraded: null,
-        });
-      }
-      return Promise.reject(new Error(url));
-    });
+    const { statusSentIn } = serveBySentProject();
     const { rerender } = render(
       <PromptDocumentList autoPublishRefreshKey={0} />
     );
     await screen.findByTestId("publish-all");
     localStorage.setItem(TENANT_KEY, "t-other");
+
     rerender(<PromptDocumentList autoPublishRefreshKey={1} />);
-    await waitFor(() => expect(answerRefresh).toBeDefined());
-    localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerRefresh?.();
-    });
-    // Let the refusal land and latch.
+
+    await waitFor(() => expect(statusSentIn).toHaveLength(2));
+    // Let the answer land.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    // It is stamped with the project it was sent in, so Adopt all is not
-    // offered on the system tenant. And the newest status answer the page
-    // holds is now about another project, so the system tenant's publish
-    // controls are withheld until a read in the system tenant answers.
-    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    expect(statusSentIn).toEqual(["t-system", "t-system"]);
+    // Answered as the system tenant: its publish controls stay, and Adopt all
+    // is not offered on it.
     expect(
-      screen.queryByTestId("doc-publish-mode-policy-coordination")
-    ).not.toBeInTheDocument();
+      screen.getByTestId("doc-publish-mode-policy-coordination")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
   });
 
   // The hook's own half — an armed run's refusal stamped with the project
@@ -484,6 +502,26 @@ describe("when the Adopt all updates button is offered", () => {
     );
   });
 
+  it("is not offered on a page with no project to pin its run to", async () => {
+    // None selected: coord's not_system_tenant answer is stamped with no
+    // project, which IS this page's, and an update is flagged. But each
+    // adopt would go out with no header, and a token-refresh replay of it
+    // could land in whatever project another tab stores by then.
+    localStorage.removeItem(TENANT_KEY);
+    serveLists([[flagged("policy", "testing")]], "not_system");
+    render(<PromptDocumentList />);
+    await screen.findByTestId("doc-row-policy-testing");
+    // Settled: the latch withdraws the row's publish-mode control.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("doc-publish-mode-policy-testing")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    // Per-row Adopt is still offered; its write is refused at call time.
+    expect(screen.getByTestId("doc-upstream-policy-testing")).toBeVisible();
+  });
+
   it("is absent when coord flags nothing — including flags that are false or absent", async () => {
     serveLists([
       [
@@ -529,7 +567,7 @@ describe("when the Adopt all updates button is offered", () => {
   });
 });
 
-async function openAdoptAll() {
+async function startAdoptAllPreview() {
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("adopt-all"));
   await screen.findByTestId("adopt-all-candidates");
@@ -564,7 +602,7 @@ describe("the adopt-all preview", () => {
       ],
     ]);
     render(<PromptDocumentList />);
-    await openAdoptAll();
+    await startAdoptAllPreview();
 
     expect(
       within(screen.getByTestId("adopt-all-candidates")).getAllByRole(
@@ -638,7 +676,7 @@ describe("the adopt-all preview", () => {
       Promise.resolve(adoptedBody("policy", url.split("/").at(-2) ?? "", 10))
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
 
     expect(
       screen.getByTestId("adopt-all-versions-policy-testing")
@@ -826,6 +864,10 @@ describe("the adopt-all preview", () => {
       await screen.findByTestId("adopt-all-tenant-changed")
     ).toBeInTheDocument();
     expect(screen.getByTestId("adopt-all-confirm")).toBeDisabled();
+    // And the page locks beside the dialog's refusal.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("refuses to preview when the project changed in another tab since load", async () => {
@@ -843,6 +885,10 @@ describe("the adopt-all preview", () => {
     expect(screen.getByTestId("adopt-all-confirm")).toBeDisabled();
     // No read was even taken in the other project.
     expect(listReads()).toBe(readsBefore);
+    // And the page locks beside the dialog's refusal.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 });
 
@@ -868,7 +914,7 @@ describe("the adopt-all run", () => {
       return Promise.resolve(adoptedBody("policy", "testing", 7));
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     const readsBeforeRun = listReads();
 
     await user.click(screen.getByTestId("adopt-all-confirm"));
@@ -951,7 +997,7 @@ describe("the adopt-all run", () => {
         : Promise.reject(new TypeError("Failed to fetch"))
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
     expect(await screen.findByTestId("adopt-all-summary")).toHaveTextContent(
@@ -999,7 +1045,7 @@ describe("the adopt-all run", () => {
       throw new Error(`POST ${LIST}/policy/a/upstream-adopt failed: 504 - {}`);
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     const readsBeforeRun = listReads();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
@@ -1044,7 +1090,7 @@ describe("the adopt-all run", () => {
       new Error(`POST ${LIST}/policy/a/upstream-adopt failed: 504 - {}`)
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(listCalls).toBe(3));
     await act(async () => {
@@ -1055,6 +1101,10 @@ describe("the adopt-all run", () => {
     expect(reread).toHaveTextContent(
       "could not be re-read in this run's project"
     );
+    // And the page locks beside it.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("says an answer arrived but could not be read, rather than that none came", async () => {
@@ -1068,7 +1118,7 @@ describe("the adopt-all run", () => {
       )
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await screen.findByTestId("adopt-all-summary");
     const outcome = screen.getByTestId("adopt-all-outcome-policy-a");
@@ -1090,7 +1140,7 @@ describe("the adopt-all run", () => {
       )
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await screen.findByTestId("adopt-all-summary");
     const outcome = screen.getByTestId("adopt-all-outcome-policy-a");
@@ -1108,7 +1158,7 @@ describe("the adopt-all run", () => {
       return adoptedBody("policy", "a", 3);
     });
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
 
     const line = await screen.findByTestId("adopt-all-summary");
@@ -1117,6 +1167,34 @@ describe("the adopt-all run", () => {
     expect(screen.getByTestId("adopt-all-outcome-policy-b")).toHaveTextContent(
       "the active project changed"
     );
+  });
+
+  it("locks the page beside the run's own refusal when the project changes mid-run", async () => {
+    serveLists([[flagged("policy", "a"), flagged("policy", "b")]]);
+    postMock.mockImplementationOnce(async () => {
+      // Another tab switches the project while the first adopt is in flight.
+      localStorage.setItem(TENANT_KEY, "t-qontinui");
+      return adoptedBody("policy", "a", 3);
+    });
+    render(<PromptDocumentList />);
+    const user = await startAdoptAllPreview();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("adopt-all-confirm"));
+
+    // The dialog refuses the rest of the run in its own words, and the page
+    // locks beside it: no control on it writes into the project now stored.
+    expect(await screen.findByTestId("adopt-all-summary")).toHaveTextContent(
+      "The active project changed during the run"
+    );
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toHaveTextContent(
+      "The active project changed since this page loaded — reload to continue."
+    );
+    expect(screen.getByTestId("prompt-documents-controls")).toBeDisabled();
   });
 
   it("stops after the document in flight when asked", async () => {
@@ -1131,7 +1209,7 @@ describe("the adopt-all run", () => {
         })
     );
     render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
 
@@ -1166,7 +1244,7 @@ describe("the adopt-all run", () => {
     );
     postMock.mockResolvedValue(adoptedBody("policy", "b", 3));
     const { unmount } = render(<PromptDocumentList />);
-    const user = await openAdoptAll();
+    const user = await startAdoptAllPreview();
     await user.click(screen.getByTestId("adopt-all-confirm"));
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
 
@@ -1192,7 +1270,7 @@ describe("the adopt-all run", () => {
       ),
     ]);
     render(<PromptDocumentList />);
-    await openAdoptAll();
+    await startAdoptAllPreview();
 
     const dialog = screen.getByTestId("adopt-all-dialog");
     const body = screen.getByTestId("adopt-all-body");
