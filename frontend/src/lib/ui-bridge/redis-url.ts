@@ -39,11 +39,14 @@ const HOST = String.raw`(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?(?:\.[A-Za
 const AUTHORITY = String.raw`(?:${USER}(?::${PASSWORD})?@)?${HOST}(?::(\d{1,5}))?`;
 const QUERY = String.raw`(?:\?[A-Za-z0-9\-._~!$&()*+,;=:%/]*)?`;
 
+// Built by concatenation, not template literals: a `${…}$` regex anchor reads
+// as a glued currency symbol to the cost-render lint (costRenders.test.ts).
+const END = "$";
 /** Scheme-less: NO path (ioredis would read any pathname as a socket path). */
-const SCHEMELESS_RE = new RegExp(`^${AUTHORITY}${QUERY}$`);
+const SCHEMELESS_RE = new RegExp("^" + AUTHORITY + QUERY + END);
 /** `redis://` / `rediss://`: the pathname is a db index. */
 const SCHEMED_RE = new RegExp(
-  `^rediss?://${AUTHORITY}(?:/\\d*)?${QUERY}$`,
+  "^rediss?://" + AUTHORITY + String.raw`(?:/\d*)?` + QUERY + END,
   "i"
 );
 /** A unix-socket path: a valid ioredis target, and carries no userinfo. */
