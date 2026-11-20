@@ -35742,6 +35742,10 @@ export interface components {
              * @default 20
              */
             limit: number;
+            /** Measured */
+            measured?: {
+                [key: string]: components["schemas"]["MeasuredRange"];
+            } | null;
             /** Personality Target */
             personality_target?: {
                 [key: string]: number;
@@ -43886,6 +43890,16 @@ export interface components {
             level: "page";
             page: components["schemas"]["PageIdentityOut"];
             site: components["schemas"]["SiteIdentityOut"];
+        };
+        /**
+         * MeasuredRange
+         * @description An inclusive range over a per-page median; at least one bound.
+         */
+        MeasuredRange: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
         };
         /**
          * MemoryAgeFacet
@@ -52223,6 +52237,10 @@ export interface components {
              * @enum {string}
              */
             level: "site" | "page" | "flow" | "component";
+            /** Measured */
+            measured: {
+                [key: string]: number;
+            };
             /** Personality Basis */
             personality_basis: ("confirmed" | "unconfirmed") | null;
             /** Personality Distance */
@@ -52266,8 +52284,14 @@ export interface components {
         };
         /** SearchResponse */
         SearchResponse: {
+            /** Candidates Capped */
+            candidates_capped: boolean;
+            /** Measured Unknown */
+            measured_unknown: number;
             /** Results */
             results: components["schemas"]["SearchHit"][];
+            /** Truncated */
+            truncated: boolean;
             /**
              * Vector Arm
              * @enum {string}

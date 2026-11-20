@@ -50,7 +50,20 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import structlog
-from sqlalchemy import Select, Text, and_, bindparam, delete, func, or_, select, text
+from sqlalchemy import (
+    Float,
+    Select,
+    Text,
+    and_,
+    bindparam,
+    case,
+    cast,
+    delete,
+    func,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -831,6 +844,20 @@ class SearchQuery:
     include_anti_pattern: bool = False
     include_holdout: bool = False
     limit: int = 20
+    #: ``{facet: (min, max)}`` over the per-page median; page level only.
+    measured: dict[str, tuple[float | None, float | None]] | None = None
+
+
+@dataclass
+class SearchOutcome:
+    vector_arm: str
+    hits: list[Hit]
+    #: The candidate cap bound, so the result may be incomplete.
+    candidates_capped: bool = False
+    #: See ``SearchResponse.measured_unknown``.
+    measured_unknown: int = 0
+    #: More hits matched than ``limit`` returned.
+    truncated: bool = False
 
 
 @dataclass
@@ -846,6 +873,8 @@ class Hit:
     personality_basis: str | None = None
     snippet: str | None = None
     labels: list[str] = field(default_factory=list)
+    #: Per-facet median over the page's newest run (page level only).
+    measured: dict[str, float] = field(default_factory=dict)
 
 
 def _entity_select(level: str) -> tuple[Any, Select[Any]]:
@@ -870,7 +899,62 @@ def _proposed_group(stmt: Select[Any], include_anti_pattern: bool) -> Select[Any
     return stmt
 
 
+def _median_facets(tenant_id: UUID, facets: Sequence[str]) -> Any:
+    """A subquery ``(page_id, <facet>...)``: per page, the median of each
+    facet over the captures of the page's NEWEST ``run_id`` (the median
+    :func:`correlation_report` uses). A facet that is absent or not a number
+    in every capture of that run is NULL, never zero."""
+    newest = (
+        select(Capture.page_id, Capture.run_id)
+        .where(Capture.tenant_id == tenant_id)
+        .distinct(Capture.page_id)
+        .order_by(Capture.page_id, Capture.created_at.desc())
+        .subquery("newest_run")
+    )
+    columns = [
+        func.percentile_cont(0.5)
+        .within_group(
+            case(
+                (
+                    func.jsonb_typeof(Capture.facets[facet]) == "number",
+                    cast(Capture.facets[facet].astext, Float),
+                )
+            )
+        )
+        .label(facet)
+        for facet in facets
+    ]
+    return (
+        select(Capture.page_id, *columns)
+        .join(
+            newest,
+            and_(
+                newest.c.page_id == Capture.page_id, newest.c.run_id == Capture.run_id
+            ),
+        )
+        .where(Capture.tenant_id == tenant_id)
+        .group_by(Capture.page_id)
+        .subquery("page_medians")
+    )
+
+
+@dataclass
+class Candidates:
+    rows: list[tuple[Any, Site]]
+    #: The candidate cap bound: more rows matched than were returned.
+    capped: bool = False
+    #: Candidates dropped because a ``measured`` facet had no value.
+    measured_unknown: int = 0
+
+
 async def candidate_entities(
+    db: AsyncSession, tenant_id: UUID, level: str, **kwargs: Any
+) -> list[tuple[Any, Site]]:
+    """:func:`candidates` without the cap and unknown accounting."""
+    return (await candidates(db, tenant_id, level, **kwargs)).rows
+
+
+async def candidates(
     db: AsyncSession,
     tenant_id: UUID,
     level: str,
@@ -885,7 +969,8 @@ async def candidate_entities(
     style_family: str | None = None,
     role: str | None = None,
     ids: Sequence[UUID] | None = None,
-) -> list[tuple[Any, Site]]:
+    measured: dict[str, tuple[float | None, float | None]] | None = None,
+) -> Candidates:
     """The tenant's records at ``level`` that an agent-facing read may see:
     never ``rejected``, ``anti_pattern`` only when asked, holdout only when
     the (operator-gated) caller asked for it.
@@ -894,7 +979,13 @@ async def candidate_entities(
     reference sites to every reference-split site, confirmed or not: the
     measured-facts arms. Each row's confirmation is its site's
     ``context_state``. Holdouts stay out at every confirmation state, and
-    component, site and flow levels stay confirmed-only (plan D4)."""
+    component, site and flow levels stay confirmed-only (plan D4).
+
+    ``measured`` (page level) keeps pages whose per-page median of each named
+    facet lies in ``[min, max]``. It is applied in SQL, BEFORE the candidate
+    cap, so a corpus above the cap cannot silently return an incomplete set.
+    A page missing a named facet is not a match; it is counted in
+    ``measured_unknown``."""
     model, stmt = _entity_select(level)
     stmt = stmt.where(
         model.tenant_id == tenant_id,
@@ -922,21 +1013,75 @@ async def candidate_entities(
         stmt = stmt.where(Component.role == role)
     if ids is not None:
         stmt = stmt.where(model.id.in_(list(ids)))
-    if not two_groups:
-        stmt = stmt.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
-        return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
-    # agent_visible OR (facts_visible AND proposed), each group under its OWN
-    # cap and newest-first order, so a flood of unconfirmed pages cannot crowd
-    # confirmed ones out of the candidates.
+    if measured and model is not Page:
+        raise ValueError("measured filters apply to page-level queries only")
+    # With ``proposed_facts``: agent_visible OR (facts_visible AND proposed),
+    # each group under its OWN cap and newest-first order, so a flood of
+    # unconfirmed pages cannot crowd confirmed ones out of the candidates.
+    groups = (
+        [
+            agent_visible(stmt),
+            _proposed_group(stmt, include_anti_pattern),
+        ]
+        if two_groups
+        else [stmt]
+    )
+    medians = _median_facets(tenant_id, list(measured)) if measured else None
     rows: list[tuple[Any, Site]] = []
-    for group in (
-        agent_visible(stmt),
-        _proposed_group(stmt, include_anti_pattern),
-    ):
-        group = group.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP)
-        rows.extend((row[0], row[1]) for row in (await db.execute(group)).all())
+    capped = False
+    unknown = 0
+    for group in groups:
+        if measured and medians is not None:
+            group = group.outerjoin(medians, medians.c.page_id == Page.id)
+            in_range = []
+            missing = []
+            for facet, (low, high) in measured.items():
+                column = medians.c[facet]
+                missing.append(column.is_(None))
+                in_range.append(column.is_not(None))
+                if low is not None:
+                    in_range.append(column >= low)
+                if high is not None:
+                    in_range.append(column <= high)
+            unknown += int(
+                (
+                    await db.execute(
+                        select(func.count()).select_from(
+                            group.where(or_(*missing))
+                            .with_only_columns(Page.id)
+                            .subquery()
+                        )
+                    )
+                ).scalar_one()
+            )
+            group = group.where(and_(*in_range))
+        group = group.order_by(model.created_at.desc()).limit(SEARCH_CANDIDATE_CAP + 1)
+        found = [(row[0], row[1]) for row in (await db.execute(group)).all()]
+        capped = capped or len(found) > SEARCH_CANDIDATE_CAP
+        rows.extend(found[:SEARCH_CANDIDATE_CAP])
     rows.sort(key=lambda pair: pair[0].created_at, reverse=True)
-    return rows
+    return Candidates(rows=rows, capped=capped, measured_unknown=unknown)
+
+
+async def page_medians(
+    db: AsyncSession, tenant_id: UUID, page_ids: Sequence[UUID]
+) -> dict[UUID, dict[str, float]]:
+    """``{page_id: {facet: median}}`` for the facets each page has a value for."""
+    ids = list(set(page_ids))
+    if not ids:
+        return {}
+    medians = _median_facets(tenant_id, MEASURED_FACETS)
+    rows = (await db.execute(select(medians).where(medians.c.page_id.in_(ids)))).all()
+    out: dict[UUID, dict[str, float]] = {}
+    for row in rows:
+        values = {
+            facet: float(row._mapping[facet])
+            for facet in MEASURED_FACETS
+            if row._mapping[facet] is not None
+        }
+        if values:
+            out[row._mapping["page_id"]] = values
+    return out
 
 
 async def latest_personality(
@@ -999,8 +1144,8 @@ def personality_distance(
 
 async def search(
     db: AsyncSession, tenant_id: UUID, query: SearchQuery
-) -> tuple[str, list[Hit]]:
-    """Hybrid search. Returns ``(vector_arm, hits)``.
+) -> SearchOutcome:
+    """Hybrid search. Returns the vector arm, the hits and the accounting.
 
     Ranking: facet-exact matches first; then (with a personality target) the
     closest personality; then the hybrid score (full-text rank plus cosine
@@ -1011,25 +1156,42 @@ async def search(
     vector_arm = (
         "hybrid" if query.query_embedding is not None else "skipped_no_embedding"
     )
-    entities = await candidate_entities(
+    # D6: an unconfirmed site's page enters a result only when nothing a
+    # description or a proposed site-context value could steer is in the
+    # query; a description signal, a personality target or a context filter
+    # applied to an unconfirmed site would leak hidden content through the
+    # ranking or the filter.
+    browse = query.level == "page" and not (
+        (query.text and query.text.strip())
+        or query.facets is not None
+        or query.query_embedding is not None
+        or query.personality_target
+        or query.industry is not None
+        or query.business_type is not None
+        or query.price_tier is not None
+        or query.style_family is not None
+    )
+    found = await candidates(
         db,
         tenant_id,
         query.level,
         include_holdout=query.include_holdout,
         include_anti_pattern=query.include_anti_pattern,
+        proposed_facts=browse,
         tier=query.tier,
         industry=query.industry,
         business_type=query.business_type,
         price_tier=query.price_tier,
         style_family=query.style_family,
+        measured=query.measured,
     )
     hits: dict[UUID, Hit] = {}
-    for record, site in entities:
+    for record, site in found.rows:
         hits[record.id] = Hit(
             level=query.level, target_id=record.id, site=site, record=record
         )
     if not hits:
-        return vector_arm, []
+        return SearchOutcome(vector_arm, [], found.capped, found.measured_unknown)
 
     has_text = bool(query.text and query.text.strip())
     signals = has_text or query.facets is not None or query.query_embedding is not None
@@ -1128,8 +1290,25 @@ async def search(
             -hit.record.created_at.timestamp(),
         )
 
-    ordered = sorted(hits.values(), key=rank_key)[: query.limit]
-    return vector_arm, ordered
+    ranked = sorted(hits.values(), key=rank_key)
+    truncated = len(ranked) > query.limit
+    ordered = ranked[: query.limit]
+    if query.level == "page":
+        medians = await page_medians(db, tenant_id, [hit.target_id for hit in ordered])
+        for hit in ordered:
+            hit.measured = medians.get(hit.target_id, {})
+    for hit in ordered:
+        if hit.site.context_state != "confirmed" and not query.include_holdout:
+            # A proposed hit carries measured facts and the curation state;
+            # nothing a description or a person wrote about the site.
+            hit.snippet = None
+            hit.text_rank = None
+            hit.vector_similarity = None
+            hit.personality_distance = None
+            hit.personality_basis = None
+    return SearchOutcome(
+        vector_arm, ordered, found.capped, found.measured_unknown, truncated
+    )
 
 
 # ═════════════════════════════ takedown ═════════════════════════════
@@ -1691,7 +1870,11 @@ __all__ = [
     "blob_key",
     "blob_prefix",
     "blocked_by_do_not_capture",
+    "Candidates",
+    "SearchOutcome",
     "candidate_entities",
+    "candidates",
+    "page_medians",
     "correlation_report",
     "delete_objects",
     "domain_bucket",

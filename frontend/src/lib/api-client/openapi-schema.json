@@ -18889,6 +18889,27 @@
             "title": "Limit",
             "type": "integer"
           },
+          "measured": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MeasuredRange"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "background_luminance",
+                    "palette_saturation",
+                    "type_scale_ratio"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured"
+          },
           "personality_target": {
             "anyOf": [
               {
@@ -36118,6 +36139,36 @@
           "labels"
         ],
         "title": "MeasuredExampleOut",
+        "type": "object"
+      },
+      "MeasuredRange": {
+        "additionalProperties": false,
+        "description": "An inclusive range over a per-page median; at least one bound.",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          }
+        },
+        "title": "MeasuredRange",
         "type": "object"
       },
       "MemoryAgeFacet": {
@@ -54908,6 +54959,13 @@
             "title": "Level",
             "type": "string"
           },
+          "measured": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Measured",
+            "type": "object"
+          },
           "personality_basis": {
             "anyOf": [
               {
@@ -55026,7 +55084,8 @@
           "personality_basis",
           "labels",
           "snippet",
-          "confirmation"
+          "confirmation",
+          "measured"
         ],
         "title": "SearchHit",
         "type": "object"
@@ -55047,12 +55106,24 @@
       },
       "SearchResponse": {
         "properties": {
+          "candidates_capped": {
+            "title": "Candidates Capped",
+            "type": "boolean"
+          },
+          "measured_unknown": {
+            "title": "Measured Unknown",
+            "type": "integer"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/SearchHit"
             },
             "title": "Results",
             "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
           },
           "vector_arm": {
             "enum": [
@@ -55065,7 +55136,10 @@
         },
         "required": [
           "vector_arm",
-          "results"
+          "results",
+          "candidates_capped",
+          "measured_unknown",
+          "truncated"
         ],
         "title": "SearchResponse",
         "type": "object"
