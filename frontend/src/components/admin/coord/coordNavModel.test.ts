@@ -91,6 +91,7 @@ describe("coordNavModel", () => {
       "Plans",
       "Work Units",
       "Subprojects",
+      "Topics",
       "Plan Library Settings",
       "Artifact Library",
       "Plan Candidates",

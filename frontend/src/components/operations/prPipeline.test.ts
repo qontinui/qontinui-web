@@ -371,6 +371,109 @@ describe("buildPipelineRows — join + unified status", () => {
     }
   });
 
+  // whitespace-engine#59 (2026-11-20): coord served merge_state_status CLEAN
+  // with ci_lifecycle "pending" and both checks queued on a just-pushed head,
+  // and the page said "Ready — clean and green". CLEAN alone is not green.
+  it("never calls a CLEAN row Ready while checks are pending or failing", () => {
+    const cases: Array<[Partial<PrRow>, string, string]> = [
+      [
+        {
+          merge_state_status: "CLEAN",
+          ci_lifecycle: "pending",
+          ci_conclusion: null,
+          pending_contexts: ["explorer", "python"],
+        },
+        "checks-pending",
+        "still running: explorer, python",
+      ],
+      // Older coord: no context arrays, aggregate lifecycle only.
+      [
+        {
+          merge_state_status: "CLEAN",
+          ci_lifecycle: "pending",
+          ci_conclusion: null,
+        },
+        "checks-pending",
+        "checks still running — no action needed",
+      ],
+      [
+        {
+          merge_state_status: "CLEAN",
+          failing_contexts: ["security"],
+          ci_conclusion: null,
+        },
+        "checks-failing",
+        "failing: security — push a fix",
+      ],
+      // Present-but-empty context arrays fall back to the lifecycle.
+      [
+        {
+          merge_state_status: "CLEAN",
+          ci_lifecycle: "pending",
+          ci_conclusion: null,
+          pending_contexts: [],
+          failing_contexts: [],
+        },
+        "checks-pending",
+        "checks still running — no action needed",
+      ],
+      // An aggregate failure with no lifecycle reported is a failure ...
+      [
+        {
+          merge_state_status: "CLEAN",
+          ci_lifecycle: null,
+          ci_conclusion: "failure",
+        },
+        "checks-failing",
+        "branch CI reports a failing check — push a fix",
+      ],
+      // ... but while the lifecycle is pending it may be the previous head's
+      // run, so with no named failure the row is in progress, not failing.
+      [
+        {
+          merge_state_status: "CLEAN",
+          ci_lifecycle: "pending",
+          ci_conclusion: "failure",
+        },
+        "checks-pending",
+        "checks still running — no action needed",
+      ],
+    ];
+    for (const [overrides, kind, reason] of cases) {
+      const status = buildPipelineRows([pr(overrides)], [])[0].status;
+      expect(status.kind, JSON.stringify(overrides)).toBe(kind);
+      expect(status.reason, JSON.stringify(overrides)).toBe(reason);
+      expect(status.label, JSON.stringify(overrides)).not.toBe("Ready");
+    }
+    // A failure outranks a still-running sibling check.
+    expect(
+      buildPipelineRows(
+        [
+          pr({
+            merge_state_status: "CLEAN",
+            ci_lifecycle: "pending",
+            pending_contexts: ["python"],
+            failing_contexts: ["explorer"],
+          }),
+        ],
+        []
+      )[0].status.kind
+    ).toBe("checks-failing");
+    // CLEAN with nothing pending and nothing failing is still Ready.
+    expect(
+      buildPipelineRows(
+        [
+          pr({
+            merge_state_status: "CLEAN",
+            pending_contexts: [],
+            failing_contexts: [],
+          }),
+        ],
+        []
+      )[0].status.kind
+    ).toBe("ready");
+  });
+
   it("BEHIND outranks a failing branch check (rebase is the actionable fix)", () => {
     const rows = buildPipelineRows(
       [pr({ merge_state_status: "BEHIND", ci_conclusion: "failure" })],

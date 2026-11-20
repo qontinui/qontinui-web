@@ -549,11 +549,6 @@ class Site(Base):
         _check_in("price_tier", PRICE_TIERS, "ck_site_price_tier"),
         _check_in("context_state", CONTEXT_STATES, "ck_site_context_state"),
         _check_in_nullable("split", SPLITS, "ck_site_split"),
-        # A split is assigned at the first context confirmation, never before.
-        CheckConstraint(
-            "split IS NULL OR context_state = 'confirmed'",
-            name="ck_site_split_after_confirmation",
-        ),
         CheckConstraint(
             "(context_state = 'confirmed') = (context_confirmed_at IS NOT NULL)",
             name="ck_site_context_confirmed_at",
@@ -598,11 +593,11 @@ class Site(Base):
     context_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    #: ``reference`` | ``holdout``; NULL until the context is first confirmed,
-    #: immutable afterwards (``trg_site_split_immutable``).
-    split: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    split_assigned_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    #: ``reference`` | ``holdout``; assigned at intake (``POST /sites``) by the
+    #: domain hash, immutable afterwards (``trg_site_split_immutable``).
+    split: Mapped[str] = mapped_column(String(16), nullable=False)
+    split_assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )
     tags: Mapped[list[Any]] = _jsonb_array()
     review_state: Mapped[str] = _review_state()
