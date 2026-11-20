@@ -129,7 +129,8 @@ pgvector
 type exists whenever this revision runs. Repeating that guard here would make
 the revision unlandable by coord's merge train: its migration classifier
 refuses any ``CREATE EXTENSION`` ("unrecognized CREATE statement") and any
-``op.get_bind()`` read, while every statement below is a shape it admits.
+SQL executed through ``op.get_bind()``, while every statement below is a shape
+it admits.
 
 Constraints
 ===========
@@ -156,8 +157,13 @@ never ``CONCURRENTLY`` — so the tables and every unique that guards them
 become visible in one commit. coord's migration classifier admits each such
 build as a new-table CLAIM (the table was created earlier in this file), which
 the merge engine discharges by proving trunk has never named the table
-(``pr_merge::migration_new_table_proof``: a case-insensitive ``git grep`` for
-the bare table name). ``topic_members`` and ``topic_aliases`` pass that proof.
+(``pr_merge::migration_new_table_proof``: a case-insensitive ``git grep`` of
+the whole tree for the bare table name, a ``git log -S`` history read over the
+versions directory, and a live ``to_regclass`` read of coord's catalog).
+``topic_members`` and ``topic_aliases`` pass both git reads on ``origin/main``
+at authoring time; the catalog read is settled only at merge time. Because the
+grep covers the whole tree, a sibling web PR naming either table must land
+AFTER this one.
 ``topics`` cannot: the bare word already appears in trunk
 (``coord.correlation_topics`` and others), so a claim on ``coord.topics``
 would be refuted and the revision blocked. ``coord.topics`` therefore carries
