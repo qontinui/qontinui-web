@@ -84,6 +84,14 @@ export interface SubprojectUnitCounts {
   open: number | null;
 }
 
+/** The topic a subproject belongs to, as the list names it (topics plan
+ *  D9). */
+export interface SubprojectTopicRef {
+  id: string;
+  slug: string;
+  title: string;
+}
+
 export interface SubprojectSummary {
   id: string;
   slug: string;
@@ -118,6 +126,13 @@ export interface SubprojectSummary {
    * could not tell; absent is a coord that predates the field.
    */
   one_off?: boolean | null;
+  /**
+   * The subproject's topic. Read it only beside the envelope's
+   * `topics_status`: `null` under `"ok"` is "in no topic"; `null` under
+   * `"unavailable:<reason>"`, or a coord that sends no `topics_status`, is
+   * UNKNOWN — never "no topic". Absent on a coord that predates topics.
+   */
+  topic?: SubprojectTopicRef | null;
 }
 
 export interface SubprojectUnattachedUnits {
@@ -166,6 +181,10 @@ export interface SubprojectListResponse {
   /** Absent on a coord that predates the facet; `null` when it could not
    *  take the counts. Either way the page falls back to one read per view. */
   counts?: SubprojectCountsFacet | null;
+  /** Whether the rows' `topic` fields were read: `"ok"`, or
+   *  `"unavailable:<reason>"`. Absent on a coord that predates topics, which
+   *  makes every row's topic UNKNOWN. */
+  topics_status?: string;
   generated_at: string;
 }
 
