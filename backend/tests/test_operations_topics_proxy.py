@@ -333,9 +333,7 @@ class TestGetTopic:
         instance.get.assert_not_called()
 
 
-def test_the_pending_migration_envelope_splices_coords_keys_to_the_top_level() -> (
-    None
-):
+def test_the_pending_migration_envelope_splices_coords_keys_to_the_top_level() -> None:
     """With the app's real HTTP-exception handler, ``error`` lands at the TOP
     level of the envelope — where the page's refusal reader looks first."""
     from starlette.exceptions import HTTPException as StarletteHTTPException
