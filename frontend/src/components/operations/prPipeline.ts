@@ -343,6 +343,13 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
  * deploys omit them entirely). Shared by prPipeline, PrsTable, and
  * MergePipeline so "failed" vs "still running" never drifts between
  * surfaces.
+ *
+ * One deliberate exception: the CLEAN arm of the status classifier does NOT
+ * use this helper. A CLEAN row whose lifecycle is still `pending` is the
+ * just-pushed-head shape (whitespace-engine#59), where an aggregate `failure`
+ * may be the previous head's run; there only a NAMED failure counts. Whether
+ * that rule should become this helper's is a separate change across the
+ * surfaces that share it.
  */
 export function unstableHasFailure(
   pr: Pick<PrRow, "failing_contexts" | "ci_conclusion">
@@ -1154,6 +1161,38 @@ function statusFromGitHub(
     };
   }
   if (pr.merge_state_status === "CLEAN") {
+    // "Ready" is a claim that CI is green, and `CLEAN` alone does not make
+    // it: coord can serve a CLEAN merge state alongside named failing or
+    // running checks (whitespace-engine#59 read CLEAN with both checks QUEUED
+    // on a just-pushed head). Never call such a row ready. An aggregate
+    // `failure` while the lifecycle is still `pending` may be the previous
+    // head's run, so only a NAMED failure outranks running checks there.
+    const aggregateFailure =
+      pr.ci_lifecycle !== "pending" && pr.ci_conclusion === "failure";
+    if ((pr.failing_contexts?.length ?? 0) > 0 || aggregateFailure) {
+      const failing = pr.failing_contexts ?? [];
+      return {
+        kind: "checks-failing",
+        label: "Checks failing",
+        reason:
+          failing.length > 0
+            ? `failing: ${formatContextNames(failing)} — push a fix`
+            : "branch CI reports a failing check — push a fix",
+        attention: "author",
+      };
+    }
+    if (hasPendingChecks(pr)) {
+      const pending = pr.pending_contexts ?? [];
+      return {
+        kind: "checks-pending",
+        label: "Checks in progress",
+        reason:
+          pending.length > 0
+            ? `still running: ${formatContextNames(pending)}`
+            : "checks still running — no action needed",
+        attention: "none",
+      };
+    }
     return {
       kind: "ready",
       label: "Ready",

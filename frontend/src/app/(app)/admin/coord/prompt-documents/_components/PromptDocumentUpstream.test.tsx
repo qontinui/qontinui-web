@@ -16,7 +16,7 @@
  *    disappears without a word reads as a bug in the page.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -71,8 +71,14 @@ function renderList(documents: PromptDocumentSummary[]) {
 }
 
 beforeEach(() => {
+  // A page in a named project, as production's always is: a page with no
+  // project to pin a write to refuses every write (`usePageWriteGuard`).
+  localStorage.setItem("qontinui.active_tenant_id", "t-tenant");
   getMock.mockReset();
   postMock.mockReset();
+});
+afterEach(() => {
+  localStorage.removeItem("qontinui.active_tenant_id");
 });
 
 describe("the upstream badge column", () => {
