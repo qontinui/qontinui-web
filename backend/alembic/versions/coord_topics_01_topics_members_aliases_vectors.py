@@ -2,8 +2,9 @@
 
 Phase 1 (the qontinui-web half, which lands FIRST) of plan
 ``2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator``.
-Creates four new, empty tables, their indexes and their table comments, all in
-ONE transaction::
+Creates four new, empty tables, their table comments and their uniques in ONE
+transaction, then one plain index on ``coord.topics`` concurrently (see
+"Indexes")::
 
     coord.topics (id, tenant_id, slug, title, summary, next_steps, status,
                   parent_topic_id, intent_ref, created_by, created_by_session,
@@ -146,27 +147,44 @@ Constraints
   arbiter must restate ``WHERE removed_at IS NULL``); the expression unique
   ``uq_topic_aliases_tenant_lower_alias``.
 
-Every index is built in the SAME transaction as the tables — a plain
-``CREATE [UNIQUE] INDEX IF NOT EXISTS``, never ``CONCURRENTLY`` — so the
-tables and every unique that guards them become visible in one commit, and
-coord's migration classifier admits each build as a new-table CLAIM (the table
-was created earlier in this file), which the merge engine discharges by
-proving trunk has never named the table.
+Indexes
+=======
+
+The uniques and ``idx_topic_members_live_subproject`` are built in the SAME
+transaction as the tables — a plain ``CREATE [UNIQUE] INDEX IF NOT EXISTS``,
+never ``CONCURRENTLY`` — so the tables and every unique that guards them
+become visible in one commit. coord's migration classifier admits each such
+build as a new-table CLAIM (the table was created earlier in this file), which
+the merge engine discharges by proving trunk has never named the table
+(``pr_merge::migration_new_table_proof``: a case-insensitive ``git grep`` for
+the bare table name). ``topic_members`` and ``topic_aliases`` pass that proof.
+``topics`` cannot: the bare word already appears in trunk
+(``coord.correlation_topics`` and others), so a claim on ``coord.topics``
+would be refuted and the revision blocked. ``coord.topics`` therefore carries
+no in-transaction index build: its one plain index,
+``idx_topics_tenant_status``, is built ``CONCURRENTLY IF NOT EXISTS`` in an
+``autocommit_block()`` AFTER the table transaction commits (the table is empty,
+so the build is instant), and its ``UNIQUE (tenant_id, slug)`` is a table
+constraint inside ``CREATE TABLE``. That index is not a unique, so a killed
+build leaving it INVALID costs only a plan choice; recovery is ``DROP INDEX
+CONCURRENTLY coord.idx_topics_tenant_status`` and a re-run.
 
 Lock posture
 ============
 
 Nothing here touches an existing table: every foreign key points at
 ``coord.topics``, which this transaction creates; ``tenant_id`` and
-``subproject_id`` carry no key; every index is on a table this transaction
-created. The upgrade requests no lock a live reader or writer holds and needs
-no ``lock_timeout``. The downgrade drops only these four tables.
+``subproject_id`` carry no key; every in-transaction index is on a table this
+transaction created, and the one concurrent build runs on the just-created,
+still-empty ``coord.topics`` (``SHARE UPDATE EXCLUSIVE``, which blocks no
+reader or writer). The upgrade requests no lock a live reader or writer of an
+existing table holds and needs no ``lock_timeout``. The downgrade drops only these four tables.
 
 Idempotency / authorship posture
 ================================
 
 * ``CREATE TABLE IF NOT EXISTS`` / ``CREATE [UNIQUE] INDEX IF NOT EXISTS`` /
-  ``COMMENT ON``, one transaction; a symmetric ``downgrade()`` drops the
+  ``COMMENT ON``, one transaction, then the one concurrent index; a symmetric ``downgrade()`` drops the
   indexes, then the tables that reference ``coord.topics``, then
   ``coord.topics``.
 * **alembic is the SOLE author of the ``coord.*`` schema** (served policy
@@ -207,7 +225,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create the four tables, their comments and their indexes in ONE transaction."""
+    """Create the tables, comments and uniques in ONE transaction, then one index."""
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.topics (
@@ -337,18 +355,11 @@ def upgrade() -> None:
             'used stale.'
         """
     )
-    # Every index is built here, in the transaction that created its table, so
-    # the tables and every unique that guards them commit together. Never
-    # CONCURRENTLY: coord's migration classifier admits these builds as
-    # new-table claims.
+    # The uniques (and the live-subproject index) are built here, in the
+    # transaction that created their table, so the tables and every unique that
+    # guards them commit together. Never CONCURRENTLY: coord's migration
+    # classifier admits these builds as new-table claims.
     #
-    # The list door's read: a tenant's topics by status.
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_topics_tenant_status
-            ON coord.topics (tenant_id, status)
-        """
-    )
     # A subproject is a live member of a topic at most once.
     op.execute(
         """
@@ -372,6 +383,19 @@ def upgrade() -> None:
             ON coord.topic_aliases (tenant_id, lower(alias))
         """
     )
+    # The list door's read: a tenant's topics by status. Built CONCURRENTLY
+    # after the commit above, so coord.topics is not a new-table claim: the
+    # merge engine's trunk proof greps for the bare name "topics", which
+    # unrelated trunk files (coord.correlation_topics, ...) already contain.
+    # Not a unique, so an INVALID leftover from a killed build loses no
+    # guarantee; recovery is DROP INDEX CONCURRENTLY and a re-run.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_topics_tenant_status
+                ON coord.topics (tenant_id, status)
+            """
+        )
 
 
 def downgrade() -> None:
