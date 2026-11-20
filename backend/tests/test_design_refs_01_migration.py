@@ -4,10 +4,11 @@ Plan ``2026-11-13-design-reference-library-stores-described-web-examples-for-any
 Phase 1. The revision is hand-authored raw SQL (never autogenerate), so the
 thing worth checking is that it builds what the models declare:
 
-1. Upgrade from the parent builds every ``design_refs`` table with exactly the
-   models' columns and nullability, exactly their CHECK and UNIQUE constraints
-   by name, every declared index, the split trigger, and the seeded
-   vocabularies equal to the model constants.
+1. Upgrade from the parent builds the ``design_refs`` tables, the split
+   trigger and the seeded vocabularies equal to the model constants; upgrading
+   on to ``design_refs_split_intake_01`` (the split is assigned at intake)
+   leaves exactly the models' columns and nullability, exactly their CHECK and
+   UNIQUE constraints by name, and every declared index.
 2. The split trigger refuses a change of an assigned split and allows the
    first assignment.
 3. Downgrade to the parent removes the schema (and its trigger function);
@@ -36,6 +37,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "design_refs_01"
+_SPLIT_REVISION_ID = "design_refs_split_intake_01"
 _PARENT_REVISION_ID = "coord_subprojects_01"
 
 pytestmark = pytest.mark.skipif(
@@ -119,23 +121,6 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
         assert not _schema_exists(engine)
 
         run_alembic(cwd, url, "upgrade", _REVISION_ID)
-        live = _columns(engine)
-        declared = {
-            model.__table__.name: {
-                c.name: bool(c.nullable) for c in model.__table__.columns
-            }
-            for model in models.DESIGN_REFS_MODELS
-        }
-        assert live == declared
-        # CHECK and UNIQUE constraints, by name, in both directions.
-        assert _constraints(engine) == _declared_constraints()
-
-        declared_indexes = {
-            index.name
-            for model in models.DESIGN_REFS_MODELS
-            for index in model.__table__.indexes
-        }
-        assert declared_indexes <= _indexes(engine)
 
         with engine.connect() as conn:
             families = conn.execute(
@@ -183,6 +168,25 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
                     {"id": site_id},
                 )
 
+        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
+        live = _columns(engine)
+        declared = {
+            model.__table__.name: {
+                c.name: bool(c.nullable) for c in model.__table__.columns
+            }
+            for model in models.DESIGN_REFS_MODELS
+        }
+        assert live == declared
+        # CHECK and UNIQUE constraints, by name, in both directions.
+        assert _constraints(engine) == _declared_constraints()
+
+        declared_indexes = {
+            index.name
+            for model in models.DESIGN_REFS_MODELS
+            for index in model.__table__.indexes
+        }
+        assert declared_indexes <= _indexes(engine)
+
         run_alembic(cwd, url, "downgrade", _PARENT_REVISION_ID)
         assert not _schema_exists(engine)
         with engine.connect() as conn:
@@ -195,5 +199,137 @@ def test_design_refs_01_builds_what_the_models_declare() -> None:
                 == 0
             )
 
-        run_alembic(cwd, url, "upgrade", _REVISION_ID)
+        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
         assert _columns(engine) == declared
+
+
+def _insert_site(
+    engine: Engine,
+    tenant: str,
+    tier: str,
+    domain: str,
+    *,
+    confirmed: bool,
+    split: str | None,
+) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO design_refs.site
+                    (tenant_id, tier, domain, context_state, context_confirmed_at,
+                     split, split_assigned_at)
+                VALUES (:t, :tier, :d, :state,
+                        CASE WHEN :c THEN now() END, :s,
+                        CASE WHEN :s IS NOT NULL THEN now() END)
+                """
+            ),
+            {
+                "t": tenant,
+                "tier": tier,
+                "d": domain,
+                "state": "confirmed" if confirmed else "proposed",
+                "c": confirmed,
+                "s": split,
+            },
+        )
+
+
+def _splits(engine: Engine) -> dict[tuple[str, str], str | None]:
+    with engine.connect() as conn:
+        return {
+            (tier, domain): split
+            for tier, domain, split in conn.execute(
+                text("SELECT tier, domain, split FROM design_refs.site")
+            ).all()
+        }
+
+
+def test_split_intake_backfills_unsplit_sites_and_reverses() -> None:
+    from app.services.design_refs import domain_bucket
+
+    cwd = backend_root()
+    held = next(
+        f"h{i}.example" for i in range(1000) if domain_bucket(f"h{i}.example") == 0
+    )
+    kept = next(
+        f"k{i}.example" for i in range(1000) if domain_bucket(f"k{i}.example") != 0
+    )
+    with ephemeral_database(admin_database_url(), "design_refs_split_intake") as (
+        engine,
+        url,
+    ):
+        run_alembic(cwd, url, "upgrade", _REVISION_ID)
+        tenant = "11111111-1111-1111-1111-111111111111"
+        # Unsplit proposed sites, one a hash holdout and one not ...
+        _insert_site(engine, tenant, "private", held, confirmed=False, split=None)
+        _insert_site(engine, tenant, "private", kept, confirmed=False, split=None)
+        # ... a confirmed one the old rule forced to a split the hash disagrees with,
+        # whose other-tier sibling is still unsplit ...
+        _insert_site(
+            engine, tenant, "public", kept + ".x", confirmed=True, split="holdout"
+        )
+        _insert_site(
+            engine, tenant, "private", kept + ".x", confirmed=False, split=None
+        )
+        # ... and a confirmed one with an ordinary split.
+        _insert_site(
+            engine, tenant, "private", "done.example", confirmed=True, split="reference"
+        )
+
+        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
+        got = _splits(engine)
+        assert got[("private", held)] == "holdout"
+        assert got[("private", kept)] == "reference"
+        assert got[("private", kept + ".x")] == "holdout"  # the sibling's split
+        assert got[("public", kept + ".x")] == "holdout"  # untouched
+        assert got[("private", "done.example")] == "reference"
+        with engine.connect() as conn:
+            assert not conn.execute(
+                text(
+                    "SELECT count(*) FROM design_refs.site "
+                    "WHERE split IS NULL OR split_assigned_at IS NULL"
+                )
+            ).scalar()
+        # A site can no longer be written without a split.
+        with pytest.raises(DBAPIError):
+            _insert_site(
+                engine,
+                tenant,
+                "private",
+                "nosplit.example",
+                confirmed=False,
+                split=None,
+            )
+        # The split of an unconfirmed site is allowed at intake: the CHECK is gone.
+        _insert_site(
+            engine,
+            tenant,
+            "private",
+            "early.example",
+            confirmed=False,
+            split="reference",
+        )
+
+        run_alembic(cwd, url, "downgrade", _REVISION_ID)
+        back = _splits(engine)
+        assert back[("private", held)] is None
+        assert back[("private", "early.example")] is None
+        assert back[("private", kept + ".x")] is None
+        assert back[("public", kept + ".x")] == "holdout"  # confirmed rows keep theirs
+        assert back[("private", "done.example")] == "reference"
+        with pytest.raises(DBAPIError, match="ck_site_split_after_confirmation"):
+            _insert_site(
+                engine,
+                tenant,
+                "private",
+                "late.example",
+                confirmed=False,
+                split="reference",
+            )
+
+        # Reversible: the hash is deterministic.
+        run_alembic(cwd, url, "upgrade", _SPLIT_REVISION_ID)
+        again = _splits(engine)
+        assert again[("private", held)] == "holdout"
+        assert again[("private", kept)] == "reference"

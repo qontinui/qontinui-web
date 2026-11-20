@@ -11,9 +11,9 @@
  * - the status read (its refusal is stamped and latched);
  * - the publish-all dry run and armed run, and the publish-mode PATCH (each
  *   can latch the same refusal);
- * - the re-ask and the list re-read at open (the page's mount read alone is
- *   not pinned: it goes out before the page's project is known, in the
- *   stored project);
+ * - the page's mount read (pinned to the project the page shows from its
+ *   first render; unpinned only when nothing was stored at mount), the
+ *   re-ask and the list re-read at open;
  * - every adopt POST, and the post-run list re-read;
  * - the status read RE-TAKEN, and the rows re-read, once the provider
  *   reconciles the page's project (pinned to that project, even when another
@@ -157,10 +157,17 @@ describe("the pin each request is sent with", () => {
         (p) => JSON.stringify(p) === JSON.stringify({ tenant: "t-b" })
       )
     ).toBe(true);
-    // The page's own mount read is not pinned (it goes in the stored
-    // project); the re-read at open and the post-run re-read are pinned to B.
+    // The page's mount read, the re-read at open and the post-run re-read:
+    // all pinned to B.
+    //
+    // Corrected (review round 2, A1): this asserted the mount read went out
+    // UNPINNED, in whatever project was stored on each attempt. Nothing
+    // re-reads the rows when the page's project is the one stored at mount,
+    // so a retry or replay of that read after another tab's switch left the
+    // other tab's rows on the page as its own: the hazard, recorded as
+    // behaviour.
     expect(argAt(client.listPromptDocuments, 0)).toEqual([
-      undefined,
+      { tenant: "t-b" },
       { tenant: "t-b" },
       { tenant: "t-b" },
     ]);

@@ -173,8 +173,8 @@ class SiteOut(_Out):
     context_state: ContextState
     context_confirmed_by: UUID | None
     context_confirmed_at: datetime | None
-    split: Split | None
-    split_assigned_at: datetime | None
+    split: Split
+    split_assigned_at: datetime
     tags: list[Any]
     review_state: ReviewState
     quality: Quality | None
@@ -588,7 +588,7 @@ class SearchHit(BaseModel):
     #: Weighted distance to ``personality_target`` (lower is closer).
     personality_distance: float | None
     personality_basis: Literal["confirmed", "unconfirmed"] | None
-    #: ``holdout``, ``split_unassigned``, ``context_unconfirmed``,
+    #: ``holdout``, ``context_unconfirmed``,
     #: ``unreviewed``, ``personality_unconfirmed``.
     labels: list[str]
     snippet: str | None
@@ -860,7 +860,8 @@ class BalanceCell(BaseModel):
     style_family: str | None
     industry: str | None
     price_tier: PriceTier
-    split: Split | None
+    split: Split
+    context_state: ContextState
     n: int
 
 
