@@ -24,6 +24,7 @@
   "tests/services/test_coord_jwks.py": 0.2,
   "tests/services/test_email_transport_ses_is_bounded.py": 0.4,
   "tests/services/test_member_added_notice_composer.py": 0.3,
+  "tests/test_acctconsent_01_account_tenant_consents_migration.py": 60.0,
   "tests/test_active_tenant_prefix_drift_guard.py": 40.4,
   "tests/test_active_tenant_transport.py": 0.0,
   "tests/test_admin_dev_gates_sweep.py": 0.1,
