@@ -68,7 +68,7 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
   const tenant = useTenantFleetPolicyDial<ModelAccessLevel>(
     CI_MODEL_ACCESS_DOMAIN,
     WRITE_LABEL,
-    "coord"
+    "coord resolves"
   );
   const repoRead = useCiModelAccessRepos();
   const { reload: reloadRepos, applyWriteReadback } = repoRead;

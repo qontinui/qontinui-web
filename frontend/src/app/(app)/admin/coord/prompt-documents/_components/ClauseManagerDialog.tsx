@@ -40,7 +40,6 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import type { TenantPin } from "@/services/http-client";
 import { useClauses } from "../_hooks/useClauses";
 import { CLAUSE_HEADER } from "../_lib/clauseMerge";
 import { ClauseEditorDialog } from "./ClauseEditorDialog";
@@ -65,20 +64,14 @@ interface ClauseManagerDialogProps {
   loadingBody: boolean;
   /** Refresh the parent document list after a category default-tier edit. */
   onDocsReload: () => void;
-  /** Checked before every clause write; `false` sends nothing. */
-  canWrite?: () => boolean;
-  /**
-   * The project every clause read and write is sent in, on every attempt —
-   * the page's. Omitted, each goes in the project stored when it is sent.
-   */
-  pin?: TenantPin;
 }
 
 /**
  * The structured-clause manager for a `policy` prompt document: the ordered
  * clause list (status/tier badges + reorder), the clause editor, the YAML
  * candidate importer, and the category default-tier editor. All clause CRUD goes
- * through the coord clause-route proxy via `useClauses`.
+ * through the coord clause-route proxy via `useClauses`, which takes the
+ * prompt-documents page's write guard and pin from the page's provider.
  */
 export function ClauseManagerDialog({
   open,
@@ -86,8 +79,6 @@ export function ClauseManagerDialog({
   document,
   loadingBody,
   onDocsReload,
-  canWrite,
-  pin,
 }: ClauseManagerDialogProps) {
   const name = document?.name ?? "";
   const {
@@ -103,8 +94,6 @@ export function ClauseManagerDialog({
     saveAttrs,
   } = useClauses("policy", name, open && document !== null, {
     onAttrsSaved: onDocsReload,
-    canWrite,
-    pin,
   });
 
   const [editorOpen, setEditorOpen] = useState(false);

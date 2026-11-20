@@ -351,13 +351,17 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     ]);
   });
 
-  it("called with a subject and no options, sends today's bytes and names that subject when the fleet disagrees", async () => {
+  it("called with its resolvers and no options, sends today's bytes and names who resolves when the fleet disagrees", async () => {
     // Exactly three arguments, as ten of the console's dials call it: the
     // options default to `{}`, so nothing is pinned.
     getMock.mockResolvedValueOnce(view("off"));
     putMock.mockResolvedValueOnce({ ...written("on"), effective: view("off") });
     const { result } = renderHook(() =>
-      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial", "agents")
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "agents resolve"
+      )
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
@@ -387,21 +391,57 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
     );
   });
 
-  it("sends the same bytes when the resolver names no project", async () => {
+  it("says who resolves in the caller's own verb, a singular one included", async () => {
+    // The CI panels pass "coord resolves": every sentence that names who
+    // resolves takes the caller's verb, never "coord resolve".
     getMock.mockResolvedValueOnce(view("off"));
+    putMock
+      .mockResolvedValueOnce({ ...written("on"), effective: view("off") })
+      .mockResolvedValueOnce({
+        ...written("on"),
+        effective: null,
+        readback_error: "read-back timed out",
+      });
     const { result } = renderHook(() =>
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
-        { resolvePin: () => undefined }
+        "coord resolves"
       )
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
 
-    expect(sentInit.mock.calls).toEqual([
-      [`${DIAL_URL}?domain=some_dial`, { method: "GET", idempotent: true }],
+    expect(vi.mocked(toast.warning).mock.calls.map(([text]) => text)).toEqual([
+      'Wrote "on", but coord resolves "off" (from the tenant scope).',
+      "The write went through, but the read-back failed — what coord resolves is unknown until this refreshes.",
     ]);
+  });
+
+  it("reads nothing more after a write whose read-back failed: today's behaviour", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+    await act(async () => {});
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result.current.readbackError).toBe("read-back timed out");
+    expect(result.current.policy?.effective_level).toBe("off");
   });
 });
 
@@ -454,7 +494,7 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
       useTenantFleetPolicyDial<"off" | "on">(
         "some_dial",
         "some dial",
-        "devices",
+        "devices resolve",
         { resolvePin: () => ({ tenant: "t-page" }) }
       )
     );
@@ -486,7 +526,7 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
         useTenantFleetPolicyDial<"off" | "on">(
           "some_dial",
           "some dial",
-          "devices",
+          "devices resolve",
           { resolvePin: resolve }
         ),
       { initialProps: { resolve: () => ({ tenant: page }) } }
@@ -509,6 +549,276 @@ describe("useTenantFleetPolicyDial — resolvePin, through the real client", () 
     expect(sent.map((s) => [s.method, s.tenant])).toEqual([
       ["GET", "t-page"],
       ["GET", "t-next"],
+    ]);
+  });
+});
+
+describe("useTenantFleetPolicyDial — the first read waits for the resolver to name a project", () => {
+  beforeEach(() => localStorage.clear());
+
+  const PINNED_GET = {
+    method: "GET",
+    idempotent: true,
+    headers: { "X-Qontinui-Active-Tenant": "t-b" },
+  };
+
+  /** A dial on a page that pins its requests, before it knows its project. */
+  const unresolved = () =>
+    renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => undefined }
+      )
+    );
+
+  it("with a resolver that names no project, reads nothing and says it is waiting", async () => {
+    // A caller with no resolver keeps today's mount read; one with a
+    // resolver reads only under the project it names.
+    const { result } = unresolved();
+    await act(async () => {});
+
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.waitingForProject).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.policy).toBeNull();
+  });
+
+  it("sends nothing for a reload while its resolver names no project, and keeps what is shown", async () => {
+    const { result } = unresolved();
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+
+    expect(applied).toBe(false);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("refuses a write beside its send while its resolver names no project, and says why", async () => {
+    // Whatever its caller checked first: the write reads the pin it is sent
+    // in, and sends nothing unpinned.
+    const { result } = unresolved();
+    let sentWrite: boolean | undefined;
+    await act(async () => {
+      sentWrite = await result.current.setLevel("on");
+    });
+
+    expect(sentWrite).toBe(false);
+    expect(sentInit).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Nothing was sent: there is no project to send the some dial change in. Select a project, or reload the page."
+    );
+  });
+
+  it("reads first, once and pinned, when the resolver first names a project", async () => {
+    let pin: { tenant: string } | undefined = undefined;
+    getMock.mockResolvedValue(view("on"));
+    const { result, rerender } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => pin }
+      )
+    );
+    await act(async () => {});
+    expect(sentInit).not.toHaveBeenCalled();
+
+    pin = { tenant: "t-b" };
+    rerender();
+    await waitFor(() =>
+      expect(result.current.policy?.effective_level).toBe("on")
+    );
+    rerender();
+
+    expect(result.current.waitingForProject).toBe(false);
+    expect(sentInit.mock.calls).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
+    ]);
+  });
+
+  it("reads again, pinned, after a write whose read-back failed, and shows coord's level", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce(view("on"));
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() =>
+      expect(result.current.policy?.effective_level).toBe("on")
+    );
+    expect(result.current.readbackError).toBeNull();
+    expect(
+      sentInit.mock.calls.filter(([, init]) => init.method === "GET")
+    ).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
+    ]);
+    // Coord resolves what was written: the re-read says so, as a read-back
+    // does, and the only warning is the read-back's own.
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Some dial: now "on" for this tenant.'
+      )
+    );
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a write whose read-back failed, warns as a read-back does when coord resolves another level", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce({ ...view("off"), resolved_scope: "repo" });
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenLastCalledWith(
+        'Wrote "on", but devices resolve "off" (from the repo scope).'
+      )
+    );
+    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.readbackError).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("keeps the last level, the read-back warning and the read error when the re-read fails", async () => {
+    getMock
+      .mockResolvedValueOnce(view("off"))
+      .mockResolvedValueOnce(
+        new Response("coord is not reachable", { status: 502 })
+      );
+    putMock.mockResolvedValueOnce({
+      ...written("on"),
+      effective: null,
+      readback_error: "read-back timed out",
+    });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => ({ tenant: "t-b" }) }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.readbackError).toBe("read-back timed out");
+    // Only the read-back's warning: a failed re-read resolved nothing.
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Every render of a dial whose resolver names `t-b` from mount, or only
+   * after it: whether it said waiting, loading, or showed a level. A section
+   * renders its waiting line, its loading line or the level, so a render with
+   * none of the three would show it empty.
+   */
+  async function rendersOfAFirstRead(atMount: boolean) {
+    let pin: { tenant: string } | undefined = atMount
+      ? { tenant: "t-b" }
+      : undefined;
+    const answer = deferred<unknown>();
+    getMock.mockReturnValueOnce(answer.promise);
+    const states: { waiting: boolean; loading: boolean; read: boolean }[] = [];
+    const { result, rerender } = renderHook(() => {
+      const dial = useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => pin }
+      );
+      states.push({
+        waiting: dial.waitingForProject,
+        loading: dial.loading,
+        read: dial.policy !== null,
+      });
+      return dial;
+    });
+    pin = { tenant: "t-b" };
+    rerender();
+    await act(async () => answer.resolve(view("on")));
+    await waitFor(() => expect(result.current.policy).not.toBeNull());
+    expect(getMock).toHaveBeenCalledTimes(1);
+    return states;
+  }
+
+  it("shows its waiting line, its loading line or a level at every render, when the resolver names a project after mount", async () => {
+    for (const state of await rendersOfAFirstRead(false)) {
+      expect(state.waiting || state.loading || state.read).toBe(true);
+    }
+  });
+
+  it("shows its loading line or a level at every render, when the resolver names a project at mount", async () => {
+    const states = await rendersOfAFirstRead(true);
+    expect(states.some((state) => state.waiting)).toBe(false);
+    for (const state of states) {
+      expect(state.loading || state.read).toBe(true);
+    }
+  });
+
+  it("reads once, pinned, at mount when the resolver names a project then", async () => {
+    let pin: { tenant: string } | undefined = { tenant: "t-b" };
+    getMock.mockResolvedValue(view("on"));
+    const { result, rerender } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">(
+        "some_dial",
+        "some dial",
+        "devices resolve",
+        { resolvePin: () => pin }
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    pin = { tenant: "t-c" };
+    rerender();
+    rerender();
+
+    expect(sentInit.mock.calls).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, PINNED_GET],
     ]);
   });
 });

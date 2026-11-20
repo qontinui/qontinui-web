@@ -19,6 +19,6 @@ export function usePermissionAutoAcceptPolicy() {
   return useTenantFleetPolicyDial<PermissionAutoAcceptLevel>(
     PERMISSION_AUTO_ACCEPT_DOMAIN,
     "permission auto-accept",
-    "runners"
+    "runners resolve"
   );
 }

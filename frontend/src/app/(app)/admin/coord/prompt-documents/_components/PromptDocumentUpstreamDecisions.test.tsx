@@ -19,7 +19,7 @@
  * 4. **The resolutions the operator made are what is sent.** Nothing else.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -185,8 +185,14 @@ function routeGets(docs: PromptDocumentSummary[], plan: ClauseMergePreview) {
 }
 
 beforeEach(() => {
+  // A page in a named project, as production's always is: a page with no
+  // project to pin a write to refuses every write (`usePageWriteGuard`).
+  localStorage.setItem("qontinui.active_tenant_id", "t-tenant");
   getMock.mockReset();
   postMock.mockReset();
+});
+afterEach(() => {
+  localStorage.removeItem("qontinui.active_tenant_id");
 });
 
 async function openUpstream(kind: PromptDocumentKind, name: string) {
