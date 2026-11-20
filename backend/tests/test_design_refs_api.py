@@ -793,10 +793,9 @@ class TestSplit:
         personality = await a.ok("GET", f"/sites/{site.id}/personality")
         assert personality == []
         example = await a.http.get(f"{API}/examples/page/{page['id']}")
-        if example.status_code == 200:
-            assert all(r["rater_kind"] == "ai" for r in example.json()["ratings"])
-        else:
-            assert example.status_code == 404
+        # An unconfirmed site's page is not served to a device at all until
+        # the measured-facts phase; pin it so a widening here fails this test.
+        assert example.status_code == 404, example.text
         # Principle evidence touching it is refused.
         principle = await _principle(a)
         resp = await _attach(a, principle, await _rating_id(a, site))
