@@ -8239,6 +8239,90 @@ async def post_subproject_spawn(
     )
 
 
+# ---- Topics ------------------------------------------------------------------
+#
+# Plan ``2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator``
+# Phase 8 (pages). A topic groups the subprojects that serve one goal, and its
+# headline rolls up its CONFIRMED members' cached subproject verdicts (D7, as
+# amended B9). coord owns all of it, so these two operator reads are thin
+# proxies over coord's ``GET /coord/topics`` and ``GET /coord/topics/{id}`` —
+# served on the same router family as ``GET /coord/subprojects`` — and every
+# body passes through VERBATIM, exactly like the subproject reads above.
+#
+# Auth: any tenant member (``get_tenant_id``), like every coord read on this
+# router. The operator WRITES (``POST /coord/topics*``) are not proxied: no page
+# calls them yet, and a proxy no caller reaches is dead surface
+# (operations-proxy checklist §3).
+#
+# ``structured_errors=True``: coord's ``503 {"error":
+# "schema_migration_pending"}`` before the ``coord_topics_01`` revision applies
+# reaches the browser as that object, and the page says "topics not available
+# yet (migration pending)" instead of an error string.
+#
+# The id is typed ``UUID`` for the reason the subproject id is: a typed segment
+# cannot carry a ``..`` that re-aims the forwarded path at another coord route.
+# The budget is the subprojects one: the detail door reads every member's
+# cached verdict and its basis, the same kind of aggregation.
+
+
+@router.get("/topics")
+async def get_topics(
+    status: str | None = Query(
+        default=None,
+        description="Lifecycle filter, forwarded as sent: `proposed`, "
+        "`active`, `dormant`, `retired` (coord's vocabulary; coord decides "
+        "the default).",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's topics — proxy coord's ``GET /coord/topics``.
+
+    coord answers ``{"as_of", "tables_ready", "unassigned_subprojects",
+    "topics": [...]}``; each topic carries its cached rollup (``headline``,
+    ``top_reason``, ``subprojects_total``, ``subprojects_working``,
+    ``unknown_members``, ``last_activity_at``, ``last_rollup_as_of``), any of
+    which may be ``null`` — unknown, never zero. ``status`` and ``limit`` are
+    forwarded only when set. A coord whose migration has not applied answers
+    ``503 {"error": "schema_migration_pending"}``, which reaches the browser as
+    that object.
+    """
+    params: dict[str, Any] = {}
+    for key, value in (("status", status), ("limit", limit)):
+        if value is not None:
+            params[key] = value
+    return await _proxy_coord_get(
+        "/coord/topics",
+        params=params or None,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+@router.get("/topics/{topic_id}")
+async def get_topic(
+    topic_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One topic with its members — proxy coord's ``GET /coord/topics/{id}``.
+
+    The body is coord's verbatim: ``topic`` (the list fields plus
+    ``next_steps``, ``intent_ref``, ``aliases``, ``created_by`` and
+    ``merged_into``), ``members`` (each subproject with its ``weight``,
+    ``state``, ``decided_by`` and the ``basis`` entries that put it there),
+    ``children`` and ``history``. coord answers 404 for an id that is unknown
+    in the caller's tenant, and 503 ``schema_migration_pending`` before its
+    migration applies; both pass through as objects.
+    """
+    return await _proxy_coord_get(
+        f"/coord/topics/{topic_id}",
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
 # ---- Wave-3c memory browser (mutation surface) ---------------------------
 #
 # Plan ``2026-05-19-coordinator-production-readiness.md`` Phase 6.
