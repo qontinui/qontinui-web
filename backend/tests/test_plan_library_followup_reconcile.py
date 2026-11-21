@@ -211,7 +211,13 @@ async def _fixing(
     """An open follow-up moved to ``fixing`` under ``acme/widgets#<n>``."""
     created = await client.post(
         f"{API_PREFIX}/{plan}/edges",
-        json={"relation": "spawned_followup", "note": note, "to_id": None},
+        json={
+            "relation": "spawned_followup",
+            "note": note,
+            "to_id": None,
+            "unanchored_reason": "names no file (test)",
+            "size_class": "small",
+        },
     )
     assert created.status_code == 201, created.text
     edge_id = created.json()["id"]
