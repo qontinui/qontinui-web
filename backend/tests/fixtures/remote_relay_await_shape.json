@@ -40,6 +40,19 @@
       "await _drop_attachment"
     ]
   ],
+  "_claim_and_forward_end": [
+    [
+      "await _claim_grant",
+      "await _write_grant_record",
+      "await _ensure_listener",
+      "call _ensure_listener",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _refuse",
+      "await _forward_end",
+      "await _drop_attachment"
+    ]
+  ],
   "_claim_grant": [
     [
       "await _get_redis",
@@ -52,6 +65,11 @@
       "call shield",
       "await shield",
       "call shield"
+    ]
+  ],
+  "_create_target": [
+    [
+      "await _refuse"
     ]
   ],
   "_detach_target": [
@@ -79,21 +97,25 @@
       "await _forward_end"
     ]
   ],
+  "_end_with_create_grant": [
+    [
+      "await _refuse",
+      "await _refuse",
+      "await _verify_grant",
+      "await _create_target",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _claim_and_forward_end"
+    ]
+  ],
   "_end_with_fresh_grant": [
     [
       "await _verify_grant",
       "await _refuse",
       "await _end_attached",
       "await _attach_target",
-      "await _claim_grant",
-      "await _write_grant_record",
-      "await _ensure_listener",
-      "call _ensure_listener",
-      "await _drop_attachment",
-      "await _refuse",
-      "await _refuse",
-      "await _forward_end",
-      "await _drop_attachment"
+      "await _claim_and_forward_end"
     ]
   ],
   "_ensure_listener": [
@@ -175,7 +197,7 @@
   "_handle_create": [
     [
       "await _verify_grant",
-      "await _refuse",
+      "await _create_target",
       "await _refuse",
       "await _claim_grant",
       "await _write_grant_record",
@@ -191,6 +213,7 @@
   ],
   "_handle_end": [
     [
+      "await _end_with_create_grant",
       "await _end_with_fresh_grant",
       "await _end_attached"
     ]

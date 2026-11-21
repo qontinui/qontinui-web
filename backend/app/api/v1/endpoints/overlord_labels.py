@@ -56,13 +56,38 @@ def _coord_detail(resp: httpx.Response) -> Any:
     return parsed if isinstance(parsed, dict) else resp.text[:500]
 
 
-def _refuse_coord(resp: httpx.Response) -> HTTPException:
+def _coord_code(detail: Any) -> str | None:
+    """Coord's machine code from its error body (``error`` or ``code``), if any."""
+    if isinstance(detail, dict):
+        for key in ("error", "code"):
+            value = detail.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _refuse_coord(resp: httpx.Response, *, posted: bool = False) -> HTTPException:
     """Coord 4xx passes through with its status; anything else is a 502.
 
     Except 401/403: those refuse WEB's service credential, not the operator, who
     already passed :func:`require_coord_tenant_admin`. Passed through, they would
     read in the browser as the operator's own session failing, so they are a 502.
+
+    Every 502 carries coord's own status and body (``coord_status``,
+    ``coord_detail``) plus a ``message``: the console renders ``detail.message``
+    ahead of ``detail.error``, so without it the operator would see only the
+    bare ``coord_upstream_error`` code and none of what coord said.
+
+    ``posted`` is True when ``resp`` answers the append itself. A 5xx there
+    (coord failing after its insert committed, or a proxy in front of it timing
+    out) leaves the write as unknown as a transport failure does, so that 502
+    carries ``write_may_have_landed`` and :func:`_write_state` wording, as every
+    5xx does (False, "no label was written", on a lookup read).
+    A 4xx, 401 and 403 included, is coord refusing the request: nothing landed.
     """
+    coord_detail = _coord_detail(resp)
+    code = _coord_code(coord_detail)
+    answered = f"{resp.status_code}" + (f" {code}" if code else "")
     if resp.status_code in (401, 403):
         logger.warning(
             "overlord_label_coord_refused_web",
@@ -73,19 +98,27 @@ def _refuse_coord(resp: httpx.Response) -> HTTPException:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
                 "error": "coord_upstream_error",
+                "message": (
+                    f"coord refused web's service credential (coord answered "
+                    f"{answered}); your own session is fine"
+                ),
                 "coord_status": resp.status_code,
-                "coord_detail": _coord_detail(resp),
+                "coord_detail": coord_detail,
             },
         )
     if 400 <= resp.status_code < 500:
-        return HTTPException(status_code=resp.status_code, detail=_coord_detail(resp))
+        return HTTPException(status_code=resp.status_code, detail=coord_detail)
     logger.warning(
         "overlord_label_coord_error", status=resp.status_code, body=resp.text[:500]
     )
-    return HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"error": "coord_upstream_error", "coord_status": resp.status_code},
-    )
+    detail: dict[str, Any] = {
+        "error": "coord_upstream_error",
+        "message": f"coord failed (coord answered {answered}); {_write_state(posted)}",
+        "coord_status": resp.status_code,
+        "coord_detail": coord_detail,
+        "write_may_have_landed": posted,
+    }
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
 
 class _CoordEntry(BaseModel):
@@ -110,8 +143,30 @@ def _malformed_page() -> HTTPException:
     """Coord's list page broke its contract: a 502, never a 404."""
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"error": "coord_malformed_interventions_page"},
+        detail={
+            "error": "coord_malformed_interventions_page",
+            "message": (
+                "coord's intervention list came back in a shape web cannot read; "
+                "no label was written"
+            ),
+        },
     )
+
+
+def _write_state(posting: bool) -> str:
+    """What a transport failure leaves of the append, in the operator's words.
+
+    The console renders ``detail.message`` ahead of ``detail.error``, so this is
+    the only place the operator learns ``write_may_have_landed``: a label that
+    may have landed must be checked before it is submitted again, or a retry
+    appends a second row to the chain.
+    """
+    if posting:
+        return (
+            "the label MAY have been written; check the intervention's history "
+            "before submitting again"
+        )
+    return "no label was written"
 
 
 async def _newest_row_id(
@@ -163,6 +218,11 @@ async def _newest_row_id(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail={
             "error": "intervention_lookup_incomplete",
+            "message": (
+                f"coord still reported more interventions after {offset} were "
+                "read, so this one was neither found nor ruled out; "
+                "no label was written"
+            ),
             "intervention_id": str(intervention_id),
             "chains_read": offset,
         },
@@ -223,29 +283,64 @@ async def post_overlord_label(
     except httpx.ConnectError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": "coord_unreachable"},
+            detail={
+                "error": "coord_unreachable",
+                "message": "coord could not be reached; no label was written",
+            },
         ) from exc
     except httpx.TimeoutException as exc:
         # Only a POST in flight may have landed; a re-read is the only way to know.
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail={"error": "coord_timeout", "write_may_have_landed": posting},
+            detail={
+                "error": "coord_timeout",
+                "message": f"coord did not answer in time; {_write_state(posting)}",
+                "write_may_have_landed": posting,
+            },
         ) from exc
     except httpx.TransportError as exc:
         # The exchange broke mid-flight (read, write or protocol error).
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": "coord_transport_error", "write_may_have_landed": posting},
+            detail={
+                "error": "coord_transport_error",
+                "message": (
+                    f"the connection to coord broke mid-request; {_write_state(posting)}"
+                ),
+                "write_may_have_landed": posting,
+            },
+        ) from exc
+    except httpx.RequestError as exc:
+        # Every other request failure: DecodingError (an undecodable response
+        # body, e.g. a bad Content-Encoding) and TooManyRedirects sit under
+        # RequestError but not TransportError. On the POST, the write may have
+        # landed; without this arm that would be a bare 500 that says nothing.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": "coord_request_error",
+                "message": (
+                    f"coord's answer could not be read; {_write_state(posting)}"
+                ),
+                "write_may_have_landed": posting,
+            },
         ) from exc
 
     assert resp is not None
     if resp.status_code not in (200, 201):
-        raise _refuse_coord(resp)
+        raise _refuse_coord(resp, posted=True)
     try:
         intervention = resp.json()["intervention"]
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": "coord_malformed_label_response"},
+            detail={
+                "error": "coord_malformed_label_response",
+                "message": (
+                    "coord recorded the label but its answer could not be read; "
+                    "do not submit it again"
+                ),
+                "write_landed": True,
+            },
         ) from exc
     return intervention

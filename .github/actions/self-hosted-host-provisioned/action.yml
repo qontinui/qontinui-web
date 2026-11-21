@@ -1,0 +1,80 @@
+name: Self-hosted host provisioned
+description: >-
+  For a job routed to the rootless-docker `webdb` self-hosted pool (plan
+  2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool, D4).
+  The pool's slot users have no sudo, so every apt/sudo step of a moved job is
+  gated to github-hosted and the tools those steps would have installed must
+  already be on the HOST. This checks them up front and fails naming the runner
+  and every missing tool, instead of letting a later step die on
+  "command not found" and read as a verdict on the diff. When the job needs a
+  PostgreSQL client it also prepends /usr/lib/postgresql/<major>/bin to PATH, so
+  later steps use the major-matched client directly rather than Debian's
+  pg_wrapper (which a slot job was measured not to resolve on PATH).
+  Call it only under `if: runner.environment == 'self-hosted'`, after checkout.
+
+inputs:
+  tools:
+    description: Space-separated commands the job's later steps run, checked with `command -v`.
+    required: false
+    default: ''
+  pg-major:
+    description: PostgreSQL client major to require; empty when the job needs no PostgreSQL client.
+    required: false
+    default: ''
+  python-version:
+    description: >-
+      Major.minor actions/setup-python will ask for. On the pool it must already be
+      complete in $RUNNER_TOOL_CACHE (setup-python has no Debian 13 build to
+      download). Empty skips the check.
+    required: false
+    default: "3.12"
+  pg-tools:
+    description: Space-separated PostgreSQL client binaries required under /usr/lib/postgresql/<pg-major>/bin.
+    required: false
+    default: psql
+
+runs:
+  using: composite
+  steps:
+    - name: Check the host carries this job's tools
+      shell: bash
+      env:
+        HOST_TOOLS: ${{ inputs.tools }}
+        PG_CLIENT_MAJOR: ${{ inputs.pg-major }}
+        PG_CLIENT_TOOLS: ${{ inputs.pg-tools }}
+        PY_VERSION: ${{ inputs.python-version }}
+      run: |
+        set -uo pipefail
+        echo "runner: ${RUNNER_NAME} (${RUNNER_ENVIRONMENT})"
+        echo "PATH=${PATH}"
+        echo "command -v psql: $(command -v psql || echo '<not found>')"
+
+        missing=""
+        for tool in $HOST_TOOLS; do
+          command -v "$tool" >/dev/null 2>&1 || missing="${missing} ${tool}"
+        done
+
+        if [ -n "$PY_VERSION" ]; then
+          if [ -z "${RUNNER_TOOL_CACHE:-}" ] || ! compgen -G "${RUNNER_TOOL_CACHE}/Python/${PY_VERSION}.*/x64.complete" >/dev/null; then
+            missing="${missing} Python ${PY_VERSION} in RUNNER_TOOL_CACHE='${RUNNER_TOOL_CACHE:-}' (setup-python cannot download one for Debian 13)"
+          fi
+        fi
+
+        pg_bin=""
+        if [ -n "$PG_CLIENT_MAJOR" ]; then
+          pg_bin="/usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin"
+          for tool in $PG_CLIENT_TOOLS; do
+            [ -x "${pg_bin}/${tool}" ] || missing="${missing} ${pg_bin}/${tool} (postgresql-client-${PG_CLIENT_MAJOR})"
+          done
+        fi
+
+        if [ -n "$missing" ]; then
+          echo "::error title=self-hosted host not provisioned::host ${RUNNER_NAME} lacks:${missing}; provision it with qontinui-claude-config/scripts/setup-coorddb-runners.sh --pool webdb. The HOST is at fault, not this change. Unsetting WEB_CI_DB_LANE (or the workflow's WEB_CI_DB_LANE_<WORKFLOW>) routes new runs back to ubuntu-latest."
+          exit 1
+        fi
+
+        if [ -n "$pg_bin" ]; then
+          echo "$pg_bin" >> "$GITHUB_PATH"
+          echo "prepended ${pg_bin} to PATH for the later steps"
+        fi
+        echo "host provisioned: every checked tool is present"

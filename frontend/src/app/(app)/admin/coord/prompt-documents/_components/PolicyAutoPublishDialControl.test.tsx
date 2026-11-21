@@ -5,12 +5,12 @@
  * tests pin the shared resolution rules; these pin the three things this domain
  * gets wrong in a way nothing else on the page corrects:
  *
- * 1. **"No row" is `on`, not the resolver's bare `off`.** Coord answers
- *    `effective_level: "off"` both for "nobody ever wrote a row" and for "an
- *    operator turned it off". Reading the first literally ships the whole
- *    feature dark — the worker decides nothing, holds nothing and publishes
- *    nothing, with no error anywhere, which is indistinguishable from the eight
- *    silent days the plan exists to end.
+ * 1. **"No row" is `on`, and is labelled as coord's default.** With no row
+ *    coord serves the typed default `on` (qontinui-coord#4239; it used to
+ *    answer `"off"`). Showing it as `off` ships the whole feature dark — the
+ *    worker decides nothing, holds nothing and publishes nothing, with no error
+ *    anywhere, which is indistinguishable from the eight silent days the plan
+ *    exists to end.
  * 2. **An unparseable level is `off`, and the row is NAMED.** What this dial
  *    authorises is this tenant's bodies reaching every other tenant with no
  *    human in the loop; a setting coord cannot read is not permission to do
@@ -21,7 +21,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { PINNED_PAGE, sectionRenderer } from "../__fixtures__/pageWriteGuard";
+
 import userEvent from "@testing-library/user-event";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
@@ -53,6 +55,11 @@ vi.mock("sonner", () => ({
 
 import { PolicyAutoPublishDialControl } from "./PolicyAutoPublishDialControl";
 
+// A section mounted on its own, under the page's guard once its project is
+// known: the hooks it uses require one, and a settings section reads only
+// under the page's pin (`__fixtures__`).
+const renderSection = sectionRenderer(PINNED_PAGE);
+
 const user = () => userEvent.setup({ pointerEventsCheck: 0 });
 
 function view(over: Partial<FleetPolicyView> = {}): FleetPolicyView {
@@ -75,21 +82,52 @@ beforeEach(() => {
 describe("what the operator can read off the dial", () => {
   it("names 'no row' as coord's built-in default rather than as off", async () => {
     getMock.mockResolvedValue(
-      view({ effective_level: "off", resolved_scope: "none" })
+      view({
+        effective_level: "on",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
     );
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     const inForce = await screen.findByTestId("policy-auto-publish-in-force");
-    expect(inForce).toHaveTextContent("on");
+    expect(inForce).toHaveTextContent(/^In force:\s*on/);
     expect(inForce).toHaveTextContent(/built-in default \(on\)/);
     expect(inForce).toHaveTextContent(/no one has set this tenant/i);
+  });
+
+  it("shows a no-row default it cannot parse as unknown, never as off", async () => {
+    getMock.mockResolvedValue(
+      view({
+        effective_level: "sometimes",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
+    );
+    renderSection(<PolicyAutoPublishDialControl />);
+
+    const notice = await screen.findByTestId(
+      "policy-auto-publish-unrecognized-level"
+    );
+    expect(notice).toHaveTextContent("sometimes");
+    expect(notice).toHaveTextContent(/no row is set/i);
+    // With no row coord enforces its own default; the console just cannot
+    // name it, so it must not claim `off`.
+    const inForce = screen.getByTestId("policy-auto-publish-in-force");
+    expect(inForce).toHaveTextContent(/^In force:\s*unknown/);
+    expect(inForce).toHaveTextContent(/cannot be shown here/i);
+    expect(inForce).not.toHaveTextContent(/fail-closed/i);
+    expect(inForce).not.toHaveTextContent(/no one has set/i);
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).not.toBeChecked();
+    }
   });
 
   it("resolves an unrecognised level to off and names the row that holds it", async () => {
     getMock.mockResolvedValue(
       view({ effective_level: "sometimes", resolved_scope: "tenant" })
     );
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     const notice = await screen.findByTestId(
       "policy-auto-publish-unrecognized-level"
@@ -108,7 +146,7 @@ describe("what the operator can read off the dial", () => {
 
   it("says a narrower band is overriding the row this control writes", async () => {
     getMock.mockResolvedValue(view({ resolved_scope: "repo" }));
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     expect(
       await screen.findByTestId("policy-auto-publish-overridden-by-repo")
@@ -120,7 +158,7 @@ describe("what the operator can read off the dial", () => {
     // reconcile keep running at `off`. An operator who reads this as "nothing
     // publishes any more" will go looking for a broken button.
     getMock.mockResolvedValue(view());
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     expect(screen.getByTestId("policy-auto-publish-dial")).toHaveTextContent(
@@ -132,7 +170,7 @@ describe("what the operator can read off the dial", () => {
 describe("what it refuses to do on one click", () => {
   it("confirms turning automatic publishing on", async () => {
     getMock.mockResolvedValue(view({ effective_level: "off" }));
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-on"));
@@ -174,7 +212,7 @@ describe("what it refuses to do on one click", () => {
       effective: view({ effective_level: "off" }),
       readback_error: null,
     });
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));
@@ -200,7 +238,9 @@ describe("what it refuses to do on one click", () => {
       readback_error: null,
     });
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));
@@ -222,7 +262,9 @@ describe("what it refuses to do on one click", () => {
       readback_error: null,
     });
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-on"));
@@ -240,7 +282,9 @@ describe("what it refuses to do on one click", () => {
       async () => new Response("boom", { status: 500 })
     );
     const onLevelChanged = vi.fn();
-    render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
+    renderSection(
+      <PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />
+    );
 
     await screen.findByTestId("policy-auto-publish-in-force");
     await user().click(screen.getByTestId("policy-auto-publish-level-off"));

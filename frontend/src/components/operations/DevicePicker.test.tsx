@@ -13,7 +13,9 @@ import {
   DevicePicker,
   deviceStateLabel,
   findRosterDevice,
+  hiddenDevicesNote,
   normalizeDeviceId,
+  pickableDevices,
 } from "./DevicePicker";
 
 describe("deviceStateLabel", () => {
@@ -118,5 +120,99 @@ describe("DevicePicker", () => {
     const trigger = screen.getByTestId("the-picker");
     expect(trigger).toHaveAttribute("id", "picker");
     expect(trigger).toHaveTextContent("Choose a device");
+  });
+});
+
+describe("pickableDevices", () => {
+  const machine = {
+    device_id: "aaaaaaaa-0000-4000-8000-000000000001",
+    hostname: "nilan",
+    state: "healthy",
+    ci_runner_status: null,
+  };
+  const quietMachine = {
+    device_id: "aaaaaaaa-0000-4000-8000-000000000002",
+    hostname: "nawa",
+    state: "partitioned",
+    ci_runner_status: null,
+  };
+  const deadMachine = {
+    device_id: "aaaaaaaa-0000-4000-8000-000000000003",
+    hostname: "old-box",
+    state: "abandoned",
+    ci_runner_status: null,
+  };
+  const jitRow = {
+    device_id: "aaaaaaaa-0000-4000-8000-000000000004",
+    hostname:
+      "gh-runner-dell-2016-ccfg-1-1794059286@qontinui/qontinui-claude-config",
+    state: "abandoned",
+    ci_runner_status: "busy",
+  };
+  const liveCiRow = {
+    device_id: "aaaaaaaa-0000-4000-8000-000000000005",
+    hostname: "gh-runner-dell-2020-ccfg-1@qontinui/qontinui-claude-config",
+    state: "healthy",
+    ci_runner_status: "idle",
+  };
+
+  it("offers every runner machine, abandoned ones last, and leaves out CI rows", () => {
+    const p = pickableDevices([
+      deadMachine,
+      machine,
+      quietMachine,
+      jitRow,
+      liveCiRow,
+    ]);
+    // An abandoned machine is still a machine an operator looks for by name;
+    // it is listed after the reachable ones, not hidden.
+    expect(p.shown.map((d) => d.hostname)).toEqual([
+      "nilan",
+      "nawa",
+      "old-box",
+    ]);
+    expect(p.hiddenCiRunners).toBe(2);
+  });
+
+  it("keeps a row whose CI status is unknown (an older coord)", () => {
+    // Absent `ci_runner_status` is "not known to be a CI runner".
+    const p = pickableDevices([
+      { device_id: "x", hostname: "h", state: "healthy" },
+    ]);
+    expect(p.shown).toHaveLength(1);
+  });
+
+  it("says what it left out, and nothing when it left out nothing", () => {
+    expect(
+      hiddenDevicesNote(
+        pickableDevices([machine, deadMachine, jitRow, liveCiRow])
+      )
+    ).toBe("2 CI runner registrations hidden");
+    expect(
+      hiddenDevicesNote(pickableDevices([machine, deadMachine]))
+    ).toBeNull();
+  });
+
+  it("still renders a deep-linked selection the picker would not offer", () => {
+    render(
+      <DevicePicker
+        devices={[machine, jitRow]}
+        value={jitRow.device_id}
+        onChange={vi.fn()}
+        data-testid="the-picker"
+      />
+    );
+    expect(screen.getByTestId("the-picker")).toHaveTextContent(
+      "gh-runner-dell-2016-ccfg-1-1794059286"
+    );
+  });
+
+  it("states what it hid beside the trigger, without opening the list", () => {
+    render(
+      <DevicePicker devices={[machine, jitRow]} value="" onChange={vi.fn()} />
+    );
+    expect(screen.getByTestId("device-picker-hidden-note")).toHaveTextContent(
+      "1 CI runner registration hidden"
+    );
   });
 });

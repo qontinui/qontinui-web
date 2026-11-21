@@ -17,7 +17,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { TestCase } from "@/services/workflow-testing-service";
+import type { TestCase } from "@/services/workflow-testing";
 import { SortableTestCaseItem } from "./SortableTestCaseItem";
 import { useDropZone } from "@qontinui/ui-bridge/react";
 

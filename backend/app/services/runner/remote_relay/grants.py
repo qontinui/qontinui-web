@@ -1,10 +1,10 @@
 """Grant authorization for the remote-terminal relay.
 
-``GrantAuthorizer`` holds the three checks every grant-bearing source frame goes
+``GrantAuthorizer`` holds the checks every grant-bearing source frame goes
 through: ``_verify_grant`` (the coord JWKS verifier, the declared ``sub_type``,
-the source device, expiry and ``jti``), ``_attach_target`` (the ``attach``
-claims of a verified attach grant) and ``_authorize`` (admission of a
-post-attach frame for a grant registered on this socket).
+the source device, expiry and ``jti``), ``_attach_target`` / ``_create_target``
+(the target claims of a verified attach or create grant) and ``_authorize``
+(admission of a post-attach frame for a grant registered on this socket).
 
 ``coord_jwks_client`` is imported as the OBJECT, so a test's
 ``patch.object(coord_jwks_client, "verify_token", ...)`` reaches the call here
@@ -28,12 +28,14 @@ from app.services.coord_jwks import (
 )
 from app.services.runner.remote_relay.core import RelayCore
 from app.services.runner.remote_relay.protocol import (
+    CODE_CREATE_GRANT_INVALID,
     CODE_END_PENDING,
     CODE_GRANT_INVALID,
     CODE_GRANT_WRONG_KIND,
     CODE_NOT_REGISTERED,
     CODE_VERIFIER_UNAVAILABLE,
     KIND_ATTACH,
+    create_target_device_id,
 )
 from app.services.runner.remote_relay.state import _Attachment, _SourceSession
 
@@ -187,6 +189,29 @@ class GrantAuthorizer:
         )
         return target_device_id, target_session_id, requested_terminal_id
 
+    async def _create_target(
+        self,
+        session: _SourceSession,
+        claims: dict[str, Any],
+        jti: str,
+        request_id: Any,
+    ) -> str | None:
+        """The device a verified create grant addresses; ``None`` when refused.
+
+        Shared by create and end, for the reason ``_attach_target`` is: the
+        close path cannot grow a weaker reading of the same token.
+        """
+        target_device_id = create_target_device_id(claims)
+        if target_device_id is None:
+            await self.core._refuse(
+                session,
+                CODE_CREATE_GRANT_INVALID,
+                "grant names no usable target device",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+        return target_device_id
+
     async def _authorize(
         self,
         session: _SourceSession,
@@ -292,8 +317,9 @@ class GrantAuthorizer:
             )
             return None
         if require_attach_kind and att.kind != KIND_ATTACH:
-            # A create grant holds no session and no terminal: it bought one
-            # spawn and nothing else. Refused HERE rather than falling through
+            # A create grant holds no session and no bound terminal: it bought
+            # one spawn, and the close of that spawn that the end path admits on
+            # its own door. Refused HERE rather than falling through
             # to the ``attached`` check below, so the answer names the reason
             # (wrong capability) instead of the symptom (nothing bound).
             await self.core._refuse(

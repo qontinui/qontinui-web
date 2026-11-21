@@ -144,7 +144,9 @@ The original state graph visualization component remains available for compariso
 ```
 Backend API (Port 8000)
     ↓
-GET /api/v1/testing/state-graph?project_id=X&workflow_id=Y
+GET /api/v1/execution/runs?project_id=X&run_type=qa_test
+    ↓
+GET /api/v1/execution/runs/{id}/actions (per run)
     ↓
 useStateGraph hook (useTesting.ts)
     ↓

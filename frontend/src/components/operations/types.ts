@@ -718,7 +718,7 @@ export type CoordHealthJoin =
       device_id: string;
       /**
        * Coord `DeviceState`, serde-lowercase: `healthy` | `degraded` |
-       * `stale` | `partitioned` | `abandoned`, plus `unknown` where coord's
+       * `stale` | `ci_offline` | `partitioned` | `abandoned`, plus `unknown` where coord's
        * stored string did not parse. Absent => `unknown`, never healthy.
        *
        * `stale` is the derived overlay (the heartbeat is fine, the resource
@@ -741,6 +741,17 @@ export type CoordHealthJoin =
        * (a GitHub Actions runner registration). Absent => not known to be one.
        */
       ciRunner?: boolean;
+      /**
+       * Coord's raw CI-runner status, carried verbatim so the row can say
+       * `not_listed` (GitHub no longer lists the registration) rather than a
+       * bare "CI offline". `null`/absent: not a CI runner, or unknown.
+       */
+      ci_runner_status?: string | null;
+      /**
+       * Coord's `last_seen_at` for the device, verbatim. A `ci_unrefreshed`
+       * row is aged from it; absent or `null` renders "last refreshed unknown".
+       */
+      last_seen_at?: string | null;
       /**
        * Coord's OWN hostname for this device, carried verbatim.
        *

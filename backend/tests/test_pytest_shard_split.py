@@ -63,8 +63,9 @@ PRODUCER_WORKFLOW = (
 #: The TWO lanes that invoke the splitter: the gating suite and the non-gating
 #: per-test coverage producer, which shards the same suite the same way.
 #: `.qontinui/ci.toml` is deliberately absent: that manifest's own header
-#: records that backend-ci's `test` job cannot run on the runner-as-CI-node lane
-#: at all (it provisions no database), and the producer needs the same services.
+#: records that backend-ci's `test` job is not declared on the
+#: runner-as-CI-node lane (the manifest header's gap 1 says why), and the
+#: producer needs the same services.
 DECLARED_LANES = frozenset(
     {
         ".github/workflows/backend-ci.yml",

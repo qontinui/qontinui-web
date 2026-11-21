@@ -118,8 +118,9 @@ export function CoverageMatrix() {
   const tiers: (1 | 2 | 3)[] = [1, 2, 3];
 
   // The whole-view notice only when EVERY probe was refused; a single refused
-  // sub-space renders as its own `restricted` cell.
-  if (probe.restricted) return <TwinAccessRestricted />;
+  // sub-space renders as its own `restricted` cell. Handed the probe so a
+  // refusal kept after a failed refresh names that failure and its read date.
+  if (probe.restricted) return <TwinAccessRestricted probe={probe} />;
 
   return (
     <div className="space-y-6">
@@ -154,7 +155,11 @@ export function CoverageMatrix() {
         {(summary.served > 0 || summary.restricted > 0) && (
           <p
             data-testid="digital-twin-gauge-notes"
-            title={RESTRICTED_COUNT_MEANING}
+            // The refusal's meaning only beside a refusal: with none counted
+            // it would explain a number that is not there.
+            title={
+              summary.restricted > 0 ? RESTRICTED_COUNT_MEANING : undefined
+            }
             className="text-xs text-muted-foreground"
           >
             Also probed, outside the live count: {summary.served} served (a

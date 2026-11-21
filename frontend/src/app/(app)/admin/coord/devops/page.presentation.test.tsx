@@ -586,6 +586,60 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     expect(machines).not.toHaveTextContent("2 of 3");
   });
 
+  it("says what coord's roster left out, without coord's own words for why", async () => {
+    mockRoutes({
+      healthExtras: {
+        excluded: null,
+        excluded_error: "pool timeout on db-prod-3",
+        truncated: true,
+        total: 4645,
+        degradable_dropped: 0,
+        row_cap: { soft: 1000, hard: 10_000 },
+      },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    const machines = await screen.findByTestId("devops-headline-machines");
+    // A roster coord cannot vouch for yields no share to say out loud.
+    await waitFor(() =>
+      expect(machines).toHaveTextContent(/could not count the machines/)
+    );
+    expect(machines).not.toHaveTextContent("2 of 3");
+    expect(machines).not.toHaveTextContent("db-prod-3");
+    const strip = screen.getByTestId("coord-devops-health-strip");
+    expect(strip).toHaveTextContent(/lists 3 rows of 4645/);
+    expect(strip).not.toHaveTextContent("db-prod-3");
+    expect(engineeringVocabularyOnPage()).toEqual([]);
+  });
+
+  it("counts no abandoned row among the machines any headline figure divides by", async () => {
+    mockRoutes({
+      extraDevices: [
+        { device_id: "dev-gone", hostname: "gone-box", state: "abandoned" },
+        { device_id: "dev-gone-2", hostname: "gone-box-2", state: "abandoned" },
+      ],
+      healthExtras: { total: 5 },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    // Not `settle()`: it pins the fixture's three slot rows, and the machine
+    // list below still shows these two.
+    const machines = await screen.findByTestId("devops-headline-machines");
+    await waitFor(() => expect(machines).toHaveTextContent("2 of 3"));
+    expect(machines).toHaveTextContent(
+      /2 machines the coordination service marked abandoned/
+    );
+    // The nav is operator-only, so its reconcile line is too.
+    expect(
+      screen.getByTestId("coord-devops-health-strip")
+    ).not.toHaveTextContent("The nav's");
+    const workspaces = screen.getByTestId("devops-headline-workspaces");
+    await waitFor(() => expect(workspaces).toHaveTextContent("3 of 8"));
+    expect(workspaces).toHaveTextContent(/2 machines not counted/);
+  });
+
   it("opens with three headline figures, each with its provenance", async () => {
     mockRoutes();
     seedDeviceStatus();

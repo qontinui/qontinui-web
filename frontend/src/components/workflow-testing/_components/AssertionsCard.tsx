@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AssertionEditor } from "./AssertionEditor";
-import type { Assertion } from "@/services/workflow-testing-service";
+import type { Assertion } from "@/services/workflow-testing";
 import type { ValidationErrors } from "../test-case-editor-types";
 
 interface AssertionsCardProps {

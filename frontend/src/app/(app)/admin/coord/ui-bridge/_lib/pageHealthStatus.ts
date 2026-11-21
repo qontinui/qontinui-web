@@ -16,14 +16,13 @@
  *
  * **It carries no occlusion verdict, and this module reads none.** The keys
  * above are all it has: there is no `occlusionDataObserved` in the report. The
- * only producer of that field is the separate visibility sweep, which no relay
- * carries yet (coord finding `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
- * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24). A
- * healthy summary here says nothing about "is anything covered?", and the panel
- * never lets one stand in for the other. Should a future runner add an
- * occlusion field to this report, {@link readPageHealth} still ignores it: the
- * occlusion row is decided in `occlusionStatus.ts` / `occlusionReadOf`, and it
- * is UNKNOWN until the follow-up that relays the sweep lands.
+ * only producer of that field is the separate visibility sweep, which the page
+ * runs beside this report (`relayReads.ts` `fetchRunnerVisibility`; coord
+ * finding `99796499-8e46-4d69-94ba-a2ac9fe3ea22`). A healthy summary here says
+ * nothing about "is anything covered?", and the panel never lets one stand in
+ * for the other. Should a future runner add an occlusion field to this report,
+ * {@link readPageHealth} still ignores it: the occlusion row is decided from
+ * the sweep's own report alone (`occlusionStatus.ts` `readOcclusion`).
  *
  * Colour follows R3: `CRITICAL` is the analyzer saying the page is broken — a
  * human must look, nothing else will fix it — so it borrows red and the `✕`.

@@ -10,6 +10,7 @@
  * sync with the coord emitter — they are the on-the-wire shape.
  */
 
+import type { PrFreshen } from "@/components/operations/mergeTypes";
 import type { PrHold } from "@/components/operations/prHold";
 import { httpClient } from "./service-factory";
 
@@ -136,16 +137,25 @@ export interface GateOverviewRow {
   // they were simply absent from this type, so nothing could read them.
   // Typed as they arrive on the wire; every one is nullable because the
   // underlying column is.
-  /** When the dispatch was last DEFERRED — a runner saw it and pushed back. */
+  /**
+   * When the dispatch was last DEFERRED (a runner saw it and pushed back) —
+   * or, when the reason starts `coord_hold.`, when coord last stamped a
+   * clearance HOLD on a never-dispatched row.
+   */
   continuation_deferred_at: string | null;
   /**
-   * Why the last deferral happened. Four producer constructors, all documented
-   * on `humanizeDeferralReason` in `gates/continuationStatus.ts`; coord also
-   * writes a plain `"no runner online"` directly.
+   * Why the last deferral happened. Two writers share this column: the
+   * runner's four producer constructors (plus coord's plain
+   * `"no runner online"`), and coord's own clearance holds, every one prefixed
+   * `coord_hold.` — the row cleared but no eligible device resolved, or the
+   * agent registry vetoed the spawn. Both vocabularies are documented on
+   * `humanizeDeferralReason` in `gates/continuationStatus.ts`, and
+   * `isClearanceHold` tells them apart.
    */
   continuation_deferred_reason: string | null;
   /**
-   * How many times the dispatch has been pushed back (`NOT NULL DEFAULT 0` in
+   * How many times the dispatch has been pushed back — for a `coord_hold.`
+   * reason, how many times coord has stamped the hold (`NOT NULL DEFAULT 0` in
    * coord's schema, nullable here only so a hand-edited NULL degrades to
    * UNKNOWN instead of reading as zero).
    */
@@ -167,6 +177,15 @@ export interface GateOverviewRow {
    * which is why "armed" alone was never an answer to "is a safety net live".
    */
   continuation_will_dispatch: boolean | null;
+  /**
+   * The open same-class gates on this gate's anchor that coord's
+   * all-gates-cleared fanout is waiting on before it dispatches this cleared
+   * continuation (plan
+   * `2026-10-03-a-continuation-follow-up-pr-is-orphaned-and-a-cleared-gate-is-held-by-an-anchor-sibling`
+   * D1.2). DERIVED per read, never a column; `[]` for every gate that is not
+   * held. Optional because a coord predating D1.2 does not send it.
+   */
+  dispatch_held_by?: string[];
   title: string;
   measures: string;
   progress: GateProgress;
@@ -268,8 +287,10 @@ export type GateVerdict =
 export type PrMergeStatus =
   | "draft"
   | "ci-failed"
-  // CI red, but the PR's base is stale — the red may be main's fault. coord's
-  // remedy is its own BEHIND freshen; not author work.
+  // CI red, but the PR's base is stale — the red may be main's fault; not
+  // author work. coord's own freshen MAY clear it; whether it will is the
+  // row's served `freshen` block (absent = UNKNOWN), so this token alone is
+  // never a "no action needed" promise.
   | "ci-failed-stale-base"
   // CI red where every failing check run was a self-hosted runner kill (zero
   // failed steps). Remedy: re-run the failed jobs once the runner is healthy —
@@ -359,6 +380,9 @@ export interface PrRow {
   correlation_id: string | null;
   merge_status: PrMergeStatus;
   blocking_summary: string;
+  // Only on `behind-base` / `ci-failed-stale-base` rows; an ABSENT key is an
+  // older coord and reads UNKNOWN. See `prMergeStatus.readBehindFreshen`.
+  freshen?: PrFreshen | null;
   escalation_alert_id: number | null;
   proposal_status: string | null;
   proposal_age_secs: number | null;

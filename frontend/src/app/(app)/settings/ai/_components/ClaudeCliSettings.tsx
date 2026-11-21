@@ -39,6 +39,10 @@ export function previewAccountSelection(
   return undefined;
 }
 
+/** Shown while the runner reports coord has not answered the fleet domain. */
+export const FLEET_UNREAD_LABEL =
+  "Fleet policy not read yet — the local setting applies until coord answers";
+
 const SOURCE_LABEL: Record<string, string> = {
   fleet: "Managed by fleet policy",
   local: "Local setting",
@@ -69,9 +73,11 @@ export function ClaudeCliSettings({
     derived.fleet
   );
   const sourceText =
-    derived.source === undefined
-      ? "Source: unknown"
-      : SOURCE_LABEL[derived.source];
+    derived.source !== undefined
+      ? SOURCE_LABEL[derived.source]
+      : derived.fleetUnread
+        ? FLEET_UNREAD_LABEL
+        : "Source: unknown";
   return (
     <div className="rounded-lg border border-border">
       <div className="px-4 py-3 border-b border-border bg-muted/50">
@@ -154,11 +160,13 @@ export function ClaudeCliSettings({
           </p>
           <p className="text-sm text-muted-foreground" data-testid="fleet-mode">
             Fleet value:{" "}
-            {derived.fleet === undefined
-              ? "unknown"
-              : derived.fleet === null
-                ? "no fleet opinion"
-                : derived.fleet}
+            {derived.fleetUnread
+              ? "not read yet"
+              : derived.fleet === undefined
+                ? "unknown"
+                : derived.fleet === null
+                  ? "no fleet opinion"
+                  : derived.fleet}
           </p>
 
           <div className="space-y-2">

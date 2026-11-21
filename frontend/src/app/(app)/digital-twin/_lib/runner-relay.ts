@@ -205,9 +205,9 @@ export async function runnerProxyGet<T>(
  * options body), so the relay carries them as POST. The method is the
  * route's, not a claim that the call writes: the relay carries only the
  * `(method, path)` pairs the runner's allowlist names, and a POST outside it
- * is refused like any other path. The occlusion sweep is such a route and is
- * outside it: no runner's relay carries it yet, so the dashboard does not ask
- * for it (`admin/coord/ui-bridge/_lib/relayReads.ts`).
+ * is refused like any other path. The occlusion sweep is another such read,
+ * relayed since qontinui-runner `d4c64ad06`
+ * (`admin/coord/ui-bridge/_lib/relayReads.ts`).
  *
  * The body always goes as JSON with an explicit `Content-Type`, on the relay
  * AND on loopback, so the runner's `Json` extractor never depends on the HTTP

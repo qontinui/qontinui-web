@@ -24,14 +24,13 @@ import {
   HEALTH_BODY,
   NOT_CARRIED_BODY,
   PAGE_HEALTH_BODY,
-  VISIBILITY_CLEAR_UNOBSERVED,
+  VISIBILITY_RELAYED_HIDES_TEXT,
 } from "../__fixtures__/runnerBodies";
 import {
   fetchRunnerComponents,
   fetchRunnerHealth,
   fetchRunnerPageHealth,
   fetchRunnerVisibility,
-  isRelayed,
   RUNNER_ROUTES,
 } from "./relayReads";
 
@@ -86,16 +85,26 @@ describe("the dashboard's relay call sites", () => {
     expect(payload.summary).toBe("WARNING");
   });
 
-  it("fetchRunnerVisibility: POST /ui-bridge/control/visibility with `{}`", async () => {
-    fetchMock.mockResolvedValue(json(200, VISIBILITY_CLEAR_UNOBSERVED));
+  it("fetchRunnerVisibility: POST /ui-bridge/control/visibility with `{}`, unwrapped — entries name nothing, occlusionText withheld", async () => {
+    fetchMock.mockResolvedValue(json(200, VISIBILITY_RELAYED_HIDES_TEXT));
     const payload = (await fetchRunnerVisibility(DEVICE_ID)) as {
       occlusionDataObserved: boolean;
+      occlusionText: unknown;
+      occlusions: Array<Record<string, unknown>>;
     };
     const { url, init } = sent();
     expect(url).toBe(relayUrl("ui-bridge/control/visibility"));
     expect(init.method).toBe("POST");
     expect(init.body).toBe("{}");
-    expect(payload.occlusionDataObserved).toBe(false);
+    expect(payload.occlusionDataObserved).toBe(true);
+    // The disclosure rides beside the report inside `data`, so unwrapping the
+    // envelope keeps it — and a relayed read is always `withheld`.
+    expect(payload.occlusionText).toBe("withheld");
+    // The relayed shape, literally: four fields per entry, none naming the webview.
+    expect(payload.occlusions.map((e) => Object.keys(e).sort())).toEqual([
+      ["hidesText", "isExpectedOverlay", "ratio", "source"],
+      ["hidesText", "isExpectedOverlay", "ratio", "source"],
+    ]);
   });
 
   it("fetchRunnerHealth: GET /health with the envelope KEPT, so sdkFeatures survives", async () => {
@@ -133,7 +142,7 @@ describe("RUNNER_ROUTES", () => {
       health: "GET /health always",
       components: "GET /ui-bridge/control/components dashboard",
       pageHealth: "POST /ui-bridge/control/page-health dashboard",
-      visibility: "POST /ui-bridge/control/visibility never",
+      visibility: "POST /ui-bridge/control/visibility dashboard",
       apps: "GET /apps never",
       specList: "GET /apps/{app_id}/spec/list always",
       specGraph: "GET /apps/{app_id}/spec/graph always",
@@ -151,26 +160,23 @@ describe("RUNNER_ROUTES", () => {
   });
 });
 
-describe("isRelayed — whether any runner's relay carries a route", () => {
-  it("is false for exactly the routes recorded as carried by no runner", () => {
+describe("RUNNER_ROUTES since — the runner commit that added each dashboard route's relay entry", () => {
+  it("names one for every dashboard route, and none for the others", () => {
     expect(
-      Object.entries(RUNNER_ROUTES)
-        .filter(([, route]) => !isRelayed(route))
-        .map(([key]) => key)
-    ).toEqual(["visibility", "apps"]);
-  });
-
-  it("is true for a route carried from the dashboard's runner build, and for one always carried", () => {
-    expect(isRelayed(RUNNER_ROUTES.components)).toBe(true);
-    expect(isRelayed(RUNNER_ROUTES.pageHealth)).toBe(true);
-    expect(isRelayed(RUNNER_ROUTES.health)).toBe(true);
-  });
-
-  it("keeps the occlusion sweep unrelayed — the lock the occlusion row keys on until the follow-up relays it", () => {
-    // Coord finding 99796499-8e46-4d69-94ba-a2ac9fe3ea22 and the plan's Phase
-    // 6 amendment (2026-10-24): flipping this is the follow-up's change, with
-    // the runner's handler review, egress gate and allow-list entry.
-    expect(RUNNER_ROUTES.visibility.carriage).toBe("never");
-    expect(isRelayed(RUNNER_ROUTES.visibility)).toBe(false);
+      Object.fromEntries(
+        Object.entries(RUNNER_ROUTES).map(([k, r]) => [k, r.since ?? null])
+      )
+    ).toEqual({
+      health: null,
+      // qontinui-runner f11a5f869: the component and page-health entries.
+      components: "f11a5f869",
+      pageHealth: "f11a5f869",
+      // qontinui-runner d4c64ad06 (rustfmt follow-up 827745bd3): the sweep.
+      visibility: "d4c64ad06",
+      apps: null,
+      specList: null,
+      specGraph: null,
+      snapshot: null,
+    });
   });
 });

@@ -42,14 +42,19 @@
  *   `secrets_broker` domain's tenant row), written through its own
  *   `PUT /operations/secrets-broker/device` door, which proves the device is
  *   bound to the tenant first (plan
- *   `2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them` Phase 3).
+ *   `2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them` Phase 3);
+ * * GitHub host — the tenant's row in `coord.tenant_github_hosts`, which points
+ *   coord at a GitHub Enterprise Server or GHE.com instance instead of
+ *   github.com (plan `2026-10-10-spec-front-end-phase-9-generic-boundary`
+ *   Phase 3). Its own door, `/operations/tenant/github-host`, not a
+ *   fleet-policy dial.
  *
  * Authz: like every `/admin/coord` page, any tenant member may VIEW it; the
  * write is gated by coord-tenant admin on the backend
  * (`require_coord_tenant_admin` on the shared `PUT /operations/fleet-policy`
- * door every switch here uses; `require_coord_tenant_admin_target` on the
- * secrets broker device's own door) and again by coord
- * (`rbac::is_tenant_admin`), and only reflected here via `can_edit`.
+ * door every switch here uses, and on the GitHub host's own PUT/DELETE;
+ * `require_coord_tenant_admin_target` on the secrets broker device's own
+ * door) and again by coord (`rbac::is_tenant_admin`), and only reflected here via `can_edit`.
  *
  * Deliberately absent: `session_coordination_enabled`, which shares the coord
  * row but is the Phase 10 cutover flag and has no HTTP write door.
@@ -58,6 +63,7 @@
 import { AccountSelectionPanel } from "./_components/AccountSelectionPanel";
 import { CommandSafetyRewritePanel } from "./_components/CommandSafetyRewritePanel";
 import { EgressPanel } from "./_components/EgressPanel";
+import { GithubHostPanel } from "./_components/GithubHostPanel";
 import { ImageGenerationPanel } from "./_components/ImageGenerationPanel";
 import { PermissionAutoAcceptPanel } from "./_components/PermissionAutoAcceptPanel";
 import { PermissionPromptCapturePanel } from "./_components/PermissionPromptCapturePanel";
@@ -75,6 +81,7 @@ export default function TenantPolicyPage() {
       <ImageGenerationPanel />
       <PresentationScopePanel />
       <SecretsBrokerDevicePanel />
+      <GithubHostPanel />
     </div>
   );
 }

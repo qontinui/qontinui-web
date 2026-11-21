@@ -1,11 +1,12 @@
 """The ``remote_terminal_end`` protocol of the remote-terminal relay.
 
 ``EndCoordinator`` forwards a source's end request as ``terminal_end`` and owns
-everything that settles it: the open-tab and fresh-grant paths, the per-end TTL
-timer, and the three relay-side settlements (reply, refusal, TTL — plus the
-two "no reply can come" cases a target disconnect or a lost listener force).
-Plan ``2026-09-30-close-remote-sessions-from-the-local-runner``, Phase 2; the
-protocol itself is described in the module docstring of
+everything that settles it: the open-tab, fresh-grant and create-grant paths,
+the per-end TTL timer, and the three relay-side settlements (reply, refusal, TTL
+— plus the two "no reply can come" cases a target disconnect or a lost listener
+force). Plan ``2026-09-30-close-remote-sessions-from-the-local-runner``, Phase 2,
+and plan ``2026-09-23-remote-create-residuals-after-coord-registration-confirm``,
+Phase 2; the protocol itself is described in the module docstring of
 ``app.services.runner.remote_terminal_relay``.
 
 ``PENDING_END_TTL_SECONDS`` is defined HERE, beside the timer that reads it at
@@ -25,6 +26,10 @@ from app.services.runner.remote_relay.core import RelayCore
 from app.services.runner.remote_relay.grants import GrantAuthorizer
 from app.services.runner.remote_relay.protocol import (
     ATTACH_GRANT_SUB_TYPE,
+    CODE_CREATE_GRANT_CONSUMED,
+    CODE_CREATE_GRANT_EXPIRED,
+    CODE_CREATE_GRANT_INVALID,
+    CODE_CREATE_GRANT_WRONG_SOURCE,
     CODE_END_PENDING,
     CODE_END_TIMEOUT,
     CODE_GRANT_CONSUMED,
@@ -33,6 +38,8 @@ from app.services.runner.remote_relay.protocol import (
     CODE_GRANT_WRONG_SOURCE,
     CODE_REGISTRY_UNAVAILABLE,
     CODE_TARGET_NOT_CONNECTED,
+    CREATE_GRANT_SUB_TYPE,
+    KIND_CREATE,
 )
 from app.services.runner.remote_relay.registry import RelayRegistry
 from app.services.runner.remote_relay.state import (
@@ -68,7 +75,12 @@ class EndCoordinator:
         self.registry = registry
 
     async def _handle_end(self, session: _SourceSession, msg: dict[str, Any]) -> None:
-        """Forward ``remote_terminal_end`` as ``terminal_end``. Two SEPARATE paths.
+        """Forward ``remote_terminal_end`` as ``terminal_end``. Three SEPARATE paths.
+
+        * **Create grant** — the frame presents ``create_grant``, the token of
+          a create this source spent, to close the terminal it created when the
+          attach that should have followed failed. Checked FIRST, and a frame
+          carrying the key at all never reaches the two attach paths below.
 
         * **Open tab** — the frame names (``grant_jti``) an attach grant already
           bound on this socket. Authorized exactly like input/resize and
@@ -84,10 +96,15 @@ class EndCoordinator:
           ``end_only``, and dropped the moment the round trip settles — reply,
           refusal or TTL — so the Redis claim is never held to grant expiry.
 
-        Either way the target receives the same frame, built by
-        ``_forward_end``, and the grant's ``target_session_id`` — not anything
-        on the wire — names the session the target resolves.
+        Every path sends the target a frame built by ``_forward_end``. On the
+        two attach paths the grant's ``target_session_id`` — not anything on
+        the wire — names the session the target resolves; a create grant names
+        no session, so the frame's ``terminal_id`` names the terminal and the
+        target admits it only if that is the terminal this jti created.
         """
+        if "create_grant" in msg:
+            await self._end_with_create_grant(session, msg)
+            return
         grant_jti = msg.get("grant_jti")
         registered = isinstance(grant_jti, str) and grant_jti in session.grants
         grant = msg.get("grant")
@@ -172,6 +189,133 @@ class EndCoordinator:
             requested_terminal_id=requested_terminal_id,
             end_only=True,
         )
+        await self._claim_and_forward_end(
+            session,
+            msg,
+            att,
+            code_consumed=CODE_GRANT_CONSUMED,
+            consumed_message="grant is already held by a live attachment",
+        )
+
+    async def _end_with_create_grant(
+        self, session: _SourceSession, msg: dict[str, Any]
+    ) -> None:
+        """The create-grant path: close the orphan the grant's create left behind.
+
+        A source whose create succeeded and whose attach then failed has no
+        attach grant to end that terminal with, and coord cannot mint one for a
+        session it does not hold. What it does hold is the create grant it
+        spent. The relay checks the token exactly as ``_handle_create`` does and
+        forwards the frame; the TARGET is the authority on whether this jti
+        created this terminal, so the relay does not (and cannot) decide that.
+
+        One capability per frame: a frame also carrying ``grant`` or
+        ``grant_jti`` is refused rather than resolved in favour of either.
+        """
+        request_id = msg.get("request_id")
+        create_grant = msg.get("create_grant")
+        if not isinstance(create_grant, str) or not create_grant:
+            await self.core._refuse(
+                session,
+                CODE_CREATE_GRANT_INVALID,
+                "create_grant must be a non-empty token",
+                request_id=request_id,
+            )
+            return
+        if "grant" in msg or "grant_jti" in msg:
+            await self.core._refuse(
+                session,
+                CODE_CREATE_GRANT_INVALID,
+                "a frame carrying create_grant may carry no other grant",
+                request_id=request_id,
+            )
+            return
+        verified = await self.grants._verify_grant(
+            session,
+            {**msg, "grant": create_grant},
+            sub_type=CREATE_GRANT_SUB_TYPE,
+            kind_noun="a create grant",
+            code_invalid=CODE_CREATE_GRANT_INVALID,
+            code_expired=CODE_CREATE_GRANT_EXPIRED,
+            code_wrong_source=CODE_CREATE_GRANT_WRONG_SOURCE,
+        )
+        if verified is None:
+            return
+        claims, jti, socket_source, exp = verified
+        target_device_id = await self.grants._create_target(
+            session, claims, jti, request_id
+        )
+        if target_device_id is None:
+            return
+        terminal_id = msg.get("terminal_id")
+        if not isinstance(terminal_id, str) or not terminal_id:
+            await self.core._refuse(
+                session,
+                CODE_CREATE_GRANT_INVALID,
+                "closing under a create grant must name the terminal it created",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+        held = session.grants.get(jti)
+        if held is not None:
+            # The create this grant bought is still unanswered, or an end under
+            # it is. Either way there is nothing yet to close under it.
+            if held.end_only:
+                await self.core._refuse(
+                    session,
+                    CODE_END_PENDING,
+                    "an end for this grant is still awaiting the target's answer",
+                    request_id=request_id,
+                    grant_jti=jti,
+                )
+            else:
+                await self.core._refuse(
+                    session,
+                    CODE_CREATE_GRANT_CONSUMED,
+                    "the create this grant bought is still awaiting the target's "
+                    "answer",
+                    request_id=request_id,
+                    grant_jti=jti,
+                )
+            return
+        att = _Attachment(
+            grant_jti=jti,
+            source_device_id=socket_source,
+            target_device_id=target_device_id,
+            target_session_id=None,
+            exp=exp,
+            request_id=request_id if isinstance(request_id, str) else None,
+            kind=KIND_CREATE,
+            end_only=True,
+        )
+        await self._claim_and_forward_end(
+            session,
+            msg,
+            att,
+            code_consumed=CODE_CREATE_GRANT_CONSUMED,
+            consumed_message="an end under this create grant is already in flight "
+            "on another connection",
+        )
+
+    async def _claim_and_forward_end(
+        self,
+        session: _SourceSession,
+        msg: dict[str, Any],
+        att: _Attachment,
+        *,
+        code_consumed: str,
+        consumed_message: str,
+    ) -> None:
+        """Claim → record → listen → forward an ``end_only`` attachment.
+
+        The one body behind the fresh-grant and create-grant paths: it drops the
+        attachment on every failure, so nothing but the round trip's settlement
+        is left holding the claim.
+        """
+        request_id = msg.get("request_id")
+        jti = att.grant_jti
+        target_device_id = att.target_device_id
         claimed = False
         try:
             claimed = await self.registry._claim_grant(att)
@@ -200,8 +344,8 @@ class EndCoordinator:
         if not claimed:
             await self.core._refuse(
                 session,
-                CODE_GRANT_CONSUMED,
-                "grant is already held by a live attachment",
+                code_consumed,
+                consumed_message,
                 request_id=request_id,
                 grant_jti=jti,
             )
@@ -232,7 +376,8 @@ class EndCoordinator:
         """Send ``terminal_end`` under a minted id and arm its TTL; False if not sent.
 
         The frame is ``terminal_attach``'s shape — the same ``remote`` block
-        (``session_remote_block``), a relay-MINTED ``request_id``, a
+        (``session_remote_block``, which under a create grant says
+        ``kind: create`` and names no session), a relay-MINTED ``request_id``, a
         ``timestamp`` — plus ``force`` and an optional top-level
         ``terminal_id`` the target only COMPARES against the terminal it
         resolves from the grant. ``force`` is true only when the source sent
@@ -312,6 +457,7 @@ class EndCoordinator:
             forwarded_request_id=minted,
             force=force,
             fresh_grant=att.end_only,
+            grant_kind=att.kind,
         )
         return True
 

@@ -111,9 +111,7 @@ permissions:
 # interpolating only `github.event_name` / `github.ref` and collapsing every
 # other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
 # and run_is_reaper_at_risk never matches an empty group, so no push run here is
-# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
-# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
-# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# modelled as reapable by a land.
 # RESIDUAL: two pushes seconds apart can have
 # their runs CREATED out of order, so the older head's run cancels the newer
 # head's; the next push (or a close+reopen) heals it.
@@ -125,11 +123,19 @@ concurrency:
 jobs:
   workflow-lint:
     name: workflow-lint
-    runs-on: [self-hosted, public-pool, ram-4g]  # never GitHub-hosted: hosted runners are off
-    # Backstop only. Step timeouts sum to 27 min (checkout 2 + arch 1 +
-    # install 18 + zizmor 3 + actionlint 2 + summary 1); this sits 3 min above
-    # that, so a slow step is killed by its own timeout, not by this one.
-    timeout-minutes: 30
+    # LIGHT LANE (WEB_CI_LANE_WORKFLOW_LINT || WEB_CI_LIGHT_LANE, fork-guarded to
+    # hosted). It used to name `public-pool`, a trust label the 2026-10-04
+    # amendment to decision_record/self-hosted-runners-on-public-repos withdrew
+    # (one host, merytshost-public, still carried it); the 2026-10-05 amendment
+    # also withdrew "hosted runners are off", so hosted is the fallback again.
+    # Plan 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-4g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WORKFLOW_LINT || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-4g"]' || '"ubuntu-latest"') }}
+    # Backstop only. Step timeouts sum to 30 min (checkout 2 + arch 1 +
+    # install 18 + zizmor 3 + actionlint 2 + summary 1 + setup-death
+    # declarer 3); this sits 3 min above that, so a slow step is killed by its
+    # own timeout, not by this one.
+    timeout-minutes: 33
     env:
       ZIZMOR_VERSION: 1.30.1
       ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
@@ -162,63 +168,31 @@ jobs:
       - name: Install zizmor and actionlint (pinned, sha256-verified, host-cached)
         id: install
         if: steps.arch.outcome == 'success'
-        # Cold fetch worst case: per tarball 2 attempts x 240 s + 5 s delay,
-        # 2 tarballs = 970 s, under this 18 min bound. A warm host-cache hit
-        # is a local copy + sha256 check.
+        # Two fetches, each bounded at 120 s x 4 attempts but capped at 240 s of
+        # retrying, so the worst cold case is about 12 min, under this 18 min
+        # bound. A warm host-cache hit is a local copy + sha256 check.
         timeout-minutes: 18
-        # HOST CACHE: verified release tarballs are kept in the runner's tool
-        # cache, keyed by their pinned sha256, so a host downloads each pinned
-        # version once instead of once per job. Before this, a saturated link
-        # timed the 9 MB zizmor download out at curl's 60 s bound (4 runs on
-        # 2026-10-13, e.g. qontinui-coord run 38463449752).
-        # The cache is NOT trusted and NEVER required: a hit is copied into this
-        # job's private $RUNNER_TEMP and its sha256 checked before use (so
-        # nothing can swap it between check and extract); a miss downloads
-        # straight into $RUNNER_TEMP and is checked there; populating the cache
-        # afterwards is best-effort (temp name + `mv -T` rename), so a planted
-        # file, a directory at the key or an unwritable cache only costs a
-        # download, never the install.
+        # Logic: .github/scripts/fetch-pinned-binary.sh (plan
+        # 2026-11-08-ci-tool-binaries-survive-a-github-release-cdn-outage). It
+        # keeps the HOST CACHE this step always had (verified release tarballs in
+        # the runner's tool cache, keyed by tool + version + pinned sha256; a
+        # hit is copied into $RUNNER_TEMP and its sha256 checked there, never
+        # trusted for its path), and on a failure prints one `DID NOT RUN`
+        # annotation naming the cache state AND the CDN status and exits 75.
+        # This step stays a SETUP row below, so the declarer is the one writer
+        # of the not-a-verdict phrase and skips it for a PR editing the script.
+        # There is no actions/cache seed on hosted runners: see the script.
         run: |
-          set -Eeuo pipefail  # -E: the ERR trap must also fire inside get()
-          trap 'echo "::error::workflow-lint: tool install failed (download, sha256 or extract); check failed"; echo "reason=install failed" >> "$GITHUB_OUTPUT"' ERR
-          tmp=""
-          trap 'rm -f "$tmp"' EXIT
-          bin="${RUNNER_TEMP}/workflow-lint-bin"
-          cache="${RUNNER_TOOL_CACHE:-${HOME}/.cache}/qontinui-workflow-lint"
-          mkdir -p "$bin"
-          mkdir -p "$cache" 2>/dev/null || true
-          verify() { printf '%s  %s\n' "$1" "$2" | sha256sum -c "${@:3}" -; }
-          # get <name> <sha256> <url>: leaves a verified copy at $bin/<name>.tar.gz
-          get() {
-            local name="$1" want="$2" url="$3"
-            local hit="${cache}/${want}.tar.gz" copy="${bin}/${name}.tar.gz"
-            if [[ -f "$hit" ]] && cp -f -- "$hit" "$copy" 2>/dev/null \
-                && verify "$want" "$copy" --status; then
-              echo "${name}: host-cache hit (${hit})"
-              return 0
-            fi
-            rm -f -- "$copy"
-            curl --fail --silent --show-error --location \
-              --connect-timeout 20 --max-time 240 --retry 1 --retry-delay 5 \
-              -o "$copy" "$url"
-            verify "$want" "$copy"
-            # best-effort cache fill; any failure here only means no cache
-            if tmp="$(mktemp "${cache}/.download.XXXXXX" 2>/dev/null)" \
-                && cp -f -- "$copy" "$tmp" && mv -fT -- "$tmp" "$hit" 2>/dev/null; then
-              tmp=""
-            else
-              rm -f -- "$tmp"; tmp=""
-              echo "${name}: host cache not updated (${cache} unusable); continuing"
-            fi
-          }
-          get zizmor "$ZIZMOR_SHA256" \
-            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-          tar xzf "${bin}/zizmor.tar.gz" -C "$bin" zizmor
-          get actionlint "$ACTIONLINT_SHA256" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          tar xzf "${bin}/actionlint.tar.gz" -C "$bin" actionlint
-          rm -f "${bin}/zizmor.tar.gz" "${bin}/actionlint.tar.gz"
-          echo "$bin" >> "$GITHUB_PATH"
+          set -Eeuo pipefail
+          trap 'echo "reason=install failed (see the DID NOT RUN annotation)" >> "$GITHUB_OUTPUT"' ERR
+          FPB_TOOL=zizmor FPB_VERSION="$ZIZMOR_VERSION" FPB_SHA256="$ZIZMOR_SHA256" \
+            FPB_URL="https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz" \
+            FPB_MEMBER=zizmor FPB_ADD_TO_PATH=1 \
+            bash .github/scripts/fetch-pinned-binary.sh
+          FPB_TOOL=actionlint FPB_VERSION="$ACTIONLINT_VERSION" FPB_SHA256="$ACTIONLINT_SHA256" \
+            FPB_URL="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            FPB_MEMBER=actionlint FPB_VERIFY_ARGS=-version FPB_ADD_TO_PATH=1 \
+            bash .github/scripts/fetch-pinned-binary.sh
       - name: zizmor
         id: zizmor
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -432,3 +406,31 @@ jobs:
             a="${ACTIONLINT_VERDICT:-ERROR (no verdict: step timed out or crashed)}"
           fi
           printf '%s\n' "- zizmor: ${z}" "- actionlint: ${a}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: workflow-lint
+          SETUP_STEPS: |
+            Check host architecture (release tarballs below are x86_64)|${{ steps.arch.outcome }}|${{ steps.arch.conclusion }}
+            Install zizmor and actionlint (pinned, sha256-verified, host-cached)|${{ steps.install.outcome }}|${{ steps.install.conclusion }}
+          VERDICT_STEPS: |
+            !zizmor|${{ steps.zizmor.outcome }}|${{ steps.zizmor.conclusion }}
+            !actionlint|${{ steps.actionlint.outcome }}|${{ steps.actionlint.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^\.github/scripts/fetch-pinned-binary\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."

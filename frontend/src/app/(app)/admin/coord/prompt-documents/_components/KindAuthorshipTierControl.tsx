@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -19,6 +20,7 @@ import type {
   KindTiersResponse,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { usePromptDocumentKindTiers } from "../_hooks/usePromptDocumentKindTiers";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   AGENT_WRITE_TIERS,
   isAgentWriteTier,
@@ -285,8 +287,22 @@ function clearTitle(row: KindTierRow): string {
 }
 
 export function KindAuthorshipTierControl() {
-  const { data, loading, saving, error, setTier, clearTier } =
-    usePromptDocumentKindTiers();
+  const pageLocked = usePageLocked();
+  // On the prompt-documents page every read and write here is sent in the
+  // page's project, and nothing is read before the page knows it (the
+  // section says it is waiting). A write raced past another tab's switch is
+  // refused — by the hook itself, beside its send: the page's disabled
+  // fieldset reaches neither a confirmation (it portals out) nor a click that
+  // lands before the switch is seen.
+  const {
+    data,
+    loading,
+    saving,
+    error,
+    waitingForProject,
+    setTier,
+    clearTier,
+  } = usePromptDocumentKindTiers();
   const [pending, setPending] = useState<{
     kind: string;
     tier: AgentWriteTier;
@@ -392,8 +408,11 @@ export function KindAuthorshipTierControl() {
         </div>
       )}
 
-      {loading && !data && (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      {waitingForProject ? (
+        <WaitingForProject testId="kind-tier-waiting" />
+      ) : (
+        loading &&
+        !data && <p className="text-sm text-muted-foreground">Loading…</p>
       )}
 
       {data && (
@@ -459,7 +478,7 @@ export function KindAuthorshipTierControl() {
                       key={tier}
                       size="sm"
                       variant={row.tier === tier ? "default" : "outline"}
-                      disabled={saving || row.tier === tier}
+                      disabled={saving || pageLocked || row.tier === tier}
                       title={tierHelp(tier, {
                         subject: "kind",
                         notifyEnforced: enforced,
@@ -478,7 +497,11 @@ export function KindAuthorshipTierControl() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={saving || (row.tier === null && !row.unreadable)}
+                    disabled={
+                      saving ||
+                      pageLocked ||
+                      (row.tier === null && !row.unreadable)
+                    }
                     title={clearTitle(row)}
                     onClick={() => void clearTier(row.kind)}
                   >
@@ -552,6 +575,7 @@ export function KindAuthorshipTierControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pending) void setTier(pending.kind, pending.tier);
                 setPending(null);

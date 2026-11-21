@@ -1312,6 +1312,17 @@ def test_python_is_set_up_before_the_qualifier() -> None:
 POST_MORTEMS = {
     "Name an unavailable postgresql client",
     "Explain infrastructure timeout vs external cancellation",
+    # `if: failure()` only (plan 2026-11-11-web-setup-step-deaths-declare-not-a-
+    # verdict). On a doc-only run every SETUP row after the qualifier is
+    # skipped, so it can declare only a setup death from before the qualifier
+    # ran; its exact `if:` is pinned by tests/test_declare_setup_death.py.
+    "Declare a setup death",
+}
+
+
+DOC_ONLY_GUARDS = {
+    "env.MRT_DOC_ONLY != '1'",
+    "runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'",
 }
 
 
@@ -1331,7 +1342,11 @@ def test_every_later_step_is_skipped_on_a_doc_only_change_set() -> None:
         elif name in POST_MORTEMS:
             assert "MRT_DOC_ONLY" not in condition
         else:
-            assert condition == "env.MRT_DOC_ONLY != '1'", (
+            # A sudo step may also be gated to github-hosted (the webdb
+            # self-hosted pool has no sudo; plan
+            # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool
+            # D4). That conjunct only narrows, so the doc-only skip still holds.
+            assert condition in DOC_ONLY_GUARDS, (
                 f"step {name!r} would run on a doc-only change set ({condition!r})"
             )
             guarded += 1

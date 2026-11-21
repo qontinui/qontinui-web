@@ -133,21 +133,9 @@ export function useAnalyticsPage() {
       controlFlowCount: 2,
     };
 
-    const executionHistory = recentExecutions
-      .filter((e) => e.workflowId === selectedWorkflow)
-      .map((e) => ({
-        id: e.id,
-        testCaseId: e.id,
-        testCaseName: e.workflowName,
-        workflowId: e.workflowId,
-        workflowName: e.workflowName,
-        passed: e.success,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        duration: e.duration,
-        assertions: [],
-        error: e.error,
-      }));
+    const executionHistory = recentExecutions.filter(
+      (e) => e.workflowId === selectedWorkflow
+    );
 
     return { workflow, metrics, complexityMetrics, executionHistory };
   }, [selectedWorkflow, allMetrics, recentExecutions]);

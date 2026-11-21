@@ -67,6 +67,9 @@ yarn-error.log*
 # comment on frontend/pnpm-lock.yaml further down.
 package-lock.json
 !/frontend/package-lock.json
+# frontend/design/kit/package-lock.json pins the design-kit CLI (and the exact
+# ui-bridge peers it drives) that frontend-ci.yml installs with `npm ci`.
+!/frontend/design/kit/package-lock.json
 next.config.js
 frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
@@ -75,6 +78,7 @@ frontend/scripts/*
 !frontend/scripts/check-browser-safe-imports.mjs
 !frontend/scripts/check-doc-code-refs.mjs
 !frontend/scripts/export-test-coverage.mjs
+!frontend/scripts/export-test-coverage.test.mjs
 !frontend/scripts/generate-api-types.ts
 !frontend/scripts/generate-image-slots.mjs
 !frontend/scripts/lighthouse-marketing.mjs

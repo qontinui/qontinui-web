@@ -721,7 +721,7 @@ function PrDetail({ pr }: { pr: PrRow }) {
       why={
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            {pr.blocking_summary ||
+            {status.reason ||
               `coord reports this PR as “${mergeStatusLabel(pr.merge_status)}”.`}
           </p>
           {meta && (
@@ -756,8 +756,8 @@ function PrDetail({ pr }: { pr: PrRow }) {
       raw={
         <div className="break-all font-mono text-[10px] text-muted-foreground/60">
           {pr.branch} → {pr.base_branch} · head {pr.head_sha.slice(0, 8)} ·
-          merge_status: {status.kind} · merge_state_status: {state} · mergeable:{" "}
-          {String(pr.mergeable)}
+          merge_status: {pr.merge_status ?? status.kind} · merge_state_status:{" "}
+          {state} · mergeable: {String(pr.mergeable)}
           {pr.escalation_alert_id != null
             ? ` · escalation: ${pr.escalation_alert_id}`
             : ""}

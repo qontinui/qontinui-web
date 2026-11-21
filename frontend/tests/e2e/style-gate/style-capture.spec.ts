@@ -75,7 +75,13 @@ import {
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { enrichElements, normalizeBboxes } from "./normalize";
+import {
+  applyHierarchy,
+  collectElementHierarchy,
+  enrichElements,
+  normalizeBboxes,
+  type ElementHierarchy,
+} from "./normalize";
 import {
   parseRoutesManifest,
   partitionRoutesByCapturePath,
@@ -210,6 +216,9 @@ function locateElements(body: SnapshotResponse): unknown[] | null {
  *      `{x,y,width,height}` floats to the Rust `Region` `{x,y,w,h}`: signed
  *      i32 origin (true negatives preserved), unsigned u32 extent (the one
  *      geometry transform).
+ *   0. `applyHierarchy` (only when `hierarchy` is supplied) — stamp the in-page
+ *      measured `parent_id` / `clips_children` so vision-core's no_clipping can
+ *      compare a child against the nearest ancestor that actually clips.
  *   2. `enrichElements` (tests/e2e/style-gate/normalize.ts) — derive the
  *      analyzer's visual/interactivity fields (`interactable`, `fg_color`,
  *      `bg_color`, `font_size_px`, `font_family`, `line_height_px`, `text`,
@@ -223,11 +232,13 @@ function locateElements(body: SnapshotResponse): unknown[] | null {
  */
 function normalizeSnapshotForAnalyzer(
   raw: string,
-  body: SnapshotResponse
+  body: SnapshotResponse,
+  hierarchy?: ElementHierarchy
 ): string {
   const elements = locateElements(body);
   if (!elements) return raw;
   normalizeBboxes(elements);
+  if (hierarchy) applyHierarchy(elements, hierarchy);
   enrichElements(elements);
   return JSON.stringify(body);
 }
@@ -974,7 +985,8 @@ for (const route of AUTHED_ROUTES) {
     // to the Rust analyzer's `{x,y,w,h}` u32 Region (the ONLY shape transform
     // required — see `normalizeSnapshotForAnalyzer`). All other fields pass
     // through unchanged (the Rust `Element` has no `deny_unknown_fields`).
-    const snapshotToWrite = normalizeSnapshotForAnalyzer(raw, body);
+    const hierarchy = await page.evaluate(collectElementHierarchy);
+    const snapshotToWrite = normalizeSnapshotForAnalyzer(raw, body, hierarchy);
     writeFileSync(
       join(SNAPSHOTS_DIR, `${route.id}.json`),
       snapshotToWrite,
@@ -1346,9 +1358,10 @@ for (const route of PUBLIC_ROUTES) {
 
       // IDENTICAL normalization to the relay lane — same functions, same order.
       // The analyzer must not be able to tell which lane produced a snapshot.
+      const hierarchy = await page.evaluate(collectElementHierarchy);
       writeFileSync(
         join(SNAPSHOTS_DIR, `${route.id}.json`),
-        normalizeSnapshotForAnalyzer(raw, body),
+        normalizeSnapshotForAnalyzer(raw, body, hierarchy),
         "utf8"
       );
 

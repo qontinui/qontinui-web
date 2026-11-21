@@ -530,6 +530,19 @@ describe("presentedPlaneLabel — the table's words, or withheld", () => {
 });
 
 describe("presentedSourceLabel — the table's words, or fixed words", () => {
+  it("labels a detection_bound row by its area, never as a source with no name", () => {
+    expect(presentedSourceLabel("detection_bound:merge_train", null)).toBe(
+      "Time for a fault on merge train to reach this view"
+    );
+    // An area off the presentation table is not named.
+    expect(presentedSourceLabel("detection_bound:globex_plane", null)).toBe(
+      "Time for a fault on an area not named here to reach this view"
+    );
+    expect(presentedSourceLabel("detection_bound:merge_train", null)).not.toBe(
+      UNLABELLED_SOURCE
+    );
+  });
+
   it("labels a source the table knows, and a watcher by the area it feeds", () => {
     expect(presentedSourceLabel("work_units", null)).toBe("Work units");
     const planes = parseProjectState({

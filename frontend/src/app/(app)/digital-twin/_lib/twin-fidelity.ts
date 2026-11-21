@@ -16,6 +16,7 @@
  * Pure functions (unit-tested in `twin-fidelity.test.ts`).
  */
 
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type { RawVerdictResponse } from "./types";
 
 /**
@@ -32,8 +33,17 @@ export interface FidelityReportView {
   honestyViolations: number | null;
   staleEvidenceViolations: number | null;
   staleAtDecisionViolations: number | null;
-  /** The report's age in seconds: `age_seconds`, else from `computed_at`. */
+  /**
+   * The report's age in seconds as of its read: `age_seconds` as coord served
+   * it, else from `computed_at` against the read's time.
+   */
   ageSeconds: number | null;
+  /**
+   * Where {@link ageSeconds} came from: `served` is coord's own `age_seconds`;
+   * `computed_at` is this page's arithmetic over the report's `computed_at`;
+   * `null` when the body carries neither (the age is UNKNOWN).
+   */
+  ageSource: "served" | "computed_at" | null;
 }
 
 /** What the header can say about the twin's self-fidelity. */
@@ -51,17 +61,6 @@ export interface FidelityQueryState {
   error: unknown;
 }
 
-/**
- * The HTTP status a failed `httpClient.get` carries. The client throws a plain
- * `Error("GET <url> failed: <status> - <body>")`, so the status is read back
- * from that message; `null` when it carries none.
- */
-export function httpStatusOf(error: unknown): number | null {
-  if (!(error instanceof Error)) return null;
-  const match = /failed: (\d{3})\b/.exec(error.message);
-  return match ? Number(match[1]) : null;
-}
-
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -75,8 +74,28 @@ const REPORT_FIELDS = [
 ] as const;
 
 /**
+ * The moment a report's age is taken against: the read's own time (the
+ * query's `dataUpdatedAt`), else `nowMs` while no read has landed. A served
+ * `age_seconds` is the report's age when coord answered, so an age computed
+ * from `computed_at`, and a computed-at time derived from `age_seconds`, are
+ * taken against that same moment — never against a render, which would move
+ * them on every re-render and set two views of one report apart. Every view of
+ * the report (the Completeness header, the Twin map's Honesty figure) calls
+ * this, so they cannot disagree.
+ */
+export function fidelityReadAt(
+  query: { readonly dataUpdatedAt?: number },
+  nowMs: number
+): number {
+  const at = query.dataUpdatedAt;
+  return typeof at === "number" && at > 0 ? at : nowMs;
+}
+
+/**
  * Read the header's state from the raw-verdict query. `nowMs` dates a report
- * that carries `computed_at` but no `age_seconds`.
+ * that carries `computed_at` but no `age_seconds`; pass the read's own time
+ * (the query's `dataUpdatedAt`) so that age is as of the read, like a served
+ * `age_seconds` is.
  */
 export function readFidelity(
   query: FidelityQueryState,
@@ -127,10 +146,13 @@ export function readFidelity(
   }
 
   let ageSeconds = finiteNumber(report.age_seconds);
+  let ageSource: FidelityReportView["ageSource"] =
+    ageSeconds === null ? null : "served";
   if (ageSeconds === null && typeof report.computed_at === "string") {
     const computedMs = Date.parse(report.computed_at);
     if (!Number.isNaN(computedMs)) {
       ageSeconds = Math.max(0, Math.round((nowMs - computedMs) / 1000));
+      ageSource = "computed_at";
     }
   }
 
@@ -145,6 +167,7 @@ export function readFidelity(
         report.stale_at_decision_violations
       ),
       ageSeconds,
+      ageSource,
     },
   };
 }
@@ -220,6 +243,23 @@ export function reportSubspaces(
 /** A count, or UNKNOWN for `null`. */
 export function formatCount(value: number | null): string {
   return value === null ? "UNKNOWN" : String(value);
+}
+
+/**
+ * The report's age, worded as of its read — never in the present tense: the
+ * number does not grow while the page stays open. It says whose number it is:
+ * coord's served `age_seconds`, or this page's arithmetic over `computed_at`.
+ */
+export function reportAgeText(
+  report: Pick<FidelityReportView, "ageSeconds" | "ageSource">
+): string {
+  if (report.ageSeconds === null || report.ageSource === null) {
+    return "report age UNKNOWN";
+  }
+  const age = formatAge(report.ageSeconds);
+  return report.ageSource === "served"
+    ? `report ${age} as of its read (age served by coord)`
+    : `report ${age} as of its read (from its computed_at)`;
 }
 
 /** A report age in words, or UNKNOWN for `null`. */

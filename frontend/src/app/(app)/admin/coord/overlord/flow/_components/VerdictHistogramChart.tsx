@@ -42,6 +42,7 @@ import { CollapsiblePanel, absoluteTime } from "@/components/console";
 import type { BarShapeProps } from "recharts";
 import { chartCategorical, colors } from "@/config/theme";
 import {
+  CAPPED_READ_NOTE,
   CHARTED_VERDICTS,
   OTHER_SERIES,
   UNKNOWN_SERIES,
@@ -113,10 +114,19 @@ function PassTooltip({
 export function VerdictHistogramChart({
   points,
   windowWords,
+  truncated,
+  reading = false,
+  capped = false,
 }: {
   /** `null` = the series has not been read (or could not be): nothing is drawn. */
   points: HistogramPoint[] | null;
   windowWords: string;
+  /** coord's `verdict_series_truncated`; `undefined` = it did not say. */
+  truncated?: boolean;
+  /** No read has answered yet, so `points === null` says nothing about coord. */
+  reading?: boolean;
+  /** coord's `truncated`: the passes behind this series were themselves capped. */
+  capped?: boolean;
 }) {
   const scopes = points ? scopeCounts(points) : { filtered: 0, unknown: 0 };
   // Recharts reads flat keys, so each bar's counts are spread onto it.
@@ -128,15 +138,24 @@ export function VerdictHistogramChart({
       icon={<BarChart3 className="h-4 w-4 text-muted-foreground" aria-hidden />}
       summary={
         <span className="text-xs normal-case tracking-normal text-muted-foreground">
-          {points === null
-            ? "not read — unknown"
-            : `${points.length} ${points.length === 1 ? "pass" : "passes"} in ${windowWords}`}
+          {reading
+            ? "reading…"
+            : points === null
+              ? "not read — unknown"
+              : `${truncated === true ? "newest " : ""}${points.length} ${points.length === 1 ? "pass" : "passes"} in ${windowWords}`}
         </span>
       }
       storageKey="coord-overlord-flow-histogram-open"
       data-testid="overlord-flow-histogram"
     >
-      {points === null ? (
+      {reading ? (
+        <p
+          className="text-sm text-muted-foreground m-0"
+          data-testid="overlord-flow-histogram-reading"
+        >
+          Reading the pass ledger…
+        </p>
+      ) : points === null ? (
         <p
           className="text-sm text-muted-foreground italic m-0"
           data-testid="overlord-flow-histogram-unknown"
@@ -269,6 +288,11 @@ export function VerdictHistogramChart({
             data-testid="overlord-flow-histogram-caption"
           >
             One bar per pass, from that pass&apos;s own stored histogram.
+            {capped && ` ${CAPPED_READ_NOTE}`}
+            {truncated === true &&
+              ` Coord cut this series: only the newest ${points.length} passes are drawn, so older passes in the window are missing here.`}
+            {truncated === undefined &&
+              " Coord did not say whether it cut this series, so older passes may be missing here."}
             {scopes.filtered > 0 &&
               ` ${scopes.filtered} of the ${points.length} passes were filtered (--only / --tab): their bars are short because they screened fewer terminals, not because fewer sessions existed.`}
             {scopes.unknown > 0 &&

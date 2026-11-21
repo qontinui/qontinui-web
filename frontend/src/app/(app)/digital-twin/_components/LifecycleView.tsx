@@ -468,8 +468,9 @@ export function LifecycleView() {
   const silence = probeUnread(probe);
 
   // The whole-view notice only when EVERY probe was refused; a single refused
-  // sub-space renders as its own `restricted` cell.
-  if (probe.restricted) return <TwinAccessRestricted />;
+  // sub-space renders as its own `restricted` cell. Handed the probe so a
+  // refusal kept after a failed refresh names that failure and its read date.
+  if (probe.restricted) return <TwinAccessRestricted probe={probe} />;
 
   return (
     <div className="space-y-6">

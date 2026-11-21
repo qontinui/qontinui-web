@@ -12,10 +12,13 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
+import { commitEtaReading } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
+  HistorySeries,
   ResourceSampleRow,
   ResourceSamplesResponse,
 } from "./fleetResources";
@@ -49,6 +52,9 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     ci_jobs_running: null,
     source: "supervisor",
     pressure: { ratio: 0.8, basis: "commit" },
+    // A Windows host as a current coord serves it: no swap ratio, because
+    // there swap is derived from the commit counters, so no swap figure.
+    swap_ratio: null,
     floor: {
       basis: "commit_available",
       bytes: 5 * GIB,
@@ -68,6 +74,8 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
       reject_source: "policy",
     },
     headroom: "ok",
+    // coord names no source on an `ok` row: nothing set a worst grade.
+    headroom_source: null,
     // Windows host lane: byte floors, no pressure ceiling.
     pressure_floor: null,
     // The SATURATION axis, as a current coord sends it against a publisher
@@ -120,6 +128,8 @@ function preFloorSample(
   delete row.pids_used;
   delete row.saturation_source;
   delete row.headroom;
+  delete row.headroom_source;
+  delete row.swap_ratio;
   return row;
 }
 
@@ -233,19 +243,257 @@ describe("§C1 — the lead column says which metric it is", () => {
     expect(screen.getByText("swap used")).toBeTruthy();
   });
 
-  it("never prints a swap figure on a host row", () => {
-    // A publisher bug: swap columns present on a Windows host row. The strip
-    // must still not render them — on Windows they are the commit counters
-    // printed a second time.
+  it("prints no swap figure on a host row coord serves `swap_ratio: null`", () => {
+    // A Windows host: coord grades no swap axis there, because its swap is the
+    // commit counters derived a second time. Swap columns on the row (a
+    // publisher bug) change nothing: this page derives no ratio from them.
     renderStrip({
       latest: [
-        sample({ swap_total_bytes: 40 * GIB, swap_used_bytes: 31 * GIB }),
+        sample({
+          swap_total_bytes: 40 * GIB,
+          swap_used_bytes: 31 * GIB,
+          swap_ratio: null,
+        }),
       ],
       history: [],
     });
     const row = screen.getByTestId("fleet-resource-row");
     expect(row.getAttribute("data-lane")).toBe("host");
+    expect(within(row).queryByTestId("fleet-resource-host-swap")).toBeNull();
+    expect(
+      within(row).queryByTestId("fleet-resource-host-swap-missing")
+    ).toBeNull();
     expect(row.textContent).not.toMatch(/swap/i);
+  });
+});
+
+/**
+ * Plan `2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan`
+ * Phase 2. A Linux host sat at swap 0.9999 (51,561,738,240 of 51,565,817,856
+ * bytes) with its commit basis at 0.815, and coord's swap axis held the lane
+ * at `warn`. This strip printed the 0.815 alone, because a lane-name rule
+ * kept every swap figure off every host row.
+ */
+describe("§C1 — a host row's swap figure is coord's served `swap_ratio`", () => {
+  function linuxHost(overrides: Partial<ResourceSampleRow> = {}) {
+    return sample({
+      swap_total_bytes: 51_565_817_856,
+      swap_used_bytes: 51_561_738_240,
+      swap_ratio: 0.9999,
+      pressure: { ratio: 0.815, basis: "commit" },
+      pressure_floor: {
+        basis: "swap_ratio",
+        ratio: 0.5,
+        source: "default",
+        verdict: "defer",
+        reject_ratio: null,
+        reject_source: null,
+      },
+      headroom: "warn",
+      headroom_source: { basis: "swap", volume: null, free_bytes: null },
+      ...overrides,
+    });
+  }
+
+  it("prints the served swap BESIDE the commit figure, and says swap set the warn", () => {
+    renderStrip({ latest: [linuxHost()], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    const lead = within(row).getByTestId("fleet-resource-pressure");
+    // The lead stays commit: coord ranks a host on commit on every OS.
+    expect(lead).toHaveTextContent("82%");
+    expect(lead).toHaveTextContent("commit used");
+    const swap = within(row).getByTestId("fleet-resource-host-swap");
+    expect(swap).toHaveTextContent("100%");
+    expect(swap).toHaveTextContent("swap used");
+    // Beside the commit figure: the same cell, not a column of its own.
+    expect(swap.closest("td")).toBe(lead.closest("td"));
+    // The verdict names the reading that set it.
+    expect(
+      within(row).getByTestId("fleet-resource-headroom-source")
+    ).toHaveTextContent("set by swap");
+    expect(
+      within(row).getByTestId("fleet-resource-admission-verb")
+    ).toHaveTextContent("builds wait");
+    // The swap ceiling it was graded against is now on this row's own axis.
+    expect(
+      within(row).queryByTestId("fleet-resource-floor-off-axis")
+    ).toBeNull();
+    expect(floorLine("swap").textContent).toMatch(
+      /at or above\s*50% swap used/
+    );
+  });
+
+  it("never labels a host lead `swap`, even when coord serves a measured swap_ratio", () => {
+    // A `basis: "swap"` on a host lead is a coord defect (a host ranks on
+    // commit): the lead keeps no swap label, and the measured swap still
+    // reaches the row through the served field, beside the lead.
+    renderStrip({
+      latest: [linuxHost({ pressure: { ratio: 0.6, basis: "swap" } })],
+      history: [],
+    });
+    const row = screen.getByTestId("fleet-resource-row");
+    const lead = within(row).getByTestId("fleet-resource-pressure");
+    expect(lead).not.toHaveTextContent("swap used");
+    expect(
+      within(row).getByTestId("fleet-resource-host-swap")
+    ).toHaveTextContent("100%");
+  });
+
+  it("prints no swap figure when coord serves `swap_ratio: null`", () => {
+    renderStrip({ latest: [linuxHost({ swap_ratio: null })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(within(row).queryByTestId("fleet-resource-host-swap")).toBeNull();
+    expect(
+      within(row).queryByTestId("fleet-resource-host-swap-missing")
+    ).toBeNull();
+    // The commit figure is untouched.
+    expect(
+      within(row).getByTestId("fleet-resource-pressure")
+    ).toHaveTextContent("82%");
+  });
+
+  it("says 'swap not reported' (never 0, never a blank) when coord predates the field", () => {
+    const old = linuxHost();
+    delete old.swap_ratio;
+    renderStrip({ latest: [old], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(within(row).queryByTestId("fleet-resource-host-swap")).toBeNull();
+    const missing = within(row).getByTestId("fleet-resource-host-swap-missing");
+    expect(missing).toHaveTextContent("swap not reported");
+    expect(missing.textContent).not.toMatch(/\d/);
+    expect(missing.closest("td")).toBe(
+      within(row).getByTestId("fleet-resource-pressure").closest("td")
+    );
+    // With no swap figure on the row, the swap ceiling is off its axis.
+    expect(
+      within(row).getByTestId("fleet-resource-floor-off-axis")
+    ).toBeTruthy();
+  });
+
+  it("says 'swap unreadable' for a value this build cannot read", () => {
+    renderStrip({ latest: [linuxHost({ swap_ratio: 1.7 })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-host-swap-unreadable")
+    ).toHaveTextContent("swap unreadable");
+    expect(screen.queryByTestId("fleet-resource-host-swap")).toBeNull();
+  });
+
+  it("demotes a stale host's swap figure exactly as it demotes the commit figure", () => {
+    renderStrip({ latest: [linuxHost({ age_secs: 600 })], history: [] });
+    expect(
+      screen
+        .getByTestId("fleet-resource-host-swap")
+        .querySelector(".line-through")
+    ).toBeTruthy();
+    // A stale row's verdict is not current, so nothing explains it.
+    expect(screen.queryByTestId("fleet-resource-headroom-source")).toBeNull();
+  });
+
+  it("withholds the swap figure with everything else on an unknown row", () => {
+    renderStrip({ latest: [linuxHost({ age_secs: 40_000 })], history: [] });
+    expect(screen.queryByTestId("fleet-resource-host-swap")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-host-swap-missing")).toBeNull();
+  });
+
+  it("keeps a measured swap figure where coord has no commit opinion", () => {
+    renderStrip({ latest: [linuxHost({ pressure: null })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-pressure-no-opinion")
+    ).toBeTruthy();
+    expect(screen.getByTestId("fleet-resource-host-swap")).toHaveTextContent(
+      "100%"
+    );
+  });
+
+  it("gives a wsl lane no second swap figure: its lead already is one", () => {
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          swap_ratio: 0.75,
+          commit_total_bytes: null,
+          commit_available_bytes: null,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.getByTestId("fleet-resource-pressure")).toHaveTextContent(
+      "75%"
+    );
+    expect(screen.queryByTestId("fleet-resource-host-swap")).toBeNull();
+    expect(screen.getAllByText("swap used")).toHaveLength(1);
+  });
+});
+
+describe("§C3 — the Admission column names WHICH reading set a warn or breach", () => {
+  it("names the volume that tripped a breach, the one source not on the row", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          headroom_source: {
+            basis: "other_volume",
+            volume: "C:",
+            free_bytes: 2 * GIB,
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-headroom-source")
+    ).toHaveTextContent("set by volume C:");
+    expect(
+      screen.getByTestId("fleet-resource-admission-verb")
+    ).toHaveTextContent("builds fail here");
+  });
+
+  it("names nothing on an ok row, or where coord sent no source", () => {
+    renderStrip({ latest: [sample()], history: [] });
+    expect(screen.queryByTestId("fleet-resource-headroom-source")).toBeNull();
+    cleanup();
+    // A coord that predates the field: the verdict stands, unexplained.
+    const old = sample({ headroom: "warn" });
+    delete old.headroom_source;
+    renderStrip({ latest: [old], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-admission-verb")
+    ).toHaveTextContent("builds wait");
+    expect(screen.queryByTestId("fleet-resource-headroom-source")).toBeNull();
+  });
+
+  it("presenting: names the volume by what it is, never by its label", () => {
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: {
+            latest: [
+              sample({
+                headroom: "breach",
+                headroom_source: {
+                  basis: "other_volume",
+                  volume: "AcmeClientShare",
+                  free_bytes: 2 * GIB,
+                },
+              }),
+            ],
+            history: [],
+          },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    expect(
+      screen.getByTestId("fleet-resource-headroom-source")
+    ).toHaveTextContent("set by another volume");
+    expect(document.body.innerHTML).not.toContain("AcmeClientShare");
   });
 });
 
@@ -581,7 +829,9 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const legend =
       screen.getByTestId("fleet-resource-floors").textContent ?? "";
     expect(legend).not.toMatch(/stopped electing/i);
-    expect(legend).toMatch(/a red row\s+means a guard on that lane is refusing work/);
+    expect(legend).toMatch(
+      /a red row\s+means a guard on that lane is refusing work/
+    );
   });
 
   it("presenting: no operator legend, and its one unknown said in plain words", () => {
@@ -637,11 +887,12 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     renderStrip({ latest: [preFloorSample()], history: [] });
     const missing = screen.getAllByTestId("fleet-resource-floor-missing");
     // The memory floor, the disk floor, and the SATURATION ceiling. NOT the
-    // swap ceiling: this is a host row, where §C1 keeps the swap axis off the
-    // row entirely. The saturation ceiling is not gated that way — coord
-    // reports it on every lane, so its silence is a real gap on a host row
-    // too, and staying quiet about it would let an older coord read as a lane
-    // with no task limit.
+    // swap ceiling: this host row's coord predates `swap_ratio`, so the row
+    // carries no swap axis to be missing a threshold on (its Pressure cell
+    // says "swap not reported" instead). The saturation ceiling is not gated
+    // that way. coord reports it on every lane, so its silence is a real gap
+    // on a host row too, and staying quiet about it would let an older coord
+    // read as a lane with no task limit.
     expect(missing).toHaveLength(3);
     expect(missing[0].textContent).toMatch(/not reported/i);
     expect(screen.queryByTestId("fleet-resource-floor")).toBeNull();
@@ -761,9 +1012,10 @@ describe("§C3 — the pressure axis is rendered where the byte floor is null", 
   });
 
   it("says NOTHING about swap on a Windows host row — §C1 outranks tidiness", () => {
-    // The host lane's guards are byte-based and its "swap" is the commit
-    // counters printed twice, so even the word is forbidden there. An empty
-    // pressure axis on that lane is correct, not a gap.
+    // A Windows host's guards are byte-based and its "swap" is the commit
+    // counters printed twice, so coord serves it `swap_ratio: null` and no
+    // swap floor, and even the word stays off the row. An empty pressure axis
+    // there is correct, not a gap.
     renderStrip({ latest: [sample()], history: [] });
     const row = screen.getByTestId("fleet-resource-row");
     expect(row.getAttribute("data-lane")).toBe("host");
@@ -772,9 +1024,10 @@ describe("§C3 — the pressure axis is rendered where the byte floor is null", 
   });
 
   it("still prints a host-lane ceiling coord actually asserts", () => {
-    // A Linux `host` lane has a real swap device. Withholding a rule the
+    // A host row that prints no swap figure (served `swap_ratio: null`) can
+    // still carry a swap ceiling coord reports. Withholding a rule the
     // dispatcher enforces would be the inversion this column exists to stop,
-    // so a REPORTED threshold prints even on a lane whose figures are hidden.
+    // so a REPORTED threshold prints even where the figure does not.
     renderStrip({
       latest: [
         sample({
@@ -1057,6 +1310,99 @@ describe("sparklines", () => {
     renderStrip({ latest: [sample()], history: [] });
     expect(screen.getByTestId("fleet-resource-sparkline-empty")).toBeTruthy();
   });
+
+  // Plan 2026-11-09-devops-swap-axis-did-not-surface-tmpfs-exhaustion-on-nilan
+  // Phase 2 follow-up: coord serves `swap_ratio` on every history point, and a
+  // host row draws it as a second, dashed line beside the commit line.
+  const swapSeries = (
+    lane: string,
+    swaps: (number | null | undefined)[],
+    pressures: (number | null)[] = swaps.map(() => 0.815)
+  ) => ({
+    device_id: DEV,
+    lane,
+    lane_instance: null,
+    pressure_basis: (lane === "host" ? "commit" : "swap") as "commit" | "swap",
+    points: swaps.map((swap_ratio, i) => {
+      const p: HistorySeries["points"][number] = {
+        sampled_at: `2026-11-09T18:${String(i * 10).padStart(2, "0")}:00Z`,
+        pressure: pressures[i],
+        disk_free_bytes: null,
+        disk_total_bytes: null,
+        build_slots_busy: null,
+        build_slots_total: null,
+        ci_jobs_running: null,
+      };
+      // `undefined` = the key is absent, as a coord older than the field sends.
+      if (swap_ratio !== undefined) p.swap_ratio = swap_ratio;
+      return p;
+    }),
+  });
+  const swapLine = () =>
+    screen
+      .getByTestId("fleet-resource-sparkline")
+      .getAttribute("data-swap-line");
+  const dashedCurves = (container: HTMLElement) =>
+    Array.from(
+      container.querySelectorAll("path.recharts-line-curve[stroke-dasharray]")
+    );
+
+  it("draws a Linux host's swap climb as a second line (nilan: swap 0.9999, commit 0.815)", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          swap_total_bytes: 51_565_817_856,
+          swap_used_bytes: 51_561_738_240,
+          swap_ratio: 0.9999,
+          pressure: { ratio: 0.815, basis: "commit" },
+        }),
+      ],
+      history: [swapSeries("host", [0.62, 0.91, 0.9999])],
+    });
+    expect(swapLine()).toBe("drawn");
+    expect(dashedCurves(container)).toHaveLength(1);
+    // Two lines need two names: the lead is named from the series' basis.
+    expect(
+      screen
+        .getByTestId("fleet-resource-sparkline")
+        .getAttribute("data-pressure-name")
+    ).toBe("commit used");
+  });
+
+  it("draws no swap line on a Windows host, which coord serves swap_ratio: null", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [null, null, null])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no swap line when coord's history predates the field (key absent), never a 0", () => {
+    const { container } = renderStrip({
+      latest: [sample()],
+      history: [swapSeries("host", [undefined, undefined])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
+
+  it("draws no second line on a wsl row: its lead line already IS swap", () => {
+    const { container } = renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          swap_ratio: 0.75,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [swapSeries("wsl", [0.7, 0.75], [0.7, 0.75])],
+    });
+    expect(swapLine()).toBe("absent");
+    expect(dashedCurves(container)).toHaveLength(0);
+  });
 });
 
 describe("§C3 — staleness applies to the WHOLE row, not just the lead column", () => {
@@ -1084,11 +1430,13 @@ describe("§C3 — staleness applies to the WHOLE row, not just the lead column"
   });
 });
 
-describe("§C1 — a host row never prints swap counters, even if coord says swap", () => {
-  it("suppresses the raw swap disclosure when the lane is host", () => {
-    // A publisher/coord bug: basis=swap stamped on a host lane. The ratio is
-    // still the server's, but the counters must not be printed a second time
-    // under a swap label.
+describe("§C1 — a host lead never prints swap counters coord does not serve", () => {
+  it("suppresses the raw swap disclosure on a host row served `swap_ratio: null`", () => {
+    // A publisher/coord bug: basis=swap stamped on a host lane, whose lead is
+    // commit on every OS. This row is served `swap_ratio: null` (a Windows
+    // host), so its swap columns are the commit counters. The ratio is still
+    // the server's, but the counters must not be printed a second time under
+    // a swap label.
     renderStrip({
       latest: [
         sample({
@@ -1198,5 +1546,541 @@ describe("CPU temperature column — display only, never a fabricated zero", () 
       .getAllByTestId("fleet-resource-cpu-temp")
       .map((c) => c.textContent);
     expect(cells).toEqual(["55 C", "not measured on this host type"]);
+  });
+});
+
+describe("host commit attribution + time-to-floor — UNKNOWN, never blank", () => {
+  // Plan 2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out D4.
+  it("renders null top_consumers and null ETA as unknown on a warned host lane", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "warn",
+          top_consumers: null,
+          commit_floor_eta_secs: null,
+        }),
+      ],
+      history: [],
+    });
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/unknown/);
+    expect(consumer.textContent).not.toMatch(/GB/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor ETA: unknown"
+    );
+  });
+
+  it("renders absent fields (an older coord) as unknown too", () => {
+    renderStrip({ latest: [sample({ headroom: "breach" })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-top-consumer").textContent
+    ).toMatch(/top consumer: unknown/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor ETA: unknown"
+    );
+  });
+
+  it("names the top consumer, its GB, the unreadable count and the ETA when populated", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          commit_floor_eta_secs: 80,
+          commit_floor_eta_state: "falling",
+          top_consumers: {
+            entries: [
+              {
+                pid: 7,
+                name: "code.exe",
+                private_bytes: 3 * GIB,
+                started_at: null,
+              },
+              {
+                pid: 1234,
+                name: "node.exe",
+                private_bytes: 57 * GIB,
+                started_at: "2026-11-05T14:16:02Z",
+              },
+            ],
+            scanned: 812,
+            unreadable: 37,
+            attributed_private_bytes: 92 * GIB,
+          },
+        }),
+      ],
+      history: [],
+    });
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/node\.exe/);
+    expect(consumer.textContent).toMatch(/57\.0 GB/);
+    expect(consumer.textContent).not.toMatch(/code\.exe/);
+    expect(
+      screen.getByTestId("fleet-resource-top-consumer-unreadable").textContent
+    ).toMatch(/37 unreadable/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor in ~1m 20s"
+    );
+  });
+
+  it("hides the consumer while the lane is ok, and an ETA at or past 10 minutes", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: 600,
+          top_consumers: {
+            entries: [],
+            scanned: 10,
+            unreadable: 0,
+            attributed_private_bytes: 0,
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.queryByTestId("fleet-resource-top-consumer")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-commit-eta")).toBeNull();
+  });
+
+  it("never renders on a non-host lane", () => {
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          headroom: "breach",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.queryByTestId("fleet-resource-top-consumer")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-commit-eta")).toBeNull();
+  });
+
+  it("presenting: states a position, not the image name", () => {
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: {
+            latest: [
+              sample({
+                headroom: "warn",
+                commit_floor_eta_secs: 45,
+                commit_floor_eta_state: "falling",
+                top_consumers: {
+                  entries: [
+                    {
+                      pid: 1,
+                      name: "acme-client.exe",
+                      private_bytes: 20 * GIB,
+                      started_at: null,
+                    },
+                  ],
+                  scanned: 5,
+                  unreadable: 0,
+                  attributed_private_bytes: 20 * GIB,
+                },
+              }),
+            ],
+            history: [],
+          },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/process 1/);
+    expect(consumer.textContent).not.toMatch(/acme/);
+    expect(
+      screen.queryByTestId("fleet-resource-top-consumer-unreadable")
+    ).toBeNull();
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor in ~45s"
+    );
+  });
+});
+
+describe("time-to-floor — coord's commit_floor_eta_state decides the line", () => {
+  // Pre-PR review: a null ETA used to read "floor ETA: unknown" on every
+  // healthy host. coord now says what the null means.
+  const etaLine = () => screen.queryByTestId("fleet-resource-commit-eta");
+
+  it("ok headroom, null ETA and not_falling: no unknown line", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "not_falling",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()).toBeNull();
+    expect(screen.queryByText(/floor ETA: unknown/)).toBeNull();
+  });
+
+  it("at_or_below_floor: says 'at floor', not unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "at_or_below_floor",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("at floor");
+  });
+
+  it("sparse: the unknown line, with the reason in its tooltip", async () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "sparse",
+        }),
+      ],
+      history: [],
+    });
+    const line = etaLine();
+    expect(line?.textContent).toBe("floor ETA: unknown");
+    // The reason rides the tooltip, which mounts on hover.
+    await userEvent.hover(line!);
+    const tips = await screen.findAllByText(/too few recent samples/);
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it.each(["stale", "degraded"] as const)("%s: the unknown line", (state) => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("an absent state (an older coord) with a null ETA: unknown", () => {
+    renderStrip({
+      latest: [sample({ headroom: "ok", commit_floor_eta_secs: null })],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("a null state: unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+});
+
+describe("commitEtaReading", () => {
+  it("maps every state", () => {
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 120,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "near", secs: 120, text: "floor in ~2m 0s" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 900,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "far", secs: 900 });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "unknown", reason: "falling_without_eta" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "not_falling",
+      })
+    ).toEqual({ kind: "not_falling" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "at_or_below_floor",
+      })
+    ).toEqual({ kind: "at_floor" });
+    for (const state of ["sparse", "stale", "degraded"] as const) {
+      expect(
+        commitEtaReading({
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        })
+      ).toEqual({ kind: "unknown", reason: state });
+    }
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: null,
+      })
+    ).toEqual({ kind: "unknown", reason: "null_state" });
+    expect(commitEtaReading({})).toEqual({ kind: "unknown", reason: "absent" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        // A coord newer than this build.
+        commit_floor_eta_state: "accelerating" as never,
+      })
+    ).toEqual({ kind: "unknown", reason: "unrecognized" });
+  });
+});
+
+describe("Slices / PSI column — unmeasured is explicit, never a fabricated zero", () => {
+  const GIB_ = 1024 ** 3;
+  const host = (overrides: Partial<ResourceSampleRow> = {}) =>
+    sample({
+      lane: "host",
+      commit_total_bytes: 64 * GIB_,
+      commit_available_bytes: 32 * GIB_,
+      ...overrides,
+    });
+
+  it("renders measured slices with a real 0 PSI as 0.0%, and null figures as a dash", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": {
+              memory_current: GIB_,
+              memory_high: 8 * GIB_,
+              memory_max: "max",
+              events: { high: 0, max: 0, oom_kill: 0 },
+            },
+          },
+          psi: {
+            system: {
+              memory: { some: { avg10: 0, avg60: 0 } },
+              cpu: { some: { avg10: 12.5, avg60: 9 } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("measured");
+    const slice = screen.getByTestId("fleet-resource-slice").textContent ?? "";
+    expect(slice).toMatch(/ci-runners:/);
+    expect(slice).toMatch(/high 8\.0 GB/);
+    expect(slice).toMatch(/max no limit/);
+    expect(slice).toMatch(/oom 0/);
+    const psi = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(psi).toMatch(/mem 0\.0%/); // a measured zero stays a zero
+    expect(psi).toMatch(/cpu 12\.5%/);
+    expect(psi).toMatch(/io —/); // never sent → dash, not 0.0%
+  });
+
+  it("renders NULL columns as an explicit unmeasured state", () => {
+    renderStrip({
+      latest: [host({ cgroup_slices: null, psi: null, slice_source: null })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("unmeasured");
+    expect(cell.textContent).toBe("not measured");
+    expect(cell.textContent).not.toMatch(/0/);
+  });
+
+  it("renders ABSENT keys (a coord predating the columns) as unmeasured", () => {
+    renderStrip({ latest: [host()], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("unmeasured");
+  });
+
+  it("renders slice_source not_supported as not measured on this OS", () => {
+    renderStrip({
+      latest: [host({ slice_source: "not_supported" })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("not_supported");
+    expect(cell.textContent).toBe("not measured on this OS");
+  });
+
+  it("says slices are not measured when only PSI arrived", () => {
+    renderStrip({
+      latest: [
+        host({
+          cgroup_slices: null,
+          psi: { system: { io: { some: { avg10: 1.5 } } } },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "slices: not measured"
+    );
+    expect(screen.getByTestId("fleet-resource-psi").textContent).toMatch(
+      /io 1\.5%/
+    );
+  });
+
+  it("never draws the runner's cpu_attribution key as a slice row", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_ },
+            cpu_attribution: { session_usec: 1, ci_usec: 2 },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toMatch(/^ci-runners:/);
+    expect(screen.getByTestId("fleet-resource-slices").textContent).not.toMatch(
+      /cpu_attribution/
+    );
+  });
+
+  it("reads an empty linux_cgroup_v2 map as 'no watched slice present', and absent PSI as not measured", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("measured");
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "no watched slice present"
+    );
+    const psi = screen.getByTestId("fleet-resource-psi");
+    expect(psi.getAttribute("data-state")).toBe("unmeasured");
+    expect(psi.textContent).toBe("system PSI: not measured");
+  });
+
+  it("renders PSI full beside some, per slice and system-wide, with avg60 in the tooltip", async () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_, memory_high: 8 * GIB_ },
+          },
+          psi: {
+            system: {
+              memory: {
+                some: { avg10: 1.5, avg60: 2.25 },
+                full: { avg10: 0.5, avg60: 0.75 },
+              },
+            },
+            slices: {
+              "ci-runners.slice": {
+                memory: {
+                  some: { avg10: 40, avg60: 35 },
+                  full: { avg10: 12.5, avg60: 10 },
+                },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const slicePsi = screen.getByTestId("fleet-resource-slice-psi");
+    expect(slicePsi.textContent).toBe(
+      "ci-runners PSI 10s some/full: mem 40.0%/12.5% · cpu —/— · io —/—"
+    );
+    const system = screen.getByTestId("fleet-resource-psi");
+    expect(system.textContent).toBe(
+      "system PSI 10s some/full: mem 1.5%/0.50% · cpu — · io —/—"
+    );
+    // The 60 s figures ride the tooltip, which mounts on hover.
+    await userEvent.hover(slicePsi);
+    const tips = await screen.findAllByText(
+      /ci-runners PSI 60s some\/full: mem 35\.0%\/10\.0%/
+    );
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it("never prints the kernel's placeholder system CPU full as a measured 0.0%", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: {
+            system: {
+              cpu: {
+                some: { avg10: 1.54, avg60: 1.79 },
+                full: { avg10: 0, avg60: 0 },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const system = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(system).toMatch(/cpu 1\.5% · /);
+    expect(system).not.toMatch(/cpu 1\.5%\//);
+  });
+
+  it("says 'memory not measured' for a slice with PSI but no memory reading, and draws no PSI line for a slice without one", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "agent-builds.slice": { memory_current: GIB_ },
+          },
+          psi: {
+            slices: {
+              "ci-runners.slice": { io: { some: { avg10: 2 } } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^agent-builds: 1\.0 GB/),
+      "ci-runners: memory not measured",
+    ]);
+    // Only ci-runners sent PSI, so exactly one per-slice PSI line.
+    const slicePsi = screen.getAllByTestId("fleet-resource-slice-psi");
+    expect(slicePsi).toHaveLength(1);
+    expect(slicePsi[0].textContent).toMatch(/^ci-runners PSI 10s/);
+    expect(slicePsi[0].textContent).toMatch(/io 2\.0%\/—/);
   });
 });

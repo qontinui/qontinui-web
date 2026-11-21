@@ -3,19 +3,40 @@
  * runner (and the web backend) send them — so the tests drive the real hooks
  * and the real relay client, and only `httpClient` is faked.
  *
- * Shapes are taken from qontinui-runner `be39991d2` + Phase 6's runner half
- * (`afc970df9`): `mcp_api.rs` `health`, `ui_bridge/elements.rs`
+ * Shapes are taken from qontinui-runner `827745bd3` (the occlusion sweep's
+ * relay, feature commit `d4c64ad06`, on top of the component and page-health
+ * entries of `f11a5f869`): `mcp_api.rs` `health`, `ui_bridge/elements.rs`
  * `ui_bridge_get_components_handler` (with `serializeComponent`'s
  * per-component shape, and `components_envelope`'s `data.wrapperComponents`),
- * `ui_bridge/screenshots.rs`
- * `ui_bridge_page_health_handler` and `build_visibility_report`,
+ * `ui_bridge/screenshots.rs` `ui_bridge_page_health_handler`,
+ * `build_visibility_report` and `disclose_occlusion_text`,
  * `backend_relay.rs` `http_relay_error` / `egress_off_http_response`, and
  * qontinui-web `fleet_targets.py` `list_apps`. Names are generic placeholders.
  */
 
 export const DEVICE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-export const BUILD_ID = "be39991d2fe9-1761210000000";
-export const GIT_SHA = "be39991d2fe9";
+/**
+ * The build every test's runner reports unless it says otherwise: qontinui-runner
+ * `827745bd3`, which relays every route the dashboard asks for but `GET /apps`.
+ */
+export const BUILD_ID = "827745bd3dc8-1762426115000";
+export const GIT_SHA = "827745bd3dc8";
+
+/**
+ * A build that predates EVERY relay entry this dashboard added
+ * (qontinui-runner `be39991d2`, before `f11a5f869`): it refuses components,
+ * page health and the sweep alike.
+ */
+export const PRE_DASHBOARD_BUILD_ID = "be39991d2fe9-1761210000000";
+export const PRE_DASHBOARD_GIT_SHA = "be39991d2fe9";
+
+/**
+ * A build between the two relay changes (qontinui-runner `abd238e9b`, the
+ * parent of `d4c64ad06`): it serves components and page health and refuses
+ * only the sweep — what most of the fleet runs the day the sweep is relayed.
+ */
+export const PRE_SWEEP_BUILD_ID = "abd238e9b0a1-1762418716000";
+export const PRE_SWEEP_GIT_SHA = "abd238e9b0a1";
 
 /**
  * The request ids the backend's relay puts on its refusals. They are UUIDs —
@@ -69,6 +90,21 @@ export const HEALTH_BODY = {
   timestamp: 1761210000000,
 };
 
+/** `HEALTH_BODY` as a runner of another build reports it. */
+export function healthBodyFor(buildId: string, gitSha: string) {
+  return {
+    ...HEALTH_BODY,
+    data: {
+      ...HEALTH_BODY.data,
+      gitSha,
+      buildId,
+      provenance: { gitSha, unstamped: false },
+    },
+    buildId,
+    provenance: { gitSha, unstamped: false },
+  };
+}
+
 /**
  * `GET /ui-bridge/control/components`: three components, seven actions — two
  * read, one write, one destructive, two with NO `effect` key (undeclared), and
@@ -76,7 +112,7 @@ export const HEALTH_BODY = {
  *
  * `data.wrapperComponents` is `"withheld"` because every relayed read says so:
  * the runner asked no wrapper app, so the list is its own registry only
- * (`components_envelope`, qontinui-runner `afc970df9`). The dashboard makes no
+ * (`components_envelope`, qontinui-runner `cd797e66a`). The dashboard makes no
  * other kind of read. A local read would say `"included"`.
  */
 export const COMPONENTS_BODY = {
@@ -252,10 +288,12 @@ export function pageHealthBodyWith(
 }
 
 /**
- * `POST /ui-bridge/control/visibility`, one per verdict shape — the answers a
- * runner would give if its relay carried the sweep, which no runner's does.
- * The dashboard does not ask for it, so its tests serve these to prove the
- * occlusion row stays UNKNOWN whatever a runner would answer.
+ * `POST /ui-bridge/control/visibility` as a LOCAL read answers it: every
+ * occlusion entry names the covered element and its occluder, and may quote
+ * the element's text, and `occlusionText` says `"included"`
+ * (qontinui-runner `disclose_occlusion_text`, `relayed: false`). The dashboard
+ * never receives this shape — a relayed read drops those fields — so a test
+ * serves it only to prove the page renders none of them even if sent.
  */
 export function visibilityBody(
   report: Record<string, unknown>
@@ -269,29 +307,21 @@ export function visibilityBody(
       includeExpected: false,
       expectedOverlayDetection: "modal-stack",
       expectedOverlaysFiltered: 0,
+      occlusionText: "included",
       ...report,
     },
   };
 }
 
-export const VISIBILITY_CLEAR_OBSERVED = visibilityBody({
-  verdict: "clear",
-  occlusionDataObserved: true,
-});
-
-/** The vacuous all-clear: nothing carried occlusion data. */
-export const VISIBILITY_CLEAR_UNOBSERVED = visibilityBody({
-  verdict: "clear",
-  occlusionDataObserved: false,
-});
-
-export const VISIBILITY_HIDES_TEXT = visibilityBody({
+/** A local-shape report that hides text, naming and quoting what it covers. */
+export const VISIBILITY_LOCAL_HIDES_TEXT = visibilityBody({
   verdict: "occlusions_found",
   occlusionDataObserved: true,
   occlusions: [
     {
       element: "session-name",
       occludedBy: "div.minimap",
+      label: "Session for Partner A",
       ratio: 0.6,
       isExpectedOverlay: false,
       hidesText: true,
@@ -309,13 +339,103 @@ export const VISIBILITY_HIDES_TEXT = visibilityBody({
   ],
 });
 
+/**
+ * `POST /ui-bridge/control/visibility` as the RELAY answers it
+ * (qontinui-runner `827745bd3`, feature commit `d4c64ad06`,
+ * `disclose_occlusion_text` with `relayed: true`): each occlusion entry keeps
+ * ONLY `ratio`, `hidesText`, `isExpectedOverlay` and `source` — `element`,
+ * `occludedBy`, `label` and `text` are dropped — and `occlusionText` says
+ * `"withheld"`. The verdict, `occlusionDataObserved` and the counts stand.
+ * Entries are spelled out literally by the callers, so a field the runner
+ * drops cannot creep back in through a spread.
+ */
+export function relayedVisibilityBody(report: {
+  verdict: string;
+  occlusionDataObserved?: boolean;
+  occlusions?: ReadonlyArray<{
+    ratio: number;
+    hidesText: boolean;
+    isExpectedOverlay: boolean;
+    source: string;
+  }>;
+}): Record<string, unknown> {
+  return {
+    success: true,
+    data: {
+      verdict: report.verdict,
+      ...(report.occlusionDataObserved === undefined
+        ? {}
+        : { occlusionDataObserved: report.occlusionDataObserved }),
+      occlusions: report.occlusions ?? [],
+      elementCount: 47,
+      minRatio: 0.02,
+      includeExpected: false,
+      expectedOverlayDetection: "modal-stack",
+      expectedOverlaysFiltered: 0,
+      occlusionText: "withheld",
+    },
+  };
+}
+
+/** Nothing covered, with occlusion data observed — a real clear. */
+export const VISIBILITY_RELAYED_CLEAR_OBSERVED = relayedVisibilityBody({
+  verdict: "clear",
+  occlusionDataObserved: true,
+});
+
+/** The vacuous all-clear: nothing carried occlusion data. */
+export const VISIBILITY_RELAYED_CLEAR_UNOBSERVED = relayedVisibilityBody({
+  verdict: "clear",
+  occlusionDataObserved: false,
+});
+
+/** Two occlusions, one hiding text — and neither naming what it covers. */
+export const VISIBILITY_RELAYED_HIDES_TEXT = relayedVisibilityBody({
+  verdict: "occlusions_found",
+  occlusionDataObserved: true,
+  occlusions: [
+    {
+      ratio: 0.6,
+      hidesText: true,
+      isExpectedOverlay: false,
+      source: "hit-test",
+    },
+    {
+      ratio: 0.1,
+      hidesText: false,
+      isExpectedOverlay: false,
+      source: "hit-test",
+    },
+  ],
+});
+
+/**
+ * A relayed sweep body with its disclosure replaced by `occlusionText` — or
+ * with the field absent, for `undefined`, which is what a runner build that
+ * predates the disclosure sends.
+ */
+export function relayedVisibilityWithDisclosure(
+  occlusionText: unknown
+): Record<string, unknown> {
+  const data: Record<string, unknown> = {
+    ...(VISIBILITY_RELAYED_CLEAR_OBSERVED.data as Record<string, unknown>),
+  };
+  delete data.occlusionText;
+  if (occlusionText !== undefined) data.occlusionText = occlusionText;
+  return { success: true, data };
+}
+
 /** The runner refusing a path its relay does not carry (`http_relay_error`). */
 export const NOT_CARRIED_BODY = {
   error:
     "this path is not carried by the HTTP relay — the relay serves a closed set of routes, and terminal creation, input and teardown go through the typed relay frames, which carry the create/attach gate",
 };
 
-/** The runner withholding a terminal-stream answer (`egress_off_http_response`). */
+/**
+ * The runner withholding a terminal-stream answer (`egress_off_http_response`)
+ * — the snapshot's, page health's and, since `d4c64ad06`, the sweep's egress
+ * refusal.
+ */
 export const EGRESS_OFF_BODY = {
   error: "egress_off",
   flow: "terminal_stream",
@@ -441,7 +561,8 @@ export function nativeCaptureSnapshotBody(
   const data: Record<string, unknown> = {
     source: "native_capture",
     reason: "UI Bridge request timed out",
-    screenshot: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    screenshot:
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
     width: 1280,
     height: 800,
     elements: [],

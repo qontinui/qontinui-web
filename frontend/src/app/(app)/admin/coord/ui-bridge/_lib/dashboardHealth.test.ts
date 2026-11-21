@@ -87,7 +87,9 @@ describe("deriveDashboardHealth", () => {
     );
     expect(h.level).toBe("amber");
     expect(h.headline).toMatch(/component actions are UNKNOWN/);
-    expect(h.headline).toMatch(/predates the relay entries/);
+    expect(h.headline).toMatch(
+      /this runner's build predates this route's relay entry \(qontinui-runner f11a5f869\)/
+    );
     expect(badge(h, "undeclared")?.label).toBe("undeclared actions –");
     expect(badge(h, "actions")?.label).toBe("actions –");
   });
@@ -186,6 +188,17 @@ describe("deriveDashboardHealth", () => {
     expect(h.headline).not.toMatch(/hidden/);
   });
 
+  it("is green once page health is run, when the page is healthy and the sweep observed nothing covered", () => {
+    const h = deriveDashboardHealth(
+      input({
+        pageHealth: { state: "ok", value: "ok", stale: false, asOf: 1 },
+        occlusion: { state: "ok", value: "clear", stale: false, asOf: 1 },
+      })
+    );
+    expect(h.level).toBe("green");
+    expect(h.headline).not.toMatch(/UNKNOWN/);
+  });
+
   it("keeps a sweep the relay refused amber, beside an unreadable page health", () => {
     const h = deriveDashboardHealth(
       input({
@@ -233,9 +246,9 @@ describe("deriveDashboardHealth", () => {
  * and never red either.
  */
 describe("deriveDashboardHealth — a stale read", () => {
-  const stale = <T,>(value: T) =>
+  const stale = <T>(value: T) =>
     ({ state: "ok", value, stale: true, asOf: 1 }) as const;
-  const fresh = <T,>(value: T) =>
+  const fresh = <T>(value: T) =>
     ({ state: "ok", value, stale: false, asOf: 1 }) as const;
   const FAILED_READ = {
     state: "failed",

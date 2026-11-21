@@ -203,24 +203,6 @@ export function WorkflowListRow({
                     />
                   </div>
                 );
-              case "testCoverage":
-                return (
-                  <div key={col.id} className="flex items-center gap-2">
-                    {item.testCoverage !== undefined ? (
-                      <Badge
-                        variant={
-                          item.testCoverage > 80 ? "default" : "secondary"
-                        }
-                      >
-                        {item.testCoverage.toFixed(0)}% coverage
-                      </Badge>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        No tests
-                      </span>
-                    )}
-                  </div>
-                );
               case "lastRun":
                 return (
                   <div key={col.id} className="text-sm text-muted-foreground">

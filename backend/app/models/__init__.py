@@ -56,6 +56,7 @@ from app.models.collaboration import (
 from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.design_policy import DesignPolicy
+from app.models.design_refs import DESIGN_REFS_MODELS  # noqa: F401
 from app.models.detected_issue import DetectedIssue
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection

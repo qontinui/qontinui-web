@@ -13,7 +13,7 @@
  * locally, the route merges the runner's own registry with the reply of every
  * live WebSocket-wrapper app; read over the relay, the only way this page
  * reads it, it returns the runner's OWN registry and asks no wrapper app
- * (qontinui-runner `afc970df9`, `ui_bridge::elements::ComponentSources`).
+ * (qontinui-runner `cd797e66a`, `ui_bridge::elements::ComponentSources`).
  * `data.wrapperComponents` carries the difference — `"withheld"` or
  * `"included"` — so a list with no wrapper entries can be told from "none is
  * registered" and from "none was asked". {@link readWrapperDisclosure} reads

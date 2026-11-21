@@ -396,6 +396,41 @@ describe("LifecycleView", () => {
   });
 });
 
+describe("LifecycleView when an all-refused answer is kept after its latest read failed", () => {
+  it("names the failure and dates the refusal above the access notice", () => {
+    const READ_AT = Date.parse("2026-10-23T12:00:00Z");
+    const error = new Error(
+      "GET /api/v1/digital-twin/subspaces failed: 503 - upstream"
+    );
+    const refused = probeAll(
+      Object.fromEntries(
+        manifest.subspaces
+          .filter((s) => s.query_kind === "snapshot")
+          .map((s) => [s.id, "restricted" as const])
+      )
+    );
+    state.probe = {
+      data: { ...refused, restricted: true },
+      isLoading: false,
+      isError: true,
+      error,
+      dataUpdatedAt: READ_AT,
+      errorUpdatedAt: READ_AT + 60_000,
+    } as typeof state.probe;
+    render(<LifecycleView />);
+    expect(screen.getByText("Access restricted")).toBeInTheDocument();
+    const notice = screen.getByTestId("digital-twin-access-restricted-held");
+    expect(notice).toHaveTextContent(
+      `Coord's live probe's latest read failed: ${error.message}, so the notice below rests on its last answer, not a current reading.`
+    );
+    expect(
+      within(notice).getByTestId(
+        "digital-twin-access-restricted-held-provenance"
+      )
+    ).toHaveAttribute("data-provenance-known", "true");
+  });
+});
+
 describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => {
   beforeEach(() => {
     state.probe = {

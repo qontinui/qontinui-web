@@ -35,8 +35,11 @@ vi.mock("@/lib/runner-api", () => {
   };
 });
 
-import { useAiSettings } from "./useAiSettings";
-import { ClaudeCliSettings } from "../_components/ClaudeCliSettings";
+import { useAiSettings, FLEET_UNREAD_REFRESH_MS } from "./useAiSettings";
+import {
+  ClaudeCliSettings,
+  FLEET_UNREAD_LABEL,
+} from "../_components/ClaudeCliSettings";
 
 const view = (cli: Record<string, unknown> = {}, extra = {}) => ({
   provider: "claude_cli",
@@ -143,6 +146,7 @@ describe("useAiSettings save", () => {
       "effective_account_selection_mode",
       "account_selection_source",
       "fleet_account_selection_mode",
+      "fleet_account_selection_answered",
     ]) {
       expect(k in body).toBe(false);
       expect(k in body.claude_cli).toBe(false);
@@ -228,6 +232,182 @@ describe("derived read-out", () => {
     expect(screen.getByTestId("preview").textContent).toContain(
       "Would apply after save: least_usage"
     );
+  });
+});
+
+describe("derived read-out — fleet domain not yet answered (runner#2357)", () => {
+  const unread = (cli = {}, extra = {}) =>
+    view(cli, {
+      account_selection_source: "local",
+      fleet_account_selection_mode: null,
+      fleet_account_selection_answered: false,
+      ...extra,
+    });
+
+  it("unpinned: source and fleet are not-read-yet, never local / no opinion", async () => {
+    const { result } = await loaded(unread());
+    expect(result.current.derived).toEqual({
+      effective: "manual",
+      fleetUnread: true,
+    });
+    render(
+      <ClaudeCliSettings
+        config={result.current.claudeCli}
+        onChange={() => {}}
+        derived={result.current.derived}
+        previewEnabled
+      />
+    );
+    expect(screen.getByTestId("source").textContent).toBe(FLEET_UNREAD_LABEL);
+    expect(screen.getByTestId("fleet-mode").textContent).toContain(
+      "not read yet"
+    );
+    expect(screen.getByTestId("fleet-mode").textContent).not.toContain(
+      "no fleet opinion"
+    );
+    expect(screen.getByTestId("preview").textContent).toContain("unknown");
+  });
+
+  it("pinned keeps its source: no fleet answer can change a pin", async () => {
+    const { result } = await loaded(
+      unread(
+        { account_selection_pinned: true },
+        { account_selection_source: "pinned" }
+      )
+    );
+    expect(result.current.derived.source).toBe("pinned");
+    expect(result.current.derived.fleetUnread).toBe(true);
+  });
+
+  it("a non-null fleet value is an answer whatever the flag says", async () => {
+    const { result } = await loaded(
+      unread(
+        {},
+        {
+          account_selection_source: "fleet",
+          fleet_account_selection_mode: "manual",
+        }
+      )
+    );
+    expect(result.current.derived).toEqual({
+      effective: "manual",
+      source: "fleet",
+      fleet: "manual",
+    });
+  });
+
+  it("answered: true with a null fleet value is a definite no-opinion", async () => {
+    const { result } = await loaded(
+      unread({}, { fleet_account_selection_answered: true })
+    );
+    expect(result.current.derived).toEqual({
+      effective: "manual",
+      source: "local",
+      fleet: null,
+    });
+  });
+
+  it("re-reads the read-out until the runner reports an answer, then stops", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result } = await loaded(unread());
+      expect(result.current.derived.fleetUnread).toBe(true);
+      const callsBefore = getAiSettings.mock.calls.length;
+      getAiSettings.mockResolvedValue(
+        unread({}, { fleet_account_selection_answered: true })
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS);
+      });
+      expect(getAiSettings.mock.calls.length).toBe(callsBefore + 1);
+      expect(result.current.derived).toEqual({
+        effective: "manual",
+        source: "local",
+        fleet: null,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS * 3);
+      });
+      expect(getAiSettings.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a read slower than the interval still lands, with no overlapping read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result } = await loaded(unread());
+      const callsBefore = getAiSettings.mock.calls.length;
+      let resolveSlow: (v: unknown) => void = () => {};
+      getAiSettings.mockImplementation(
+        () => new Promise((r) => (resolveSlow = r))
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS);
+      });
+      // In flight for three more intervals: no second read is started.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS * 3);
+      });
+      expect(getAiSettings.mock.calls.length).toBe(callsBefore + 1);
+      await act(async () => {
+        resolveSlow(unread({}, { fleet_account_selection_answered: true }));
+      });
+      expect(result.current.derived).toEqual({
+        effective: "manual",
+        source: "local",
+        fleet: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a poll that lands after a reload started is dropped", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { result } = await loaded(unread());
+      let resolveSlow: (v: unknown) => void = () => {};
+      getAiSettings.mockImplementationOnce(
+        () => new Promise((r) => (resolveSlow = r))
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS);
+      });
+      // A reload starts (and lands, still unread) while the poll is in flight.
+      getAiSettings.mockResolvedValue(unread());
+      await act(() => result.current.retryLoad());
+      await act(async () => {
+        resolveSlow(
+          unread(
+            {},
+            {
+              account_selection_source: "fleet",
+              fleet_account_selection_mode: "least_usage",
+            }
+          )
+        );
+      });
+      expect(result.current.derived.fleetUnread).toBe(true);
+      expect(result.current.derived.fleet).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never re-reads while the fleet domain is answered", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await loaded(unread({}, { fleet_account_selection_answered: true }));
+      const callsBefore = getAiSettings.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FLEET_UNREAD_REFRESH_MS * 3);
+      });
+      expect(getAiSettings.mock.calls.length).toBe(callsBefore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

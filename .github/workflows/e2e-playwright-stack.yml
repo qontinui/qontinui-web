@@ -88,7 +88,8 @@ on:
 jobs:
   playwright:
     name: Playwright (chromium)
-    runs-on: ubuntu-latest
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-24.04]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_E2E_PLAYWRIGHT_STACK || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-24.04"') }}
     # Job cap — see e2e-tests.yml's `backend-tests` for why this workflow
     # needed one. Sized from 28 green shard runs on `main` (2026-08-18/19):
     # p50 ~12m, p90 ~18m, max 41m39s (run 32264216432 shard 2/4, which went
@@ -128,11 +129,20 @@ jobs:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: test_db
+        # PGDATA on a tmpfs: the database is throwaway, so a commit never waits on
+        # a WAL fsync to the runner's disk. Measured on the webdb self-hosted pool
+        # (1500 autocommit statements in the container): 1.9 s on disk, 0.7 s on
+        # tmpfs, and the on-disk figure degrades with whatever else shares that
+        # host's disk. Expected to be no slower on hosted. The tmpfs is RAM charged
+        # to the job (on the pool, to the slot's MemoryMax). Plan
+        # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool,
+        # Phase 2b.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/data
         ports:
           - 5432:5432
 
@@ -165,10 +175,23 @@ jobs:
         with:
           persist-credentials: false
 
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        id: host_provisioned
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git curl
+          pg-major: 16
+
       # Both backend pyproject.toml and frontend package.json have path
       # deps on these five sibling repos. Without this clone, `pip
       # install -e .` and `npm ci` fail with ENOENT.
       - name: Clone sibling dependencies
+        id: siblings
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -192,6 +215,7 @@ jobs:
           done
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -199,6 +223,7 @@ jobs:
       # Node 20 was the sole entry of the old job's `node-version` matrix; it
       # is pinned here rather than exposed as an input nobody varies.
       - name: Set up Node.js 20
+        id: setup_node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
@@ -474,6 +499,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
@@ -504,6 +530,7 @@ jobs:
       # boundary. This step touches local disk only -- no network, nothing to
       # stall - so it is deliberately unbounded and deliberately has no `id:`.
       - name: Seed apt archives from cache
+        if: runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -526,6 +553,7 @@ jobs:
           fi
 
       - name: Install Playwright browser system deps (apt)
+        if: runner.environment == 'github-hosted'
         id: apt_playwright
         # Sized from a per-half measurement, not from the fused step: each green
         # run's log was cut at the boundary between apt's last output line and the
@@ -574,7 +602,7 @@ jobs:
       # `-maxdepth 1` `*.deb` glob below matches the top level only, so
       # `partial/` -- one level deeper -- is never picked up.
       - name: Stage apt archives for cache
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -643,9 +671,32 @@ jobs:
         # tail does NOT come from here - not once in 40 samples.
         timeout-minutes: 2
         working-directory: ./frontend
-        run: npx playwright install chromium
+        # On the webdb self-hosted pool, slot.sh exports PLAYWRIGHT_BROWSERS_PATH
+        # at a ROOT-OWNED, READ-ONLY cache that already holds chromium for one
+        # Playwright version (its .version stamp). `playwright install` against
+        # a read-only path does not finish: measured on nawa 2026-11-04 as an
+        # unprivileged user, it timed out after 300 s. Chromium itself launches
+        # from that cache fine (measured the same day). So: skip the install
+        # when the cache is read-only and its stamp is this project's version;
+        # on a version mismatch, install into a job-local path instead.
+        run: |
+          set -euo pipefail
+          if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -w "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+            want="$(npx playwright --version | awk '{print $2}')"
+            have="$(cat "$PLAYWRIGHT_BROWSERS_PATH/.version" 2>/dev/null || true)"
+            if [ -n "$want" ] && [ "$want" = "$have" ]; then
+              echo "chromium from the read-only cache $PLAYWRIGHT_BROWSERS_PATH (playwright $want); skipping install"
+              exit 0
+            fi
+            echo "::warning title=browser cache version mismatch::read-only cache is playwright '${have}', this project is '${want}'; installing into a job-local path"
+            PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright"
+            export PLAYWRIGHT_BROWSERS_PATH
+            echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          fi
+          npx playwright install chromium
 
       - name: Install postgresql-client
+        if: runner.environment == 'github-hosted'
         id: apt_psql
         # ONLY the apt-get call lives in this step, and it is the entire reason
         # for the bound: it reaches an external mirror at job time and is the
@@ -689,16 +740,19 @@ jobs:
       # the `runner` schema, and nothing creates it in a fresh CI service
       # container, so create the schema explicitly.
       - name: Create runner schema
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        # Deliberately UNBOUNDED. This is psql/DDL against this job's own
+        # postgres service, not the external mirror, so a failure here IS a
+        # verdict on the change. Its `id:` exists only for the declarer's
+        # VERDICT row; it must never appear in APT_STEP_OUTCOMES
+        # (backend/tests/test_declare_setup_death.py asserts that).
+        id: runner_schema
         env:
           PGPASSWORD: test_password
         run: |
           psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
 
       - name: Run database migrations
+        id: migrations
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
@@ -737,9 +791,9 @@ jobs:
             --issuer "http://127.0.0.1:8770" \
             --audience spec-ci-local \
             --email "$EMAIL" \
-            --out-dir /tmp/e2e-idp)
+            --out-dir "$RUNNER_TEMP"/e2e-idp)
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          (cd "$RUNNER_TEMP"/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > "$RUNNER_TEMP"/idp.log 2>&1 &)
           for i in $(seq 1 15); do
             if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
               echo "local JWKS up after ${i}s"
@@ -750,6 +804,7 @@ jobs:
           curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       - name: Run frontend E2E tests
+        id: e2e_tests
         working-directory: ./frontend
         env:
           CI: true
@@ -1209,4 +1264,42 @@ jobs:
           # non-cancelled path above has already returned. Kept so an unforeseen
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Playwright (chromium)
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Clone sibling dependencies|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Set up Node.js 20|${{ steps.setup_node.outcome }}|${{ steps.setup_node.conclusion }}
+            Install Playwright browser system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Create runner schema|${{ steps.runner_schema.outcome }}|${{ steps.runner_schema.conclusion }}
+            Run database migrations|${{ steps.migrations.outcome }}|${{ steps.migrations.conclusion }}
+            Run frontend E2E tests|${{ steps.e2e_tests.outcome }}|${{ steps.e2e_tests.conclusion }}
+          # Plus the frontend lockfile: `Set up Node.js 20` caches on
+          # frontend/package-lock.json (and fails when it is missing), and
+          # `apt_playwright` runs `npx playwright install-deps chromium` from
+          # ./frontend, so its apt package list follows the Playwright version
+          # the PR's lockfile pins. A PR editing either can cause that death.
+          HARNESS_PATHS_RE: '^\.github/workflows/e2e-playwright-stack\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^frontend/package(-lock)?\.json$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
 
