@@ -253,8 +253,7 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     expect(screen.getByTestId("fleet-roles-remove-dialog")).toBeTruthy();
     // OTHER's handler, while CI's dialog is open.
     fireEvent.click(screen.getByText(OTHER));
-    const other = registered.get(`fleet-roles-remove:host:${OTHER}`)
-      ?.customActions?.["remove-from-tenant"];
+    const other = removeAction(`fleet-roles-remove:host:${OTHER}`);
     expect(other).toBeTruthy();
     let resolved: unknown;
     await act(async () => {
@@ -302,8 +301,7 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
         screen.getByTestId("fleet-roles-remove-dialog-confirm").textContent
       ).toBe("Retry the 1 device row not confirmed removed")
     );
-    const action = registered.get(`fleet-roles-remove:host:${CI}`)
-      ?.customActions?.["remove-from-tenant"];
+    const action = removeAction(`fleet-roles-remove:host:${CI}`);
     let resolved: unknown;
     await act(async () => {
       resolved = await action!.handler(undefined);
