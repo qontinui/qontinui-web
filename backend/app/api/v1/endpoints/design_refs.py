@@ -1995,12 +1995,11 @@ async def _page_tokens(
 ) -> dict[UUID, dict[str, Any]]:
     """The newest MEASURED capture's tokens per page.
 
-    A newer capture that carries the stated-unknown sentinel does not hide an
-    older measurement: an older measurement is still a measurement. A page
-    with no measured capture at all maps to its newest stated-unknown set, so
-    the caller can count it as unmeasured rather than drop it silently."""
+    A newer capture that carries the stated-unknown sentinel (or no token
+    leaves) does not hide an older measurement: an older measurement is still a
+    measurement. A page with no measured capture at all is absent from the
+    result, and the caller counts it in ``unmeasured_candidates``."""
     measured: dict[UUID, dict[str, Any]] = {}
-    unknown: dict[UUID, dict[str, Any]] = {}
     if not page_ids:
         return measured
     rows = await db.execute(
@@ -2009,23 +2008,21 @@ async def _page_tokens(
         .order_by(Capture.created_at, Capture.id)
     )
     for page_id, value in rows.all():
-        value = value or {}
-        if svc.is_measured_token_set(value):
+        if svc.is_measured_token_set(value or {}):
             measured[page_id] = value
-        elif svc.is_stated_unknown_token_set(value):
-            unknown[page_id] = value
-    return {**unknown, **measured}
+    return measured
 
 
 def _require_measured_query(tokens: dict[str, Any]) -> None:
-    """A query token set that states it is unknown (or is empty) has no
-    distance to anything: refuse it rather than rank every candidate 1.0."""
+    """A query token set that is not a measurement (empty, leafless, or the
+    stated-unknown sentinel) has no distance to anything: refuse it rather
+    than rank every candidate 1.0."""
     if not svc.is_measured_token_set(tokens):
         raise _refusal(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "tokens_not_measured",
-            "The query tokens are not a measurement: they are empty or carry the "
-            'stated-unknown sentinel {"state": "unknown"}. Comparing an unknown '
+            "The query tokens are not a measurement: they carry no token values "
+            'or are the stated-unknown sentinel {"state": "unknown"}. Comparing an unknown '
             "token set against anything is not a distance; capture measured "
             "tokens first.",
         )
@@ -2034,11 +2031,11 @@ def _require_measured_query(tokens: dict[str, Any]) -> None:
 def _split_measured(
     candidates: list[tuple[Any, Site, dict[str, Any]]],
 ) -> tuple[list[tuple[Any, Site, dict[str, Any]]], int]:
-    """The candidates that can be ranked, and how many were left out because
-    their token set is the stated-unknown sentinel."""
+    """The candidates that can be ranked, and how many could not be: every
+    candidate whose token set is not a measurement (no capture, empty or
+    leafless tokens, or the stated-unknown sentinel)."""
     measured = [c for c in candidates if svc.is_measured_token_set(c[2])]
-    unmeasured = sum(1 for c in candidates if svc.is_stated_unknown_token_set(c[2]))
-    return measured, unmeasured
+    return measured, len(candidates) - len(measured)
 
 
 async def _style_candidates(
