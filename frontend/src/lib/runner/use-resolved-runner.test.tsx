@@ -100,7 +100,11 @@ describe("resolve client", () => {
         status: "resolved",
         deviceId: B,
         via: "pool",
-        pinReleased: { reason: "offline", detail: "stale heartbeat" },
+        pinReleased: {
+          reason: "offline",
+          rawReason: "offline",
+          detail: "stale heartbeat",
+        },
       },
     ],
     [
@@ -115,6 +119,7 @@ describe("resolve client", () => {
         status: "pin_ineligible",
         deviceId: A,
         reason: "missing_capabilities",
+        rawReason: "missing_capabilities",
         detail: "no pwsh",
         missingCapabilities: ["shell:powershell"],
       },
@@ -131,7 +136,61 @@ describe("resolve client", () => {
         status: "no_capable",
         missing: ["os:windows"],
         onlineDevices: 1,
+        // 0 from a coord that predates the counts.
+        staleCapable: 0,
+        unprobedOnlineDevices: 0,
         pinReleased: null,
+      },
+    ],
+    [
+      {
+        outcome: "no_capable_device",
+        missing: [],
+        online_devices: 2,
+        stale_capable: 1,
+        unprobed_online_devices: 2,
+      },
+      {
+        status: "no_capable",
+        missing: [],
+        onlineDevices: 2,
+        staleCapable: 1,
+        unprobedOnlineDevices: 2,
+        pinReleased: null,
+      },
+    ],
+    // A pin code this build predates is coord's answer, verbatim — the
+    // refused or released pin still reads as one, never as "malformed".
+    [
+      {
+        outcome: "pin_ineligible",
+        device_id: A,
+        reason: "quarantined",
+        detail: "quarantined",
+        missing_capabilities: [],
+      },
+      {
+        status: "pin_ineligible",
+        deviceId: A,
+        reason: null,
+        rawReason: "quarantined",
+        detail: "quarantined",
+        missingCapabilities: [],
+      },
+    ],
+    [
+      {
+        outcome: "resolved",
+        device_id: B,
+        via: "pool",
+        pin_released_reason: "quarantined",
+        pin_released_detail: null,
+      },
+      {
+        status: "resolved",
+        deviceId: B,
+        via: "pool",
+        pinReleased: { reason: null, rawReason: "quarantined", detail: null },
       },
     ],
     [
@@ -149,7 +208,11 @@ describe("resolve client", () => {
       {
         status: "all_offline",
         capableOffline: 2,
-        pinReleased: { reason: "offline", detail: "stale heartbeat" },
+        pinReleased: {
+          reason: "offline",
+          rawReason: "offline",
+          detail: "stale heartbeat",
+        },
       },
     ],
     [
@@ -168,7 +231,11 @@ describe("resolve client", () => {
       },
       {
         status: "all_role_closed",
-        pinReleased: { reason: "role_closes_agent_lane", detail: "bench" },
+        pinReleased: {
+          reason: "role_closes_agent_lane",
+          rawReason: "role_closes_agent_lane",
+          detail: "bench",
+        },
       },
     ],
     [
@@ -183,6 +250,7 @@ describe("resolve client", () => {
         status: "pin_ineligible",
         deviceId: A,
         reason: "role_closes_agent_lane",
+        rawReason: "role_closes_agent_lane",
         detail: "bench",
         missingCapabilities: [],
       },
@@ -217,6 +285,8 @@ describe("resolve client", () => {
 
   it.each([
     [{ outcome: "resolved", device_id: A }],
+    [{ outcome: "pin_ineligible", device_id: A, reason: "", detail: "x" }],
+    [{ outcome: "pin_ineligible", device_id: A, reason: 7, detail: "x" }],
     [{ outcome: "unknown_outcome" }],
     [{ outcome: 7 }],
     [{ outcome: "" }],

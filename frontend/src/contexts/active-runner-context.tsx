@@ -366,7 +366,9 @@ export type DispatchNotice =
 /** A `machine_bound` pin coord refused — the surface offers alternatives. */
 export interface PinRefusal {
   deviceId: string;
-  /** Null when coord answered with a different device instead of a reason. */
+  /** Null when coord answered with a different device instead of a reason,
+   *  or refused with a code this build predates (`detail` carries coord's
+   *  wording). */
   reason: PinIneligibility | null;
   detail: string;
   missingCapabilities: string[];
@@ -412,6 +414,41 @@ const PIN_REASON_PHRASE: Record<PinIneligibility, string> = {
   at_capacity: "at its limit on concurrent sessions",
 };
 
+/** The phrase for a pin code: this build's words for a known code, coord's
+ *  own code verbatim for one this build predates (never "malformed"). */
+function pinReasonPhrase(
+  reason: PinIneligibility | null,
+  rawReason: string
+): string {
+  return reason
+    ? PIN_REASON_PHRASE[reason]
+    : `not eligible (coord says “${rawReason}”)`;
+}
+
+function runnersCount(n: number): string {
+  return n === 1 ? "1 runner" : `${n} runners`;
+}
+
+/** The `no_capable` copy, naming coord's counts when they explain it. */
+function noCapableMessage(
+  resolution: Extract<ResolvedRunnerState, { status: "no_capable" }>
+): string {
+  const parts = ["None of your runners is online and able to take new work."];
+  const unprobed = resolution.unprobedOnlineDevices;
+  if (unprobed > 0) {
+    parts.push(
+      `${runnersCount(unprobed)} online ${unprobed === 1 ? "has" : "have"} not yet run the credential probes this work needs; retry once ${unprobed === 1 ? "it has" : "they have"}.`
+    );
+  }
+  const stale = resolution.staleCapable;
+  if (stale > 0) {
+    parts.push(
+      `${runnersCount(stale)} able to take this work ${stale === 1 ? "was" : "were"} last seen too long ago to wait for.`
+    );
+  }
+  return parts.join(" ");
+}
+
 /** A runner's display name: listed name, else the stored pin name, else a short id. */
 export function runnerDisplayName(
   id: string,
@@ -451,10 +488,7 @@ function nothingEligibleRefusal(resolution: NoDeviceAnswer): DispatchTarget {
         `Coord could not read which runners are drained, so it names none. Retry shortly, or ${PICK_HINT}.`
       );
     case "no_capable":
-      return refused(
-        "no_capable",
-        "None of your runners is online and able to take new work."
-      );
+      return refused("no_capable", noCapableMessage(resolution));
     case "all_drained":
       return refused(
         "all_drained",
@@ -531,15 +565,15 @@ export function dispatchTargetFrom({
         return allowed(resolution.deviceId, "resolved");
       }
       // Coord released the pin and picked from the pool: never silent.
-      const reason = resolution.pinReleased?.reason ?? null;
+      const released = resolution.pinReleased;
       const to = runnerDisplayName(resolution.deviceId, runners, pin);
       return allowed(resolution.deviceId, "resolved", {
         kind: "pin_released",
         pinId: pin.id,
         runnerId: resolution.deviceId,
-        reason,
-        text: reason
-          ? `Your pick ${pinName} is ${PIN_REASON_PHRASE[reason]} — running on ${to}.`
+        reason: released?.reason ?? null,
+        text: released
+          ? `Your pick ${pinName} is ${pinReasonPhrase(released.reason, released.rawReason)} — running on ${to}.`
           : `Your pick ${pinName} is not available — running on ${to}.`,
       });
     }
@@ -643,7 +677,7 @@ export function machineBoundDispatchFrom({
       const missing = resolution.missingCapabilities;
       return refused(
         "pin_ineligible",
-        `${whose} can't run this: it is ${PIN_REASON_PHRASE[resolution.reason]}${
+        `${whose} can't run this: it is ${pinReasonPhrase(resolution.reason, resolution.rawReason)}${
           missing.length > 0 ? ` (missing: ${missing.join(", ")})` : ""
         }. This work runs on one machine's screen, so it is not moved to another runner — pick one below.`,
         {

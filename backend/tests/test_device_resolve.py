@@ -27,12 +27,14 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+import structlog.testing
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.device_resolve import (
     KNOWN_COORD_OUTCOMES,
+    KNOWN_PIN_REASONS,
     AllCapableAtCapacityOutcome,
     AllCapableOfflineOutcome,
     AllCapableRoleClosedOutcome,
@@ -279,6 +281,124 @@ async def test_a_known_tag_with_a_broken_body_is_still_malformed(
     _Coord(body={"outcome": "all_capable_offline"}).install(monkeypatch)
     out = await resolve_device(_placeable(), CALLER)
     assert out == UnavailableOutcome(reason="malformed_response", status=200)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "outcome": "pin_ineligible",
+            "device_id": str(DEVICE_A),
+            "reason": "quarantined",
+            "detail": "device … is quarantined",
+            "missing_capabilities": [],
+        },
+        {
+            "outcome": "resolved",
+            "device_id": str(DEVICE_B),
+            "via": "pool",
+            "pin_released_reason": "quarantined",
+            "pin_released_detail": "device … is quarantined",
+        },
+        {
+            "outcome": "all_capable_offline",
+            "capable_offline": 1,
+            "pin_released_reason": "quarantined",
+            "pin_released_detail": None,
+        },
+    ],
+    ids=lambda b: b["outcome"],
+)
+async def test_an_unknown_pin_reason_is_passed_through_not_malformed(
+    monkeypatch: pytest.MonkeyPatch, body: dict[str, Any]
+) -> None:
+    """A pin code coord added after this build is coord's answer, verbatim —
+    the refused or released pin still reads as one, never as a broken coord."""
+    _Coord(body=body).install(monkeypatch)
+    out = await resolve_device(_placeable(), CALLER)
+    assert out.model_dump(mode="json") == body
+
+
+@pytest.mark.parametrize(
+    ("field", "body", "logged"),
+    [
+        (
+            "reason",
+            {
+                "outcome": "pin_ineligible",
+                "device_id": str(DEVICE_A),
+                "reason": "quarantined",
+                "detail": "…",
+            },
+            True,
+        ),
+        (
+            "pin_released_reason",
+            {
+                "outcome": "all_capable_drained",
+                "pin_released_reason": "quarantined",
+            },
+            True,
+        ),
+        (
+            "reason",
+            {
+                "outcome": "pin_ineligible",
+                "device_id": str(DEVICE_A),
+                "reason": "offline",
+                "detail": "…",
+            },
+            False,
+        ),
+    ],
+    ids=["unknown-reason", "unknown-released", "known"],
+)
+async def test_an_unknown_pin_reason_is_logged_by_name(
+    monkeypatch: pytest.MonkeyPatch, field: str, body: dict[str, Any], logged: bool
+) -> None:
+    _Coord(body=body).install(monkeypatch)
+    with structlog.testing.capture_logs() as logs:
+        await resolve_device(_placeable(), CALLER)
+    named = [e for e in logs if e["event"] == "device_resolve_unknown_pin_reason"]
+    if logged:
+        assert named == [
+            {
+                "event": "device_resolve_unknown_pin_reason",
+                "log_level": "warning",
+                "outcome": body["outcome"],
+                "field": field,
+                "raw_reason": "quarantined",
+            }
+        ]
+    else:
+        assert named == []
+
+
+@pytest.mark.parametrize("reason", ["", 7, ["offline"]], ids=["empty", "int", "list"])
+async def test_an_empty_or_non_string_pin_reason_is_still_malformed(
+    monkeypatch: pytest.MonkeyPatch, reason: object
+) -> None:
+    _Coord(
+        body={
+            "outcome": "pin_ineligible",
+            "device_id": str(DEVICE_A),
+            "reason": reason,
+            "detail": "…",
+        }
+    ).install(monkeypatch)
+    out = await resolve_device(_placeable(), CALLER)
+    assert out == UnavailableOutcome(reason="malformed_response", status=200)
+
+
+def test_known_pin_reasons_are_coords_codes() -> None:
+    assert KNOWN_PIN_REASONS == {
+        "not_a_paired_device",
+        "offline",
+        "missing_capabilities",
+        "drained",
+        "role_closes_agent_lane",
+        "at_capacity",
+    }
 
 
 def test_known_outcomes_cover_coords_arms() -> None:
@@ -677,6 +797,82 @@ async def test_auto_pick_maps_no_capable_device(
     )
     assert isinstance(picked, AutoPickRefusal)
     assert picked.code == "no_healthy_runner"
+
+
+@pytest.mark.parametrize(
+    ("answer", "says", "never"),
+    [
+        (
+            NoCapableDeviceOutcome(
+                missing=["os:windows"], online_devices=2, unprobed_online_devices=1
+            ),
+            [
+                "(missing: os:windows)",
+                "1 runner online has not yet run the credential probes",
+            ],
+            ["last seen"],
+        ),
+        (
+            NoCapableDeviceOutcome(missing=[], online_devices=0, stale_capable=3),
+            ["3 runners able to take this work were last seen too long ago"],
+            ["credential probes", "missing"],
+        ),
+        (
+            NoCapableDeviceOutcome(
+                missing=[], online_devices=2, unprobed_online_devices=2
+            ),
+            ["2 runners online have not yet run", "retry once they have."],
+            ["Start a runner"],
+        ),
+        (
+            NoCapableDeviceOutcome(missing=[], online_devices=0, stale_capable=1),
+            [
+                "1 runner able to take this work was last seen too long ago",
+                "Start a runner",
+            ],
+            ["credential probes"],
+        ),
+        (
+            NoCapableDeviceOutcome(
+                missing=[],
+                online_devices=1,
+                unprobed_online_devices=1,
+                stale_capable=1,
+            ),
+            [
+                "1 runner online has not yet run the credential probes this "
+                "work needs; retry once it has. 1 runner able to take this "
+                "work was last seen too long ago to wait for."
+            ],
+            ["Start a runner"],
+        ),
+        (
+            NoCapableDeviceOutcome(missing=[], online_devices=0),
+            ["No online runner of yours can run this.", "Start a runner"],
+            ["credential probes", "last seen"],
+        ),
+    ],
+    ids=["unprobed", "stale", "unprobed-plural", "stale-singular", "both", "neither"],
+)
+async def test_no_capable_device_names_coords_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    answer: NoCapableDeviceOutcome,
+    says: list[str],
+    never: list[str],
+) -> None:
+    _install(monkeypatch, _Resolver(answer), {})
+    picked = await _pick_auto_runner(
+        cast(AsyncSession, _RefusingDb()),
+        USER,
+        CALLER,
+        required_capabilities=[],
+    )
+    assert isinstance(picked, AutoPickRefusal)
+    assert picked.code == "no_healthy_runner"
+    for text in says:
+        assert text in picked.message
+    for text in never:
+        assert text not in picked.message
 
 
 @pytest.mark.parametrize(
