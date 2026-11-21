@@ -106,7 +106,7 @@ it:
     code uses `Button`, `Card`, `Badge`, `Input`, `Select`, `Checkbox`,
     `RadioGroup` and `Label` from `@/components/ui/*`, and does not extend these
     families. To count the files that still use a prefixed one, run
-    `git grep -lE 'className="[^"]*(btn|card|badge|form)-' -- frontend/src | wc -l`
+    `git grep -lE 'className="[^"]*\b(btn|card|badge|form)-' -- frontend/src | wc -l`
     from the repo root.
   - _The remaining families have no primitive yet_ and stay in `components.css`:
     `.panel*`, `.explorer-panel*`, `.item-card*`, `.tab-*` (the accent and
