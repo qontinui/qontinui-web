@@ -1,7 +1,7 @@
 """coord agent_logs: the deferred-load hold index also covers continuation_deferred_load
 
 Revision ID: cfo_02_continuation_deferred_load_index
-Revises: coord_topics_01
+Revises: fleet_res_tel_06
 Create Date: 2026-11-20
 
 Phase 2 of plan
@@ -98,7 +98,7 @@ Every step is ``IF [NOT] EXISTS``, so a re-run after an interruption at any
 step converges: interrupted after step 1, the VALID temporary index is reused;
 after step 2, the drop is a no-op and the rename completes; during step 2, an
 INVALID half-dropped old index is dropped by the re-run's ``IF EXISTS``. A
-re-run after a COMPLETE upgrade (``alembic stamp coord_topics_01`` then
+re-run after a COMPLETE upgrade (``alembic stamp fleet_res_tel_06`` then
 ``upgrade``) builds the temporary index afresh and swaps again: correct, at the
 cost of one more build. A run that finds the original already dropped and the
 temporary index present (interrupted between steps 2 and 3) builds nothing and
@@ -121,7 +121,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cfo_02_continuation_deferred_load_index"
-down_revision: str = "coord_topics_01"
+down_revision: str = "fleet_res_tel_06"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

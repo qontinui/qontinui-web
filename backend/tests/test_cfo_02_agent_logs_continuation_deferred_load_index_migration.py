@@ -76,7 +76,7 @@ from tests._alembic_harness import (
 # cannot silently change what this test walks. MUST equal the revision's own
 # down_revision (the first test enforces it); re-point BOTH together.
 _REVISION_ID = "cfo_02_continuation_deferred_load_index"
-_PARENT_REVISION_ID = "coord_topics_01"
+_PARENT_REVISION_ID = "fleet_res_tel_06"
 _REVISION_FILENAME = "cfo_02_agent_logs_continuation_deferred_load_index.py"
 
 _INDEX_NAME = "idx_agent_logs_deferred_load_retire_device"
