@@ -163,7 +163,14 @@ class Harness:
                 tenant_id=tenant,
                 device_id=None if operator else self.device_id,
                 actor=self.actor,
-                user_id=self.user.id if operator else None,
+                # Production's device arm (``memory.py`` ``get_memory_tenant``)
+                # always carries the device's OWNING USER beside its device id,
+                # so every device of one user shares a ``user_id``. The harness
+                # does the same; a device principal with ``user_id=None`` is a
+                # shape production never produces and hid the claimant bug.
+                user_id=(
+                    self.user.id if self.actor in ("operator", "device") else None
+                ),
             )
 
         self.app.dependency_overrides[get_async_db] = _db
@@ -1673,13 +1680,28 @@ class TestJobsAndCuration:
                 {"outcome": "done", "worker": "w1"},
             )
         ).status_code == 422
-        # Another device credential of the same tenant cannot end the job, even
-        # though it could name the worker label; the job stays running.
+        # Another device of the SAME USER (same user_id, as production's device
+        # principal carries) cannot end the job or write to it while it runs:
+        # a claim belongs to the device that made it. The job stays running.
         claimant = a.device_id
         a.device_id = uuid4()
         resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
-        assert resp.status_code == 409 and resp.json()["error"] == "not_the_claimant"
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        for write in (
+            {"derived_tier": "public"},
+            {"tier_reason": {"robots": "x"}},
+            {"error": "not mine"},
+            {"lease_seconds": 60},
+        ):
+            resp = await a.http.patch(f"{API}/capture-jobs/{job['id']}", json=write)
+            assert resp.status_code == 403, write
+            assert resp.json()["error"] == "not_the_claimant"
         a.device_id = claimant
+        unchanged = await a.ok(
+            "PATCH", f"/capture-jobs/{job['id']}", json={"lease_seconds": 60}
+        )
+        assert unchanged["state"] == "running"
+        assert unchanged["derived_tier"] == "private" and unchanged["error"] is None
         failed = await a.ok(
             "POST",
             f"/capture-jobs/{job['id']}/complete",
@@ -1722,6 +1744,32 @@ class TestJobsAndCuration:
         }
         # Only a failed job is retried.
         assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 409
+
+    async def test_the_single_door_strips_its_url(self, a: Harness) -> None:
+        # Stripped as the batch door strips each entry; whitespace-only is then
+        # empty and refused by the schema.
+        padded = await a.ok(
+            "POST",
+            "/capture-jobs",
+            json={"url": "  https://pad.example/a \n", "source": "cli"},
+        )
+        assert padded["url"] == "https://pad.example/a"
+        assert padded["domain"] == "pad.example"
+        resp = await a.post("/capture-jobs", {"url": "   ", "source": "cli"})
+        assert resp.status_code == 422
+
+    async def test_a_principal_with_no_id_cannot_claim(self, a: Harness) -> None:
+        await a.ok(
+            "POST",
+            "/capture-jobs",
+            json={"url": "https://anon.example", "source": "cli"},
+        )
+        # ``coord_service`` in the harness carries a device id; strip it to the
+        # shape that names nobody.
+        a.as_("coord_service")
+        a.device_id = None  # type: ignore[assignment]
+        resp = await a.post("/capture-jobs/claim", {"worker": "w1"})
+        assert resp.status_code == 403 and resp.json()["error"] == "unattributable"
 
     async def test_an_operator_completing_a_job_is_logged(self, a: Harness) -> None:
         job = await a.ok(

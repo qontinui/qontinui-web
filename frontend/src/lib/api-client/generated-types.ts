@@ -4366,8 +4366,11 @@ export interface paths {
         /**
          * One capture job per URL of a pasted list
          * @description A do-not-capture URL is reported in ``refused`` and does not stop the
-         *     rest; every other URL gets its own job. Blank and repeated entries of the
-         *     list are skipped.
+         *     rest; every other URL gets its own job. Entries are stripped, as the
+         *     single-URL door strips its ``url``. An EMPTY entry (``""``) fails the
+         *     schema, so the whole list is a 422; only whitespace-only entries are
+         *     skipped, as are repeats, and a list with nothing left is a 422
+         *     ``no_urls``.
          */
         post: operations["api_v1_design_refs_capture_jobs_batch_post"];
         delete?: never;
@@ -4426,11 +4429,13 @@ export interface paths {
         put?: never;
         /**
          * Complete Capture Job
-         * @description The one door that ends a running job: ``done``, or ``failed`` with the
-         *     reason the Jobs view shows. A non-operator completes only a job its own
-         *     credential claimed (the caller's principal identity equals the job's
-         *     ``claimed_by_actor``); an operator may complete any running job, and that
-         *     completion is written to the correction log.
+         * @description The one door that FINISHES a running job: ``done``, or ``failed`` with
+         *     the reason the Jobs view shows. A non-operator completes only a job its own
+         *     credential claimed (its ``_claimant_key`` equals the job's
+         *     ``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may
+         *     complete any running job, and that completion is written to the correction
+         *     log. The deliberate exception is an operator's PATCH ``running ->
+         *     cancelled``, which stops a running job without finishing it.
          */
         post: operations["api_v1_design_refs_capture_jobs_job_id_complete_post"];
         delete?: never;
@@ -31237,8 +31242,10 @@ export interface components {
         };
         /**
          * CaptureJobUpdate
-         * @description A worker's or operator's move of one job. Ending a running job is
-         *     ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this.
+         * @description A worker's or operator's move of one job. Finishing a running job is
+         *     ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this;
+         *     the one deliberate exception is an operator's ``running -> cancelled``.
+         *     While a job runs, only its claimant (or an operator) writes its fields.
          */
         CaptureJobUpdate: {
             /** Derived Tier */

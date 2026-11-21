@@ -501,6 +501,13 @@ class CaptureJobCreate(_Strict):
     is_reproduction: bool = False
     browser: JobBrowser = "launched"
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _strip_url(cls, value: Any) -> Any:
+        """Strip before the length bound, as the batch door strips each entry:
+        a whitespace-only ``url`` is then empty and refused (422)."""
+        return value.strip() if isinstance(value, str) else value
+
     @model_validator(mode="after")
     def _scope_whole(self) -> CaptureJobCreate:
         if (self.scope_kind == "crawl") != (self.crawl_depth is not None):
@@ -511,8 +518,10 @@ class CaptureJobCreate(_Strict):
 
 
 class CaptureJobUpdate(_Strict):
-    """A worker's or operator's move of one job. Ending a running job is
-    ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this."""
+    """A worker's or operator's move of one job. Finishing a running job is
+    ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this;
+    the one deliberate exception is an operator's ``running -> cancelled``.
+    While a job runs, only its claimant (or an operator) writes its fields."""
 
     state: JobState | None = None
     derived_tier: Tier | None = None

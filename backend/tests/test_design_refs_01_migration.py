@@ -418,9 +418,10 @@ def test_jobs_01_adopts_pieces_that_already_match() -> None:
 
 
 def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
-    """A pre-existing column with another type or nullability is not adopted
-    silently: the upgrade fails, naming the column, and leaves the database at
-    the parent revision (the DDL is transactional)."""
+    """A pre-existing column with another type, nullability or default, or a
+    CHECK of the same name with another body, is not adopted silently: the
+    upgrade fails, naming it, and leaves the database at the parent revision
+    (the DDL is transactional)."""
     cwd = backend_root()
     with ephemeral_database(admin_database_url(), "design_refs_jobs_01_refuse") as (
         engine,
@@ -431,7 +432,9 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
             "browser text NOT NULL DEFAULT 'launched'",  # wrong type
             "browser varchar(16)",  # nullable
             "browser varchar(64) NOT NULL DEFAULT 'launched'",  # wrong length
+            "browser varchar(16) NOT NULL DEFAULT 'attached'",  # wrong default
             "claimed_by_actor varchar(16)",  # wrong type
+            "claimed_by_actor text DEFAULT 'x'",  # a default it does not declare
         ):
             column = existing.split()[0]
             with engine.begin() as conn:
@@ -451,3 +454,32 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
                 conn.execute(
                     text(f"ALTER TABLE design_refs.capture_job DROP COLUMN {column}")
                 )
+
+        # Columns exactly as declared, but a CHECK of the same name whose body
+        # differs: refused, naming the constraint and both bodies.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE design_refs.capture_job "
+                    "ADD COLUMN browser varchar(16) NOT NULL DEFAULT 'launched', "
+                    "ADD COLUMN claimed_by_actor text, "
+                    "ADD CONSTRAINT ck_capture_job_browser "
+                    "CHECK (browser IN ('launched'))"
+                )
+            )
+        result = run_alembic(
+            cwd, url, "upgrade", _JOBS_REVISION_ID, expect_success=False
+        )
+        assert "constraint ck_capture_job_browser exists as" in (
+            result.stdout + result.stderr
+        )
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_constraint "
+                        "WHERE conname = 'ck_capture_job_browser_expected'"
+                    )
+                ).scalar_one()
+                == 0
+            )
