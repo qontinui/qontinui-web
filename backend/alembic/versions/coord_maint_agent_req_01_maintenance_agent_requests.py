@@ -1,0 +1,209 @@
+"""coord.maintenance_agent_requests — the scheduled-maintenance agent queue
+
+Phases 2 and 3 (the qontinui-web half, which lands FIRST) of plan
+``2026-06-08-coord-scheduled-maintenance-subsystem``. Creates one new, empty
+table, its comment, its verdict-dedupe unique and its queue index in ONE
+transaction::
+
+    coord.maintenance_agent_requests (id, tenant_id, kind, task_id, run_id,
+        target_device_id, candidate_key, repo_path, question, prompt,
+        min_confidence, state, claimed_by_device, claimed_at, verdict,
+        confidence, rationale, result, error, requested_by, created_at,
+        answered_at, expires_at)
+        ux_maintenance_agent_requests_verdict_dedupe
+            UNIQUE (task_id, candidate_key, question) WHERE kind = 'verdict'
+        idx_maintenance_agent_requests_queue  (state, target_device_id)
+
+One queue, two kinds
+====================
+
+Both later phases need the same thing from a runner: coord composes a prompt,
+a runner of the right tenant (or the one named device) claims it, runs it
+through its local agent verbatim, and posts back a structured answer. So ONE
+table carries both, discriminated by ``kind``:
+
+* ``kind = 'verdict'`` — Phase 2, the semantic predicate. The scheduler tick
+  enqueues one request per (task, candidate, question) for a candidate that
+  already passed the deterministic predicates and the safety floor.
+  ``target_device_id`` is the candidate's device, ``candidate_key`` is
+  ``<repo_path>|<branch>|<head_sha>`` (so a moved head is a NEW candidate and
+  never reuses an old verdict), ``repo_path`` is the checkout the runner reads
+  read-only. The answer lands in ``verdict`` / ``confidence`` / ``rationale``.
+  A semantic predicate can only narrow: the safety floor still re-checks at
+  emit.
+* ``kind = 'compile'`` — Phase 3, natural-language task compile. The operator
+  posts a description; ``question`` holds it, ``target_device_id`` is NULL (any
+  device of the tenant may claim it), and the answer lands in ``result`` (the
+  proposed task definition, which the operator approves by posting it to the
+  task API) and ``rationale``.
+
+``error`` records a runner that could not answer either kind.
+
+Shape
+=====
+
+* ``kind`` is closed to ``verdict`` / ``compile``; ``state`` to ``pending`` /
+  ``claimed`` / ``answered`` / ``failed`` / ``expired`` (default
+  ``pending``); ``verdict`` to ``yes`` / ``no`` / ``unknown``; ``confidence``
+  to ``[0, 1]``.
+* ``task_id`` references ``coord.maintenance_tasks`` ON DELETE CASCADE (a
+  deleted task takes its pending requests with it); ``run_id`` references
+  ``coord.maintenance_runs`` ON DELETE SET NULL (the run ledger is history, a
+  pruned run row must not delete an answered verdict). Both are nullable: a
+  compile request has no task yet.
+* The verdict dedupe is a PARTIAL unique, so a coord enqueue naming it as its
+  ``ON CONFLICT`` arbiter must restate ``WHERE kind = 'verdict'``.
+* The queue index serves the claim read: pending rows for a device, or for no
+  device.
+
+Indexes and lock posture
+========================
+
+Both indexes are built in the SAME transaction as the table — a plain
+``CREATE [UNIQUE] INDEX IF NOT EXISTS``, never ``CONCURRENTLY`` — on a table
+this transaction created, so the build is on an empty table and holds no lock
+any reader waits on. coord's migration classifier admits each such build as a
+new-table claim, which the merge engine discharges by proving trunk has never
+named the table (``pr_merge::migration_new_table_proof``). The bare table name
+appeared nowhere on trunk at authoring time; a sibling coord PR naming it must
+therefore land AFTER this one.
+
+The two foreign keys take ``SHARE ROW EXCLUSIVE`` on ``coord.maintenance_tasks``
+and ``coord.maintenance_runs`` for the instant of the ``CREATE TABLE``. That
+conflicts with the scheduler tick writing those tables, so the wait is bounded
+with ``SET LOCAL lock_timeout = '3s'`` (as ``journey_03`` / ``journey_04`` do):
+a busy writer fails the migration loudly instead of queueing the tick behind
+it. No existing table is altered.
+
+Idempotency / authorship posture
+================================
+
+* ``CREATE TABLE IF NOT EXISTS`` / ``CREATE [UNIQUE] INDEX IF NOT EXISTS`` /
+  re-runnable ``COMMENT ON``; a re-run (or a partial prior apply) is a no-op.
+* ``downgrade()`` drops the two indexes, then the table, all ``IF EXISTS``.
+  It drops no table this revision did not create.
+* alembic is the SOLE author of the ``coord.*`` schema (served policy
+  ``production-and-cost`` ``alembic-sole-authorship``). coord only INSERTs,
+  UPDATEs and SELECTs this table.
+* Privileges for the ``coord_tenant`` roles come from ``coordrls_01``'s
+  ``ALTER DEFAULT PRIVILEGES``. No backfill: this revision writes no rows.
+* Every SQL string is a static literal inline at its call, with no ``:word``
+  sequence and no ``%``.
+
+Chaining
+========
+
+``down_revision`` is this repo's single alembic head at authoring time and is
+deliberately NOT pinned: ``alembic-graph-pr.yml`` serialises alembic PRs, so a
+revision that lands ahead of this one re-forks the chain and this line is
+re-pointed at the new head. A re-point is three coupled edits:
+``down_revision``, the ``Revises:`` line below, and ``_PARENT_REVISION_ID`` in
+``tests/test_coord_maint_agent_req_01_migration.py``. Never author an
+``alembic merge`` revision for it.
+
+Revision ID: coord_maint_agent_req_01
+Revises: journey_05_edge_outcome_verdict_unknown
+Create Date: 2026-11-21
+
+"""
+
+from collections.abc import Sequence
+
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = "coord_maint_agent_req_01"
+down_revision: str | None = "journey_05_edge_outcome_verdict_unknown"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+# Every SQL string below is a STATIC literal. The coord merge-train migration
+# classifier extracts string literals from each execute call and rejects a call
+# with none as dynamic. Keep these comments free of apostrophes and of the
+# op-dot-call spelling: the classifier lexer does not skip Python comments.
+
+
+def upgrade() -> None:
+    """Create the table, its comment, the dedupe unique and the queue index."""
+    # The two foreign keys lock the existing task and run tables briefly.
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord.maintenance_agent_requests (
+            id                uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id         uuid        NOT NULL,
+            kind              text        NOT NULL,
+            task_id           uuid        NULL,
+            run_id            uuid        NULL,
+            target_device_id  uuid        NULL,
+            candidate_key     text        NULL,
+            repo_path         text        NULL,
+            question          text        NOT NULL,
+            prompt            text        NOT NULL,
+            min_confidence    real        NULL,
+            state             text        NOT NULL DEFAULT 'pending',
+            claimed_by_device uuid        NULL,
+            claimed_at        timestamptz NULL,
+            verdict           text        NULL,
+            confidence        real        NULL,
+            rationale         text        NULL,
+            result            jsonb       NULL,
+            error             text        NULL,
+            requested_by      text        NOT NULL,
+            created_at        timestamptz NOT NULL DEFAULT now(),
+            answered_at       timestamptz NULL,
+            expires_at        timestamptz NOT NULL,
+            CONSTRAINT ck_maintenance_agent_requests_kind
+                CHECK (kind IN ('verdict', 'compile')),
+            CONSTRAINT ck_maintenance_agent_requests_state
+                CHECK (state IN ('pending', 'claimed', 'answered', 'failed', 'expired')),
+            CONSTRAINT ck_maintenance_agent_requests_verdict
+                CHECK (verdict IN ('yes', 'no', 'unknown')),
+            CONSTRAINT ck_maintenance_agent_requests_confidence
+                CHECK (confidence >= 0 AND confidence <= 1),
+            CONSTRAINT fk_maintenance_agent_requests_task
+                FOREIGN KEY (task_id) REFERENCES coord.maintenance_tasks (id)
+                ON DELETE CASCADE,
+            CONSTRAINT fk_maintenance_agent_requests_run
+                FOREIGN KEY (run_id) REFERENCES coord.maintenance_runs (id)
+                ON DELETE SET NULL
+        )
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON TABLE coord.maintenance_agent_requests IS
+            'Scheduled-maintenance agent queue (plan '
+            '2026-06-08-coord-scheduled-maintenance-subsystem Phases 2-3). '
+            'kind=verdict: a semantic-predicate question about one candidate; '
+            'kind=compile: a natural-language task description to compile into '
+            'a proposed task definition. coord composes prompt, a runner claims '
+            'the row and runs it verbatim, and posts the answer back.'
+        """
+    )
+    # One verdict request per task, candidate and question. Partial, so an
+    # upsert naming it as its arbiter must restate WHERE kind = verdict.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_maintenance_agent_requests_verdict_dedupe
+            ON coord.maintenance_agent_requests (task_id, candidate_key, question)
+            WHERE kind = 'verdict'
+        """
+    )
+    # The claim read: requests in a state, for a device or for no device.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_maintenance_agent_requests_queue
+            ON coord.maintenance_agent_requests (state, target_device_id)
+        """
+    )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
+
+
+def downgrade() -> None:
+    """Drop the two indexes, then the table."""
+    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_agent_requests_queue")
+    op.execute(
+        "DROP INDEX IF EXISTS coord.ux_maintenance_agent_requests_verdict_dedupe"
+    )
+    op.execute("DROP TABLE IF EXISTS coord.maintenance_agent_requests")
