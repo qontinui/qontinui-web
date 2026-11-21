@@ -17,17 +17,22 @@ import {
 } from "@testing-library/react";
 import type { RegisteredElement } from "@qontinui/ui-bridge";
 
+/**
+ * The LATEST config each id rendered with. The SDK (>= 0.54) runs the handler
+ * of the latest committed declaration, so that is what a bridge call reaches;
+ * the handler closes over its render's values with no latest-ref mirror. Read
+ * it at the moment of the call, never from an earlier capture.
+ */
 const registered = new Map<string, RegisteredElement>();
-/** The FIRST config each id registered with — what a bridge may still hold. */
-const firstRegistered = new Map<string, RegisteredElement>();
 vi.mock("@qontinui/ui-bridge/react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@qontinui/ui-bridge/react")>()),
   useUIElement: (config: RegisteredElement & { id: string }) => {
     registered.set(config.id, config);
-    if (!firstRegistered.has(config.id)) firstRegistered.set(config.id, config);
     return { ref: () => {} };
   },
 }));
+const removeAction = (id: string) =>
+  registered.get(id)?.customActions?.["remove-from-tenant"];
 vi.mock("@/components/ui/destructive-button", () => ({
   isSyntheticClick: () => false,
   DestructiveButton: (props: Record<string, unknown>) => (
@@ -71,7 +76,6 @@ let deviceIds: string[];
 
 beforeEach(() => {
   registered.clear();
-  firstRegistered.clear();
   deviceIds = [DEV_1, DEV_2];
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
@@ -154,13 +158,11 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     expect(posts).toEqual([]);
   });
 
-  it("a handler the bridge registered earlier opens the machine as the roster now reads it", async () => {
+  it("after a roster re-read, the bridge's handler opens the machine as the roster now reads it", async () => {
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText(CI));
     const id = `fleet-roles-remove:host:${CI}`;
-    const stale =
-      firstRegistered.get(id)?.customActions?.["remove-from-tenant"];
-    expect(stale).toBeTruthy();
+    expect(removeAction(id)).toBeTruthy();
 
     // A removal re-reads the roster, which now lists one row for the host
     // (e.g. the registrar re-bound one of them).
@@ -176,12 +178,12 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
       )
     );
 
-    let staleResult: unknown;
+    let result: unknown;
     await act(async () => {
-      staleResult = await stale!.handler(undefined);
+      result = await removeAction(id)!.handler(undefined);
     });
-    // Its result names the count as the roster reads now, not at registration.
-    expect(staleResult).toEqual({
+    // Its result names the count as the roster reads now, not at first render.
+    expect(result).toEqual({
       opened: true,
       effect: "removes this tenant's binding of 1 device",
     });
@@ -202,8 +204,6 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     });
     render(<FleetRolesSection />);
     fireEvent.click(await screen.findByText(CI));
-    const action = registered.get(`fleet-roles-remove:host:${CI}`)
-      ?.customActions?.["remove-from-tenant"];
     fireEvent.click(screen.getByTestId("fleet-roles-remove-open"));
     fireEvent.click(screen.getByTestId("fleet-roles-remove-dialog-confirm"));
     await waitFor(() =>
@@ -215,7 +215,9 @@ describe("the remove-from-tenant control's UI Bridge registration", () => {
     );
     let resolved: unknown;
     await act(async () => {
-      resolved = await action!.handler(undefined);
+      resolved = await removeAction(`fleet-roles-remove:host:${CI}`)!.handler(
+        undefined
+      );
     });
     expect(resolved).toEqual({
       opened: false,
