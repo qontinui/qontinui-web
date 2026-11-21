@@ -1,82 +1,5 @@
 // types/integration-testing.ts
-// Types for Integration Testing feature (mock mode testing with simulated data)
-
-export interface MockExecutionRequest {
-  project_id: string;
-  workflow_id: string;
-  workflow_name: string;
-  snapshot_run_ids: string[];
-  initial_states: string[];
-  actions: ActionSpec[];
-}
-
-export interface ActionSpec {
-  type: string;
-  pattern_id?: string;
-  text?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface MockExecutionResponse {
-  workflow_id: string;
-  workflow_name: string;
-  start_time: string;
-  end_time: string | null;
-  total_duration_ms: number;
-  initial_states: string[];
-  final_states: string[];
-  actions: ActionVisualization[];
-  success: boolean;
-  success_rate: number;
-  total_actions: number;
-  successful_actions: number;
-}
-
-export interface ActionVisualization {
-  action_type: string;
-  screenshot_path: string;
-  action_location?: [number, number];
-  action_region?: {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  };
-  success: boolean;
-  matches?: Array<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    score: number;
-  }>;
-  text?: string;
-  active_states: string[];
-  timestamp: string;
-  duration_ms: number;
-}
-
-export interface StateScreenshot {
-  screenshot_path: string;
-  active_states: string[];
-  timestamp: string;
-  width: number;
-  height: number;
-  state_hash: string;
-}
-
-export interface StateScreenshotListResponse {
-  screenshots: StateScreenshot[];
-  total: number;
-  unique_state_combinations: number;
-}
-
-export interface CoverageAnalysisRequest {
-  workflow_id: string;
-  workflow_name: string;
-  snapshot_run_ids: string[];
-  expected_states?: string[];
-}
+// Types for the Integration Testing feature (runner integration test runs, coverage and playback)
 
 export interface StateCoverageMetrics {
   state_name: string;
@@ -386,16 +309,6 @@ export type ReliabilityInsightType =
 // =============================================================================
 
 /**
- * Playback state for visual mode
- */
-export interface PlaybackState {
-  is_playing: boolean;
-  current_step_index: number;
-  playback_speed: number; // multiplier: 0.5, 1, 2, 4
-  total_steps: number;
-}
-
-/**
  * Frame data for visual playback
  */
 export interface PlaybackFrame {
@@ -439,16 +352,6 @@ export interface HighlightRegion {
 // =============================================================================
 // API Request/Response Types for Integration Test Endpoint
 // =============================================================================
-
-/**
- * Request to run an integration test via runner
- */
-export interface IntegrationTestRequest {
-  project_id: string;
-  workflow_config: WorkflowConfig;
-  initial_states?: string[];
-  options?: IntegrationTestOptions;
-}
 
 /**
  * Workflow configuration for integration test

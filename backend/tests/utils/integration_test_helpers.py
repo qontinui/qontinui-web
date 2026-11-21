@@ -174,45 +174,6 @@ def import_test_snapshot(client, snapshot_data: dict[str, Any]) -> dict[str, Any
         return result
 
 
-def execute_test_process(
-    client,
-    process_id: str,
-    process_name: str,
-    snapshot_run_ids: list[str],
-    initial_states: list[str],
-    actions: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """
-    Execute a mock process via API.
-
-    Args:
-        client: FastAPI TestClient instance
-        process_id: Process identifier
-        process_name: Human-readable process name
-        snapshot_run_ids: List of snapshot run IDs to use
-        initial_states: List of initial state names
-        actions: List of action specifications
-
-    Returns:
-        Execution result data
-    """
-    request_data = {
-        "process_id": process_id,
-        "process_name": process_name,
-        "snapshot_run_ids": snapshot_run_ids,
-        "initial_states": initial_states,
-        "actions": actions,
-    }
-
-    response = client.post("/api/integration-testing/execute", json=request_data)
-
-    if response.status_code != 200:
-        raise Exception(f"Execution failed: {response.text}")
-
-    result: dict[str, Any] = response.json()
-    return result
-
-
 def verify_execution_result(
     result: dict[str, Any],
     expected_action_count: int,
