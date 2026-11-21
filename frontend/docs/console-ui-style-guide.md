@@ -116,16 +116,15 @@ it:
     `.layout-full-height`, the `.text-*` typography scale, and
     `.text-ellipsis-start`, which is a truncation utility rather than
     typography.
-  - To see how much code still uses the prefixed families, run from the repo
-    root `git grep -lE 'className="[^"]*\b(btn|card|badge|form)-' -- frontend/src | wc -l`.
-    It returned **22** on 2026-11-21. It counts files containing a literal
-    `className="..."` string with a dash-prefixed `btn-`, `card-`, `badge-` or
-    `form-` member, and nothing else: it misses the bare `.card`, `.badge` and
-    `.input` classes and any class passed through `className={...}` or `cn()`.
-    One of the 22, `EditPresetDialog.tsx`, matches only through `form-*`
-    classes it styles itself in an inline `<style>` block (`.form-group`,
-    `.form-input`, `.form-select`, `.form-textarea`, `.form-section`); of
-    those, only `.form-group` also exists in `components.css`.
+  - To see how much code still uses the legacy families, run from the repo root
+    `git grep -lE 'className="([^"]* )?(btn-|card-|badge-|form-label)' -- 'frontend/src/*.tsx' 'frontend/src/*.ts' | wc -l`.
+    It returned **18** on 2026-11-21. It counts `.ts`/`.tsx` files under
+    `frontend/src` containing a literal `className="..."` string with a class
+    that starts with `btn-`, `card-` or `badge-`, or is `form-label`. Every
+    class it matched that day is defined in `components.css`, and none of the
+    18 files restyles one locally, so all 18 are legacy-family uses. It misses
+    the bare `.card`, `.badge`, `.input`, `.select`, `.checkbox` and `.radio`
+    classes, and any class passed through `className={...}` or `cn()`.
 - **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
   `spacing.*`, `reactFlow.*`).
 - **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
