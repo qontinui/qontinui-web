@@ -40,15 +40,23 @@ depends_on = None
 
 
 def _add_column_or_verify(
-    column: str, ddl: str, data_type: str, max_length: int | None, nullable: bool
+    column: str,
+    ddl: str,
+    data_type: str,
+    max_length: int | None,
+    nullable: bool,
+    default: str | None,
 ) -> None:
     """Add ``column`` with ``ddl``, or, when it exists, refuse unless it is
-    exactly the declared type and nullability."""
+    exactly the declared type, nullability and default. ``default`` is the
+    ``information_schema.columns.column_default`` rendering (``None`` = no
+    default)."""
     length_check = (
         f"OR character_maximum_length IS DISTINCT FROM {max_length}"
         if max_length is not None
         else ""
     )
+    default_sql = "NULL" if default is None else "'" + default.replace("'", "''") + "'"
     is_nullable = "YES" if nullable else "NO"
     quoted_ddl = ddl.replace("'", "''")  # inside the RAISE string literal
     op.execute(
@@ -69,11 +77,13 @@ def _add_column_or_verify(
                    AND column_name = '{column}'
                    AND (data_type <> '{data_type}'
                         OR is_nullable <> '{is_nullable}'
+                        OR column_default IS DISTINCT FROM {default_sql}
                         {length_check})
             ) THEN
                 RAISE EXCEPTION
-                    'design_refs.capture_job.{column} exists with a type or '
-                    'nullability other than {quoted_ddl}; refusing to adopt it';
+                    'design_refs.capture_job.{column} exists with a type, '
+                    'nullability or default other than {quoted_ddl}; '
+                    'refusing to adopt it';
             END IF;
         END
         $$;
@@ -88,24 +98,54 @@ def upgrade() -> None:
         "character varying",
         16,
         nullable=False,
+        default="'launched'::character varying",
     )
-    _add_column_or_verify("claimed_by_actor", "text", "text", None, nullable=True)
+    _add_column_or_verify(
+        "claimed_by_actor", "text", "text", None, nullable=True, default=None
+    )
+    # The CHECK: added when absent; when present, its body must be the one this
+    # revision declares. The expected body is not hard-coded (Postgres's
+    # rendering of a CHECK varies across versions): it is read back from a
+    # NOT VALID twin added under a scratch name and dropped again in the same
+    # transaction, so both renderings come from the same server.
     op.execute(
         """
         DO $$
+        DECLARE
+            existing text;
+            expected text;
         BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                  FROM pg_constraint c
-                  JOIN pg_class t ON t.oid = c.conrelid
-                  JOIN pg_namespace n ON n.oid = t.relnamespace
-                 WHERE n.nspname = 'design_refs'
-                   AND t.relname = 'capture_job'
-                   AND c.conname = 'ck_capture_job_browser'
-            ) THEN
+            SELECT pg_get_constraintdef(c.oid) INTO existing
+              FROM pg_constraint c
+              JOIN pg_class t ON t.oid = c.conrelid
+              JOIN pg_namespace n ON n.oid = t.relnamespace
+             WHERE n.nspname = 'design_refs'
+               AND t.relname = 'capture_job'
+               AND c.conname = 'ck_capture_job_browser';
+            IF existing IS NULL THEN
                 ALTER TABLE design_refs.capture_job
                     ADD CONSTRAINT ck_capture_job_browser
                     CHECK (browser IN ('launched', 'attached'));
+                RETURN;
+            END IF;
+            ALTER TABLE design_refs.capture_job
+                ADD CONSTRAINT ck_capture_job_browser_expected
+                CHECK (browser IN ('launched', 'attached')) NOT VALID;
+            SELECT replace(pg_get_constraintdef(c.oid), ' NOT VALID', '')
+              INTO expected
+              FROM pg_constraint c
+              JOIN pg_class t ON t.oid = c.conrelid
+              JOIN pg_namespace n ON n.oid = t.relnamespace
+             WHERE n.nspname = 'design_refs'
+               AND t.relname = 'capture_job'
+               AND c.conname = 'ck_capture_job_browser_expected';
+            ALTER TABLE design_refs.capture_job
+                DROP CONSTRAINT ck_capture_job_browser_expected;
+            IF existing IS DISTINCT FROM expected THEN
+                RAISE EXCEPTION
+                    'design_refs.capture_job constraint ck_capture_job_browser '
+                    'exists as % but this revision declares %; refusing to '
+                    'adopt it', existing, expected;
             END IF;
         END
         $$;

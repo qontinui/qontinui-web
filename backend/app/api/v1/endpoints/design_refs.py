@@ -293,6 +293,40 @@ def _actor_id(principal: MemoryPrincipal) -> str:
     return principal.actor
 
 
+def _claimant_key(principal: MemoryPrincipal) -> str:
+    """Who holds a capture job, for authorization — NOT ``_actor_id``.
+
+    ``_actor_id`` prefers ``user_id``, and every device of one user carries
+    that user's id, so it would make all of a user's devices one claimant. A
+    claim belongs to the credential that made it: the device id comes first,
+    then the user id (a human session has no device). A principal with neither
+    cannot be told apart from any other, so it may not claim (403).
+    """
+    if principal.device_id is not None:
+        return f"{principal.actor}:device:{principal.device_id}"
+    if principal.user_id is not None:
+        return f"{principal.actor}:{principal.user_id}"
+    raise _refusal(
+        status.HTTP_403_FORBIDDEN,
+        "unattributable",
+        "This credential carries neither a device nor a user id, so a capture "
+        "job it held could not be told apart from anyone else's.",
+    )
+
+
+def _require_claimant(principal: MemoryPrincipal, job: CaptureJob, action: str) -> None:
+    """Refuse (403) a non-operator whose claimant key is not the job's."""
+    if is_operator(principal):
+        return
+    if job.claimed_by_actor is None or job.claimed_by_actor != _claimant_key(principal):
+        raise _refusal(
+            status.HTTP_403_FORBIDDEN,
+            "not_the_claimant",
+            f"Only the credential that claimed this capture job may {action}.",
+            claimed_by=job.claimed_by,
+        )
+
+
 class PrincipleApprover:
     """The operator approving or retiring a principle, and the tenant."""
 
@@ -1631,10 +1665,12 @@ _JOB_TRANSITIONS: Final[dict[tuple[str, str], str]] = {
     ("queued", "cancelled"): "operator",
     ("running", "cancelled"): "operator",
 }
-# Not here, on purpose: a running job is ended only through
-# ``POST /capture-jobs/{id}/complete`` (claimant or operator), and a failed job
-# is re-queued only through ``POST /capture-jobs/{id}/retry`` (operator). PATCH
-# offering either move would be a second door around those rules.
+# Not here, on purpose: a running job is finished (``done`` / ``failed``) only
+# through ``POST /capture-jobs/{id}/complete`` (claimant or operator), and a
+# failed job is re-queued only through ``POST /capture-jobs/{id}/retry``
+# (operator). PATCH offering either move would be a second door around those
+# rules. The one deliberate exception is ``running -> cancelled`` above: an
+# operator may stop a running job through PATCH without completing it.
 
 
 def _check_job_source(principal: MemoryPrincipal, source: str) -> None:
@@ -1709,8 +1745,11 @@ async def create_capture_jobs_batch(
     body: CaptureJobBatchCreate, principal: Principal, db: Db
 ) -> CaptureJobBatchOut:
     """A do-not-capture URL is reported in ``refused`` and does not stop the
-    rest; every other URL gets its own job. Blank and repeated entries of the
-    list are skipped."""
+    rest; every other URL gets its own job. Entries are stripped, as the
+    single-URL door strips its ``url``. An EMPTY entry (``""``) fails the
+    schema, so the whole list is a 422; only whitespace-only entries are
+    skipped, as are repeats, and a list with nothing left is a 422
+    ``no_urls``."""
     _check_job_source(principal, body.source)
     urls: list[str] = []
     for raw in body.urls:
@@ -1780,6 +1819,10 @@ async def claim_capture_job(
 ) -> CaptureJobOut | None:
     """Lease the oldest queued job — or a running one whose lease lapsed (a
     dead worker's job is re-queued this way). ``null`` when none waits."""
+    # Resolved before anything is selected or written: a principal with no
+    # device or user id cannot claim (403), since its claim could not be told
+    # apart from anyone else's.
+    claimant = _claimant_key(principal)
     now = datetime.now(UTC)
     job = (
         await db.execute(
@@ -1800,7 +1843,7 @@ async def claim_capture_job(
         return None
     job.state = "running"
     job.claimed_by = body.worker
-    job.claimed_by_actor = _actor_id(principal)
+    job.claimed_by_actor = claimant
     job.claimed_until = now + timedelta(seconds=body.lease_seconds)
     await db.commit()
     await db.refresh(job)
@@ -1814,6 +1857,14 @@ async def update_capture_job(
     job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
+    writes_fields = any(
+        v is not None
+        for v in (body.derived_tier, body.tier_reason, body.error, body.lease_seconds)
+    )
+    if writes_fields and job.state == "running":
+        # A running job's pre-check result, error and lease are its claimant's
+        # to write (or an operator's), not any device's of the tenant.
+        _require_claimant(principal, job, "write to it while it runs")
     if body.state is not None and body.state != job.state:
         who = _JOB_TRANSITIONS.get((job.state, body.state))
         if who is None:
@@ -1920,11 +1971,13 @@ async def retry_capture_job(
 async def complete_capture_job(
     job_id: UUID, body: CaptureJobComplete, principal: Principal, db: Db
 ) -> CaptureJobOut:
-    """The one door that ends a running job: ``done``, or ``failed`` with the
-    reason the Jobs view shows. A non-operator completes only a job its own
-    credential claimed (the caller's principal identity equals the job's
-    ``claimed_by_actor``); an operator may complete any running job, and that
-    completion is written to the correction log."""
+    """The one door that FINISHES a running job: ``done``, or ``failed`` with
+    the reason the Jobs view shows. A non-operator completes only a job its own
+    credential claimed (its ``_claimant_key`` equals the job's
+    ``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may
+    complete any running job, and that completion is written to the correction
+    log. The deliberate exception is an operator's PATCH ``running ->
+    cancelled``, which stops a running job without finishing it."""
     job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
@@ -1946,13 +1999,8 @@ async def complete_capture_job(
                 body.outcome,
             )
         )
-    elif job.claimed_by_actor is None or job.claimed_by_actor != _actor_id(principal):
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "not_the_claimant",
-            "Only the credential that claimed this capture job completes it.",
-            claimed_by=job.claimed_by,
-        )
+    else:
+        _require_claimant(principal, job, "complete it")
     job.state = body.outcome
     job.error = body.error if body.outcome == "failed" else None
     job.claimed_until = None

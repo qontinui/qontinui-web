@@ -7783,7 +7783,7 @@
       },
       "CaptureJobUpdate": {
         "additionalProperties": false,
-        "description": "A worker's or operator's move of one job. Ending a running job is\n``/complete``'s and re-queueing a failed one is ``/retry``'s, not this.",
+        "description": "A worker's or operator's move of one job. Finishing a running job is\n``/complete``'s and re-queueing a failed one is ``/retry``'s, not this;\nthe one deliberate exception is an operator's ``running -> cancelled``.\nWhile a job runs, only its claimant (or an operator) writes its fields.",
         "properties": {
           "derived_tier": {
             "anyOf": [
@@ -86009,7 +86009,7 @@
     },
     "/api/v1/design-refs/capture-jobs/batch": {
       "post": {
-        "description": "A do-not-capture URL is reported in ``refused`` and does not stop the\nrest; every other URL gets its own job. Blank and repeated entries of the\nlist are skipped.",
+        "description": "A do-not-capture URL is reported in ``refused`` and does not stop the\nrest; every other URL gets its own job. Entries are stripped, as the\nsingle-URL door strips its ``url``. An EMPTY entry (``\"\"``) fails the\nschema, so the whole list is a 422; only whitespace-only entries are\nskipped, as are repeats, and a list with nothing left is a 422\n``no_urls``.",
         "operationId": "api_v1_design_refs_capture_jobs_batch_post",
         "requestBody": {
           "content": {
@@ -86227,7 +86227,7 @@
     },
     "/api/v1/design-refs/capture-jobs/{job_id}/complete": {
       "post": {
-        "description": "The one door that ends a running job: ``done``, or ``failed`` with the\nreason the Jobs view shows. A non-operator completes only a job its own\ncredential claimed (the caller's principal identity equals the job's\n``claimed_by_actor``); an operator may complete any running job, and that\ncompletion is written to the correction log.",
+        "description": "The one door that FINISHES a running job: ``done``, or ``failed`` with\nthe reason the Jobs view shows. A non-operator completes only a job its own\ncredential claimed (its ``_claimant_key`` equals the job's\n``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may\ncomplete any running job, and that completion is written to the correction\nlog. The deliberate exception is an operator's PATCH ``running ->\ncancelled``, which stops a running job without finishing it.",
         "operationId": "api_v1_design_refs_capture_jobs_job_id_complete_post",
         "parameters": [
           {
