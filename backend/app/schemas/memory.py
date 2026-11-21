@@ -154,9 +154,9 @@ MAX_ANCHORED_TO_CLAUSES = 16
 # ``on_ref`` — coord reads it as absent, dropping what the writer typed), a
 # ``content`` pattern over coord's resolve-time cap (which the parser admits
 # but the resolver can never compile), extra keys inside nested objects
-# (``flag_state.expect``), and length caps coord does not have (256 bytes on
-# ``repo`` / ``workflow`` / ``name`` / ``ref`` / ``on_ref``, 1024 on
-# ``path``).
+# (``flag_state.expect``), and length caps coord does not have (256
+# characters on ``repo`` / ``workflow`` / ``name`` / ``ref`` / ``on_ref``,
+# 1024 on ``path``; pydantic's ``max_length`` counts characters, not bytes).
 #
 # Every variant forbids extra keys. Anchor IDENTITY is the whole JSON
 # object (that is what the dedup-merge in ``memory_store.insert_record``
