@@ -23,7 +23,7 @@ With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
 4. Column types, nullability and defaults, in contract order.
-5. The two indexes by definition, the CHECKs, the dedupe, and the FK actions.
+5. The four indexes by definition, the CHECKs, the dedupe, and the FK actions.
 6. ``upgrade()`` is idempotent, and up, down, up leaves no residue.
 """
 
@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import ast
 import re
+import secrets
 import sys
 import uuid
 from collections.abc import Callable, Iterator
@@ -376,7 +377,7 @@ def test_indexes_by_definition(requests_db: Engine) -> None:
     valid, unique, predicate = index_state(requests_db, _DEDUPE_INDEX)
     assert valid and unique
     assert predicate == "(kind = 'verdict'::text)", predicate
-    assert "(task_id, candidate_key, question)" in index_definition(
+    assert "(task_id, md5(candidate_key), md5(question))" in index_definition(
         requests_db, _DEDUPE_INDEX
     )
     valid, unique, predicate = index_state(requests_db, _PENDING_INDEX)
@@ -428,7 +429,6 @@ def test_a_minimal_request_gets_its_defaults(requests_db: Engine) -> None:
         ({"task_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
         ({"target_device_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
         ({"repo_path": None}, "ck_maintenance_agent_requests_verdict_fields"),
-        ({"question": "q" * 2001}, "ck_maintenance_agent_requests_text_bounds"),
     ],
 )
 def test_closed_vocabularies_refuse_another_word(
@@ -463,16 +463,54 @@ def test_a_verdict_needs_its_fields_and_a_compile_does_not(
         )
 
 
-@_needs_pg
-def test_the_dedupe_key_text_is_bounded(requests_db: Engine) -> None:
-    def long_key(conn: Connection) -> None:
-        _insert_request(conn, candidate_key="k" * 1025)
-
-    assert _refused_by(requests_db, long_key) == (
-        "ck_maintenance_agent_requests_text_bounds"
+def _enqueue_verdict(
+    conn: Connection, task_id: uuid.UUID, candidate_key: str, question: str
+) -> list[object]:
+    """The coord enqueue: insert a verdict request unless one already exists."""
+    return list(
+        conn.execute(
+            text(
+                f"""
+                INSERT INTO coord.{_TABLE}
+                    (tenant_id, kind, task_id, target_device_id, candidate_key,
+                     repo_path, question, prompt, requested_by, expires_at)
+                VALUES (:t, 'verdict', :task, :d, :key, 'D:/repo', :q, 'p',
+                        'coord:maintenance', now() + interval '1 hour')
+                ON CONFLICT (task_id, md5(candidate_key), md5(question))
+                    WHERE kind = 'verdict' DO NOTHING
+                RETURNING id
+                """
+            ),
+            {
+                "t": _TENANT,
+                "task": task_id,
+                "d": _DEVICE,
+                "key": candidate_key,
+                "q": question,
+            },
+        ).all()
     )
+
+
+@_needs_pg
+def test_incompressible_long_dedupe_text_fits_and_dedupes(requests_db: Engine) -> None:
+    """A raw-text unique fails past the 2704-byte btree row; the md5 key does not."""
+    question = secrets.token_hex(2000)
+    candidate_key = secrets.token_hex(1000)
+    assert (len(question), len(candidate_key)) == (4000, 2000)
     with requests_db.begin() as conn:
-        _insert_request(conn, candidate_key="k" * 1024, question="q" * 2000)
+        task_id = _insert_task(conn)
+        assert len(_enqueue_verdict(conn, task_id, candidate_key, question)) == 1
+    with requests_db.begin() as conn:
+        assert _enqueue_verdict(conn, task_id, candidate_key, question) == []
+        stored = conn.execute(
+            text(
+                f"SELECT count(*) FROM coord.{_TABLE} "
+                "WHERE task_id = :task AND question = :q AND candidate_key = :key"
+            ),
+            {"task": task_id, "q": question, "key": candidate_key},
+        ).scalar_one()
+    assert stored == 1
 
 
 _CLAIM = {"claimed_by_device": _DEVICE}
@@ -507,6 +545,25 @@ def _state_row(conn: Connection, state: str, **fields: object) -> uuid.UUID:
             {"claimed_by_device": _DEVICE, "claimed_at": True, "answered_at": True},
         ),
         ("failed", {**_CLAIM, "claimed_at": True}),
+        (
+            "answered",
+            {
+                **_CLAIM,
+                "result": '{"name": "reset"}',
+                "claimed_at": True,
+                "answered_at": True,
+            },
+        ),
+        (
+            "answered",
+            {
+                **_CLAIM,
+                "kind": "compile",
+                "verdict": "yes",
+                "claimed_at": True,
+                "answered_at": True,
+            },
+        ),
     ],
     ids=[
         "claimed-no-claimed-at",
@@ -515,6 +572,8 @@ def _state_row(conn: Connection, state: str, **fields: object) -> uuid.UUID:
         "answered-no-answered-at",
         "answered-no-verdict-or-result",
         "failed-no-error",
+        "answered-verdict-kind-with-only-result",
+        "answered-compile-kind-with-only-verdict",
     ],
 )
 def test_a_state_refuses_a_row_missing_its_fields(
@@ -540,6 +599,7 @@ def test_a_state_refuses_a_row_missing_its_fields(
             "answered",
             {
                 **_CLAIM,
+                "kind": "compile",
                 "result": '{"name": "reset"}',
                 "claimed_at": True,
                 "answered_at": True,
@@ -552,7 +612,7 @@ def test_a_state_refuses_a_row_missing_its_fields(
         "expired",
         "claimed",
         "answered-verdict",
-        "answered-result",
+        "answered-compile-result",
         "failed-unclaimed",
     ],
 )
@@ -615,23 +675,8 @@ def test_one_verdict_request_per_task_candidate_and_question(
         _insert_request(conn, task_id=task_id, candidate_key="k|b|1", question="Q2")
         _insert_request(conn, kind="compile", task_id=task_id, candidate_key="k|b|1")
         _insert_request(conn, kind="compile", task_id=task_id, candidate_key="k|b|1")
-        # The enqueue arbiter restates the partial predicate.
-        inserted = conn.execute(
-            text(
-                f"""
-                INSERT INTO coord.{_TABLE}
-                    (tenant_id, kind, task_id, target_device_id, candidate_key,
-                     repo_path, question, prompt, requested_by, expires_at)
-                VALUES (:t, 'verdict', :task, :d, 'k|b|1', 'D:/repo',
-                        'Is this branch abandoned?', 'p', 'coord:maintenance',
-                        now() + interval '1 hour')
-                ON CONFLICT (task_id, candidate_key, question)
-                    WHERE kind = 'verdict' DO NOTHING
-                RETURNING id
-                """
-            ),
-            {"t": _TENANT, "task": task_id, "d": _DEVICE},
-        ).all()
+        # The enqueue arbiter restates the md5 expressions and the predicate.
+        inserted = _enqueue_verdict(conn, task_id, "k|b|1", "Is this branch abandoned?")
     assert inserted == []
 
 
