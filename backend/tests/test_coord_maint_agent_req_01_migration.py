@@ -389,9 +389,9 @@ def test_indexes_by_definition(requests_db: Engine) -> None:
     valid, unique, predicate = index_state(requests_db, _DEDUPE_INDEX)
     assert valid and unique
     assert predicate == "(kind = 'verdict'::text)", predicate
-    assert "(task_id, md5(candidate_key), md5(question))" in index_definition(
-        requests_db, _DEDUPE_INDEX
-    )
+    assert (
+        "(task_id, target_device_id, md5(candidate_key), md5(question))"
+    ) in index_definition(requests_db, _DEDUPE_INDEX)
     valid, unique, predicate = index_state(requests_db, _PENDING_INDEX)
     assert valid and not unique
     assert predicate == "(state = 'pending'::text)", predicate
@@ -476,7 +476,11 @@ def test_a_verdict_needs_its_fields_and_a_compile_does_not(
 
 
 def _enqueue_verdict(
-    conn: Connection, task_id: uuid.UUID, candidate_key: str, question: str
+    conn: Connection,
+    task_id: uuid.UUID,
+    candidate_key: str,
+    question: str,
+    device: uuid.UUID = _DEVICE,
 ) -> list[object]:
     """The coord enqueue: insert a verdict request unless one already exists."""
     return list(
@@ -488,7 +492,8 @@ def _enqueue_verdict(
                      repo_path, question, prompt, requested_by, expires_at)
                 VALUES (:t, 'verdict', :task, :d, :key, 'D:/repo', :q, 'p',
                         'coord:maintenance', now() + interval '1 hour')
-                ON CONFLICT (task_id, md5(candidate_key), md5(question))
+                ON CONFLICT (task_id, target_device_id, md5(candidate_key),
+                             md5(question))
                     WHERE kind = 'verdict' DO NOTHING
                 RETURNING id
                 """
@@ -496,7 +501,7 @@ def _enqueue_verdict(
             {
                 "t": _TENANT,
                 "task": task_id,
-                "d": _DEVICE,
+                "d": device,
                 "key": candidate_key,
                 "q": question,
             },
@@ -672,90 +677,192 @@ def test_a_kind_refuses_the_other_kinds_answer_fields(
 _REARM = f"""
     INSERT INTO coord.{_TABLE}
         (tenant_id, kind, task_id, target_device_id, candidate_key, repo_path,
-         question, prompt, requested_by, expires_at)
-    VALUES (:t, 'verdict', :task, :d, :key, 'D:/repo', :q, 'prompt v2',
+         question, prompt, min_confidence, requested_by, expires_at)
+    VALUES (:t, 'verdict', :task, :d, :key, 'D:/repo-v2', :q, 'prompt v2', 0.8,
             'coord:maintenance', now() + interval '2 hours')
-    ON CONFLICT (task_id, md5(candidate_key), md5(question))
+    ON CONFLICT (task_id, target_device_id, md5(candidate_key), md5(question))
         WHERE kind = 'verdict'
     DO UPDATE SET state = 'pending', claimed_by_device = NULL,
         claimed_at = NULL, answered_at = NULL, verdict = NULL,
         confidence = NULL, rationale = NULL, error = NULL,
         expires_at = EXCLUDED.expires_at, run_id = EXCLUDED.run_id,
-        prompt = EXCLUDED.prompt
+        prompt = EXCLUDED.prompt,
+        min_confidence = EXCLUDED.min_confidence,
+        repo_path = EXCLUDED.repo_path
     WHERE {_TABLE}.state IN ('expired', 'failed')
+       OR ({_TABLE}.state = 'answered' AND {_TABLE}.expires_at < now())
     RETURNING id
 """
 
+_QUESTION = "Is this branch abandoned?"
+
+
+def _rearm(
+    conn: Connection, task_id: uuid.UUID, key: str, device: uuid.UUID = _DEVICE
+) -> list[uuid.UUID]:
+    return [
+        _uuid(row[0])
+        for row in conn.execute(
+            text(_REARM),
+            {"t": _TENANT, "task": task_id, "d": device, "key": key, "q": _QUESTION},
+        ).all()
+    ]
+
+
+def _request_row(conn: Connection, request_id: uuid.UUID) -> dict[str, object]:
+    row = (
+        conn.execute(
+            text(
+                f"""
+                SELECT state, claimed_by_device, claimed_at, answered_at, verdict,
+                       confidence, rationale, error, prompt, min_confidence,
+                       repo_path
+                  FROM coord.{_TABLE} WHERE id = :id
+                """
+            ),
+            {"id": request_id},
+        )
+        .mappings()
+        .one()
+    )
+    return dict(row)
+
+
+# Each prior row carries every field the re-arm clears, where its state allows.
+_OLD = {"rationale": "old rationale", "min_confidence": 0.3, "question": _QUESTION}
+_PRIOR_ROWS: dict[str, tuple[str, dict[str, object], bool]] = {
+    # id: (state, fields, past its expires_at)
+    "expired": (
+        "expired",
+        {**_OLD, **_CLAIM, "claimed_at": True, "error": "timed out"},
+        True,
+    ),
+    "failed": (
+        "failed",
+        {**_OLD, **_CLAIM, "claimed_at": True, "error": "unparseable output"},
+        False,
+    ),
+    "answered-unexpired": (
+        "answered",
+        {**_OLD, **_ANSWER, "claimed_at": True, "answered_at": True},
+        False,
+    ),
+    "answered-past-ttl": (
+        "answered",
+        {
+            **_OLD,
+            **_ANSWER,
+            "verdict": "unknown",
+            "claimed_at": True,
+            "answered_at": True,
+        },
+        True,
+    ),
+    "pending": ("pending", {**_OLD}, False),
+    "claimed": ("claimed", {**_OLD, **_CLAIM, "claimed_at": True}, False),
+}
+_REARMED = {"expired", "failed", "answered-past-ttl"}
+
 
 @_needs_pg
-def test_the_rearm_upsert_resets_a_failed_verdict_and_keeps_an_answered_one(
-    requests_db: Engine,
-) -> None:
-    question = "Is this branch abandoned?"
+@pytest.mark.parametrize("case", sorted(_PRIOR_ROWS))
+def test_the_rearm_upsert_by_prior_state(requests_db: Engine, case: str) -> None:
+    state, fields, past_ttl = _PRIOR_ROWS[case]
+    key = f"rearm|{case}|{uuid.uuid4().hex}"
     with requests_db.begin() as conn:
         task_id = _insert_task(conn)
-        failed = _state_row(
-            conn,
-            "failed",
-            task_id=task_id,
-            candidate_key="rearm|b|1",
-            claimed_by_device=_DEVICE,
-            claimed_at=True,
-            error="unparseable claude output: x",
+        request_id = _state_row(
+            conn, state, task_id=task_id, candidate_key=key, **fields
         )
-        answered = _state_row(
-            conn,
-            "answered",
-            task_id=task_id,
-            candidate_key="rearm|b|2",
-            claimed_by_device=_DEVICE,
-            verdict="no",
-            confidence=0.5,
-            claimed_at=True,
-            answered_at=True,
-        )
-
-    def rearm(conn: Connection, key: str) -> list[uuid.UUID]:
-        return [
-            _uuid(row[0])
-            for row in conn.execute(
-                text(_REARM),
-                {
-                    "t": _TENANT,
-                    "task": task_id,
-                    "d": _DEVICE,
-                    "key": key,
-                    "q": question,
-                },
-            ).all()
-        ]
+        if past_ttl:
+            conn.execute(
+                text(
+                    f"UPDATE coord.{_TABLE} "
+                    "SET expires_at = now() - interval '1 minute' WHERE id = :id"
+                ),
+                {"id": request_id},
+            )
+        before = _request_row(conn, request_id)
 
     with requests_db.begin() as conn:
-        assert rearm(conn, "rearm|b|1") == [failed]
-        assert rearm(conn, "rearm|b|2") == []
-        rows = {
-            row[0]: tuple(row[1:])
-            for row in conn.execute(
-                text(
-                    f"""
-                    SELECT id, state, claimed_by_device, claimed_at IS NULL,
-                           answered_at IS NULL, verdict, error, prompt
-                      FROM coord.{_TABLE} WHERE id IN (:a, :b)
-                    """
-                ),
-                {"a": failed, "b": answered},
-            ).all()
-        }
-    assert rows[failed] == ("pending", None, True, True, None, None, "prompt v2")
-    assert rows[answered] == (
-        "answered",
-        _DEVICE,
-        False,
-        False,
-        "no",
-        None,
-        "full prompt",
-    )
+        returned = _rearm(conn, task_id, key)
+        after = _request_row(conn, request_id)
+
+    if case in _REARMED:
+        assert returned == [request_id]
+        assert after["state"] == "pending"
+        for cleared in (
+            "claimed_by_device",
+            "claimed_at",
+            "answered_at",
+            "verdict",
+            "confidence",
+            "rationale",
+            "error",
+        ):
+            assert after[cleared] is None, (cleared, after)
+        assert after["prompt"] == "prompt v2"
+        assert after["repo_path"] == "D:/repo-v2"
+        assert after["min_confidence"] == pytest.approx(0.8)
+    else:
+        assert returned == []
+        assert after == before
+
+
+@_needs_pg
+def test_two_devices_with_the_same_candidate_get_two_rows(requests_db: Engine) -> None:
+    other_device = uuid.UUID("00000000-0000-4000-8000-00000000d002")
+    key = f"D:/repo|main|{uuid.uuid4().hex}"
+    with requests_db.begin() as conn:
+        task_id = _insert_task(conn)
+        row_a = _enqueue_verdict(conn, task_id, key, _QUESTION, device=_DEVICE)
+        row_b = _enqueue_verdict(conn, task_id, key, _QUESTION, device=other_device)
+        assert len(row_a) == 1 and len(row_b) == 1
+        id_a = _uuid(row_a[0][0])  # type: ignore[index]
+        id_b = _uuid(row_b[0][0])  # type: ignore[index]
+        assert id_a != id_b
+        # Device A answered; device B failed.
+        conn.execute(
+            text(
+                f"""
+                UPDATE coord.{_TABLE}
+                   SET state = 'answered', claimed_by_device = :d,
+                       claimed_at = now(), answered_at = now(), verdict = 'yes',
+                       confidence = 0.9
+                 WHERE id = :id
+                """
+            ),
+            {"d": _DEVICE, "id": id_a},
+        )
+        conn.execute(
+            text(
+                f"""
+                UPDATE coord.{_TABLE}
+                   SET state = 'failed', error = 'no answer'
+                 WHERE id = :id
+                """
+            ),
+            {"id": id_b},
+        )
+        before_a = _request_row(conn, id_a)
+
+    with requests_db.begin() as conn:
+        # Re-enqueuing for B re-arms B alone; re-enqueuing for A changes nothing.
+        assert _rearm(conn, task_id, key, device=other_device) == [id_b]
+        assert (
+            _enqueue_verdict(conn, task_id, key, _QUESTION, device=other_device) == []
+        )
+        assert _rearm(conn, task_id, key, device=_DEVICE) == []
+        assert _request_row(conn, id_a) == before_a
+        assert _request_row(conn, id_b)["state"] == "pending"
+        count = conn.execute(
+            text(
+                f"SELECT count(*) FROM coord.{_TABLE} "
+                "WHERE task_id = :task AND candidate_key = :key"
+            ),
+            {"task": task_id, "key": key},
+        ).scalar_one()
+    assert count == 2
 
 
 @_needs_pg

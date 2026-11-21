@@ -11,7 +11,8 @@ its two foreign-key indexes in ONE transaction::
         confidence, rationale, result, error, requested_by, created_at,
         answered_at, expires_at)
         ux_maintenance_agent_requests_verdict_dedupe
-            UNIQUE (task_id, md5(candidate_key), md5(question))
+            UNIQUE (task_id, target_device_id, md5(candidate_key),
+                    md5(question))
             WHERE kind = 'verdict'
         idx_maintenance_agent_requests_pending
             (target_device_id, tenant_id) WHERE state = 'pending'
@@ -74,28 +75,39 @@ Shape
   ``coord.maintenance_runs`` ON DELETE SET NULL (the run ledger is history, a
   pruned run row must not delete an answered verdict). Both are nullable: a
   compile request has no task yet.
-* The verdict dedupe keys on ``md5(candidate_key)`` and ``md5(question)``
-  rather than the raw text, so a question or candidate key of any length fits
-  the btree index row (a raw-text key fails past btree's 2704-byte row limit).
-  It is PARTIAL and keyed on expressions, so a coord enqueue naming it as its
-  arbiter must spell it exactly: ``ON CONFLICT (task_id, md5(candidate_key),
-  md5(question)) WHERE kind = 'verdict'``.
-* The dedupe holds across ALL states, so answered verdict history is kept and a
-  candidate is never asked the same question twice while an answer stands. An
-  ``expired`` or ``failed`` verdict is RE-ARMED in place, never re-inserted;
-  the companion coord enqueue does it with::
+* The verdict dedupe is per DEVICE: it keys on ``task_id``,
+  ``target_device_id``, ``md5(candidate_key)`` and ``md5(question)``. Two
+  devices can hold the same ``repo_path``, branch and head, so a key without
+  the device would let one device's enqueue re-arm the other's row and serve
+  its answer for a different checkout. The text columns are hashed rather than
+  keyed raw, so a question or candidate key of any length fits the btree index
+  row (a raw-text key fails past btree's 2704-byte row limit). It is PARTIAL
+  and keyed on expressions, so a coord enqueue naming it as its arbiter must
+  spell it exactly: ``ON CONFLICT (task_id, target_device_id,
+  md5(candidate_key), md5(question)) WHERE kind = 'verdict'``.
+* The dedupe holds across ALL states, so answered verdict history is kept. A
+  row is RE-ARMED in place, never re-inserted; the companion coord enqueue
+  does it with::
 
-      ON CONFLICT (task_id, md5(candidate_key), md5(question))
+      ON CONFLICT (task_id, target_device_id, md5(candidate_key),
+                   md5(question))
           WHERE kind = 'verdict'
       DO UPDATE SET state = 'pending', claimed_by_device = NULL,
           claimed_at = NULL, answered_at = NULL, verdict = NULL,
           confidence = NULL, rationale = NULL, error = NULL,
           expires_at = EXCLUDED.expires_at, run_id = EXCLUDED.run_id,
-          prompt = EXCLUDED.prompt
+          prompt = EXCLUDED.prompt,
+          min_confidence = EXCLUDED.min_confidence,
+          repo_path = EXCLUDED.repo_path
       WHERE maintenance_agent_requests.state IN ('expired', 'failed')
+         OR (maintenance_agent_requests.state = 'answered'
+             AND maintenance_agent_requests.expires_at < now())
 
-  A pending, claimed or answered row is left untouched (the statement returns
-  no row for it).
+  So an ``expired`` or ``failed`` request is re-asked on the next tick. An
+  ``answered`` verdict, including an ``unknown`` one, is DECIDED to be re-asked
+  only once its own ``expires_at`` (its TTL) has passed, never on every tick.
+  A ``pending`` or ``claimed`` row, and an unexpired ``answered`` row, are left
+  untouched (the statement returns no row for them).
 * The pending index serves the claim read: pending rows for a device, or for
   no device within a tenant. It is partial, so answered history never bloats
   it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
@@ -119,9 +131,10 @@ table must exist before its consumer deploys (served policy
 
 The two foreign keys take ``SHARE ROW EXCLUSIVE`` on ``coord.maintenance_tasks``
 and ``coord.maintenance_runs``, held until the migration transaction commits
-(not just for the ``CREATE TABLE`` statement). That conflicts with the scheduler tick writing those tables, so the wait is bounded
-with ``SET LOCAL lock_timeout = '3s'`` (as ``journey_03`` / ``journey_04`` do):
-a busy writer fails the migration loudly instead of queueing the tick behind
+(not just for the ``CREATE TABLE`` statement). That conflicts with the
+scheduler tick writing those tables, so the wait is bounded with
+``SET LOCAL lock_timeout = '3s'`` (as ``journey_03`` / ``journey_04`` do): a
+busy writer fails the migration loudly instead of queueing the tick behind
 it. No existing table is altered. ``downgrade()`` is bounded the same way.
 
 Idempotency / authorship posture
@@ -143,10 +156,11 @@ Chaining
 ========
 
 ``down_revision`` is this repo's single alembic head at authoring time and is
-deliberately NOT pinned: ``alembic-graph-pr.yml`` serialises alembic PRs, so a
-revision that lands ahead of this one re-forks the chain and this line is
-re-pointed at the new head. A re-point is three coupled edits:
-``down_revision``, the ``Revises:`` line below, and ``_PARENT_REVISION_ID`` in
+deliberately NOT pinned: when another revision lands on ``main`` ahead of
+this one, this revision forks the chain, ``alembic-graph-pr.yml`` fails this PR
+on the second head, and this line is re-pointed at the new head. A re-point
+is three coupled edits: ``down_revision``, the ``Revises:`` line below, and
+``_PARENT_REVISION_ID`` in
 ``tests/test_coord_maint_agent_req_01_migration.py``. Never author an
 ``alembic merge`` revision for it.
 
@@ -253,15 +267,16 @@ def upgrade() -> None:
             'the row and runs it verbatim, and posts the answer back.'
         """
     )
-    # One verdict request per task, candidate and question. Keyed on md5 of the
-    # two text columns so any length fits the btree row. Partial and keyed on
-    # expressions, so an upsert arbiter must restate both the md5 expressions
-    # and WHERE kind = verdict.
+    # One verdict request per task, device, candidate and question. The device
+    # is in the key because two devices can share a path, branch and head. The
+    # two text columns are keyed by md5 so any length fits the btree row.
+    # Partial and keyed on expressions, so an upsert arbiter must restate the
+    # same column list and WHERE kind = verdict.
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_maintenance_agent_requests_verdict_dedupe
             ON coord.maintenance_agent_requests
-                (task_id, md5(candidate_key), md5(question))
+                (task_id, target_device_id, md5(candidate_key), md5(question))
             WHERE kind = 'verdict'
         """
     )
