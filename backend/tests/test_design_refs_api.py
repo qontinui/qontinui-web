@@ -1017,16 +1017,21 @@ class TestStyleNeverRanksUnknownTokens:
         await self._capture(a, pages["leafless"]["id"], {"color": {}}, 7)
         a.as_("device")
 
-        similar = await a.ok(
-            "POST",
-            "/similar-by-style",
+        # The full mounted paths (api_router at /api/v1, the design-refs router
+        # at /design-refs, which the harness mounts at ``API``), spelled out so
+        # the route each call enters is readable from this test's text.
+        similar_resp = await a.http.post(
+            "/api/v1/design-refs/similar-by-style",
             json={"level": "page", "tokens": {"color": {"primary": "#111"}}},
         )
-        compare = await a.ok(
-            "POST",
-            "/compare-to-references",
+        assert similar_resp.status_code == 200, similar_resp.text
+        compare_resp = await a.http.post(
+            "/api/v1/design-refs/compare-to-references",
             json={"snapshot": {"tokens": {"color": {"primary": "#111"}}}},
         )
+        assert compare_resp.status_code == 200, compare_resp.text
+        similar = similar_resp.json()
+        compare = compare_resp.json()
         for response in (similar, compare):
             got = {r["target_id"]: r["token_distance"] for r in response["results"]}
             assert pages["unknown_only"]["id"] not in got, response
