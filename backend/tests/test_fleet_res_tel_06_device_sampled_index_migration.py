@@ -32,7 +32,7 @@ What is asserted
    disabled on the table for the seeded span so no plan above races it; this
    case sets the map deliberately, and the setting is reset afterwards.
 4. Idempotency: ``stamp`` back to the parent and ``upgrade`` again leaves the
-   same valid index untouched.
+   same valid index untouched — same oid and same storage file.
 5. Downgrade removes it; rows survive.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
@@ -50,8 +50,13 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     ephemeral_database,
+    index_definition,
     index_exists,
+    index_filenode,
+    index_oid,
+    index_state,
     run_alembic,
+    scalar,
 )
 
 _REVISION_ID = "fleet_res_tel_06"
@@ -89,24 +94,6 @@ _NEWEST_SQL = f"""
 # lane's ordered run can answer alone.
 _SEED_ROWS = 2000
 _PROBED_ROWS = 20
-
-
-def _index_row(engine: Engine) -> tuple[bool, str | None, str]:
-    """``(indisvalid, predicate, indexdef)`` for the index."""
-    with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT i.indisvalid, pg_get_expr(i.indpred, i.indrelid),
-                       pg_get_indexdef(i.indexrelid)
-                  FROM pg_index i
-                  JOIN pg_class c ON c.oid = i.indexrelid
-                 WHERE c.relname = :idx
-                """
-            ),
-            {"idx": _INDEX_NAME},
-        ).one()
-    return bool(row[0]), row[1], str(row[2])
 
 
 def _plan_for(engine: Engine, sql: str) -> str:
@@ -150,24 +137,17 @@ def _expected_newest(engine: Engine) -> object:
 
 
 def _all_visible_pages(engine: Engine) -> int:
-    with engine.connect() as conn:
-        return int(
-            conn.execute(
-                text(
-                    "SELECT relallvisible FROM pg_class "
-                    "WHERE oid = 'coord.device_resource_samples'::regclass"
-                )
-            ).scalar_one()
-        )
+    pages = scalar(
+        engine,
+        "SELECT relallvisible FROM pg_class "
+        "WHERE oid = 'coord.device_resource_samples'::regclass",
+    )
+    assert isinstance(pages, int), pages
+    return pages
 
 
-def _sample_count(engine: Engine) -> int:
-    with engine.connect() as conn:
-        return int(
-            conn.execute(
-                text("SELECT count(*) FROM coord.device_resource_samples")
-            ).scalar_one()
-        )
+def _sample_count(engine: Engine) -> object:
+    return scalar(engine, "SELECT count(*) FROM coord.device_resource_samples")
 
 
 @pytest.mark.skipif(
@@ -189,7 +169,8 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
 
-        # Seed two devices, each alternating host / wsl lanes. Autovacuum off
+        # Seed five devices (the probed one plus four newer, busier ones), each
+        # alternating host / wsl lanes. Autovacuum off
         # first, so it cannot set the visibility map between two plans below;
         # 3b sets it on purpose.
         with engine.begin() as conn:
@@ -249,16 +230,20 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         # 2. Apply — exists, VALID, non-partial, keyed (device_id, sampled_at DESC).
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert index_exists(engine, _INDEX_NAME)
-        valid, predicate, indexdef = _index_row(engine)
+        valid, unique, predicate = index_state(engine, _INDEX_NAME)
+        indexdef = index_definition(engine, _INDEX_NAME)
         assert valid, (
             "a killed CONCURRENTLY build leaves an INVALID index that "
             "IF NOT EXISTS would skip on re-run — existence is not enough"
         )
-        assert predicate is None, f"the index must not be partial: {predicate!r}"
+        assert not unique, indexdef
+        assert predicate == "", f"the index must not be partial: {predicate!r}"
         assert indexdef.endswith("(device_id, sampled_at DESC)"), indexdef
 
         # 3. The newest-per-device read rides it as one ordered descent.
-        with engine.connect() as conn:
+        # ``begin()``, not ``connect()``: ANALYZE's pg_statistic write is
+        # transactional, and a ``connect()`` block rolls back on exit.
+        with engine.begin() as conn:
             conn.execute(text("ANALYZE coord.device_resource_samples"))
         plan = _plan_for(engine, _NEWEST_SQL)
         assert _INDEX_NAME in plan, f"the read must ride the index:\n{plan}"
@@ -278,18 +263,15 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         assert _device_is_index_cond(vm_plan), vm_plan
         assert _newest(engine) == _expected_newest(engine)
 
-        # 4. Idempotency — re-running over its own schema is a no-op.
-        with engine.connect() as conn:
-            oid_before = conn.execute(
-                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
-            ).scalar_one()
+        # 4. Idempotency — re-running over its own schema is a no-op: same oid
+        # (not rebuilt), same storage file (not REINDEXed), still valid.
+        oid_before = index_oid(engine, _INDEX_NAME)
+        filenode_before = index_filenode(engine, _INDEX_NAME)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        with engine.connect() as conn:
-            oid_after = conn.execute(
-                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
-            ).scalar_one()
-        assert oid_after == oid_before and _index_row(engine)[0]
+        assert index_oid(engine, _INDEX_NAME) == oid_before
+        assert index_filenode(engine, _INDEX_NAME) == filenode_before
+        assert index_state(engine, _INDEX_NAME)[0]
 
         # Seeded span over: restore the table's autovacuum setting.
         with engine.begin() as conn:
