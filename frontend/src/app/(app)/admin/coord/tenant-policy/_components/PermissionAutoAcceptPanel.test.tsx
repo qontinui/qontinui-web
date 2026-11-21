@@ -10,9 +10,15 @@
  * registered state getter stays live inside a real provider.
  */
 
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  type RenderResult,
+} from "@testing-library/react";
 import { UNKNOWN_AMBER } from "@/components/console";
 import type {
   FleetPolicyView,
@@ -648,56 +654,102 @@ describe("PermissionAutoAcceptPanel", () => {
       }, [bridge]);
       return null;
     }
-    let setPolicy: ((p: FleetPolicyView) => void) | null = null;
+    // A passive-effect canary in the same commit: if passive effects have
+    // already run when the sample is taken, the sample is not inside the gap
+    // and the test would pass vacuously against a passive-effect state ref.
+    let passiveRanForOff = false;
+    function PassiveCanary({ level }: { level: string | null }) {
+      useEffect(() => {
+        if (level === "off") passiveRanForOff = true;
+      }, [level]);
+      return null;
+    }
+    // Every consumer of the mocked hook (the panel and the canary) holds its
+    // own state; the update sets them all in one task, so they commit together.
+    const setters = new Set<(p: FleetPolicyView) => void>();
     usePolicyMock.mockImplementation(() => {
       const [policy, set] = useState<FleetPolicyView>(ON_TENANT);
-      setPolicy = set;
+      setters.add(set);
       return hookState(policy);
     });
+    function CanaryFromPolicy() {
+      return (
+        <PassiveCanary
+          level={usePolicyMock().policy?.effective_level ?? null}
+        />
+      );
+    }
 
-    const view = render(
-      <UIBridgeProvider>
-        <GrabRegistry />
-        <PermissionAutoAcceptPanel />
-      </UIBridgeProvider>
-    );
+    let view: RenderResult | undefined;
     const readState = () =>
       (registry as Registry | null)
         ?.getComponent("coord-tenant-permission-auto-accept")
         ?.getState?.() as Record<string, unknown> | undefined;
-    expect(readState()).toMatchObject({ resolvedLevel: "on" });
-    const panel = screen.getByTestId("permission-auto-accept-policy");
     const badge = () =>
-      screen.getByTestId("permission-auto-accept-effective").textContent;
-    expect(badge()).toBe("on");
+      screen.queryByTestId("permission-auto-accept-effective")?.textContent ??
+      null;
 
     const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
     const previousActEnv = g.IS_REACT_ACT_ENVIRONMENT;
-    g.IS_REACT_ACT_ENVIRONMENT = false;
     try {
-      const sampled = new Promise<{ shown: string | null; state: unknown }>(
-        (resolve) => {
-          const observer = new MutationObserver(() => {
-            if (badge() !== "off") return;
-            observer.disconnect();
-            resolve({ shown: badge(), state: readState()?.resolvedLevel });
-          });
-          observer.observe(panel, {
-            childList: true,
-            subtree: true,
-            characterData: true,
-            attributes: true,
-          });
-        }
+      view = render(
+        <UIBridgeProvider>
+          <GrabRegistry />
+          <PermissionAutoAcceptPanel />
+          <CanaryFromPolicy />
+        </UIBridgeProvider>
       );
+      expect(readState()).toMatchObject({ resolvedLevel: "on" });
+      const panel = screen.getByTestId("permission-auto-accept-policy");
+      expect(badge()).toBe("on");
+      g.IS_REACT_ACT_ENVIRONMENT = false;
+      let observer: MutationObserver | null = null;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const sampled = new Promise<{
+        shown: string | null;
+        state: unknown;
+        passiveRan: boolean;
+      }>((resolve, reject) => {
+        observer = new MutationObserver(() => {
+          try {
+            if (badge() !== "off") return;
+            observer?.disconnect();
+            clearTimeout(timer);
+            resolve({
+              shown: badge(),
+              state: readState()?.resolvedLevel,
+              passiveRan: passiveRanForOff,
+            });
+          } catch (e) {
+            observer?.disconnect();
+            clearTimeout(timer);
+            reject(e);
+          }
+        });
+        observer.observe(panel, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+        });
+        timer = setTimeout(() => {
+          observer?.disconnect();
+          reject(new Error("the badge never showed off"));
+        }, 3000);
+      });
       // A write's read-back resolving: a non-discrete (default-lane) update.
       void Promise.resolve().then(() =>
-        setPolicy?.({ ...ON_TENANT, effective_level: "off" })
+        setters.forEach((set) => set({ ...ON_TENANT, effective_level: "off" }))
       );
-      expect(await sampled).toEqual({ shown: "off", state: "off" });
+      expect(await sampled).toEqual({
+        shown: "off",
+        state: "off",
+        passiveRan: false,
+      });
     } finally {
       g.IS_REACT_ACT_ENVIRONMENT = previousActEnv;
-      view.unmount();
+      usePolicyMock.mockReset();
+      view?.unmount();
     }
   });
 });
