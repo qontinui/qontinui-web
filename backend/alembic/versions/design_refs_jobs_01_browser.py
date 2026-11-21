@@ -25,8 +25,16 @@ curated record, the append-only ``correction`` log). This adds two columns:
 
 Every step is guarded so a re-run, or a database that already carries a piece,
 does not fail on a duplicate. A guard that finds a column already present
-checks its type and nullability and RAISES when they differ, rather than
-accepting a column this revision did not define.
+checks its type, nullability and default and RAISES when they differ, rather
+than accepting a column this revision did not define; a CHECK of the same name
+must have the declared body and be VALIDATED.
+
+Locking: every ``ALTER TABLE design_refs.capture_job`` here takes an ACCESS
+EXCLUSIVE lock on that table for the rest of the migration's transaction, so
+reads and writes of the capture queue wait until it commits. The column adds
+are catalog-only (a constant default needs no rewrite), but adding the CHECK
+scans the table to validate it, and the adopt guard briefly adds and drops a
+NOT VALID twin. The queue is small and its writers retry, so this is accepted.
 """
 
 from __future__ import annotations
@@ -113,9 +121,11 @@ def upgrade() -> None:
         DO $$
         DECLARE
             existing text;
+            existing_valid boolean;
             expected text;
         BEGIN
-            SELECT pg_get_constraintdef(c.oid) INTO existing
+            SELECT pg_get_constraintdef(c.oid), c.convalidated
+              INTO existing, existing_valid
               FROM pg_constraint c
               JOIN pg_class t ON t.oid = c.conrelid
               JOIN pg_namespace n ON n.oid = t.relnamespace
@@ -127,6 +137,12 @@ def upgrade() -> None:
                     ADD CONSTRAINT ck_capture_job_browser
                     CHECK (browser IN ('launched', 'attached'));
                 RETURN;
+            END IF;
+            IF NOT existing_valid THEN
+                RAISE EXCEPTION
+                    'design_refs.capture_job constraint ck_capture_job_browser '
+                    'exists but is NOT VALID (rows were never checked against '
+                    'it): %; refusing to adopt it', existing;
             END IF;
             ALTER TABLE design_refs.capture_job
                 ADD CONSTRAINT ck_capture_job_browser_expected

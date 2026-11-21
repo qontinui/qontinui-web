@@ -392,6 +392,19 @@ def _browser_constraints(engine: Engine) -> int:
         )
 
 
+def _expected_twins(engine: Engine) -> int:
+    """The adopt guard's scratch constraint must never outlive the guard."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_constraint "
+                    "WHERE conname = 'ck_capture_job_browser_expected'"
+                )
+            ).scalar_one()
+        )
+
+
 def test_jobs_01_adopts_pieces_that_already_match() -> None:
     """Every step of ``design_refs_jobs_01`` is guarded: a database that
     already carries the columns (with the declared type and nullability) and
@@ -415,6 +428,7 @@ def test_jobs_01_adopts_pieces_that_already_match() -> None:
 
         run_alembic(cwd, url, "upgrade", _JOBS_REVISION_ID)
         assert _browser_constraints(engine) == 1
+        assert _expected_twins(engine) == 0
 
 
 def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
@@ -483,3 +497,24 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
                 ).scalar_one()
                 == 0
             )
+
+        # The same body, but NOT VALID: refused, and the message says so.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE design_refs.capture_job "
+                    "DROP CONSTRAINT ck_capture_job_browser"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE design_refs.capture_job "
+                    "ADD CONSTRAINT ck_capture_job_browser "
+                    "CHECK (browser IN ('launched', 'attached')) NOT VALID"
+                )
+            )
+        result = run_alembic(
+            cwd, url, "upgrade", _JOBS_REVISION_ID, expect_success=False
+        )
+        assert "exists but is NOT VALID" in (result.stdout + result.stderr)
+        assert _expected_twins(engine) == 0
