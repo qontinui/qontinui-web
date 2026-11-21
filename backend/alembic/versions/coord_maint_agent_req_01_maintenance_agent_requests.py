@@ -111,13 +111,16 @@ Shape
   only once its own ``expires_at`` (its TTL) has passed, never on every tick.
   A ``pending`` or ``claimed`` row, and an unexpired ``answered`` row, are left
   untouched (the statement returns no row for them).
-* ``expires_at`` changes meaning once, by decision. Until a verdict is
-  answered it is the pending / claim deadline. Coord's answer route then
-  REWRITES it to the verdict TTL, and that TTL is what the re-arm arm above
-  (``state = 'answered' AND expires_at < now()``) and the "unexpired answered
-  verdict is left untouched" rule read. A ``pending`` or ``claimed`` row past
-  its deadline is NOT re-armed by the enqueue; it is re-asked only once its
-  state has become ``expired``.
+* ``expires_at`` means one thing per state, by decision. While a request is
+  pending or claimed it is the pending / claim deadline. Coord's answer route
+  REWRITES it to the verdict TTL when a verdict is answered, and that TTL is
+  what the re-arm arm above (``state = 'answered' AND expires_at < now()``) and
+  the "unexpired answered verdict is left untouched" rule read. A re-arm sets
+  it back to a fresh pending deadline, so the meaning alternates each cycle. A
+  ``pending`` or ``claimed`` row past its deadline is NOT re-armed by the
+  enqueue; coord's tick expiry sweep moves it to ``expired``, and only then is
+  it re-asked. Without that sweep, a claimed verdict whose runner died would
+  never be re-asked.
 * The pending index serves the claim read: pending rows for a device, or for
   no device within a tenant. It is partial, so answered history never bloats
   it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
