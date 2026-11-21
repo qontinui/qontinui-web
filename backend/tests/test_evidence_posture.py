@@ -80,7 +80,15 @@ from app.core.evidence_posture import (
 #: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
 #:   phase progress and ids, this plan;
 #: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
-GAP_COUNT_PIN = 10
+#:
+#: Four more when the design-refs capture-job doors were given true
+#: correction stories (plan
+#: ``2026-11-19-design-surface-defects-and-stale-records-found-by-the-design-loop-study``):
+#: a job that ended ``done`` (or was cancelled or rejected) has no door back,
+#: on ``POST /design-refs/capture-jobs``, ``…/capture-jobs/batch``,
+#: ``PATCH …/capture-jobs/{job_id}`` and ``POST …/{job_id}/complete``; a
+#: fifth on ``POST …/{job_id}/retry``, whose re-queued job can end the same way.
+GAP_COUNT_PIN = 15
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;

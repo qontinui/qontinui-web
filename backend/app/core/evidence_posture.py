@@ -343,6 +343,32 @@ OVERVIEW_PUBLISHING_PLAN: Final = (
 
 
 _DESIGN_REFS = f"{_V1}/design-refs"
+#: Owns the capture-job correction gap below (a finished job has no door back).
+DESIGN_SURFACE_PLAN: Final = (
+    "2026-11-19-design-surface-defects-and-stale-records-found-by-the-design-loop-study"
+)
+#: A job that is still open (proposed, queued, running) is corrected by an
+#: operator's PATCH: approve or reject a proposal, cancel a queued or running
+#: job. PATCH does NOT move a done or failed job.
+_CAPTURE_JOB_OPEN_FIX: Final = Verb(
+    verb=f"PATCH {_DESIGN_REFS}/capture-jobs/{{job_id}}",
+    admits=("proposed", "queued", "running"),
+)
+#: A wrongly failed job is re-queued by an operator's retry.
+_CAPTURE_JOB_FAILED_FIX: Final = Verb(
+    verb=f"POST {_DESIGN_REFS}/capture-jobs/{{job_id}}/retry",
+    admits=("failed",),
+)
+#: A job that ended done, cancelled or rejected has no door back; submitting a
+#: new job for the URL is the only recourse.
+_CAPTURE_JOB_END_GAP: Final = Gap(
+    tracked_by=DESIGN_SURFACE_PLAN,
+    what=(
+        "a capture job wrongly completed done, or wrongly cancelled or "
+        "rejected, cannot be reopened; only a new job for the same URL "
+        "replaces it"
+    ),
+)
 _DR_REVIEW_STATES: Final = ("pending", "approved", "rejected")
 _DR_TAKEDOWN = Verb(verb=f"POST {_DESIGN_REFS}/takedown", admits=_DR_REVIEW_STATES)
 _DR_RETIRE = Verb(
@@ -1117,35 +1143,41 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         ),
     ),
     ("POST", f"{_DESIGN_REFS}/capture-jobs"): Evidence(
-        closed_fields=("scope_kind", "source"),
+        closed_fields=("scope_kind", "source", "browser"),
         store="design_refs_capture_jobs",
-        correction=Verb(
-            verb=f"PATCH {_DESIGN_REFS}/capture-jobs/{{job_id}}",
-            admits=(
-                "proposed",
-                "rejected",
-                "queued",
-                "running",
-                "done",
-                "failed",
-                "cancelled",
-            ),
+        correction=_CAPTURE_JOB_OPEN_FIX,
+        aspects=(
+            ("a job that later failed", _CAPTURE_JOB_FAILED_FIX),
+            ("a job that ended done, cancelled or rejected", _CAPTURE_JOB_END_GAP),
+        ),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-jobs/batch"): Evidence(
+        closed_fields=("scope_kind", "source", "browser"),
+        store="design_refs_capture_jobs",
+        correction=_CAPTURE_JOB_OPEN_FIX,
+        aspects=(
+            ("a job that later failed", _CAPTURE_JOB_FAILED_FIX),
+            ("a job that ended done, cancelled or rejected", _CAPTURE_JOB_END_GAP),
         ),
     ),
     ("PATCH", f"{_DESIGN_REFS}/capture-jobs/{{job_id}}"): Evidence(
         closed_fields=("derived_tier", "state"),
         store="design_refs_capture_jobs",
-        correction=Verb(
-            verb=f"PATCH {_DESIGN_REFS}/capture-jobs/{{job_id}}",
-            admits=(
-                "proposed",
-                "rejected",
-                "queued",
-                "running",
-                "done",
-                "failed",
-                "cancelled",
-            ),
+        correction=_CAPTURE_JOB_OPEN_FIX,
+        aspects=(("a move to cancelled or rejected", _CAPTURE_JOB_END_GAP),),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-jobs/{{job_id}}/complete"): Evidence(
+        closed_fields=("outcome",),
+        store="design_refs_capture_jobs",
+        correction=_CAPTURE_JOB_FAILED_FIX,
+        aspects=(("an outcome of done", _CAPTURE_JOB_END_GAP),),
+    ),
+    ("POST", f"{_DESIGN_REFS}/capture-jobs/{{job_id}}/retry"): Evidence(
+        closed_fields=("browser",),
+        store="design_refs_capture_jobs",
+        correction=_CAPTURE_JOB_OPEN_FIX,
+        aspects=(
+            ("a job that ended done, cancelled or rejected", _CAPTURE_JOB_END_GAP),
         ),
     ),
     ("POST", f"{_DESIGN_REFS}/capture-jobs/claim"): Ephemeral(

@@ -147,6 +147,9 @@ class Harness:
         self.storage = storage
         self.actor = "device"
         self.device_id = uuid4()
+        #: The user id a principal OTHER than an operator or a device carries
+        #: (a ``coord_service`` that names a user); ``None`` by default.
+        self.service_user_id: UUID | None = None
         self.app = FastAPI()
         self.app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
         self.app.add_exception_handler(
@@ -163,7 +166,16 @@ class Harness:
                 tenant_id=tenant,
                 device_id=None if operator else self.device_id,
                 actor=self.actor,
-                user_id=self.user.id if operator else None,
+                # Production's device arm (``memory.py`` ``get_memory_tenant``)
+                # always carries the device's OWNING USER beside its device id,
+                # so every device of one user shares a ``user_id``. The harness
+                # does the same; a device principal with ``user_id=None`` is a
+                # shape production never produces and hid the claimant bug.
+                user_id=(
+                    self.user.id
+                    if self.actor in ("operator", "device")
+                    else self.service_user_id
+                ),
             )
 
         self.app.dependency_overrides[get_async_db] = _db
@@ -1548,10 +1560,18 @@ class TestJobsAndCuration:
         claimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
         assert claimed["id"] == queued["id"] and claimed["state"] == "running"
         assert await a.ok("POST", "/capture-jobs/claim", json={"worker": "w2"}) is None
+        # PATCH is not a door to end a running job: /complete is the only one.
+        for outcome in ("done", "failed"):
+            resp = await a.http.patch(
+                f"{API}/capture-jobs/{queued['id']}", json={"state": outcome}
+            )
+            assert resp.status_code == 409
+            assert resp.json()["error"] == "invalid_transition"
+        await a.ok(
+            "PATCH", f"/capture-jobs/{queued['id']}", json={"derived_tier": "private"}
+        )
         done = await a.ok(
-            "PATCH",
-            f"/capture-jobs/{queued['id']}",
-            json={"state": "done", "derived_tier": "private"},
+            "POST", f"/capture-jobs/{queued['id']}/complete", json={"outcome": "done"}
         )
         assert done["state"] == "done"
         assert (
@@ -1577,6 +1597,490 @@ class TestJobsAndCuration:
             resp.status_code == 422
             and resp.json()["error"] == "reproduction_is_private"
         )
+
+    async def test_a_submitted_list_creates_one_job_per_url(self, a: Harness) -> None:
+        a.as_("operator")
+        await a.ok(
+            "POST",
+            "/takedown",
+            json={"domain": "gone.example", "reason": "request"},
+        )
+        batch = await a.ok(
+            "POST",
+            "/capture-jobs/batch",
+            json={
+                "urls": [
+                    "https://one.example/a",
+                    "  https://two.example  ",
+                    "https://one.example/a",
+                    "   ",
+                    "https://gone.example/x",
+                ],
+                "notes": "from the list",
+                "browser": "attached",
+            },
+        )
+        assert [j["url"] for j in batch["created"]] == [
+            "https://one.example/a",
+            "https://two.example",
+        ]
+        assert all(
+            j["state"] == "queued"
+            and j["browser"] == "attached"
+            and j["notes"] == "from the list"
+            and j["derived_tier"] is None  # the backend never derives a tier
+            for j in batch["created"]
+        )
+        assert [(r["url"], r["error"]) for r in batch["refused"]] == [
+            ("https://gone.example/x", "do_not_capture")
+        ]
+        listed = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
+        assert {j["url"] for j in listed} == {j["url"] for j in batch["created"]}
+        # Each item is bounded like the single door's ``url``: an empty item or
+        # one over 4000 characters refuses the whole list, creating nothing.
+        for bad in ("", "https://long.example/" + "a" * 4000):
+            assert (
+                await a.post(
+                    "/capture-jobs/batch", {"urls": ["https://ok.example", bad]}
+                )
+            ).status_code == 422
+        # A list whose every entry is blank creates nothing and says so.
+        resp = await a.post("/capture-jobs/batch", {"urls": ["  ", "\t "]})
+        assert resp.status_code == 422 and resp.json()["error"] == "no_urls"
+        queued = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
+        assert "https://ok.example" not in {j["url"] for j in queued}
+        a.as_("device")
+        assert (
+            await a.post(
+                "/capture-jobs/batch",
+                {"urls": ["https://x.example"], "source": "operator"},
+            )
+        ).status_code == 422
+
+    async def test_the_worker_precheck_complete_and_operator_retry(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://w.example", "source": "cli"}
+        )
+        assert job["browser"] == "launched"
+        claimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        assert claimed["id"] == job["id"]
+        # The worker's precheck step writes the derived tier and its reason.
+        prechecked = await a.ok(
+            "PATCH",
+            f"/capture-jobs/{job['id']}",
+            json={"derived_tier": "private", "tier_reason": {"robots": "unreachable"}},
+        )
+        assert prechecked["derived_tier"] == "private"
+        assert prechecked["tier_reason"] == {"robots": "unreachable"}
+        # A failed outcome must carry its reason: the body is refused (422).
+        assert (
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "failed"})
+        ).status_code == 422
+        # The body names no claimant: who completes is the caller's credential.
+        assert (
+            await a.post(
+                f"/capture-jobs/{job['id']}/complete",
+                {"outcome": "done", "worker": "w1"},
+            )
+        ).status_code == 422
+        # Another device of the SAME USER (same user_id, as production's device
+        # principal carries) cannot end the job or write to it while it runs:
+        # a claim belongs to the device that made it. The job stays running.
+        claimant = a.device_id
+        a.device_id = uuid4()
+        resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        for write in (
+            {"derived_tier": "public"},
+            {"tier_reason": {"robots": "x"}},
+            {"error": "not mine"},
+            {"lease_seconds": 60},
+        ):
+            resp = await a.http.patch(f"{API}/capture-jobs/{job['id']}", json=write)
+            assert resp.status_code == 403, write
+            assert resp.json()["error"] == "not_the_claimant"
+        a.device_id = claimant
+        unchanged = await a.ok(
+            "PATCH", f"/capture-jobs/{job['id']}", json={"lease_seconds": 60}
+        )
+        assert unchanged["state"] == "running"
+        assert unchanged["derived_tier"] == "private" and unchanged["error"] is None
+        failed = await a.ok(
+            "POST",
+            f"/capture-jobs/{job['id']}/complete",
+            json={"outcome": "failed", "error": "blocked by a bot challenge"},
+        )
+        assert failed["state"] == "failed" and failed["claimed_until"] is None
+        # A job that is not running (here: failed) is not completable.
+        assert (
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        ).status_code == 409
+        # Nor is a queued job that no worker has claimed.
+        queued = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://q.example", "source": "cli"}
+        )
+        resp = await a.post(
+            f"/capture-jobs/{queued['id']}/complete", {"outcome": "done"}
+        )
+        assert resp.status_code == 409 and resp.json()["error"] == "invalid_transition"
+        # Retry is the operator's: a device is refused.
+        assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 403
+        a.as_("operator")
+        # PATCH is not a retry door, even for an operator: /retry is the only one.
+        resp = await a.http.patch(
+            f"{API}/capture-jobs/{job['id']}", json={"state": "queued"}
+        )
+        assert resp.status_code == 409 and resp.json()["error"] == "invalid_transition"
+        retried = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/retry", json={"browser": "attached"}
+        )
+        assert retried["state"] == "queued" and retried["browser"] == "attached"
+        assert retried["error"] is None and retried["derived_tier"] is None
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert {(c["field"], c["to_value"]) for c in log} >= {
+            ("state", "queued"),
+            ("browser", "attached"),
+        }
+        # Only a failed job is retried.
+        assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 409
+
+    async def test_the_single_door_strips_its_url(self, a: Harness) -> None:
+        # Stripped as the batch door strips each entry; whitespace-only is then
+        # empty and refused by the schema.
+        padded = await a.ok(
+            "POST",
+            "/capture-jobs",
+            json={"url": "  https://pad.example/a \n", "source": "cli"},
+        )
+        assert padded["url"] == "https://pad.example/a"
+        assert padded["domain"] == "pad.example"
+        resp = await a.post("/capture-jobs", {"url": "   ", "source": "cli"})
+        assert resp.status_code == 422
+
+    async def test_a_principal_with_no_id_cannot_claim(self, a: Harness) -> None:
+        await a.ok(
+            "POST",
+            "/capture-jobs",
+            json={"url": "https://anon.example", "source": "cli"},
+        )
+        # ``coord_service`` in the harness carries a device id; strip it to the
+        # shape that names nobody.
+        a.as_("coord_service")
+        a.device_id = None  # type: ignore[assignment]
+        resp = await a.post("/capture-jobs/claim", {"worker": "w1"})
+        assert resp.status_code == 403 and resp.json()["error"] == "unattributable"
+
+    async def test_an_operator_completing_a_job_is_logged(self, a: Harness) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://op.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        a.as_("operator")
+        # An operator may end a job another credential claimed; the move is
+        # written to the correction log.
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert [(c["field"], c["from_value"], c["to_value"]) for c in log] == [
+            ("state", "running", "done")
+        ]
+
+    async def test_job_fields_follow_the_job_state(self, a: Harness) -> None:
+        # Queued: an operator's write only, and it is logged.
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://st.example", "source": "cli"}
+        )
+        resp = await a.http.patch(
+            f"{API}/capture-jobs/{job['id']}", json={"error": "early"}
+        )
+        assert resp.status_code == 403
+        a.as_("operator")
+        noted = await a.ok(
+            "PATCH",
+            f"/capture-jobs/{job['id']}",
+            json={"derived_tier": "private", "tier_reason": {"by": "operator"}},
+        )
+        assert noted["derived_tier"] == "private"
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert sorted(
+            [(c["field"], c["from_value"], c["to_value"]) for c in log],
+            key=lambda r: r[0],
+        ) == [
+            ("derived_tier", None, "private"),
+            ("tier_reason", None, {"by": "operator"}),
+        ]
+        # Finished: nobody writes its fields any more, operator included.
+        await a.ok("PATCH", f"/capture-jobs/{job['id']}", json={"state": "cancelled"})
+        for write in (
+            {"derived_tier": "public"},
+            {"tier_reason": {"x": 1}},
+            {"error": "late"},
+            {"lease_seconds": 60},
+        ):
+            resp = await a.http.patch(f"{API}/capture-jobs/{job['id']}", json=write)
+            assert resp.status_code == 409, write
+            assert resp.json()["error"] == "invalid_state"
+        a.as_("device")
+        resp = await a.http.patch(
+            f"{API}/capture-jobs/{job['id']}", json={"error": "late"}
+        )
+        assert resp.status_code == 409 and resp.json()["error"] == "invalid_state"
+
+    async def test_an_operator_writing_a_claimed_job_is_logged(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://ow.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        # The claimant's own writes are not corrections.
+        await a.ok(
+            "PATCH", f"/capture-jobs/{job['id']}", json={"derived_tier": "private"}
+        )
+        a.as_("operator")
+        await a.ok(
+            "PATCH",
+            f"/capture-jobs/{job['id']}",
+            json={"error": "operator note", "lease_seconds": 120},
+        )
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert {c["field"] for c in log} == {"error", "claimed_until"}
+        by_field = {c["field"]: c for c in log}
+        assert by_field["error"]["from_value"] is None
+        assert by_field["error"]["to_value"] == "operator note"
+        # The lease is logged as the end it sets: timestamp -> timestamp, the
+        # new one equal to what the PATCH stored.
+        lease = by_field["claimed_until"]
+        before = datetime.fromisoformat(lease["from_value"])
+        after = datetime.fromisoformat(lease["to_value"])
+        # The claim leased 600 s; the operator set 120 s, so the end moved.
+        assert after != before
+        stored = await a.ok("GET", f"/capture-jobs/{job['id']}")
+        assert datetime.fromisoformat(stored["claimed_until"]) == after
+
+    async def test_a_device_credential_without_a_device_id_cannot_claim(
+        self, a: Harness
+    ) -> None:
+        await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://nd.example", "source": "cli"}
+        )
+        # A device principal carrying only its user's id would be keyed as
+        # every device of that user; it is refused instead.
+        a.device_id = None  # type: ignore[assignment]
+        resp = await a.post("/capture-jobs/claim", {"worker": "w1"})
+        assert resp.status_code == 403 and resp.json()["error"] == "unattributable"
+
+    async def test_operator_completion_and_retry_log_what_they_change(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://lg.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        await a.ok(
+            "PATCH",
+            f"/capture-jobs/{job['id']}",
+            json={"derived_tier": "private", "tier_reason": {"robots": "x"}},
+        )
+        a.as_("operator")
+        await a.ok(
+            "POST",
+            f"/capture-jobs/{job['id']}/complete",
+            json={"outcome": "failed", "error": "stopped by operator"},
+        )
+        await a.ok("POST", f"/capture-jobs/{job['id']}/retry", json={})
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        got = [(c["field"], c["from_value"], c["to_value"]) for c in log]
+        for row in (
+            ("state", "running", "failed"),
+            ("error", None, "stopped by operator"),
+            ("state", "failed", "queued"),
+            ("error", "stopped by operator", None),
+            ("derived_tier", "private", None),
+            ("tier_reason", {"robots": "x"}, None),
+        ):
+            assert row in got, row
+
+    async def test_a_lapsed_lease_moves_the_job_to_its_new_claimant(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://ls.example", "source": "cli"}
+        )
+        first = a.device_id
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "a"})
+        # A's lease lapses (as if its worker died) ...
+        await a.db.execute(
+            text(
+                "UPDATE design_refs.capture_job "
+                "SET claimed_until = now() - interval '1 minute' WHERE id = :id"
+            ),
+            {"id": job["id"]},
+        )
+        await a.db.commit()
+        # ... and device B re-claims it.
+        second = uuid4()
+        a.device_id = second
+        reclaimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "b"})
+        assert reclaimed["id"] == job["id"] and reclaimed["claimed_by"] == "b"
+        # A is no longer the claimant: refused on PATCH and on /complete.
+        a.device_id = first
+        resp = await a.http.patch(
+            f"{API}/capture-jobs/{job['id']}", json={"lease_seconds": 60}
+        )
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        # B completes it.
+        a.device_id = second
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
+
+    async def test_a_service_credential_with_only_a_user_id_cannot_claim(
+        self, a: Harness
+    ) -> None:
+        await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://su.example", "source": "cli"}
+        )
+        # Only an operator is keyed by its user id; a service naming a user is
+        # not, since it would be every credential of that user.
+        a.as_("coord_service")
+        a.device_id = None  # type: ignore[assignment]
+        a.service_user_id = a.user.id
+        resp = await a.post("/capture-jobs/claim", {"worker": "svc"})
+        assert resp.status_code == 403 and resp.json()["error"] == "unattributable"
+
+    async def test_a_done_outcome_carries_no_error(self, a: Harness) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://de.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        resp = await a.post(
+            f"/capture-jobs/{job['id']}/complete",
+            {"outcome": "done", "error": "but it failed"},
+        )
+        assert resp.status_code == 422
+
+    async def test_every_job_write_reads_its_row_for_update(self, a: Harness) -> None:
+        """PATCH, /complete and /retry each issue a SELECT ... FOR UPDATE on
+        capture_job before writing, so the claimant check and the write see one
+        row version. Captured from the SQL each handler actually sends."""
+        from sqlalchemy import event
+
+        statements: list[str] = []
+
+        def _capture(
+            conn: Any, cursor: Any, statement: str, *args: Any, **kw: Any
+        ) -> None:
+            statements.append(" ".join(statement.split()))
+
+        def locked() -> bool:
+            """At least one SELECT on capture_job before the write, and every
+            one of them carries FOR UPDATE: no unlocked read the check could
+            rely on. Reads AFTER the handler's UPDATE are the post-commit
+            ``refresh`` of the row it just wrote, which decides nothing."""
+            before_write: list[str] = []
+            for sql in statements:
+                if sql.upper().startswith("UPDATE DESIGN_REFS.CAPTURE_JOB"):
+                    break
+                before_write.append(sql)
+            selects = [
+                sql
+                for sql in before_write
+                if sql.upper().startswith("SELECT") and "design_refs.capture_job" in sql
+            ]
+            return bool(selects) and all(
+                sql.upper().endswith("FOR UPDATE") for sql in selects
+            )
+
+        engine = a.db.bind.sync_engine
+        event.listen(engine, "before_cursor_execute", _capture)
+        try:
+            job = await a.ok(
+                "POST",
+                "/capture-jobs",
+                json={"url": "https://fu.example", "source": "cli"},
+            )
+            await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+            statements.clear()
+            await a.ok(
+                "PATCH", f"/capture-jobs/{job['id']}", json={"lease_seconds": 60}
+            )
+            assert locked(), ("PATCH", statements)
+            statements.clear()
+            await a.ok(
+                "POST",
+                f"/capture-jobs/{job['id']}/complete",
+                json={"outcome": "failed", "error": "x"},
+            )
+            assert locked(), ("/complete", statements)
+            a.as_("operator")
+            statements.clear()
+            await a.ok("POST", f"/capture-jobs/{job['id']}/retry", json={})
+            assert locked(), ("/retry", statements)
+        finally:
+            event.remove(engine, "before_cursor_execute", _capture)
+
+    async def test_a_claim_belongs_to_the_device_not_the_token(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://dv.example", "source": "cli"}
+        )
+        device = a.device_id
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        # A coord_service token naming a DIFFERENT device is refused ...
+        a.as_("coord_service")
+        a.device_id = uuid4()
+        resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        # ... one naming the device that claimed (through its device JWT) is
+        # that claimant.
+        a.device_id = device
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
+
+    async def test_a_coord_service_claimant_completes_its_own_job(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://cs.example", "source": "cli"}
+        )
+        a.as_("coord_service")
+        claimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "svc"})
+        assert claimed["id"] == job["id"]
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
 
     async def test_curation_is_operator_only_and_logged(self, a: Harness) -> None:
         site = await reference_site(a)

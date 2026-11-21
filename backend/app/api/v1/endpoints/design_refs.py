@@ -122,9 +122,14 @@ from app.schemas.design_refs import (
     BalanceCell,
     BlobOut,
     CaptureCreate,
+    CaptureJobBatchCreate,
+    CaptureJobBatchOut,
+    CaptureJobBatchRefused,
     CaptureJobClaim,
+    CaptureJobComplete,
     CaptureJobCreate,
     CaptureJobOut,
+    CaptureJobRetry,
     CaptureJobUpdate,
     CaptureOut,
     CaptureSourceCreate,
@@ -286,6 +291,45 @@ def _actor_id(principal: MemoryPrincipal) -> str:
     if principal.device_id is not None:
         return f"{principal.actor}:device:{principal.device_id}"
     return principal.actor
+
+
+def _claimant_key(principal: MemoryPrincipal) -> str:
+    """Who holds a capture job, for authorization — NOT ``_actor_id``.
+
+    ``_actor_id`` prefers ``user_id``, and every device of one user carries
+    that user's id, so it would make all of a user's devices one claimant. A
+    claim belongs to the DEVICE that made it: any principal carrying a device
+    id is keyed ``device:<device_id>``, whatever its actor, so the device's own
+    JWT and a coord_service token naming the same device are one claimant,
+    while another device is not. The user id is used only for an ``operator``
+    (a human session, which has no device). Any other principal without a
+    device id — a device, or a service, carrying only a user id — is refused
+    rather than keyed by that user, which would make it every credential of
+    that user (403 ``unattributable``).
+    """
+    if principal.device_id is not None:
+        return f"device:{principal.device_id}"
+    if principal.actor == "operator" and principal.user_id is not None:
+        return f"{principal.actor}:{principal.user_id}"
+    raise _refusal(
+        status.HTTP_403_FORBIDDEN,
+        "unattributable",
+        "This credential carries no device id, so a capture job it held could "
+        "not be told apart from its user's other credentials'.",
+    )
+
+
+def _require_claimant(principal: MemoryPrincipal, job: CaptureJob, action: str) -> None:
+    """Refuse (403) a non-operator whose claimant key is not the job's."""
+    if is_operator(principal):
+        return
+    if job.claimed_by_actor is None or job.claimed_by_actor != _claimant_key(principal):
+        raise _refusal(
+            status.HTTP_403_FORBIDDEN,
+            "not_the_claimant",
+            f"Only the credential that claimed this capture job may {action}.",
+            claimed_by=job.claimed_by,
+        )
 
 
 class PrincipleApprover:
@@ -1625,10 +1669,127 @@ _JOB_TRANSITIONS: Final[dict[tuple[str, str], str]] = {
     ("proposed", "cancelled"): "operator",
     ("queued", "cancelled"): "operator",
     ("running", "cancelled"): "operator",
-    ("failed", "queued"): "operator",
-    ("running", "done"): "any",
-    ("running", "failed"): "any",
 }
+# Not here, on purpose: a running job is finished (``done`` / ``failed``) only
+# through ``POST /capture-jobs/{id}/complete`` (claimant or operator), and a
+# failed job is re-queued only through ``POST /capture-jobs/{id}/retry``
+# (operator). PATCH offering either move would be a second door around those
+# rules. The one deliberate exception is ``running -> cancelled`` above: an
+# operator may stop a running job through PATCH without completing it.
+
+#: States a job does not leave through PATCH: its fields are no longer written.
+#: (``failed`` leaves only through ``/retry``, which clears them itself.)
+_JOB_TERMINAL_STATES: Final[frozenset[str]] = frozenset(
+    {"done", "failed", "cancelled", "rejected"}
+)
+
+
+def _locked_job_query(tenant_id: UUID, job_id: UUID) -> Any:
+    """One capture job of the tenant, ``FOR UPDATE``: the authorization check
+    and the write that follows it see the same row version, so a concurrent
+    re-claim cannot slip between them. ``populate_existing`` refreshes a row
+    the session already holds, rather than trusting the identity map's copy."""
+    return (
+        select(CaptureJob)
+        .where(CaptureJob.tenant_id == tenant_id, CaptureJob.id == job_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def _locked_job(
+    db: AsyncSession, tenant_id: UUID, job_id: UUID
+) -> CaptureJob | None:
+    job: CaptureJob | None = (
+        await db.execute(_locked_job_query(tenant_id, job_id))
+    ).scalar_one_or_none()
+    return job
+
+
+def _log_job_field_writes(
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    job: CaptureJob,
+    body: CaptureJobUpdate,
+    lease_until: datetime | None,
+) -> None:
+    """One correction row per job field this PATCH changes (call before the
+    write, so ``from_value`` is the stored value)."""
+    changes: list[tuple[str, Any, Any]] = []
+    if body.derived_tier is not None and body.derived_tier != job.derived_tier:
+        changes.append(("derived_tier", job.derived_tier, body.derived_tier))
+    if body.tier_reason is not None and body.tier_reason != job.tier_reason:
+        changes.append(("tier_reason", job.tier_reason, body.tier_reason))
+    if body.error is not None and body.error != job.error:
+        changes.append(("error", job.error, body.error))
+    if lease_until is not None:
+        # Logged as the lease END it sets (timestamp -> timestamp): the same
+        # value the PATCH then writes.
+        changes.append(
+            (
+                "claimed_until",
+                job.claimed_until.isoformat() if job.claimed_until else None,
+                lease_until.isoformat(),
+            )
+        )
+    for field, before, after in changes:
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                field,
+                before,
+                after,
+            )
+        )
+
+
+def _check_job_source(principal: MemoryPrincipal, source: str) -> None:
+    if source == "operator" and not is_operator(principal):
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "source_operator_requires_operator",
+            "source=operator is recorded only for an operator's session.",
+        )
+
+
+async def _new_job(
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    *,
+    url: str,
+    body: CaptureJobCreate | CaptureJobBatchCreate,
+) -> CaptureJob:
+    """Validate one URL against the do-not-capture list and add its job (no
+    commit). The tier is NOT set here: the worker's pre-check derives it."""
+    blocked = await svc.blocked_by_do_not_capture(db, principal.tenant_id, url)
+    if blocked is not None:
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "do_not_capture",
+            "This URL is on the tenant's do-not-capture list.",
+            entry=blocked.domain + blocked.path_prefix,
+        )
+    domain, _path = svc.url_domain_and_path(url)
+    job = CaptureJob(
+        tenant_id=principal.tenant_id,
+        url=url,
+        domain=domain,
+        scope_kind=body.scope_kind,
+        crawl_depth=body.crawl_depth,
+        flow_goal=body.flow_goal,
+        notes=body.notes,
+        source=body.source,
+        submitter_kind=principal.actor,
+        submitter_id=_actor_id(principal),
+        is_reproduction=body.is_reproduction,
+        browser=body.browser,
+        state="proposed" if body.source == "discovery" else "queued",
+    )
+    db.add(job)
+    return job
 
 
 @router.post(
@@ -1640,40 +1801,61 @@ async def create_capture_job(
     """Queue a capture. A discovery proposal waits as ``proposed`` for the
     operator; anything else is ``queued``. The tier is NOT a field: the
     worker's pre-check derives it and writes it back."""
-    if body.source == "operator" and not is_operator(principal):
-        raise _refusal(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "source_operator_requires_operator",
-            "source=operator is recorded only for an operator's session.",
-        )
-    source = body.source
-    blocked = await svc.blocked_by_do_not_capture(db, principal.tenant_id, body.url)
-    if blocked is not None:
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "do_not_capture",
-            "This URL is on the tenant's do-not-capture list.",
-            entry=blocked.domain + blocked.path_prefix,
-        )
-    domain, _path = svc.url_domain_and_path(body.url)
-    job = CaptureJob(
-        tenant_id=principal.tenant_id,
-        url=body.url,
-        domain=domain,
-        scope_kind=body.scope_kind,
-        crawl_depth=body.crawl_depth,
-        flow_goal=body.flow_goal,
-        notes=body.notes,
-        source=source,
-        submitter_kind=principal.actor,
-        submitter_id=_actor_id(principal),
-        is_reproduction=body.is_reproduction,
-        state="proposed" if source == "discovery" else "queued",
-    )
-    db.add(job)
+    _check_job_source(principal, body.source)
+    job = await _new_job(db, principal, url=body.url, body=body)
     await db.commit()
     await db.refresh(job)
     return CaptureJobOut.model_validate(job)
+
+
+@router.post(
+    "/capture-jobs/batch",
+    response_model=CaptureJobBatchOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="One capture job per URL of a pasted list",
+)
+async def create_capture_jobs_batch(
+    body: CaptureJobBatchCreate, principal: Principal, db: Db
+) -> CaptureJobBatchOut:
+    """A do-not-capture URL is reported in ``refused`` and does not stop the
+    rest; every other URL gets its own job. Entries are stripped, as the
+    single-URL door strips its ``url``. An EMPTY entry (``""``) fails the
+    schema, so the whole list is a 422; only whitespace-only entries are
+    skipped, as are repeats, and a list with nothing left is a 422
+    ``no_urls``."""
+    _check_job_source(principal, body.source)
+    urls: list[str] = []
+    for raw in body.urls:
+        url = raw.strip()
+        if url and url not in urls:
+            urls.append(url)
+    if not urls:
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "no_urls",
+            "Every entry of the list is blank; send at least one URL.",
+        )
+    created: list[CaptureJob] = []
+    refused: list[CaptureJobBatchRefused] = []
+    for url in urls:
+        try:
+            created.append(await _new_job(db, principal, url=url, body=body))
+        except HTTPException as exc:
+            detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
+            refused.append(
+                CaptureJobBatchRefused(
+                    url=url,
+                    error=str(detail.get("error", "refused")),
+                    message=str(detail.get("message", exc.detail)),
+                )
+            )
+    await db.commit()
+    for job in created:
+        await db.refresh(job)
+    return CaptureJobBatchOut(
+        created=[CaptureJobOut.model_validate(job) for job in created],
+        refused=refused,
+    )
 
 
 @router.get("/capture-jobs", response_model=list[CaptureJobOut])
@@ -1710,6 +1892,10 @@ async def claim_capture_job(
 ) -> CaptureJobOut | None:
     """Lease the oldest queued job — or a running one whose lease lapsed (a
     dead worker's job is re-queued this way). ``null`` when none waits."""
+    # Resolved before anything is selected or written: a principal with no
+    # device or user id cannot claim (403), since its claim could not be told
+    # apart from anyone else's.
+    claimant = _claimant_key(principal)
     now = datetime.now(UTC)
     job = (
         await db.execute(
@@ -1730,6 +1916,7 @@ async def claim_capture_job(
         return None
     job.state = "running"
     job.claimed_by = body.worker
+    job.claimed_by_actor = claimant
     job.claimed_until = now + timedelta(seconds=body.lease_seconds)
     await db.commit()
     await db.refresh(job)
@@ -1740,9 +1927,44 @@ async def claim_capture_job(
 async def update_capture_job(
     job_id: UUID, body: CaptureJobUpdate, principal: Principal, db: Db
 ) -> CaptureJobOut:
-    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    job = await _locked_job(db, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
+    writes_fields = any(
+        v is not None
+        for v in (body.derived_tier, body.tier_reason, body.error, body.lease_seconds)
+    )
+    # Who may write a job's pre-check result, error and lease depends on the
+    # state it is in when the write arrives (read under the row lock above):
+    #   - a finished job (done/failed/cancelled/rejected): nobody (409);
+    #   - a running job: its claimant, or an operator (logged when the
+    #     operator is not the claimant — a claimant's own writes are the worker
+    #     path and are not corrections; by contrast EVERY operator /complete is
+    #     logged, since an operator completion always overrides that path);
+    #   - a queued or proposed job: an operator only (logged).
+    lease_until = (
+        datetime.now(UTC) + timedelta(seconds=body.lease_seconds)
+        if body.lease_seconds is not None
+        else None
+    )
+    log_field_writes = False
+    if writes_fields:
+        if job.state in _JOB_TERMINAL_STATES:
+            raise _refusal(
+                status.HTTP_409_CONFLICT,
+                "invalid_state",
+                f"A {job.state} capture job's fields are not written any more.",
+            )
+        if job.state == "running":
+            _require_claimant(principal, job, "write to it while it runs")
+            log_field_writes = is_operator(principal) and (
+                job.claimed_by_actor != _claimant_key(principal)
+            )
+        else:
+            require_operator(principal, f"write to a {job.state} capture job")
+            log_field_writes = True
+    if log_field_writes:
+        _log_job_field_writes(db, principal, job, body, lease_until)
     if body.state is not None and body.state != job.state:
         who = _JOB_TRANSITIONS.get((job.state, body.state))
         if who is None:
@@ -1787,7 +2009,138 @@ async def update_capture_job(
                 "not_running",
                 "Only a running job's lease is extended.",
             )
-        job.claimed_until = datetime.now(UTC) + timedelta(seconds=body.lease_seconds)
+        job.claimed_until = lease_until
+    await db.commit()
+    await db.refresh(job)
+    return CaptureJobOut.model_validate(job)
+
+
+@router.post("/capture-jobs/{job_id}/retry", response_model=CaptureJobOut)
+async def retry_capture_job(
+    job_id: UUID, body: CaptureJobRetry, principal: Principal, db: Db
+) -> CaptureJobOut:
+    """Re-queue a failed job (operator only), optionally as ``attached``. The
+    derived tier is cleared so the worker's pre-check derives it afresh."""
+    require_operator(principal, "retry a capture job")
+    job = await _locked_job(db, principal.tenant_id, job_id)
+    if job is None:
+        raise _not_found("capture_job")
+    if job.state != "failed":
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "invalid_transition",
+            f"Only a failed capture job is retried; this one is {job.state}.",
+        )
+    db.add(
+        _correction(
+            principal.tenant_id,
+            principal,
+            "capture_job",
+            job.id,
+            "state",
+            "failed",
+            "queued",
+        )
+    )
+    if body.browser is not None and body.browser != job.browser:
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                "browser",
+                job.browser,
+                body.browser,
+            )
+        )
+        job.browser = body.browser
+    # The retry clears what the failed attempt left; each cleared value is
+    # logged so the correction log shows what the operator wiped.
+    for field, before in (
+        ("error", job.error),
+        ("derived_tier", job.derived_tier),
+        ("tier_reason", job.tier_reason),
+    ):
+        if before is not None:
+            db.add(
+                _correction(
+                    principal.tenant_id,
+                    principal,
+                    "capture_job",
+                    job.id,
+                    field,
+                    before,
+                    None,
+                )
+            )
+    job.state = "queued"
+    job.error = None
+    job.derived_tier = None
+    job.tier_reason = None
+    job.claimed_by = None
+    job.claimed_by_actor = None
+    job.claimed_until = None
+    await db.commit()
+    await db.refresh(job)
+    return CaptureJobOut.model_validate(job)
+
+
+@router.post("/capture-jobs/{job_id}/complete", response_model=CaptureJobOut)
+async def complete_capture_job(
+    job_id: UUID, body: CaptureJobComplete, principal: Principal, db: Db
+) -> CaptureJobOut:
+    """The one door that FINISHES a running job: ``done``, or ``failed`` with
+    the reason the Jobs view shows. A non-operator completes only a job its own
+    credential claimed (its ``_claimant_key`` equals the job's
+    ``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may
+    complete any running job, and that completion is written to the correction
+    log. The deliberate exception is an operator's PATCH ``running ->
+    cancelled``, which stops a running job without finishing it.
+
+    A job already ``running`` when ``design_refs_jobs_01`` deployed has
+    ``claimed_by_actor`` NULL, so no worker can complete it here: it finishes
+    when its lease lapses and a worker re-claims it (which records the
+    claimant), or an operator completes it."""
+    job = await _locked_job(db, principal.tenant_id, job_id)
+    if job is None:
+        raise _not_found("capture_job")
+    if job.state != "running":
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "invalid_transition",
+            f"Only a running capture job is completed; this one is {job.state}.",
+        )
+    if is_operator(principal):
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                "state",
+                job.state,
+                body.outcome,
+            )
+        )
+        new_error = body.error if body.outcome == "failed" else None
+        if new_error != job.error:
+            db.add(
+                _correction(
+                    principal.tenant_id,
+                    principal,
+                    "capture_job",
+                    job.id,
+                    "error",
+                    job.error,
+                    new_error,
+                )
+            )
+    else:
+        _require_claimant(principal, job, "complete it")
+    job.state = body.outcome
+    job.error = body.error if body.outcome == "failed" else None
+    job.claimed_until = None
     await db.commit()
     await db.refresh(job)
     return CaptureJobOut.model_validate(job)

@@ -7277,6 +7277,145 @@
         "title": "CaptureHealthResponse",
         "type": "object"
       },
+      "CaptureJobBatchCreate": {
+        "additionalProperties": false,
+        "description": "One job per URL: a pasted list. Scope, notes and flags are shared.",
+        "properties": {
+          "browser": {
+            "default": "launched",
+            "enum": [
+              "launched",
+              "attached"
+            ],
+            "title": "Browser",
+            "type": "string"
+          },
+          "crawl_depth": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crawl Depth"
+          },
+          "flow_goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Goal"
+          },
+          "is_reproduction": {
+            "default": false,
+            "title": "Is Reproduction",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "scope_kind": {
+            "default": "page",
+            "enum": [
+              "page",
+              "crawl",
+              "flow"
+            ],
+            "title": "Scope Kind",
+            "type": "string"
+          },
+          "source": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "cli",
+              "mcp",
+              "discovery"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "urls": {
+            "items": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "title": "CaptureJobBatchCreate",
+        "type": "object"
+      },
+      "CaptureJobBatchOut": {
+        "properties": {
+          "created": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureJobOut"
+            },
+            "title": "Created",
+            "type": "array"
+          },
+          "refused": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureJobBatchRefused"
+            },
+            "title": "Refused",
+            "type": "array"
+          }
+        },
+        "required": [
+          "created",
+          "refused"
+        ],
+        "title": "CaptureJobBatchOut",
+        "type": "object"
+      },
+      "CaptureJobBatchRefused": {
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "error",
+          "message"
+        ],
+        "title": "CaptureJobBatchRefused",
+        "type": "object"
+      },
       "CaptureJobClaim": {
         "additionalProperties": false,
         "properties": {
@@ -7300,9 +7439,48 @@
         "title": "CaptureJobClaim",
         "type": "object"
       },
+      "CaptureJobComplete": {
+        "additionalProperties": false,
+        "description": "The end of a running job. ``failed`` carries the reason.\n\nWho may send it is decided by the caller's credential, not by the body: the\ncredential that claimed the job, or an operator.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outcome": {
+            "enum": [
+              "done",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "CaptureJobComplete",
+        "type": "object"
+      },
       "CaptureJobCreate": {
         "additionalProperties": false,
         "properties": {
+          "browser": {
+            "default": "launched",
+            "enum": [
+              "launched",
+              "attached"
+            ],
+            "title": "Browser",
+            "type": "string"
+          },
           "crawl_depth": {
             "anyOf": [
               {
@@ -7379,6 +7557,14 @@
       },
       "CaptureJobOut": {
         "properties": {
+          "browser": {
+            "enum": [
+              "launched",
+              "attached"
+            ],
+            "title": "Browser",
+            "type": "string"
+          },
           "claimed_by": {
             "anyOf": [
               {
@@ -7561,6 +7747,7 @@
           "submitter_id",
           "is_reproduction",
           "state",
+          "browser",
           "claimed_by",
           "claimed_until",
           "derived_tier",
@@ -7572,9 +7759,31 @@
         "title": "CaptureJobOut",
         "type": "object"
       },
+      "CaptureJobRetry": {
+        "additionalProperties": false,
+        "properties": {
+          "browser": {
+            "anyOf": [
+              {
+                "enum": [
+                  "launched",
+                  "attached"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser"
+          }
+        },
+        "title": "CaptureJobRetry",
+        "type": "object"
+      },
       "CaptureJobUpdate": {
         "additionalProperties": false,
-        "description": "A worker's or operator's move of one job.",
+        "description": "A worker's or operator's move of one job. Finishing a running job is\n``/complete``'s and re-queueing a failed one is ``/retry``'s, not this;\nthe one deliberate exception is an operator's ``running -> cancelled``.\nWhile a job runs, only its claimant (or an operator) writes its fields.",
         "properties": {
           "derived_tier": {
             "anyOf": [
@@ -85798,6 +86007,56 @@
         ]
       }
     },
+    "/api/v1/design-refs/capture-jobs/batch": {
+      "post": {
+        "description": "A do-not-capture URL is reported in ``refused`` and does not stop the\nrest; every other URL gets its own job. Entries are stripped, as the\nsingle-URL door strips its ``url``. An EMPTY entry (``\"\"``) fails the\nschema, so the whole list is a 422; only whitespace-only entries are\nskipped, as are repeats, and a list with nothing left is a 422\n``no_urls``.",
+        "operationId": "api_v1_design_refs_capture_jobs_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureJobBatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureJobBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One capture job per URL of a pasted list",
+        "tags": [
+          "design-refs"
+        ]
+      }
+    },
     "/api/v1/design-refs/capture-jobs/claim": {
       "post": {
         "description": "Lease the oldest queued job \u2014 or a running one whose lease lapsed (a\ndead worker's job is re-queued this way). ``null`` when none waits.",
@@ -85961,6 +86220,130 @@
           }
         ],
         "summary": "Update Capture Job",
+        "tags": [
+          "design-refs"
+        ]
+      }
+    },
+    "/api/v1/design-refs/capture-jobs/{job_id}/complete": {
+      "post": {
+        "description": "The one door that FINISHES a running job: ``done``, or ``failed`` with\nthe reason the Jobs view shows. A non-operator completes only a job its own\ncredential claimed (its ``_claimant_key`` equals the job's\n``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may\ncomplete any running job, and that completion is written to the correction\nlog. The deliberate exception is an operator's PATCH ``running ->\ncancelled``, which stops a running job without finishing it.\n\nA job already ``running`` when ``design_refs_jobs_01`` deployed has\n``claimed_by_actor`` NULL, so no worker can complete it here: it finishes\nwhen its lease lapses and a worker re-claims it (which records the\nclaimant), or an operator completes it.",
+        "operationId": "api_v1_design_refs_capture_jobs_job_id_complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureJobComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Capture Job",
+        "tags": [
+          "design-refs"
+        ]
+      }
+    },
+    "/api/v1/design-refs/capture-jobs/{job_id}/retry": {
+      "post": {
+        "description": "Re-queue a failed job (operator only), optionally as ``attached``. The\nderived tier is cleared so the worker's pre-check derives it afresh.",
+        "operationId": "api_v1_design_refs_capture_jobs_job_id_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureJobRetry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Capture Job",
         "tags": [
           "design-refs"
         ]
