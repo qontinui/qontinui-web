@@ -585,16 +585,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the four tables and both columns. Reverse of upgrade()."""
+    """Drop the four tables and both columns. Reverse of upgrade().
+
+    Within the two policy tables the parent is altered before its versions
+    table, the order coord's write path locks them in (``FOR UPDATE`` on the
+    parent, then the snapshot INSERT), so a downgrade run against a live coord
+    cannot deadlock against a coord write (the order capmodel_02 set).
+    """
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_mints")
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_ops")
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_inventory")
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_exposure")
     op.execute(
-        "ALTER TABLE coord.fleet_runtime_policy_versions "
+        "ALTER TABLE coord.fleet_runtime_policy "
         "DROP COLUMN IF EXISTS secrets_broker_device_id"
     )
     op.execute(
-        "ALTER TABLE coord.fleet_runtime_policy "
+        "ALTER TABLE coord.fleet_runtime_policy_versions "
         "DROP COLUMN IF EXISTS secrets_broker_device_id"
     )

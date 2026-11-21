@@ -627,6 +627,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop every column upgrade() added, from all three tables. Exact reverse.
 
+    Within the two policy tables the parent is altered before its versions
+    table, the order coord's write path locks them in (``FOR UPDATE`` on the
+    parent, then the snapshot INSERT), so a downgrade run against a live coord
+    cannot deadlock against a coord write (the order capmodel_02 set).
+
     The COMMENTs go with their columns. Both policy tables are dropped
     together for the reason sess_guard_01 gives: leaving the snapshot columns
     behind would let the versions table hold payload the parent cannot. The
@@ -636,7 +641,7 @@ def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy_versions
+        ALTER TABLE coord.fleet_runtime_policy
             DROP COLUMN IF EXISTS kernel_token_objects_warn,
             DROP COLUMN IF EXISTS kernel_token_objects_breach,
             DROP COLUMN IF EXISTS kernel_token_slope_warn_per_hour,
@@ -649,7 +654,7 @@ def downgrade() -> None:
     )
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy
+        ALTER TABLE coord.fleet_runtime_policy_versions
             DROP COLUMN IF EXISTS kernel_token_objects_warn,
             DROP COLUMN IF EXISTS kernel_token_objects_breach,
             DROP COLUMN IF EXISTS kernel_token_slope_warn_per_hour,

@@ -241,7 +241,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the five columns from both tables. Exact reverse of upgrade().
+    """Drop the five columns from both tables, reversing upgrade().
+
+    Within the two policy tables the parent is altered before its versions
+    table, the order coord's write path locks them in (``FOR UPDATE`` on the
+    parent, then the snapshot INSERT), so a downgrade run against a live coord
+    cannot deadlock against a coord write (the order capmodel_02 set).
 
     The CHECK constraints and COMMENTs go with their columns. The DROPs are
     static literals inside this body, where the coord column-drop guard
@@ -249,7 +254,7 @@ def downgrade() -> None:
     """
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy_versions
+        ALTER TABLE coord.fleet_runtime_policy
             DROP COLUMN IF EXISTS capacity_model_mode,
             DROP COLUMN IF EXISTS capacity_model_off_consumers,
             DROP COLUMN IF EXISTS min_session_target,
@@ -259,7 +264,7 @@ def downgrade() -> None:
     )
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy
+        ALTER TABLE coord.fleet_runtime_policy_versions
             DROP COLUMN IF EXISTS capacity_model_mode,
             DROP COLUMN IF EXISTS capacity_model_off_consumers,
             DROP COLUMN IF EXISTS min_session_target,

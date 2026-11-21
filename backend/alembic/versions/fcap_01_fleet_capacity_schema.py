@@ -574,6 +574,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Exact reverse of upgrade(): Part 3, then Part 2, then Part 1.
 
+    Within the two policy tables the parent is altered before its versions
+    table, the order coord's write path locks them in (``FOR UPDATE`` on the
+    parent, then the snapshot INSERT), so a downgrade run against a live coord
+    cannot deadlock against a coord write (the order capmodel_02 set).
+
     Comments go with their columns and table — a comment has no independent
     existence to drop. Any recorded advice goes with the table.
 
@@ -596,13 +601,13 @@ def downgrade() -> None:
     # payload the parent cannot.
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy_versions
+        ALTER TABLE coord.fleet_runtime_policy
             DROP COLUMN IF EXISTS workload_census_enabled
         """
     )
     op.execute(
         """
-        ALTER TABLE coord.fleet_runtime_policy
+        ALTER TABLE coord.fleet_runtime_policy_versions
             DROP COLUMN IF EXISTS workload_census_enabled
         """
     )
