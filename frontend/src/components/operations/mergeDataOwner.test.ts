@@ -195,26 +195,41 @@ describe("MergeTrain.tsx is presentation-only", () => {
     expect(source).not.toMatch(/\buseEffect\s*\(/);
   });
 
-  it("exports nothing that no one renders", () => {
-    // The `MergeTrain` panel itself was such an export: re-exported from the
-    // barrel, imported by nothing, and still being edited. Every export must
-    // be reachable from some module outside this file — tests count, since
-    // they are how the pure helpers are pinned.
-    const exported = [...source.matchAll(/^export function (\w+)/gm)].map(
-      (m) => m[1]
-    );
-    expect(exported.length).toBeGreaterThan(0);
+  // This walks and reads every module under `src/` synchronously. On a full
+  // CI run (~900 test files sharing one runner) that I/O alone exceeded the
+  // global 20s testTimeout (qontinui-web#2322, run 44850300403: the only red
+  // in 18,184 tests). So the scan stops as soon as every export is found, and
+  // the test carries its own bound sized for a whole-tree read.
+  it(
+    "exports nothing that no one renders",
+    () => {
+      // The `MergeTrain` panel itself was such an export: re-exported from the
+      // barrel, imported by nothing, and still being edited. Every export must
+      // be reachable from some module outside this file — tests count, since
+      // they are how the pure helpers are pinned.
+      const exported = [...source.matchAll(/^export function (\w+)/gm)].map(
+        (m) => m[1]
+      );
+      expect(exported.length).toBeGreaterThan(0);
 
-    const others = moduleFiles(SRC_DIR).filter(
-      (f) => !f.endsWith("MergeTrain.tsx")
-    );
-    const tests = readdirSync(OPERATIONS_DIR)
-      .filter((f) => /\.test\.tsx?$/.test(f))
-      .map((f) => join(OPERATIONS_DIR, f));
-    const haystack = [...others, ...tests]
-      .map((f) => readFileSync(f, "utf8"))
-      .join("\n");
+      // Tests first: they are few, and they pin most of the pure helpers.
+      const tests = readdirSync(OPERATIONS_DIR)
+        .filter((f) => /\.test\.tsx?$/.test(f))
+        .map((f) => join(OPERATIONS_DIR, f));
+      const others = moduleFiles(SRC_DIR).filter(
+        (f) => !f.endsWith("MergeTrain.tsx")
+      );
+      const unreferenced = new Set(exported);
+      for (const file of [...tests, ...others]) {
+        if (unreferenced.size === 0) break;
+        const text = readFileSync(file, "utf8");
+        for (const name of [...unreferenced]) {
+          if (text.includes(name)) unreferenced.delete(name);
+        }
+      }
 
-    expect(exported.filter((name) => !haystack.includes(name))).toEqual([]);
-  });
+      expect([...unreferenced]).toEqual([]);
+    },
+    60_000
+  );
 });
