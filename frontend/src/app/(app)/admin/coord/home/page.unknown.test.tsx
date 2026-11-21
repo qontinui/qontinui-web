@@ -281,7 +281,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         expect(strip()).toHaveTextContent(
           "Cannot tell — part of this view is not read"
         );
-        expect(strip()).toHaveTextContent("Not read: needs you unknown.");
+        expect(strip()).toHaveTextContent("The needs-you list is unknown.");
         expectNoNeedsYouCalm();
       }
     );
@@ -318,7 +318,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       expect(strip()).toHaveTextContent(
         "Cannot tell — part of this view is not read"
       );
-      expect(strip()).toHaveTextContent("Not read: needs you not built yet.");
+      expect(strip()).toHaveTextContent("The needs-you list is not built yet.");
       expect(strip()).toHaveTextContent("1 source not read");
       expectNoNeedsYouCalm();
     });
@@ -346,7 +346,9 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         screen.getByTestId("coord-home.strip.no-change")
       ).toHaveTextContent(/^– units /);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
-      expect(strip()).toHaveTextContent("Not read: work by state unknown.");
+      expect(strip()).toHaveTextContent(
+        "The work-by-state summary is unknown."
+      );
       expect(screen.queryByText(/^No work units\.$/)).not.toBeInTheDocument();
     });
 
@@ -369,7 +371,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       expect(strip()).toHaveTextContent(
         "Cannot tell — part of this view is not read"
       );
-      expect(strip()).toHaveTextContent("Not read: degrading unknown.");
+      expect(strip()).toHaveTextContent("The degradations list is unknown.");
       expectNoDegradingCalm();
     });
 
@@ -388,7 +390,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         row.querySelector('[data-status-kind="source_not_read"]')
       ).toHaveTextContent(/^unknown$/);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
-      expect(strip()).toHaveTextContent("Not read: correct? unknown.");
+      expect(strip()).toHaveTextContent("The correctness check is unknown.");
     });
 
     it.each([

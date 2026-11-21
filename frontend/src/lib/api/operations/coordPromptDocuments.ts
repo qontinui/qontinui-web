@@ -37,6 +37,7 @@
  */
 
 import { httpClient } from "@/services/service-factory";
+import { pinned, type TenantPin } from "@/services/http-client";
 import type {
   AgentWriteTier,
   AutoPublishStatusResponse,
@@ -78,22 +79,40 @@ import type {
 import type { ProposedClause } from "@/components/admin/coord/policy-gap";
 import { OPERATIONS_BASE, readJson } from "./base";
 
+/**
+ * Re-exported from `services/http-client`, where it lives beside
+ * `pinActiveTenant`. Every function below that takes one sends its request in
+ * the pinned project on every attempt.
+ */
+export type { TenantPin };
+
 // ─────────────────────────────── documents ───────────────────────────────
 
 /** `GET /coord/prompt-documents` — `list_prompt_documents` (bodies omitted). */
-export async function listPromptDocuments(): Promise<ListPromptDocumentsResponse> {
+export async function listPromptDocuments(
+  pin?: TenantPin
+): Promise<ListPromptDocumentsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListPromptDocumentsResponse>(res, `GET ${url}`);
 }
 
 /** `GET /coord/prompt-documents/{kind}/{name}` — `get_prompt_document`, body included. */
 export async function fetchPromptDocument(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<PromptDocument>(res, `GET ${url}`);
 }
 
@@ -104,10 +123,15 @@ export async function fetchPromptDocument(
  */
 export async function listPromptDocumentVersions(
   kind: PromptDocumentKind | string,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListVersionsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListVersionsResponse>(res, `GET ${url}`);
 }
 
@@ -118,10 +142,15 @@ export async function listPromptDocumentVersions(
 export async function fetchPromptDocumentVersion(
   kind: PromptDocumentKind | string,
   name: string,
-  version: number
+  version: number,
+  pin?: TenantPin
 ): Promise<PromptDocumentVersion> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions/${version}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<PromptDocumentVersion>(res, `GET ${url}`);
 }
 
@@ -131,13 +160,15 @@ export async function fetchPromptDocumentVersion(
  */
 export async function createPromptDocument(
   kind: PromptDocumentKind,
-  data: PromptDocumentCreate
+  data: PromptDocumentCreate,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(data),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PromptDocument>(res, `POST ${url}`);
 }
@@ -149,13 +180,15 @@ export async function createPromptDocument(
 export async function updatePromptDocument(
   kind: PromptDocumentKind | string,
   name: string,
-  data: PromptDocumentUpdate
+  data: PromptDocumentUpdate,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify(data),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PromptDocument>(res, `PATCH ${url}`);
 }
@@ -169,13 +202,15 @@ export async function updatePromptDocument(
 export async function updatePromptDocumentAttrs(
   kind: PromptDocumentKind,
   name: string,
-  attrs: PromptDocumentAttrs
+  attrs: PromptDocumentAttrs,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify({ attrs }),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
 }
@@ -187,13 +222,15 @@ export async function updatePromptDocumentAttrs(
  */
 export async function restorePromptDocumentDefault(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/restore-default`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({}),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -207,13 +244,15 @@ export async function restorePromptDocumentVersion(
   kind: PromptDocumentKind,
   name: string,
   version: number,
-  changeNote?: string
+  changeNote?: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions/${version}/restore`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(changeNote ? { change_note: changeNote } : {}),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -254,10 +293,15 @@ export async function withdrawPromptDocument(
  */
 export async function listPromptDocumentClauses(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListClausesResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListClausesResponse>(res, `GET ${url}`);
 }
 
@@ -276,13 +320,15 @@ export async function listPromptDocumentClauses(
 export async function createPromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
-  clause: ClauseCreate | (ProposedClause & { clause_id: string })
+  clause: ClauseCreate | (ProposedClause & { clause_id: string }),
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(clause),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -295,13 +341,15 @@ export async function updatePromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
   clauseId: string,
-  patch: ClauseUpdate
+  patch: ClauseUpdate,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/${encodeURIComponent(clauseId)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify(patch),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
 }
@@ -313,12 +361,14 @@ export async function updatePromptDocumentClause(
 export async function deletePromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
-  clauseId: string
+  clauseId: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/${encodeURIComponent(clauseId)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `DELETE ${url}`, { unparseable: "null" });
 }
@@ -330,13 +380,15 @@ export async function deletePromptDocumentClause(
 export async function reorderPromptDocumentClauses(
   kind: PromptDocumentKind,
   name: string,
-  clauseIds: string[]
+  clauseIds: string[],
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/reorder`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ clause_ids: clauseIds }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -351,13 +403,15 @@ export async function reorderPromptDocumentClauses(
 export async function publishPromptDocument(
   kind: PromptDocumentKind,
   name: string,
-  request: PublishRequest
+  request: PublishRequest,
+  pin?: TenantPin
 ): Promise<PublishResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/publish`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(request),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishResponse>(res, `POST ${url}`);
 }
@@ -368,10 +422,15 @@ export async function publishPromptDocument(
  */
 export async function listPromptDocumentPublications(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListPublicationsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-publications?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListPublicationsResponse>(res, `GET ${url}`);
 }
 
@@ -382,10 +441,15 @@ export async function listPromptDocumentPublications(
 export async function fetchPromptDocumentPublication(
   kind: PromptDocumentKind,
   name: string,
-  version: number
+  version: number,
+  pin?: TenantPin
 ): Promise<Publication> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-publications/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/${version}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<Publication>(res, `GET ${url}`);
 }
 
@@ -396,13 +460,15 @@ export async function fetchPromptDocumentPublication(
 export async function adoptUpstreamPublication(
   kind: PromptDocumentKind,
   name: string,
-  decision: UpstreamDecisionRequest
+  decision: UpstreamDecisionRequest,
+  pin?: TenantPin
 ): Promise<UpstreamDecisionResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-adopt`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(decision),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<UpstreamDecisionResponse>(res, `POST ${url}`);
 }
@@ -415,13 +481,15 @@ export async function adoptUpstreamPublication(
 export async function keepLocalOverPublication(
   kind: PromptDocumentKind,
   name: string,
-  decision: UpstreamDecisionRequest
+  decision: UpstreamDecisionRequest,
+  pin?: TenantPin
 ): Promise<UpstreamDecisionResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-keep`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(decision),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<UpstreamDecisionResponse>(res, `POST ${url}`);
 }
@@ -433,10 +501,15 @@ export async function keepLocalOverPublication(
 export async function previewUpstreamMerge(
   kind: PromptDocumentKind,
   name: string,
-  publicationVersion: number
+  publicationVersion: number,
+  pin?: TenantPin
 ): Promise<ClauseMergePreview> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-merge?publication_version=${publicationVersion}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ClauseMergePreview>(res, `GET ${url}`);
 }
 
@@ -447,13 +520,15 @@ export async function previewUpstreamMerge(
 export async function applyUpstreamMerge(
   kind: PromptDocumentKind,
   name: string,
-  request: ClauseMergeApplyRequest
+  request: ClauseMergeApplyRequest,
+  pin?: TenantPin
 ): Promise<ClauseMergeApplyResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-merge`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(request),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<ClauseMergeApplyResponse>(res, `POST ${url}`);
 }
@@ -463,12 +538,15 @@ export async function applyUpstreamMerge(
  * `publish_all_prompt_documents`'s preview: every candidate with the version it
  * would publish. Writes nothing.
  */
-export async function previewPublishAll(): Promise<PublishAllDryRunResponse> {
+export async function previewPublishAll(
+  pin?: TenantPin
+): Promise<PublishAllDryRunResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/publish-all`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ dry_run: true }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishAllDryRunResponse>(res, `POST ${url}`);
 }
@@ -483,7 +561,8 @@ export async function previewPublishAll(): Promise<PublishAllDryRunResponse> {
  */
 export async function publishAllPromptDocuments(
   releaseNote: string | null,
-  items: PublishAllItem[]
+  items: PublishAllItem[],
+  pin?: TenantPin
 ): Promise<PublishAllArmedResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/publish-all`;
   const res = await httpClient.fetch(url, {
@@ -494,6 +573,7 @@ export async function publishAllPromptDocuments(
       items,
     }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishAllArmedResponse>(res, `POST ${url}`);
 }
@@ -503,9 +583,15 @@ export async function publishAllPromptDocuments(
  * `get_prompt_document_auto_publish_status`: what the auto-publisher would do
  * next, per candidate, and the resolved D5 switch.
  */
-export async function fetchAutoPublishStatus(): Promise<AutoPublishStatusResponse> {
+export async function fetchAutoPublishStatus(
+  pin?: TenantPin
+): Promise<AutoPublishStatusResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/auto-publish/status`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<AutoPublishStatusResponse>(res, `GET ${url}`);
 }
 
@@ -656,9 +742,15 @@ export interface KindTiersResponse {
 }
 
 /** `GET /coord/prompt-document-kind-tiers` — one row per kind. */
-export async function fetchKindTiers(): Promise<KindTiersResponse> {
+export async function fetchKindTiers(
+  pin?: TenantPin
+): Promise<KindTiersResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<KindTiersResponse>(res, `GET ${url}`);
 }
 
@@ -668,13 +760,15 @@ export async function fetchKindTiers(): Promise<KindTiersResponse> {
  */
 export async function setKindTier(
   kind: string,
-  tier: AgentWriteTier
+  tier: AgentWriteTier,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
     body: JSON.stringify({ tier }),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PUT ${url}`, { unparseable: "null" });
 }
@@ -683,11 +777,15 @@ export async function setKindTier(
  * `DELETE /coord/prompt-document-kind-tiers/{kind}` —
  * `clear_prompt_document_kind_tier`: back to coord's compile-time default.
  */
-export async function clearKindTier(kind: string): Promise<unknown> {
+export async function clearKindTier(
+  kind: string,
+  pin?: TenantPin
+): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `DELETE ${url}`, { unparseable: "null" });
 }
@@ -695,9 +793,15 @@ export async function clearKindTier(kind: string): Promise<unknown> {
 // ─────────────────────────── session compliance ───────────────────────────
 
 /** `GET /coord/session-compliance/config` — `get_session_compliance_config`. */
-export async function fetchSessionComplianceConfig(): Promise<SessionComplianceConfig> {
+export async function fetchSessionComplianceConfig(
+  pin?: TenantPin
+): Promise<SessionComplianceConfig> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<SessionComplianceConfig>(res, `GET ${url}`);
 }
 
@@ -705,9 +809,15 @@ export async function fetchSessionComplianceConfig(): Promise<SessionComplianceC
  * `GET /coord/session-compliance/config/versions` —
  * `list_session_compliance_config_versions`: the settings' audit trail.
  */
-export async function listSessionComplianceConfigVersions(): Promise<ListConfigVersionsResponse> {
+export async function listSessionComplianceConfigVersions(
+  pin?: TenantPin
+): Promise<ListConfigVersionsResponse> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config/versions`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListConfigVersionsResponse>(res, `GET ${url}`);
 }
 
@@ -717,13 +827,15 @@ export async function listSessionComplianceConfigVersions(): Promise<ListConfigV
  * Retried by method (`PUT`), exactly as the old `httpClient.put` call was.
  */
 export async function saveSessionComplianceConfig(
-  patch: SessionComplianceConfigUpdate
+  patch: SessionComplianceConfigUpdate,
+  pin?: TenantPin
 ): Promise<SessionComplianceConfig> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
     body: JSON.stringify(patch),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<SessionComplianceConfig>(res, `PUT ${url}`);
 }
@@ -733,16 +845,23 @@ export async function saveSessionComplianceConfig(
  * `list_session_compliance_sessions`. `verdict` and `cursor` are sent only when
  * given, in that order after `limit`.
  */
-export async function listSessionComplianceSessions(params: {
-  limit: number;
-  verdict?: string;
-  cursor?: string | null;
-}): Promise<ListComplianceSessionsResponse> {
+export async function listSessionComplianceSessions(
+  params: {
+    limit: number;
+    verdict?: string;
+    cursor?: string | null;
+  },
+  pin?: TenantPin
+): Promise<ListComplianceSessionsResponse> {
   const qs = new URLSearchParams({ limit: String(params.limit) });
   if (params.verdict) qs.set("verdict", params.verdict);
   if (params.cursor) qs.set("cursor", params.cursor);
   const url = `${OPERATIONS_BASE}/coord/session-compliance/sessions?${qs.toString()}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListComplianceSessionsResponse>(res, `GET ${url}`);
 }
 
@@ -750,9 +869,15 @@ export async function listSessionComplianceSessions(params: {
  * `GET /coord/session-compliance/outstanding` —
  * `list_session_compliance_outstanding`: the outstanding-work ledger.
  */
-export async function listSessionComplianceOutstanding(): Promise<ListOutstandingResponse> {
+export async function listSessionComplianceOutstanding(
+  pin?: TenantPin
+): Promise<ListOutstandingResponse> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/outstanding`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListOutstandingResponse>(res, `GET ${url}`);
 }
 

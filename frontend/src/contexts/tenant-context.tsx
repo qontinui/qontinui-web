@@ -187,3 +187,14 @@ export function useTenant(): TenantContextValue {
   }
   return ctx;
 }
+
+/**
+ * {@link useTenant} for a component that can render outside a provider — a
+ * list mounted standalone, or under test. `null` means no provider, which is
+ * UNKNOWN: a caller naming a tenant must say it cannot name one. It must not
+ * fall back to the raw stored id (it can name a project coord is not serving)
+ * and must not invent a name.
+ */
+export function useOptionalTenant(): TenantContextValue | null {
+  return useContext(TenantContext) ?? null;
+}

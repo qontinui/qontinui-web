@@ -6,7 +6,7 @@ export function EmptyState() {
     <BaseEmptyState
       icon={Activity}
       message="No Integration Tests Yet"
-      detail="Select a workflow from the configuration panel and run your first integration test. Tests run in mock mode using historical data."
+      detail="Select a workflow from the configuration panel and run your first integration test. Tests run in mock mode using simulated data."
     />
   );
 }

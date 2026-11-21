@@ -59,6 +59,19 @@ const summarize = (
   });
 
 describe("summarizeFleetLiveness", () => {
+  it("explains an empty roster by its retired rows, still amber", () => {
+    const s = summarize([], {
+      completeness: {
+        ...whole(0),
+        excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 5700 },
+      },
+    });
+    // Retired rows are not a binding fault: still the complete-roster branch.
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("not an all-clear");
+    expect(s.detail).toContain("5700 devices were retired");
+  });
+
   it("is green only when every device reports healthy", () => {
     const s = summarize([device("a", "healthy"), device("b", "healthy")]);
     expect(s.level).toBe("green");
@@ -305,13 +318,17 @@ describe("summarizeFleetLiveness", () => {
 
     it("says what is off in words coord backs, naming no reach it did not measure", () => {
       const ci = summarize([device("a", "ci_offline"), device("b", "healthy")]);
-      expect(ci.detail).toContain("GitHub reports its CI runner offline");
+      expect(ci.detail).toContain(
+        "Its CI runner is offline, or GitHub no longer lists its registration."
+      );
       expect(ci.detail).not.toContain("still reaches");
       const twoCi = summarize([
         device("a", "ci_offline"),
         device("b", "ci_offline"),
       ]);
-      expect(twoCi.detail).toContain("GitHub reports their CI runners offline");
+      expect(twoCi.detail).toContain(
+        "Their CI runners are offline, or GitHub no longer lists their registrations."
+      );
       const degraded = summarize([
         device("a", "degraded"),
         device("b", "healthy"),
@@ -363,6 +380,24 @@ describe("summarizeFleetLiveness", () => {
         "The nav's 4 unhealthy also counts what is not a degradation here: 1 abandoned, 1 with no health verdict and 1 placeholder row."
       );
       expect(line).not.toContain("named above");
+    });
+
+    it("names a ci_unrefreshed row in the nav's line, and never reads it healthy or unknown", () => {
+      const s = summarize([
+        device("a", "healthy"),
+        device("gh", "ci_unrefreshed"),
+      ]);
+      expect(s.navReconcile).toBe(
+        "The nav's 1 unhealthy also counts what is not a degradation here: 1 CI registration the registrar has not refreshed recently."
+      );
+      expect(s.navReconcile).not.toContain("no health verdict");
+      // Not a degradation, so never red; not healthy, so never green.
+      expect(s.level).toBe("amber");
+      expect(s.ciUnrefreshed).toBe(1);
+      expect(s.unknown).toBe(0);
+      expect(s.healthy).toBe(1);
+      expect(s.headline).toBe("2 machines, 1 not refreshed by the registrar");
+      expect(s.detail).toContain("not refreshed recently is not healthy");
     });
 
     it("says nothing of the nav over a failed read: it polls on its own", () => {

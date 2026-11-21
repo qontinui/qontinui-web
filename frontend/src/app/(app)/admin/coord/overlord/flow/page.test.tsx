@@ -83,10 +83,10 @@ describe("/admin/coord/overlord/flow", () => {
     );
     expect(
       screen.getByTestId("overlord-flow-ttc-absent-unproven")
-    ).toHaveTextContent("gone across a rebuild2");
+    ).toHaveTextContent("gone across a restart2");
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-unproven")
-    ).toHaveTextContent("gone across a rebuild2");
+    ).toHaveTextContent("gone across a restart2");
 
     // Nudge rates with their counts and the unmeasured remainder.
     expect(
@@ -140,6 +140,13 @@ describe("/admin/coord/overlord/flow", () => {
     ).toHaveTextContent(
       "Last /next-move: class A, nudge (live), outcome did_work"
     );
+    expect(screen.getByTestId("overlord-flow-unchanged-label")).toHaveAttribute(
+      "href",
+      "/admin/coord/overlord/label?intervention_id=0190aaaa-0000-7000-8000-000000000001"
+    );
+    expect(rows[0]).toHaveTextContent(
+      "intervention 0190aaaa-0000-7000-8000-000000000001"
+    );
     await userEvent.click(
       within(
         screen.getAllByTestId("overlord-flow-unchanged-row")[1]!
@@ -149,6 +156,7 @@ describe("/admin/coord/overlord/flow", () => {
       screen.getByTestId("overlord-flow-unchanged-no-session")
     ).toHaveTextContent("terminal term-9");
     expect(screen.queryByTestId("overlord-flow-unchanged-open")).toBeNull();
+    expect(screen.queryByTestId("overlord-flow-unchanged-label")).toBeNull();
 
     // The histogram: one row per pass, oldest first, full breakdown.
     const passes = screen.getAllByTestId("overlord-flow-histogram-pass");
@@ -216,7 +224,7 @@ describe("/admin/coord/overlord/flow", () => {
     await waitFor(() => expect(counts).toHaveTextContent("of nudged2/10"));
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-unproven")
-    ).not.toHaveTextContent(/rebuild\d/);
+    ).not.toHaveTextContent(/restart\d/);
   });
 
   it("renders a 503 schema_migration_pending as UNKNOWN everywhere", async () => {

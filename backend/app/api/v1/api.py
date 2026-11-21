@@ -49,6 +49,7 @@ from app.api.v1.endpoints import (
     constraints,
     custom_functions,
     design_policies,
+    design_refs,
     devenv,
     devenv_agent,
     device_bridge_ws,
@@ -69,11 +70,11 @@ from app.api.v1.endpoints import (
     feedback_scores,
     files_sharing,
     finding_categories,
+    fleet_device_bindings,
     fleet_dispatch,
     fleet_targets,
     health,
     helper_tasks,
-    historical,
     identity_resolution,
     image_assets,
     images,
@@ -128,6 +129,7 @@ from app.api.v1.endpoints import (
     settings,
     skills,
     snapshots,
+    spawn_launch_settings,
     spawn_ledger,
     state_discovery,
     state_discovery_results,
@@ -256,6 +258,15 @@ api_router.include_router(internal.router, prefix="/internal", tags=["internal"]
 api_router.include_router(
     repo_followup_dials.router, prefix="/operations", tags=["operations"]
 )
+# Spawn launch settings — the operator's model and effort per spawn type,
+# proxied to coord's `/coord/spawn-launch-settings`. Its own prefix, so the
+# frontend's `ACTIVE_TENANT_URL_PREFIXES` carries a line for it. Plan
+# `2026-11-15-operator-sets-spawn-model-and-effort-per-spawn-type` Phase 5.
+api_router.include_router(
+    spawn_launch_settings.router,
+    prefix="/spawn-launch-settings",
+    tags=["spawn-launch-settings"],
+)
 # Spawn ledger reads — every spawn coord was asked to place, where it went,
 # how long it waited and how it ended. Under `/operations` beside the reads the
 # Spawns page uses with it; a sibling module so the operations package's hub
@@ -272,6 +283,15 @@ api_router.include_router(
 # `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
 api_router.include_router(
     session_runs.router, prefix="/operations", tags=["operations"]
+)
+# Fleet device bindings — remove a roster machine's device rows from the
+# caller's tenant (coord's per-tenant `DELETE /coord/devices/:id/tenant-binding`,
+# once per id, with a per-id outcome). Under `/operations` so the active-tenant
+# prefix rule covers it; a sibling module so the operations hub file is
+# untouched. Plan
+# `2026-11-15-stale-ci-hosts-and-devices-are-removable-from-the-web-console` Phase 1.
+api_router.include_router(
+    fleet_device_bindings.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
@@ -397,9 +417,6 @@ api_router.include_router(
     rag_dashboard.router, prefix="/projects", tags=["rag-dashboard"]
 )
 api_router.include_router(issues.router, prefix="/issues", tags=["issues"])
-api_router.include_router(
-    historical.router, prefix="/testing/historical", tags=["historical-data"]
-)
 api_router.include_router(execution.router, prefix="/execution", tags=["execution"])
 # Drift report endpoints — placeholder routes until the runner proxy lands.
 # See: app/api/v1/endpoints/runs_drift.py
@@ -515,6 +532,14 @@ api_router.include_router(
 # labelled by coord-tenant admins (plan
 # 2026-10-13-image-generation-and-visual-judgment, Phase 23).
 api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The design reference library — the design_refs schema: captured third-party
+# web examples with descriptions and perception judgements, tenant-scoped under
+# the memory credential (plan
+# 2026-11-13-design-reference-library-stores-described-web-examples-for-any-project-to-query,
+# Phase 1). No public route: public serving is Phase 6.
+api_router.include_router(
+    design_refs.router, prefix="/design-refs", tags=["design-refs"]
+)
 # The presentation scope — web.presentation_scopes: the first-party owners and
 # confidential terms the console's presentation lens redacts by, read by any
 # member of the active project and written by its admins (plan

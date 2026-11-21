@@ -7,6 +7,7 @@ import { ComplianceStateNotice } from "./ComplianceStateNotice";
 import { OutstandingWorkLedger } from "./OutstandingWorkLedger";
 import { SessionComplianceEnforcementPanel } from "./SessionComplianceEnforcementPanel";
 import { SessionComplianceSessions } from "./SessionComplianceSessions";
+import { WaitingForProject } from "./WaitingForProject";
 
 /**
  * The session-compliance surface: the enforcement switch, the per-session
@@ -18,6 +19,11 @@ import { SessionComplianceSessions } from "./SessionComplianceSessions";
  * the text it enforces is how the two drift apart.
  */
 export function SessionComplianceSection() {
+  // On the prompt-documents page every read and the save are sent in the
+  // page's project, and nothing is read before the page knows it (the
+  // section says it is waiting). A save raced past another tab's switch is
+  // refused — by the hook itself, beside its send: the page's disabled
+  // fieldset does not reach a click that lands before the switch is seen.
   const {
     config,
     versions,
@@ -32,6 +38,7 @@ export function SessionComplianceSection() {
     saveConfig,
     reloadAll,
     featureUnavailable,
+    waitingForProject,
   } = useSessionCompliance();
 
   return (
@@ -55,6 +62,10 @@ export function SessionComplianceSection() {
           Refresh
         </Button>
       </div>
+
+      {waitingForProject ? (
+        <WaitingForProject testId="compliance-waiting" />
+      ) : null}
 
       {featureUnavailable ? (
         /* Every route 404s — the feature isn't deployed on coord yet. Say that

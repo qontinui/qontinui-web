@@ -94,8 +94,11 @@ import {
 } from "./_audit";
 import {
   checkRateLimit,
-  kindForMethod,
+  laneFor,
+  logLaneRefused,
   rateLimitedResponse,
+  withRateLimitHeaders,
+  type RateLimitResult,
 } from "./_rate-limit";
 
 const sseManager = new SSEManager();
@@ -113,6 +116,14 @@ const routeHandlers = createNextRouteHandlers(handlers, {
 
 // Wrap handlers to adapt from Next.js 15 async params to the expected sync params
 type NextContext = { params: Promise<{ path: string[] }> };
+
+/** An SDK route handler, as `createNextRouteHandlers` returns them. */
+type RouteHandler = (
+  req: NextRequest,
+  ctx: { params: Record<string, string> }
+) => Promise<Response>;
+
+type RelayMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 // Route knowledge (`isKnownRoute` + the compiled UI_BRIDGE_ROUTES /
 // relay-transport sets) lives in `./_browser-required` — a Next route
@@ -166,13 +177,10 @@ async function mergeRelayBusStatus(
 }
 
 async function wrapHandler(
-  handler: (
-    req: NextRequest,
-    ctx: { params: Record<string, string> }
-  ) => Promise<Response>,
+  handler: RouteHandler,
   request: NextRequest,
   context: NextContext,
-  method: "GET" | "POST" | "PUT" | "DELETE"
+  method: RelayMethod
 ): Promise<Response> {
   const params = await context.params;
   const path = resolvePath(params);
@@ -194,8 +202,10 @@ async function wrapHandler(
   // `callerRateLimitKey` is the rate-limit bucket key. It is NAMESPACED by
   // principal kind so a device and a user whose UUIDs collide can't share a
   // bucket: `dev:<deviceId>` for a device, the bare `userId` for a user.
+  // `callerPrincipalKind` names which, for the refusal log.
   let callerUserId: string | null = null;
   let callerRateLimitKey: string | null = null;
+  let callerPrincipalKind: "user" | "device" | null = null;
   let callerToken: string | null = null;
   if (isAuthGateEnabled()) {
     if (!isAllowedOrigin(request.headers.get("origin"))) {
@@ -217,6 +227,7 @@ async function wrapHandler(
     }
     callerUserId = auth.userId;
     callerToken = auth.token;
+    callerPrincipalKind = auth.kind;
     callerRateLimitKey =
       auth.kind === "device" ? `dev:${auth.deviceId}` : auth.userId;
   }
@@ -229,16 +240,57 @@ async function wrapHandler(
   // principal kind (`dev:<deviceId>` vs the bare userId) so a device gets
   // its own budget separate from its paired operator.
   //
+  // The LANE comes from path + method alone (`laneFor`), never from a body,
+  // so a request is still one INCR and a refusal reads no body: the SDK's
+  // own transport routes draw on their own per-principal sub-lanes, every
+  // other request on the read/write command lanes (`_rate-limit.ts` header).
+  //
   // The check is fail-OPEN when Redis is unreachable: `checkRateLimit`
   // returns `allowed: true, redisOffline: true` and we let the request
   // through. See `_rate-limit.ts::checkRateLimit` for the rationale.
+  let rl: RateLimitResult | null = null;
   if (callerRateLimitKey) {
-    const rl = await checkRateLimit(callerRateLimitKey, kindForMethod(method));
+    rl = await checkRateLimit(callerRateLimitKey, laneFor(path, method));
     if (!rl.allowed) {
+      // The SDK discards the response to a refused heartbeat or result, so
+      // a transport refusal is visible in this log line (sampled by
+      // overflow) or nowhere.
+      logLaneRefused(rl, callerPrincipalKind);
       return rateLimitedResponse(rl);
     }
   }
 
+  // ONE exit after the check: every response from here on — forwarded,
+  // refused by a later gate, the `/health` augmentation, the command
+  // stream — carries the budget of the lane it drew on.
+  const response = await forwardToRelay(
+    handler,
+    request,
+    method,
+    path,
+    params.path,
+    callerUserId,
+    callerToken
+  );
+  return rl ? withRateLimitHeaders(response, rl) : response;
+}
+
+/**
+ * Everything after authentication and the rate limit: the forbidden-route,
+ * known-route and browser-required gates, the body pass-through and caller
+ * identity, the SDK handler itself, the `/health` augmentation and the
+ * write-command audit. Split out of `wrapHandler` so that function has a
+ * single exit after the rate-limit check.
+ */
+async function forwardToRelay(
+  handler: RouteHandler,
+  request: NextRequest,
+  method: RelayMethod,
+  path: string,
+  segments: string[],
+  callerUserId: string | null,
+  callerToken: string | null
+): Promise<Response> {
   // Hard reject paths forbidden on a DEPLOYED web surface (e.g.
   // `/control/page/evaluate` — see `web-forbidden-routes.ts`). Scoped to
   // production builds, so local `next dev` keeps full UI Bridge power for
@@ -273,14 +325,14 @@ async function wrapHandler(
     return noBrowserResponse(path);
   }
 
-  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH so the SDK's
-  // `request.json()` sees the inbound body byte-for-byte with an explicit
+  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH/DELETE so the
+  // SDK's JSON body reader sees the inbound body byte-for-byte with an explicit
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
   //
   // We use `passThroughBodyWithPeek` (a `passThroughBody` superset) so we
-  // get the body back, parsed by the SDK's own parser, on the same read —
+  // get the body back, read by the SDK's own rule, on the same read —
   // needed for the caller-identity strip and for the audit-log safe
   // summary in the auditable-write branch below.
   const {
@@ -290,20 +342,33 @@ async function wrapHandler(
   } = await passThroughBodyWithPeek(request, method);
 
   // Fail closed under the auth gate. The caller-identity strip below can
-  // only remove an identity from a body it parsed, so a body present but
-  // not parseable the way the SDK parses it is refused with a typed 400
-  // instead of being forwarded as it came. With the gate off nothing
-  // changes: there is no verified identity to protect.
+  // only remove an identity from a body it parsed, so a body the SDK's
+  // reader would refuse (declared JSON, or declared as nothing, and not
+  // JSON) is refused with a typed 400 instead of being forwarded as it came.
+  // A body the SDK reads as none (blank, or declared as a non-JSON type and
+  // not JSON) was already handed on with no body by the peek. A body over the
+  // SDK's cap goes on unparsed (with its Content-Type forced to JSON), and every
+  // SDK path that reads a body refuses it (413); a handler that never reads a
+  // body runs without it. With the gate off nothing changes: there is no
+  // verified identity to protect.
+  //
+  // The deliberate residual: this refusal does not know the route. Under the
+  // gate an unparseable body declared JSON (or nothing) is refused even on a
+  // route whose handler never reads a body, where the SDK alone would have
+  // answered; an unparseable body declared as a non-JSON type is forwarded
+  // with no body on every route.
   //
   // No route is exempt, because the SDK's Next handler reads every body it
-  // reads with `request.json()` — the `bodyRequired` routes of
-  // `UI_BRIDGE_ROUTES`, its hand-routed POSTs, `POST /heartbeat`,
-  // `POST /commands` and `POST /tabs/cdp/new` — and no route reads a
-  // multipart, binary or text body. Its own clients, and this app's, send
-  // only JSON bodies. That census is a property of the INSTALLED SDK, so it
-  // is not pinned to a version here: `route.real-sdk.test.ts` re-takes it
-  // against whatever `node_modules` resolves, and fails on any release that
-  // reads a body another way.
+  // reads as JSON, through its one reader `readJsonBody` — the
+  // `bodyRequired` routes of `UI_BRIDGE_ROUTES` (`DELETE
+  // /control/media/override` among them, which is why DELETE is peeked
+  // too), its hand-routed POSTs, `POST /heartbeat`, `POST /commands` and
+  // `POST /tabs/cdp/new` — and no route reads a multipart, binary or text
+  // body. Its own clients, and this app's, send only JSON bodies. That
+  // census is a property of the INSTALLED SDK, so it is not pinned to a
+  // version here: `route.real-sdk.test.ts` re-takes it against whatever
+  // `node_modules` resolves, and fails on any release that reads a body
+  // another way.
   if (
     callerUserId &&
     (bodyState === "unparseable" || bodyState === "unreadable")
@@ -324,7 +389,7 @@ async function wrapHandler(
     : bodyPreserved;
 
   const response = await handler(forwardRequest, {
-    params: { path: params.path.join("/") },
+    params: { path: segments.join("/") },
   });
 
   // Relay-bus health surfacing (friction-2): the SDK's `/health` returns
@@ -354,9 +419,8 @@ async function wrapHandler(
   // never hit the table — keeping the activity feed about user-issued
   // commands, not the SDK's own bookkeeping.
   if (callerUserId && callerToken && isAuditablePath(path, method as HttpMethod)) {
-    // Capture into a const so the async closure below sees the narrowed
-    // non-null type (the `let callerToken` is reassigned above, so TS would
-    // otherwise widen it back to `string | null` inside the closure).
+    // Capture into a const so the narrowed non-null type is explicit at the
+    // `recordAudit` call below.
     const auditToken = callerToken;
     const commandName = commandNameFromPath(path);
     const summary = summarizeBody(parsedBody, commandName);

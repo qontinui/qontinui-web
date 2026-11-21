@@ -39,8 +39,8 @@ function answer(status: number, body: unknown): Response {
 beforeEach(() => http.fetch.mockReset());
 
 const NO_PROJECT_SENTENCE =
-  "No project could be resolved for this request: select a project you " +
-  "belong to, or ask a project admin to add you.";
+  "No project could be resolved for this request: ask a project admin to " +
+  "add you.";
 
 /**
  * The read's 403 when no project resolves for the caller, the same on both
@@ -56,7 +56,7 @@ const NO_PROJECT_REFUSAL = {
   refusal: {
     code: "permission_denied",
     discriminator: "tenant_not_resolved",
-    next_action: { kind: "fix_request" },
+    next_action: { kind: "request_access", target: "a project admin" },
     glossary_terms: [],
     detail: NO_PROJECT_SENTENCE,
     source: "web_backend",
@@ -76,7 +76,7 @@ describe("fetchPresentationScope", () => {
       refusal: {
         code: "permission_denied",
         discriminator: "tenant_not_resolved",
-        next_action: { kind: "fix_request" },
+        next_action: { kind: "request_access", target: "a project admin" },
       },
     });
     // The message the loader holds as the read's failure names the condition.

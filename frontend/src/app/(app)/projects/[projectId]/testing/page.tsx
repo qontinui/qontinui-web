@@ -16,17 +16,7 @@ const CoverageTrendChart = nextDynamic(
   { ssr: false }
 );
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
-import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
-import { createLogger } from "@/lib/logger";
-
-const log = createLogger("TestingDashboard");
-import {
-  BarChart3,
-  TrendingUp,
-  PlayCircle,
-  Activity,
-  FlaskConical,
-} from "lucide-react";
+import { BarChart3, TrendingUp, PlayCircle, FlaskConical } from "lucide-react";
 
 export default function ProjectTestingDashboard() {
   const router = useRouter();
@@ -34,7 +24,7 @@ export default function ProjectTestingDashboard() {
   const projectId = params.projectId as string;
 
   const [selectedView, setSelectedView] = useState<
-    "overview" | "live" | "trends" | "reliability"
+    "overview" | "trends" | "reliability"
   >("overview");
 
   return (
@@ -89,7 +79,6 @@ export default function ProjectTestingDashboard() {
           {(
             [
               { key: "overview", label: "Test Runs", icon: PlayCircle },
-              { key: "live", label: "Live Execution", icon: Activity },
               { key: "trends", label: "Coverage Trends", icon: TrendingUp },
               { key: "reliability", label: "Reliability", icon: BarChart3 },
             ] as const
@@ -110,14 +99,6 @@ export default function ProjectTestingDashboard() {
         </div>
 
         {selectedView === "overview" && <TestRunsList projectId={projectId} />}
-
-        {selectedView === "live" && (
-          <LiveTestExecution
-            onComplete={(data) => {
-              log.debug("Test execution completed:", data);
-            }}
-          />
-        )}
 
         {selectedView === "trends" && (
           <CoverageTrendChart projectId={projectId} />

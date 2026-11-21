@@ -57,13 +57,40 @@
  *   narrowed to `space-y-4`, because the two `border-t` sections below are
  *   separate governance controls and their separation is what stops them
  *   reading as one.
- * - **R3** — nothing to correct at page scope. The one amber surface here
- *   (`PromptDocumentList`) is a warning callout, not a kind-keyed status hue,
- *   so there is no palette to enrol in `console/attention.test.ts`.
+ * - **R3** — the page's attention surfaces are `PageWriteGuard`'s two
+ *   notices, both RED and both outside its fieldset, each with a Reload:
+ *   the cross-tab notice, which only the operator's Reload (or a switch back
+ *   in the other tab) clears, and the project-list notice, shown when the
+ *   layout's provider said its membership read failed and the page has no
+ *   project to pin to, which only the operator's Reload clears. Both are R3's
+ *   "the operator's move, now" (plan
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). Each is one
+ *   callout with one state, not a kind→attention table, so there is nothing
+ *   to enrol in `CONSOLE_PALETTES` (`components/console/consoleSurfaces.ts`,
+ *   which `console/attention.test.ts` imports and audits). That registry
+ *   holds the modules that export an attention table, typed as one or named
+ *   `*ATTENTION*`, and `consoleSurfaces.test.ts` scans the console for them;
+ *   this route exports none. The notices take the route's existing must-act
+ *   red from `PromptDocumentClaims.tsx`, which is unregistered for the same
+ *   reason. Their classes are not `AUTHOR_RED` or a drift of it, which that
+ *   scan also checks.
+ *
+ * ## One cross-tab write guard for the whole page
+ *
+ * `PageWriteGuardProvider` takes the page's project and the guard against
+ * another tab's project switch ONCE, for the list's rows and the five settings
+ * sections alike (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+ * D1): its notices, one fieldset around everything, and every section hook
+ * refuses and pins beside its own send by reading the provider (D9). Nothing
+ * is handed up from the list, and no section takes a guard as a prop.
  */
 
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
+import {
+  PageWriteGuardProvider,
+  useRequiredPageWriteGuard,
+} from "./_components/PageWriteGuard";
 import {
   observedFromPublishAll,
   PolicyAutoPublishDialControl,
@@ -75,14 +102,39 @@ import { usePublishAll } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
+  return (
+    <div className="p-3 sm:p-6" data-testid="prompt-documents-page">
+      <PageWriteGuardProvider>
+        <PromptDocumentsPageBody />
+      </PageWriteGuardProvider>
+    </div>
+  );
+}
+
+/**
+ * Everything on the page, under its one write guard. A component, not part of
+ * `PromptDocumentsPage`, because a hook cannot read a provider its own
+ * component renders: the status read below asks the provider which project to
+ * send in.
+ */
+function PromptDocumentsPageBody() {
+  // The page's send guard: `writeAllowed`, asked right before the dry run, the
+  // armed run and a publish-mode PATCH are sent, and `resolvePin`, the
+  // project the page's rows are pinned to, asked as each status read and
+  // publish-all request is SENT. So one in flight when another tab switches
+  // project — re-issued after a 429, replayed after a token refresh — cannot
+  // land in, or answer from, that tab's project. Both keep one identity for
+  // the page's lifetime, so the mount read below does not re-fire on them
+  // (D9, D10).
+  const guard = useRequiredPageWriteGuard();
   // ONE auto-publish status read for the whole page (plan
   // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the
   // list's badges and the dial's observed worker are two readings of the same
   // response, so they must not come from two fetches that can disagree. A
   // write to the D5 switch re-takes it, because the badges key on the switch.
-  const publishAllState = usePublishAll();
+  const publishAllState = usePublishAll(guard);
   return (
-    <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
+    <div className="space-y-8">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
           title and the nav crumb naming this route. The prose stays because it
           is not a restatement of the title — it names WHICH content this is and

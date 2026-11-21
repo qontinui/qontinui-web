@@ -115,6 +115,11 @@ interface PromptDocumentUpstreamDialogProps {
   saving?: boolean;
 }
 
+/** How many lines a release note has, for its collapsed summary. */
+function lineCount(text: string): number {
+  return text.split("\n").length;
+}
+
 /** Which surface the dialog is showing: the three-way comparison, or the clause merge. */
 type DialogView = "compare" | "merge";
 
@@ -177,6 +182,44 @@ type DialogView = "compare" | "merge";
  * When coord says the pair does not decompose into clauses (`mode:
  * "whole_body"`), the panel relays coord's reason and points back at Adopt /
  * Keep-mine, which remain the honest whole-body decisions.
+ *
+ * ## Layout: header and footer are fixed, ONE body scrolls
+ *
+ * The decisions live in the footer, and the footer must be on screen at every
+ * content size, in both views. So the dialog is three rows: a `shrink-0`
+ * header, a body that is the dialog's only `min-h-0 flex-1 overflow-y-auto`,
+ * and a `shrink-0` footer. Everything that grows with content — the release
+ * note, the pane selector, the diff, the clause list, the unwired notice — is
+ * inside the body.
+ *
+ * It was not, and that is how `Adopt v1` became unreachable (2026-11-07). The
+ * release note sat OUTSIDE the scrolling region as a `shrink-0` block in a
+ * `max-h-[90vh] overflow-hidden` column. A publication's release note is, by
+ * default, every change note since the last publication, gathered into one
+ * string by coord (`Candidate::gathered_release_note`), so it grows with a
+ * document's edit history. A
+ * block that cannot shrink and cannot scroll, in a box that clips, pushes the
+ * footer out of the box — and the clip hides it. Zooming the browser out was
+ * the only way to reach the button.
+ *
+ * Nothing INSIDE the body is a scroll or clip container of its own (the diff
+ * table is rendered `overflow-visible`): a nested one inside a shrinkable
+ * region is how content gets squeezed to nothing, and two scrollbars on one
+ * surface is how an operator loses their place.
+ *
+ * The release note is collapsed by default (a `<details>`): it is the long,
+ * secondary text, and an open note put the pane selector and the diff — what
+ * the operator opened this for — below it.
+ *
+ * ## Width: 64rem, clamped to the viewport
+ *
+ * The base `DialogContent` carries `max-w-[calc(100%-2rem)] sm:max-w-lg`, and
+ * `cn` (tailwind-merge) only resolves conflicts WITHIN a variant. So the
+ * `max-w-4xl` this dialog used to pass replaced the unprefixed viewport clamp
+ * and left `sm:max-w-lg` standing: at 640px and wider the dialog rendered at
+ * 32rem, not 56rem. The width here is set ON the `sm:` variant, at twice that
+ * real 32rem, inside the same `calc(100% - 2rem)` clamp, so it never overflows
+ * a narrow screen; below `sm` the base clamp applies untouched.
  */
 export function PromptDocumentUpstreamDialog({
   open,
@@ -362,10 +405,12 @@ export function PromptDocumentUpstreamDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden"
+        className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[min(64rem,calc(100%-2rem))]"
         data-testid="prompt-document-upstream"
       >
-        <DialogHeader>
+        {/* `pr-6` keeps a long title clear of the absolutely-placed close
+            button, which would otherwise sit on top of the document's name. */}
+        <DialogHeader className="shrink-0 pr-6">
           <DialogTitle className="flex items-center gap-2">
             <CloudDownload className="size-4" />
             Upstream update{doc ? ` — ${label}` : ""}
@@ -384,146 +429,168 @@ export function PromptDocumentUpstreamDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {incoming?.release_note ? (
-          <div
-            className="shrink-0 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
-            data-testid="upstream-release-note"
-          >
-            <span className="text-muted-foreground">
-              Release note for v{incoming.publication_version}:
-            </span>{" "}
-            <span className="italic">{incoming.release_note}</span>
-          </div>
-        ) : null}
-
-        {view === "merge" && mergePreview ? (
-          <PromptDocumentClauseMergePanel
-            preview={mergePreview}
-            resolutions={resolutions}
-            onResolve={resolve}
-            saving={saving}
-          />
-        ) : (
-          <>
-            {/* Pane selector — the three comparisons of the three-way view. */}
-            <div
-              className="flex shrink-0 flex-wrap gap-1"
-              role="tablist"
-              aria-label="Three-way comparison"
-            >
-              {panes.map((p) => {
-                const unavailable = p.id !== "adopt_effect" && base === null;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={pane === p.id}
-                    disabled={unavailable}
-                    onClick={() => setPane(p.id)}
-                    data-testid={`upstream-pane-${p.id}`}
-                    className={cn(
-                      "rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
-                      pane === p.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted/50",
-                      unavailable && "cursor-not-allowed opacity-50"
-                    )}
-                  >
-                    <span className="block font-medium">{p.label}</span>
-                    <span className="block text-muted-foreground">
-                      {p.caption}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
-              {loadingBody || loadingPublications ? (
-                <p className="py-12 text-center text-sm text-muted-foreground">
-                  Loading the comparison…
-                </p>
-              ) : !incoming ? (
-                <p
-                  className="py-12 text-center text-sm text-muted-foreground"
-                  data-testid="upstream-no-publication"
-                >
-                  No publication could be read for this document. That is
-                  unknown, not &ldquo;nothing published&rdquo; — the channel may
-                  be unreachable from here.
-                </p>
-              ) : diff === null ? (
-                <p
-                  className="py-12 text-center text-sm text-muted-foreground"
-                  data-testid="upstream-no-base"
-                >
-                  This document tracks no publication, so there is no base to
-                  compare against. It was written here, or seeded before any
-                  publication for it existed — either way, what it would have
-                  diverged FROM is unknown rather than identical. &ldquo;What
-                  adopting would change&rdquo; is still exact.
-                </p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-muted/40 px-3 py-2 text-xs">
-                    <span className="font-medium">
-                      {panes.find((p) => p.id === pane)?.caption}
-                    </span>
-                    {diff.stats.identical ? (
-                      <span className="text-muted-foreground">
-                        Identical — these two are the same text.
-                      </span>
-                    ) : (
-                      <>
-                        <span className={DIFF_ADDED_COUNT_CLASS}>
-                          +{diff.stats.added}
-                        </span>
-                        <span className={DIFF_REMOVED_COUNT_CLASS}>
-                          −{diff.stats.removed}
-                        </span>
-                        {diff.stats.truncated && (
-                          <span className="text-muted-foreground">
-                            Document too large for a line-by-line diff — showing
-                            a full replacement.
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <DiffTable lines={diff.lines} data-testid="upstream-diff" />
-                </>
-              )}
-            </div>
-          </>
-        )}
-
         {/*
+          The ONE scrolling region. Everything whose height depends on content
+          lives here, so nothing can push the footer below out of the dialog.
+        */}
+        <div
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1"
+          data-testid="upstream-body"
+        >
+          {incoming?.release_note ? (
+            <details
+              className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
+              data-testid="upstream-release-note"
+            >
+              <summary className="cursor-pointer text-muted-foreground">
+                Release note for v{incoming.publication_version} (
+                {lineCount(incoming.release_note)}{" "}
+                {lineCount(incoming.release_note) === 1 ? "line" : "lines"})
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap break-words italic">
+                {incoming.release_note}
+              </p>
+            </details>
+          ) : null}
+
+          {view === "merge" && mergePreview ? (
+            <PromptDocumentClauseMergePanel
+              preview={mergePreview}
+              resolutions={resolutions}
+              onResolve={resolve}
+              saving={saving}
+            />
+          ) : (
+            <>
+              {/* Pane selector — the three comparisons of the three-way view. */}
+              <div
+                className="flex flex-wrap gap-1"
+                role="tablist"
+                aria-label="Three-way comparison"
+              >
+                {panes.map((p) => {
+                  const unavailable = p.id !== "adopt_effect" && base === null;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={pane === p.id}
+                      disabled={unavailable}
+                      onClick={() => setPane(p.id)}
+                      data-testid={`upstream-pane-${p.id}`}
+                      className={cn(
+                        "rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
+                        pane === p.id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50",
+                        unavailable && "cursor-not-allowed opacity-50"
+                      )}
+                    >
+                      <span className="block font-medium">{p.label}</span>
+                      <span className="block text-muted-foreground">
+                        {p.caption}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-md border border-border">
+                {loadingBody || loadingPublications ? (
+                  <p className="py-12 text-center text-sm text-muted-foreground">
+                    Loading the comparison…
+                  </p>
+                ) : !incoming ? (
+                  <p
+                    className="py-12 text-center text-sm text-muted-foreground"
+                    data-testid="upstream-no-publication"
+                  >
+                    No publication could be read for this document. That is
+                    unknown, not &ldquo;nothing published&rdquo; — the channel
+                    may be unreachable from here.
+                  </p>
+                ) : diff === null ? (
+                  <p
+                    className="py-12 text-center text-sm text-muted-foreground"
+                    data-testid="upstream-no-base"
+                  >
+                    This document tracks no publication, so there is no base to
+                    compare against. It was written here, or seeded before any
+                    publication for it existed — either way, what it would have
+                    diverged FROM is unknown rather than identical. &ldquo;What
+                    adopting would change&rdquo; is still exact.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-t-md border-b border-border bg-muted/40 px-3 py-2 text-xs">
+                      <span className="font-medium">
+                        {panes.find((p) => p.id === pane)?.caption}
+                      </span>
+                      {diff.stats.identical ? (
+                        <span className="text-muted-foreground">
+                          Identical — these two are the same text.
+                        </span>
+                      ) : (
+                        <>
+                          <span className={DIFF_ADDED_COUNT_CLASS}>
+                            +{diff.stats.added}
+                          </span>
+                          <span className={DIFF_REMOVED_COUNT_CLASS}>
+                            −{diff.stats.removed}
+                          </span>
+                          {diff.stats.truncated && (
+                            <span className="text-muted-foreground">
+                              Document too large for a line-by-line diff —
+                              showing a full replacement.
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {/* `overflow-visible`: the body is the one scroll region. */}
+                    <DiffTable
+                      lines={diff.lines}
+                      className="overflow-visible rounded-b-md"
+                      data-testid="upstream-diff"
+                    />
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+          {/*
           The decisions are wired by props. When they are absent this says so
           instead of leaving two dead buttons to be read as "already decided" —
           and it names WHY neither can be simulated from the document write path
           that IS available here.
         */}
-        {!decisionsWired && (
-          <div
-            className="flex shrink-0 items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200"
-            data-testid="upstream-decisions-unwired"
-          >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <p>
-              This view compares; it cannot yet decide. Both decisions move the
-              version this document tracks — adopting replaces the body and
-              advances it, keeping yours advances it and leaves the body alone —
-              and an ordinary edit cannot do either: it moves the body and
-              leaves the tracking where it was, which would clear no badge. This
-              page has not wired those two operations, so comparing here and
-              editing in the editor is the honest path.
-            </p>
-          </div>
-        )}
+          {!decisionsWired && (
+            <div
+              className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200"
+              data-testid="upstream-decisions-unwired"
+            >
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <p>
+                This view compares; it cannot yet decide. Both decisions move
+                the version this document tracks — adopting replaces the body
+                and advances it, keeping yours advances it and leaves the body
+                alone — and an ordinary edit cannot do either: it moves the body
+                and leaves the tracking where it was, which would clear no
+                badge. This page has not wired those two operations, so
+                comparing here and editing in the editor is the honest path.
+              </p>
+            </div>
+          )}
+        </div>
 
+        {/* The footer: outside the scrolling body, so always on screen. */}
         {view === "merge" ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2">
+          <div
+            className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2"
+            data-testid="upstream-footer"
+          >
             <Button
               variant="outline"
               className="mr-auto gap-1.5"
@@ -562,7 +629,10 @@ export function PromptDocumentUpstreamDialog({
             </Button>
           </div>
         ) : (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2">
+          <div
+            className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2"
+            data-testid="upstream-footer"
+          >
             <Button
               variant="outline"
               className="mr-auto gap-1.5"
@@ -602,7 +672,7 @@ export function PromptDocumentUpstreamDialog({
               disabled={!canDecide}
               title={
                 decisionsWired
-                  ? "Replace this document's body with the publication. Your current wording stays in version history and is restorable in one click."
+                  ? "Replace this document's body with the publication. Your current wording stays in version history, restorable from the row's History."
                   : "Not available yet — see the note above."
               }
               onClick={() => {

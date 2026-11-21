@@ -55,7 +55,6 @@ pandas = "^2.2.0"
 pyarrow = "^23.0.1"
 radon = "^6.0.1"
 qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
-opencv-python-headless = "^4.8"
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
 croniter = "^6"

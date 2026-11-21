@@ -38,7 +38,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -77,7 +77,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import devices_to_wire
+from app.api.v1.endpoints.devices import _recent_crash_from, devices_to_wire
 from app.core.config import settings
 from app.core.refusal import (
     GlossaryTerm,
@@ -545,6 +545,20 @@ _UI_THREAD_UNKNOWN: dict[str, Any] = {
 }
 
 
+def _beacon_recent_crash_wire(beacon: RegisteredRunner) -> dict[str, Any] | None:
+    """The ``recentCrash`` wire value for a beacon-only fleet row.
+
+    The beacon carries the runner's snake_case ``HeartbeatRecentCrash``; it is
+    read through the same ``_recent_crash_from`` a paired row's
+    ``coord.devices.recent_crash`` uses, so both rows render one shape.
+    ``None`` means the runner reported no fresh dump, or predates the field.
+    """
+    if beacon.recent_crash is None:
+        return None
+    crash = _recent_crash_from(beacon.recent_crash.model_dump())
+    return None if crash is None else crash.model_dump(mode="json")
+
+
 def _ui_thread_wire(beacon: RegisteredRunner) -> dict[str, Any]:
     """The fleet-row keys for the UI-thread block an in-memory beacon carries.
 
@@ -696,7 +710,10 @@ async def get_fleet_status(
                 "lastHeartbeat": beacon.last_heartbeat.isoformat(),
                 "wsConnected": False,
                 "uiError": None,
-                "recentCrash": None,
+                # The beacon's own crash report: a beacon-only runner has no
+                # coord.devices row to carry one, so this is the only place
+                # its crash dump (and the crashed process's pid) is visible.
+                "recentCrash": _beacon_recent_crash_wire(beacon),
                 # Last-reported native UI-thread liveness; None = UNKNOWN.
                 **_ui_thread_wire(beacon),
                 "createdAt": beacon.last_heartbeat.isoformat(),
@@ -1069,10 +1086,10 @@ def _coord_timeout(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
-        # The detail is the same constant for a read and a write: callers
-        # (``fleet_targets._reraise_coord_refusal``) recognise web's own
-        # transport text by it. The write's re-read lives in
-        # ``next_action.target``, which ``Refusal::render`` states since
+        # The detail is the same constant for a read and a write (callers
+        # recognise web's own transport refusals by their class,
+        # ``RefusalHTTPException``, not by this text). The write's re-read
+        # lives in ``next_action.target``, which ``Refusal::render`` states since
         # qontinui-schemas#204 ("... but first check "<target>": the earlier
         # attempt may already have taken effect"), as does the web reader's
         # mirror of it (frontend ``lib/errors/refusal.ts``).
@@ -1119,8 +1136,8 @@ def _coord_answer_lost_in_transit(exc: httpx.HTTPError) -> RefusalHTTPException:
     outcome is unknown. For the rare failure before anything was sent
     (``LocalProtocolError``, ``UnsupportedProtocol``) this over-reports "may
     have been applied", which is the safe direction. Shared by
-    ``_proxy_coord_write`` and ``_proxy_coord_verbatim`` so the two cannot
-    drift."""
+    ``_proxy_coord_write``, ``_proxy_coord_post`` and ``_proxy_coord_verbatim``
+    so they cannot drift."""
     return _coord_answer_lost(
         f"coord's answer was lost in transit ({type(exc).__name__}); the "
         "outcome is unknown and the change may have been applied, so re-read "
@@ -1628,6 +1645,7 @@ async def _proxy_coord_patch(
     *,
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a PATCH request to coord. Returns the JSON body (``None`` for an
     empty 2xx).
@@ -1644,11 +1662,18 @@ async def _proxy_coord_patch(
     own identity coord-side and resolves no home tenant web-side, so it
     needs the bearer without the resolution. Default False preserves the
     prior behavior exactly.
+
+    ``structured_errors`` — pass coord's typed JSON refusal object through
+    verbatim on a ≥400, the same opt-in as ``_proxy_coord_put``'s flag (and
+    ``_proxy_coord_post``'s, whose docstring says why it is per route). Default
+    False keeps ``detail=resp.text`` exactly.
     """
     headers = (
         _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
     )
-    return await _proxy_coord_write("patch", path, body, headers=headers)
+    return await _proxy_coord_write(
+        "patch", path, body, headers=headers, structured_errors=structured_errors
+    )
 
 
 async def _proxy_coord_put(
@@ -2965,6 +2990,147 @@ async def post_pr_merge_onboarding_restore_repo(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Un-enroll ("stop governing") an enrolled repo --------------------------
+#
+# The inverse of the restore above, on the same card: the "Stop governing"
+# control on an ENROLLED row of the Connected Organizations card (plan
+# `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+# Phase 8, D6). Coord's one HTTP removal door is `DELETE
+# /coord/canonical-repos?repo=` (`canonical_repos::delete_deregister`, a thin
+# transport over `pr_merge::unenroll::unenroll_repo`): it deletes the caller
+# tenant's governance rows for the repo and writes the
+# `coord.tenant_repo_unenrollments` tombstone that keeps the installation
+# enroll path from putting the repo straight back. Coord gates it on
+# `strategy_admin` (an operator's `admin` role in the tenant coord resolves).
+# The same plan's Phase 7 gives that door an optional `reason` query parameter,
+# recorded on the tombstone; a coord that predates it ignores the parameter,
+# and its tombstone then records no reason.
+#
+# The tenant is the one the operator is LOOKING AT. `_tenant_headers` forwards
+# the bearer and `X-Qontinui-Active-Tenant`, so the write lands in the selected
+# tenant; the 2026-11-08 cleanup that called coord without that header wrote 35
+# tombstones into the operator's HOME tenant instead (plan, Why).
+COORD_CANONICAL_REPOS_PATH = "/coord/canonical-repos"
+
+#: The longest un-enrollment reason this proxy forwards, counted after
+#: trimming. Coord stores the tombstone's ``reason`` as free text with no
+#: bound of its own; the cap is a TRANSPORT bound, because the reason travels
+#: to coord in the query string (the parameter plan Phase 7 adds): 500
+#: characters stay under an 8 KiB request line even when every character is a
+#: 4-byte one, percent-encoded. The frontend input carries the same cap
+#: (``ConnectedOrgsUnenroll.tsx``).
+UNENROLL_REASON_MAX = 500
+
+#: Timeout for the un-enroll write. Coord answers only after the removal's
+#: transaction commits, and that transaction first waits for the
+#: per-(tenant, repo) advisory lock an enrollment of the same repo also takes
+#: (``pr_merge::unenroll::lock_key``) — and, once plan Phase 7 lands, for the
+#: per-repo tenancy key ahead of it. At the 5s small-read budget the "may have
+#: landed" 504 would be an ordinary outcome of that contention rather than an
+#: exceptional one. 30s stays under the frontend's 60s request default, so the
+#: proxy's own 504 envelope still reaches the page.
+_COORD_UNENROLL_WRITE_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+
+#: The ``reason`` query parameter as the schema publishes it: REQUIRED, because
+#: the route never runs without one. FastAPI is told the parameter is optional
+#: (and to leave it out of the schema) only so that a missing reason reaches the
+#: handler's ``400 reason_required`` instead of FastAPI's own 422; this entry,
+#: merged in through ``openapi_extra``, is what the snapshots and the generated
+#: types read.
+_UNENROLL_REASON_PARAMETER: dict[str, Any] = {
+    "name": "reason",
+    "in": "query",
+    "required": True,
+    "description": (
+        "Why coord stops governing the repository, recorded on the "
+        "un-enrollment tombstone. Required and non-blank; at most "
+        f"{UNENROLL_REASON_MAX} characters after trimming."
+    ),
+    "schema": {"type": "string", "minLength": 1, "title": "Reason"},
+}
+
+
+@router.delete(
+    "/pr-merge/onboarding/repos/{repo:path}",
+    status_code=204,
+    openapi_extra={"parameters": [_UNENROLL_REASON_PARAMETER]},
+)
+async def delete_pr_merge_onboarding_repo(
+    repo: str,
+    reason: str | None = Query(None, include_in_schema=False),
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> Response:
+    """Stop governing an enrolled repo: un-enroll it with a recorded reason.
+
+    Proxies coord's ``DELETE /coord/canonical-repos?repo=<owner/name>``, the
+    door ``coord_onboard_unenroll_repo`` shares one core with, and sends the
+    reason beside it as ``reason`` (read by coord from plan Phase 7 on). The
+    ``owner/name`` path param carries a slash, so it is a ``{repo:path}`` here
+    (the restore route's shape); it travels to coord as the ``repo`` query
+    parameter. Backs the "Stop governing" action on an enrolled row of the
+    Connected Organizations card; the row's undo is Re-enroll (the restore
+    route above), on the same card.
+
+    Authz — ``require_coord_tenant_admin_target``: admin IN THE ACTIVE TENANT,
+    the tenant the write lands in. Coord re-checks its own, stricter bar
+    (``strategy_admin``) on the forwarded bearer and refuses with ``403
+    strategy_admin_required``.
+
+    Refused HERE, with nothing sent to coord:
+      * ``400 {"error": "invalid_repo"}`` — the path is not ``owner/name``;
+      * ``400 {"error": "reason_required"}`` — no reason, or only whitespace.
+        Un-enrolling is sticky and silent (the repo stops appearing wherever
+        coord lists governed repos), so the WHY is required at this door, where
+        coord itself treats it as optional (``coord_onboard_unenroll_repo``
+        today, the HTTP door's ``reason`` from plan Phase 7);
+      * ``400 {"error": "reason_too_long", "max_length": <cap>}`` — over
+        :data:`UNENROLL_REASON_MAX` after trimming.
+
+    Coord's answers:
+      * ``204`` — the tenant's governance rows were removed and the tombstone
+        written. Answered here as a BODILESS ``204``: not through
+        ``_proxy_coord_delete``, which turns a ``204`` into ``200 {"status":
+        "ok"}``, and not as the JSON response the verbatim helper builds for
+        it (``_proxy_coord_verbatim`` wraps coord's empty body as ``{"detail":
+        ""}``, a recorded oddity of that helper's characterization suite,
+        ``tests/test_coord_proxy_contract.py``), because a 204 carries no
+        content;
+      * ``404 {"error": "repo not found: <repo>", "tombstoned": bool, "note":
+        str}`` — nothing of the caller tenant's was removed. ``tombstoned``
+        says whether a suppression was written anyway and ``note`` says what
+        that means for the tenant; both pass through VERBATIM, whatever coord
+        sends, because their meaning moves with coord (plan Phase 7 answers
+        ``tombstoned: false`` for a tenant that does not govern the repo);
+      * any other refusal (``403 strategy_admin_required``, ``400``, ``500``)
+        — status and body verbatim.
+
+    Transport failures are the web's own refusals (``_proxy_coord_verbatim``):
+    ``502 coord_unreachable`` (coord never saw the request), ``504
+    coord_write_timeout`` / ``answer_lost`` (the removal may have been
+    applied — re-read before retrying).
+    """
+    if not _RESTORE_REPO_RE.match(repo):
+        return JSONResponse(content={"error": "invalid_repo"}, status_code=400)
+    text = (reason or "").strip()
+    if not text:
+        return JSONResponse(content={"error": "reason_required"}, status_code=400)
+    if len(text) > UNENROLL_REASON_MAX:
+        return JSONResponse(
+            content={"error": "reason_too_long", "max_length": UNENROLL_REASON_MAX},
+            status_code=400,
+        )
+    resp = await _proxy_coord_verbatim(
+        "DELETE",
+        COORD_CANONICAL_REPOS_PATH,
+        tenant_id=tenant_id,
+        params={"repo": repo, "reason": text},
+        timeout=_COORD_UNENROLL_WRITE_TIMEOUT,
+    )
+    if resp.status_code == 204:
+        return Response(status_code=204)
+    return resp
+
+
 # ---- Per-repo tenant bindings (list / bind / unbind) ------------------------
 #
 # A binding makes one repo governed by a tenant other than its GitHub org's
@@ -3724,6 +3890,14 @@ async def _proxy_coord_post(
     out of ``resp.json()`` as a 500. A success is still a success: the write
     was accepted, and turning that into a server error would tell the operator
     it failed. Default False preserves the prior behavior exactly.
+
+    Any other transport failure (``ReadError``, ``RemoteProtocolError`` — a
+    load balancer cutting the response) is treated as after-send, exactly as
+    ``_proxy_coord_write`` treats it: coord may have committed the POST, so it
+    is the **504** ``answer_lost`` refusal ("the outcome is unknown"), never an
+    unhandled 500 that reads as "refused". For a spawn that difference is the
+    difference between "try again" and "check before trying again, or you may
+    get two".
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -3736,6 +3910,11 @@ async def _proxy_coord_post(
             raise _coord_unreachable()
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "coord_post_answer_lost", path=path, exc_type=type(exc).__name__
+            )
+            raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -4449,7 +4628,8 @@ async def list_coord_plans(
         description=(
             "With ``include_live_sessions``: attach coord's ``custody`` object "
             "(``sole`` + ``session_name`` / ``ambiguous`` + "
-            "``live_session_count`` / ``unresolved``) to every live session. "
+            "``live_session_count`` / ``unresolved`` / ``declared`` + "
+            "``session_id`` + ``session_name``) to every live session. "
             "coord echoes ``resolve_session_names: true`` only when it "
             "resolved them; no echo means an older coord (UNKNOWN)."
         ),
@@ -7761,6 +7941,386 @@ async def get_agent(
     stay agent→coord direct.
     """
     return await _proxy_coord_get(f"/agents/{agent_id}", tenant_id=tenant_id)
+
+
+# ---- Subprojects ------------------------------------------------------------
+#
+# Plan ``2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled``
+# Phase 5. A subproject groups the sessions, work units, gates and PRs of one
+# piece of work, and carries coord's verdict on whether anything is still
+# moving it (D1, D6). coord owns all of it, so these six routes are thin
+# proxies over coord's ``/coord/subprojects*`` doors and every body passes
+# through VERBATIM in both directions — no field whitelist and no reshaping, so
+# a field coord adds reaches the page without a web deploy.
+#
+# Auth, per the plan:
+#
+# * the two reads are any tenant member (``get_tenant_id``), like every other
+#   coord read on this router;
+# * the four writes are coord tenant ADMIN (``require_coord_tenant_admin``) —
+#   the gate ``POST /agents/spawn`` uses — because coord serves them on its
+#   ``operator_admin_writes`` router, and Continue (``…/spawn``) IS an operator
+#   spawn: it places the session through ``/agents/spawn``'s own placement.
+#
+# ``structured_errors=True`` on every route: coord's typed refusals
+# (``schema_migration_pending`` before the alembic revision applies, the
+# spawn's capacity and pin refusals, ``subproject_has_no_repo``,
+# ``invalid_effort``, a members ``action`` coord refuses) reach the browser as
+# data the page branches on rather than as text inside ``message``. Nothing
+# else reads these routes, so the opt-in changes no existing envelope (see
+# ``_proxy_coord_post``'s docstring for why the flag is per route).
+#
+# The id is typed ``UUID``: coord keys subprojects by uuid, so anything else
+# names no subproject, and a typed segment cannot carry a ``..`` that would
+# re-aim the forwarded path at another coord route under the operator's bearer.
+
+# Budget for the three subproject routes that make coord aggregate: the detail
+# door computes the verdict LIVE (D1 — "the detail door recomputes on every
+# read"), Continue composes its brief from the same next steps (D7, D8), and
+# the list serves the tick's cached verdicts but counts each row's sessions and
+# work units and classifies the unattached units beside them — none of which
+# is part of the cached verdict. The plan has coord bound the live computation
+# per SOURCE (its D6 and its "Verdict cost" risk): each member session's
+# obligations read under its own deadline (`VERDICT_DEADLINE`), gate recursion
+# depth-capped, and a source that runs out served as ``could_not_read`` while
+# the door still answers 200. That is the same kind of synthesis as the
+# project-state door, so it gets that door's budget (see
+# ``_COORD_PROJECT_STATE_TIMEOUT``). UNMEASURED: coord's doors are being built
+# alongside this proxy, so this is sized by analogy, not by a sampled latency.
+# At ``_COORD_TIMEOUT`` an answer coord gave in 6s would be a 504 here: the
+# detail page would render every section unknown, and Continue would have to
+# say the spawn may or may not have landed. Connect stays short: an
+# unreachable coord should still fail fast.
+#
+# COST: the reads resolve their tenant with ``get_tenant_id``, which holds no
+# backend DB session across the coord call. Continue's admin gate does hold one
+# (``get_current_active_user_async``) for the length of the spawn, once per
+# operator click; the list page and the home count line poll single-flight.
+_COORD_SUBPROJECTS_TIMEOUT = httpx.Timeout(25.0, connect=5.0)
+
+
+@router.get("/subprojects")
+async def get_subprojects(
+    status: str | None = Query(
+        default=None,
+        description="Lifecycle filter, forwarded as sent: `open` (coord's "
+        "default), `done`, `archived` or `all`.",
+    ),
+    headline: str | None = Query(
+        default=None,
+        description="Verdict filter, forwarded as sent: one of `needs_you`, "
+        "`stalled`, `working`, `waiting`, `done` or `unknown` (coord's "
+        "vocabulary), or several comma-separated (`needs_you,stalled`).",
+    ),
+    exclude_headline: str | None = Query(
+        default=None,
+        description="Verdicts to leave out, forwarded as sent, comma-separated "
+        "like `headline` — `done` lists every subproject that is not done in "
+        "one read. A coord that predates the parameter refuses it (400 "
+        "`unknown_query_parameter`, passed through) or ignores it (its answer "
+        "then still holds done subprojects); a caller tells which.",
+    ),
+    origin: str | None = Query(
+        default=None,
+        description="Origin filter, forwarded as sent (`operator_prompt`, "
+        "`autonomous`, `scheduled`, ...).",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=200),
+    cursor: str | None = Query(
+        default=None,
+        description="coord's opaque `next_cursor` from the previous page.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's subprojects — proxy coord's ``GET /coord/subprojects``.
+
+    Each item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``
+    come from the verdict coord's reconciler tick cached, with its
+    ``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,
+    ``total``, ``unattached_units`` and ``counts`` — every headline's count and
+    the folded one-off / scheduled / merged counts over the same status and
+    origin filter, or ``null`` when coord could not take them. The filters
+    (``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,
+    ``cursor``) are forwarded only when set, as sent: coord owns the
+    vocabulary and refuses a value — or a parameter — it does not know, so this
+    route does not keep a second copy of it to drift. Every filter coord takes
+    has to be declared here: this router does not refuse an undeclared query
+    parameter, it drops it, so an undeclared filter would never reach coord.
+    A coord whose migration has not applied answers ``503 {"error":
+    "schema_migration_pending"}``, which reaches the browser as that object.
+    """
+    params: dict[str, Any] = {}
+    for key, value in (
+        ("status", status),
+        ("headline", headline),
+        ("exclude_headline", exclude_headline),
+        ("origin", origin),
+        ("limit", limit),
+        ("cursor", cursor),
+    ):
+        if value is not None:
+            params[key] = value
+    return await _proxy_coord_get(
+        "/coord/subprojects",
+        params=params or None,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+#: coord's bound on one ``by-sessions`` lookup (the contract's "max 200").
+_SUBPROJECT_LOOKUP_MAX_IDS = 200
+
+
+# Declared BEFORE ``/subprojects/{subproject_id}``: Starlette matches routes in
+# order and converts path parameters only after a match, so with the ``{id}``
+# route first, ``by-sessions`` would be taken for an id and refused 422.
+@router.get("/subprojects/by-sessions")
+async def get_subprojects_by_sessions(
+    ids: str = Query(
+        ...,
+        description="Comma-separated harness (Claude Code) session ids, at "
+        "most 200 — one page of session rows.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Which subproject each session belongs to — proxy coord's
+    ``GET /coord/subprojects/by-sessions``.
+
+    One batched read per page of session rows (the sessions console's
+    subproject chip). coord answers ``{"items": {<session id>: {"id",
+    "title", "headline"}}, "missing": [<ids with no live membership>]}``,
+    verbatim; a pending membership is reported under ``missing``. The ids are
+    forwarded as sent; only their COUNT is checked here, so a page that would
+    exceed coord's bound is refused before the call rather than after it.
+    """
+    count = len([part for part in ids.split(",") if part.strip()])
+    if count == 0 or count > _SUBPROJECT_LOOKUP_MAX_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_session_ids",
+                "message": (
+                    f"ids must name between 1 and {_SUBPROJECT_LOOKUP_MAX_IDS} "
+                    f"sessions; got {count}"
+                ),
+            },
+        )
+    return await _proxy_coord_get(
+        "/coord/subprojects/by-sessions",
+        params={"ids": ids},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.get("/subprojects/{subproject_id}")
+async def get_subproject(
+    subproject_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One subproject with its verdict computed live — proxy coord's
+    ``GET /coord/subprojects/{id}``.
+
+    The body is coord's verbatim: the summary plus the note fields, the LIVE
+    ``verdict`` (headline, reasons and per-source read states), ``next_steps``,
+    the member ``sessions`` (open AND closed), ``work_units``, ``gates`` (each
+    with its mover), ``prs`` and ``history``. A merged id resolves to the
+    subproject it was merged into, and the body then carries ``resolved_from``.
+    coord answers 404 for an id that is unknown in the caller's tenant.
+    """
+    return await _proxy_coord_get(
+        f"/coord/subprojects/{subproject_id}",
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+@router.patch("/subprojects/{subproject_id}")
+async def patch_subproject(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Rename a subproject, set its goal or next-steps note, or mark it done /
+    reopen it — proxy coord's ``PATCH /coord/subprojects/{id}``.
+
+    The body (``{"title"?, "goal"?, "next_steps_note"?, "status"?}``) is
+    forwarded verbatim; coord answers the updated ``SubprojectSummary``. Coord
+    tenant admin, like every subproject write (D11).
+    """
+    return await _proxy_coord_patch(
+        f"/coord/subprojects/{subproject_id}",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/merge")
+async def post_subproject_merge(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Merge this subproject INTO another — proxy coord's
+    ``POST /coord/subprojects/{id}/merge``.
+
+    The body (``{"into_id": <uuid>}``) is forwarded verbatim. coord moves the
+    members, records ``merged_into`` and answers
+    ``{"merged_into", "moved_members"}``; the merged id resolves to its target
+    from then on (D11).
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/merge",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/members")
+async def post_subproject_members(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Attach, move or remove one member session or work unit — proxy coord's
+    ``POST /coord/subprojects/{id}/members``.
+
+    The body (``{"action", "member_kind", "agent_session_id"?,
+    "work_unit_id"?, "work_unit_slug"?}``) is forwarded verbatim; coord
+    resolves a harness session id through its identity card in the caller's
+    tenant and answers ``{"member": {...}}`` (D11).
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/members",
+        body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/subprojects/{subproject_id}/spawn")
+async def post_subproject_spawn(
+    subproject_id: UUID,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Continue a subproject: spawn a session to work on it — proxy coord's
+    ``POST /coord/subprojects/{id}/spawn`` (D8).
+
+    The body (``{"effort", "ultracode"?, "prompt_addendum"?,
+    "target_device_id"?, "account"?, "repos"?}``) is forwarded verbatim. coord
+    derives the repos when none are sent, composes the brief from the
+    subproject's next steps, writes the pending allocation membership and
+    places the session through ``/agents/spawn``'s placement: a hard pin on a
+    named device, coord's pool otherwise. It answers the allocation id, where
+    the session went (``placement``) and the effort it was ASKED for — never the
+    effort applied, which no runner reports yet.
+
+    Mirrors ``post_agents_spawn``: coord's refusals pass through as objects
+    (``structured_errors=True``) — the capacity and pin 409s ``/agents/spawn``
+    already returns, ``422 {"error": "subproject_has_no_repo"}`` and
+    ``422 {"error": "invalid_effort"}`` — because the Continue dialog branches
+    on them. It uses ``_COORD_SUBPROJECTS_TIMEOUT``, not ``_COORD_TIMEOUT``:
+    the brief is built from the verdict the detail door computes, and a spawn
+    that times out here is one whose outcome is unknown, so the timeout must
+    outlast coord's own work rather than cut it off.
+    """
+    return await _proxy_coord_post(
+        f"/coord/subprojects/{subproject_id}/spawn",
+        body,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+# ---- Topics ------------------------------------------------------------------
+#
+# Plan ``2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator``
+# Phase 8 (pages). A topic groups the subprojects that serve one goal, and its
+# headline rolls up its CONFIRMED members' cached subproject verdicts (D7, as
+# amended B9). coord owns all of it, so these two operator reads are thin
+# proxies over coord's ``GET /coord/topics`` and ``GET /coord/topics/{id}`` —
+# served on the same router family as ``GET /coord/subprojects`` — and every
+# body passes through VERBATIM, exactly like the subproject reads above.
+#
+# Auth: any tenant member (``get_tenant_id``), like every coord read on this
+# router. The operator WRITES (``POST /coord/topics*``) are not proxied: no page
+# calls them yet, and a proxy no caller reaches is dead surface
+# (operations-proxy checklist §3).
+#
+# ``structured_errors=True``: coord's ``503 {"error":
+# "schema_migration_pending"}`` before the ``coord_topics_01`` revision applies
+# reaches the browser as that object, and the page says "topics not available
+# yet (migration pending)" instead of an error string.
+#
+# The id is typed ``UUID`` for the reason the subproject id is: a typed segment
+# cannot carry a ``..`` that re-aims the forwarded path at another coord route.
+# The budget is the subprojects one: the detail door reads every member's
+# cached verdict and its basis, the same kind of aggregation.
+
+
+@router.get("/topics")
+async def get_topics(
+    status: str | None = Query(
+        default=None,
+        description="Lifecycle filter, forwarded as sent: `proposed`, "
+        "`active`, `dormant`, `retired` (coord's vocabulary; coord decides "
+        "the default).",
+    ),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """List the tenant's topics — proxy coord's ``GET /coord/topics``.
+
+    coord answers ``{"as_of", "tables_ready", "unassigned_subprojects",
+    "topics": [...]}``; each topic carries its cached rollup (``headline``,
+    ``top_reason``, ``subprojects_total``, ``subprojects_working``,
+    ``unknown_members``, ``last_activity_at``, ``last_rollup_as_of``), any of
+    which may be ``null`` — unknown, never zero. ``status`` and ``limit`` are
+    forwarded only when set. A coord whose migration has not applied answers
+    ``503 {"error": "schema_migration_pending"}``, which reaches the browser as
+    that object.
+    """
+    params: dict[str, Any] = {}
+    for key, value in (("status", status), ("limit", limit)):
+        if value is not None:
+            params[key] = value
+    return await _proxy_coord_get(
+        "/coord/topics",
+        params=params or None,
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+@router.get("/topics/{topic_id}")
+async def get_topic(
+    topic_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One topic with its members — proxy coord's ``GET /coord/topics/{id}``.
+
+    The body is coord's verbatim: ``topic`` (the list fields plus
+    ``next_steps``, ``intent_ref``, ``aliases``, ``created_by`` and
+    ``merged_into``), ``members`` (each subproject with its ``weight``,
+    ``state``, ``decided_by`` and the ``basis`` entries that put it there),
+    ``children`` and ``history``. coord answers 404 for an id that is unknown
+    in the caller's tenant, and 503 ``schema_migration_pending`` before its
+    migration applies; both pass through as objects.
+    """
+    return await _proxy_coord_get(
+        f"/coord/topics/{topic_id}",
+        tenant_id=tenant_id,
+        timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
 
 
 # ---- Wave-3c memory browser (mutation surface) ---------------------------

@@ -48,6 +48,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import { CiModelAccessPanel } from "./CiModelAccessPanel";
 
 const WEB = "qontinui/qontinui-web";
@@ -277,6 +278,30 @@ describe("CiModelAccessPanel — off", () => {
         httpGet.mock.calls.filter((c) => String(c[0]).includes("/ci-hosting"))
           .length
       ).toBeGreaterThanOrEqual(2)
+    );
+  });
+});
+
+describe("CiModelAccessPanel — what coord resolves", () => {
+  it("a tenant write whose read-back resolves another level says what coord resolves", async () => {
+    route({});
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "ci_model_access",
+      written_level: "off",
+      effective: policy("on", "repo"),
+      readback_error: null,
+    });
+    render(<CiModelAccessPanel isAdmin />);
+    await waitFor(() =>
+      expect(screen.getByTestId("ci-model-access-tenant-off")).toBeEnabled()
+    );
+    fireEvent.click(screen.getByTestId("ci-model-access-tenant-off"));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Wrote "off", but coord resolves "on" (from the repo scope).'
+      )
     );
   });
 });

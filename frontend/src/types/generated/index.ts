@@ -44,14 +44,6 @@ export type {
   CoverageTrendResponse,
   TransitionReliabilityStats,
   ReliabilityResponse,
-  // Historical types
-  HistoricalResultRequest,
-  HistoricalResultResponse,
-  ActionDataCreate,
-  ActionDataBatch,
-  ActionDataBatchResponse,
-  HistoricalFrameResponse,
-  PlaybackRequest,
 } from "./testing";
 
 // Enums need regular export (they have runtime values)

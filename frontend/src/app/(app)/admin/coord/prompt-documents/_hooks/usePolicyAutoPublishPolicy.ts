@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   fetchFleetPolicy,
@@ -8,6 +8,17 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
+import {
+  rereadAfterFailedReadBack,
+  resolvedOtherwise,
+  type Resolvers,
+} from "../../_shared/fleetPolicyReadBack";
+import {
+  useFirstPinnedRead,
+  useSendTimePin,
+} from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import {
   isPolicyAutoPublishLevel,
   POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
@@ -19,6 +30,9 @@ import {
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
+
+/** Who resolves this dial's level, for its read-back's warning. */
+const RESOLVERS: Resolvers = "the worker resolves";
 
 /**
  * The `policy_auto_publish` fleet-policy dial — whether this tenant's settled
@@ -32,7 +46,10 @@ function message(err: unknown, fallback: string): string {
  *    Every state transition comes from a READ; the write's own echo is kept
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
- *    screen and the error is surfaced.
+ *    screen and the error is surfaced, and the level is read again at once,
+ *    pinned, so what is shown becomes coord's — saying what a read-back
+ *    would: "now X" for the level written, its warning for any other
+ *    (`rereadAfterFailedReadBack`).
  *
  * What is specific to THIS domain:
  *
@@ -63,38 +80,79 @@ function message(err: unknown, fallback: string): string {
  * gating the recovery reconcile on it would mean turning automatic publishing
  * off silently removed the safety net under the button the operator still
  * presses.
+ *
+ * **Which project it reads and writes, and when it writes nothing.** On the
+ * prompt-documents page the read and the write are sent in the page's
+ * project, asked as each goes out and kept on every attempt, so a write
+ * re-issued after another tab's switch cannot land in that tab's project.
+ * Nothing is read before the page knows its project: the first read goes out
+ * then (`useFirstPinnedRead`), and `waitingForProject` says the hook is
+ * waiting. A write is refused — nothing sent, the page says why — while that
+ * switch is in effect, or while the page has no project to pin it to. Both
+ * come from the page's provider (`usePageSendGuard`), and the refusal sits
+ * beside the send, which reads the pin it is sent in (`pinForWrite`), so no
+ * caller can leave it out. It is never mounted outside that provider, and
+ * throws if it is: there is no unguarded mode.
  */
 export function usePolicyAutoPublishPolicy() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the first read runs once.
+  const sendPin = useSendTimePin(resolvePin);
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading only once a read goes out: not while waiting for a project.
+  const [loading, setLoading] = useState(() => sendPin() !== undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
     null
   );
+  // Bumped when a write LANDS. A read that began before it may answer after
+  // the write's own result; applying it would paint the level from before
+  // the write. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`).
+  const writeGeneration = useRef(0);
 
-  const load = useCallback(async () => {
+  /**
+   * Read the level: the view when THIS read landed and is now what is shown,
+   * else `null` — it failed, sent nothing, or a write landed while it was in
+   * flight and it was discarded.
+   */
+  const read = useCallback(async (): Promise<FleetPolicyView | null> => {
+    const pin = sendPin();
+    // No project to read in yet: nothing is sent, and what is shown stays.
+    if (pin === undefined) return null;
+    const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(POLICY_AUTO_PUBLISH_DOMAIN);
+      const view = await fetchFleetPolicy(
+        POLICY_AUTO_PUBLISH_DOMAIN,
+        undefined,
+        pin
+      );
+      if (generation !== writeGeneration.current) return null;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
       // banner says "the value above may be stale", and leaving it up beside a
       // value we just confirmed would be the opposite of honest.
       setLastWrite(null);
+      return view;
     } catch (err) {
+      if (generation !== writeGeneration.current) return null;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, "Failed to read the automatic-publishing dial"));
+      return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sendPin]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const load = useCallback(async (): Promise<void> => {
+    await read();
+  }, [read]);
+
+  const waitingForProject = useFirstPinnedRead(sendPin, () => void load());
 
   /**
    * Write `level` at the tenant band.
@@ -109,32 +167,37 @@ export function usePolicyAutoPublishPolicy() {
       level: PolicyAutoPublishLevel,
       changeNote?: string
     ): Promise<boolean> => {
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       try {
         setSaving(true);
-        const result = await putFleetPolicy({
-          domain: POLICY_AUTO_PUBLISH_DOMAIN,
-          scope_band: "tenant",
-          scope_key: null,
-          level,
-          master_enabled: true,
-          change_note:
-            changeNote ??
-            `Set automatic publishing to "${level}" from the console`,
-        });
+        const result = await putFleetPolicy(
+          {
+            domain: POLICY_AUTO_PUBLISH_DOMAIN,
+            scope_band: "tenant",
+            scope_key: null,
+            level,
+            master_enabled: true,
+            change_note:
+              changeNote ??
+              `Set automatic publishing to "${level}" from the console`,
+          },
+          pin
+        );
+        writeGeneration.current += 1;
         setLastWrite(result);
+        const confirmed = `Automatic publishing is now "${level}".`;
 
         if (result.effective) {
           setPolicy(result.effective);
           setError(null);
           if (result.effective.effective_level === level) {
-            toast.success(`Automatic publishing is now "${level}".`);
+            toast.success(confirmed);
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the worker is actually on.
             toast.warning(
-              `Wrote "${level}", but the worker resolves ` +
-                `"${result.effective.effective_level}" ` +
-                `(from the ${result.effective.resolved_scope} scope).`
+              resolvedOtherwise(level, RESOLVERS, result.effective)
             );
           }
         } else {
@@ -142,6 +205,19 @@ export function usePolicyAutoPublishPolicy() {
             "The write went through, but the read-back failed — what this " +
               "tenant resolves is unknown until this refreshes."
           );
+          // Read it again, pinned, so what is shown is coord's level and not
+          // the one from before the write, and say what the read-back would
+          // have. A failed re-read keeps both the value and the warning.
+          void rereadAfterFailedReadBack({
+            read,
+            level,
+            confirmed,
+            resolvers: RESOLVERS,
+            onError: (err) =>
+              setError(
+                message(err, "Failed to read the automatic-publishing dial")
+              ),
+          });
         }
         return true;
       } catch (err) {
@@ -153,7 +229,7 @@ export function usePolicyAutoPublishPolicy() {
         setSaving(false);
       }
     },
-    []
+    [read, sendPin, writeAllowed]
   );
 
   // `"none"` means no row matched, which for this domain is `on` — NOT off.
@@ -184,6 +260,8 @@ export function usePolicyAutoPublishPolicy() {
     loading,
     saving,
     error,
+    /** No project to read in yet: nothing has been read, or is shown as read. */
+    waitingForProject,
     /**
      * The level actually in force: the no-row case resolved to coord's typed
      * default, an unparseable row resolved fail-closed. Always one of the two

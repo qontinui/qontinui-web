@@ -101,6 +101,9 @@ import { postDrain, postUndrain } from "./useFleetDrain";
 
 const log = createLogger("DeviceDrainControl");
 
+/** Extension steps offered beside Undrain on a drained machine. */
+const EXTEND_HOURS = [1, 24] as const;
+
 export interface DeviceDrainControlProps {
   /** What this row would drain — or why it cannot name anything. */
   target: DrainTarget;
@@ -371,6 +374,50 @@ export function DeviceDrainControl({
     setReason("");
   }, []);
 
+  /**
+   * Push a live drain's expiry out by `hours`, measured from the CURRENT
+   * expiry (not from now), by re-draining with the new deadline. Reuses the
+   * existing reason so the audit row keeps saying why. Clamped to coord's
+   * ceiling — a longer request would be a 4xx, so say so rather than send it.
+   */
+  const extend = useCallback(
+    async (hours: number) => {
+      if (deviceId === null || drain.state !== "drained") return;
+      const currentUntil = Date.parse(drain.entry.until);
+      const base = Number.isFinite(currentUntil)
+        ? Math.max(currentUntil, Date.now())
+        : Date.now();
+      const nextMs = base + hours * 3_600_000;
+      if (nextMs > Date.now() + MAX_DRAIN_DAYS * 86_400_000) {
+        toast.error("That extension was not accepted", {
+          description: `Coord rejects a drain further out than ${MAX_DRAIN_DAYS} days.`,
+        });
+        return;
+      }
+      setBusy(true);
+      const res = await postDrain({
+        deviceId,
+        untilIso: new Date(nextMs).toISOString(),
+        reason:
+          drain.entry.reason?.trim() || `Extended drain by ${hours} hour(s)`,
+      });
+      setBusy(false);
+      if (!res.ok) {
+        log.warn("extend drain failed", res.status, res.body);
+        toast.error(`Couldn't extend the drain on ${rowHostname}`, {
+          description:
+            res.status === null
+              ? res.body
+              : describeDrainError(res.status, res.body),
+        });
+        return;
+      }
+      toast.success(`${rowHostname} drain extended by ${hours} hour(s).`);
+      onActed?.();
+    },
+    [deviceId, drain, onActed, rowHostname]
+  );
+
   const submit = useCallback(async () => {
     if (deviceId === null || mode === null) return;
     const trimmed = reason.trim();
@@ -478,17 +525,32 @@ export function DeviceDrainControl({
         <CoordAdminOnly fallback={<ReadOnlyNotice />}>
           <div className="flex flex-wrap items-center gap-2">
             {drain.state === "drained" ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!actable || busy}
-                title={actable ? undefined : disabledReason(target, drain)}
-                onClick={() => setMode("undrain")}
-                data-testid="device-drain-undrain"
-              >
-                <PlayCircle className="h-3.5 w-3.5" />
-                Undrain
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!actable || busy}
+                  title={actable ? undefined : disabledReason(target, drain)}
+                  onClick={() => setMode("undrain")}
+                  data-testid="device-drain-undrain"
+                >
+                  <PlayCircle className="h-3.5 w-3.5" />
+                  Undrain
+                </Button>
+                {EXTEND_HOURS.map((hours) => (
+                  <Button
+                    key={hours}
+                    size="sm"
+                    variant="outline"
+                    disabled={!actable || busy}
+                    title={`Push the drain's expiry out by ${hours} ${hours === 1 ? "hour" : "hours"}`}
+                    onClick={() => void extend(hours)}
+                    data-testid={`device-drain-extend-${hours}h`}
+                  >
+                    +{hours} {hours === 1 ? "hour" : "hours"}
+                  </Button>
+                ))}
+              </>
             ) : (
               <Button
                 size="sm"

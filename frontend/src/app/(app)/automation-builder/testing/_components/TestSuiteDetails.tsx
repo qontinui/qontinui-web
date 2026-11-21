@@ -1,4 +1,4 @@
-import { Play, Settings, Loader2 } from "lucide-react";
+import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,17 +13,13 @@ import type { TestCase, TestSuite } from "@/services/workflow-testing";
 interface TestSuiteDetailsProps {
   suite: TestSuite;
   testCases: TestCase[];
-  onRun: (id: string) => void;
   onEdit: () => void;
-  isRunning: boolean;
 }
 
 export function TestSuiteDetails({
   suite,
   testCases,
-  onRun,
   onEdit,
-  isRunning,
 }: TestSuiteDetailsProps) {
   return (
     <div className="space-y-4">
@@ -37,19 +33,6 @@ export function TestSuiteDetails({
               )}
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={() => onRun(suite.id)}
-                variant="default"
-                size="sm"
-                disabled={isRunning}
-              >
-                {isRunning ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-                Run Suite
-              </Button>
               <Button onClick={onEdit} variant="outline" size="sm">
                 <Settings className="size-4" />
                 Edit

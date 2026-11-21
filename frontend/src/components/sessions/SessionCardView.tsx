@@ -26,10 +26,17 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Activity, GitCommitHorizontal, History, Server } from "lucide-react";
+import {
+  Activity,
+  GitCommitHorizontal,
+  History,
+  PanelsTopLeft,
+  Server,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { relativeTime } from "@/components/operations/utils";
+import { absoluteTime } from "@/components/console/time";
 import { LiveTailPane } from "./LiveTailPane";
 import { ResumePanel } from "./ResumePanel";
 import { TranscriptPane } from "./TranscriptPane";
@@ -63,6 +70,229 @@ function Field({ label, value }: { label: string; value: string | null }) {
       <dd className="text-xs font-mono truncate" title={value}>
         {value}
       </dd>
+    </div>
+  );
+}
+
+/**
+ * Placement rows (plan
+ * `2026-11-16-runner-page-name-reaches-the-coord-session-identity-card`,
+ * D4/D5/D6). Each renders a value or a STATED unknown — never blank — and an
+ * absent field (an older coord) reads differently from `null` + a reason.
+ */
+
+/** Wire reason → operator text; an unrecognised reason is shown, not dropped. */
+function reasonText(reason: string): string {
+  switch (reason) {
+    case "device_id_absent":
+      return "no device id";
+    case "no_device_row":
+      return "no device row";
+    case "devenv_read_failed":
+      return "devenv read failed";
+    case "device_read_failed":
+      return "device read failed";
+    case "no_handle":
+      return "no runner handle";
+    case "never_reported":
+      return "never reported";
+    case "columns_absent":
+      return "placement columns absent";
+    case "read_failed":
+      return "read failed";
+    default:
+      return reason.replace(/_/g, " ");
+  }
+}
+
+function machineSourceText(source: string | null | undefined): string {
+  switch (source) {
+    case null:
+    case undefined:
+    case "":
+      return "source unknown";
+    case "devenv":
+      return "via devenv";
+    case "coord_device":
+      return "via coord device";
+    default:
+      return `via ${source}`;
+  }
+}
+
+/** The machine's identifying text: name, else hostname, else stated unknown. */
+function machineLabel(machine: SessionCard["machine"]): string {
+  if (!machine) return "unknown machine";
+  // `||`, not `??`: an empty string is as unidentifying as a null.
+  return machine.name || machine.hostname || "unnamed machine";
+}
+
+function MachineRow({ card }: { card: SessionCard }) {
+  const machine = card.machine;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 text-sm"
+      data-testid="session-card-machine"
+    >
+      <Server className="size-4 text-muted-foreground" />
+      {machine ? (
+        <>
+          {/* Only a devenv machine has a row on /environments/machines; a
+              coord_device machine (id null) would be a dead link. */}
+          {machine.id ? (
+            <Link
+              href="/environments/machines"
+              className="font-medium text-primary hover:underline [overflow-wrap:anywhere]"
+              title={machineLabel(machine)}
+            >
+              {machineLabel(machine)}
+            </Link>
+          ) : (
+            <span
+              className="font-medium [overflow-wrap:anywhere]"
+              title={machineLabel(machine)}
+            >
+              {machineLabel(machine)}
+            </span>
+          )}
+          {machine.hostname && machine.hostname !== machineLabel(machine) && (
+            <span className="font-mono text-xs text-muted-foreground break-all">
+              {machine.hostname}
+            </span>
+          )}
+          {machine.environment && (
+            <Badge
+              variant="outline"
+              title={machine.environment.name || machine.environment.id}
+            >
+              {machine.environment.name || machine.environment.id}
+            </Badge>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {machineSourceText(machine.source)}
+          </span>
+          {/* coord's fallback answered, but its devenv read failed: say so,
+              so a failed read never reads as "no devenv enrollment". */}
+          {card.machine_unknown_reason && (
+            <span className="text-xs text-muted-foreground">
+              ({reasonText(card.machine_unknown_reason)})
+            </span>
+          )}
+        </>
+      ) : (
+        <>
+          <span className="text-xs text-muted-foreground">
+            {card.machine_unknown_reason === undefined
+              ? "machine unknown (reason not served)"
+              : card.machine_unknown_reason
+                ? `machine unknown: ${reasonText(card.machine_unknown_reason)}`
+                : "machine unknown"}
+          </span>
+          {card.device_id && (
+            <span
+              className="font-mono text-xs text-muted-foreground break-all"
+              title={card.device_id}
+            >
+              device {card.device_id}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RunnerPageRow({ card }: { card: SessionCard }) {
+  const page = card.runner_page;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 text-sm"
+      data-testid="session-card-runner-page"
+    >
+      <PanelsTopLeft className="size-4 text-muted-foreground" />
+      {page === undefined ? (
+        <span className="text-xs text-muted-foreground">
+          Runner page: unknown (not served)
+        </span>
+      ) : page === null ? (
+        <span className="text-xs text-muted-foreground">
+          {card.runner_page_unknown_reason === undefined
+            ? "Runner page: unknown (reason not served)"
+            : card.runner_page_unknown_reason
+              ? `Runner page: unknown (${reasonText(card.runner_page_unknown_reason)})`
+              : "Runner page: unknown"}
+        </span>
+      ) : (
+        <>
+          <span className="text-xs text-muted-foreground">Runner page</span>
+          {page.name_withheld ? (
+            <span className="text-xs italic text-muted-foreground">
+              name withheld
+            </span>
+          ) : page.name ? (
+            <span
+              className="font-medium [overflow-wrap:anywhere]"
+              title={page.name}
+            >
+              {page.name}
+            </span>
+          ) : (
+            <span className="text-xs italic text-muted-foreground">
+              unnamed
+            </span>
+          )}
+          {/* D6: a page name is unique per runner only, so it is always
+              paired with its page id and machine. */}
+          <span
+            className="font-mono text-xs text-muted-foreground break-all"
+            title={page.page_id}
+          >
+            page {page.page_id || "unknown"}
+          </span>
+          <span className="text-xs text-muted-foreground break-all">
+            window {page.window || "unknown"}
+          </span>
+          <span className="text-xs text-muted-foreground break-all">
+            on {machineLabel(card.machine)}
+          </span>
+          {page.fresh !== true && page.fresh !== false ? (
+            <>
+              {/* Unknown freshness is at least as loud as stale (style guide R3). */}
+              <Badge variant="warning">freshness unknown</Badge>
+              <span
+                className="text-xs text-muted-foreground"
+                title={absoluteTime(page.observed_at)}
+              >
+                observed{" "}
+                {relativeTime(page.observed_at, {
+                  absent: "at an unknown time",
+                })}
+              </span>
+            </>
+          ) : page.fresh ? (
+            <span
+              className="text-xs text-muted-foreground"
+              title={absoluteTime(page.observed_at)}
+            >
+              observed{" "}
+              {relativeTime(page.observed_at, { absent: "at an unknown time" })}
+            </span>
+          ) : (
+            <>
+              <Badge variant="warning">stale</Badge>
+              <span
+                className="text-xs text-muted-foreground"
+                title={absoluteTime(page.observed_at)}
+              >
+                last observed{" "}
+                {relativeTime(page.observed_at, {
+                  absent: "at an unknown time",
+                })}
+              </span>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -119,39 +349,9 @@ export function SessionCardView({ card, archiveSlot }: SessionCardViewProps) {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Machine / environment */}
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Server className="size-4 text-muted-foreground" />
-          {card.machine ? (
-            <>
-              <Link
-                href="/environments/machines"
-                className="font-medium text-primary hover:underline"
-              >
-                {card.machine.name}
-              </Link>
-              {card.machine.hostname && (
-                <span className="font-mono text-xs text-muted-foreground">
-                  {card.machine.hostname}
-                </span>
-              )}
-              {card.machine.environment && (
-                <Badge variant="outline">{card.machine.environment.name}</Badge>
-              )}
-            </>
-          ) : card.device_id ? (
-            <span
-              className="font-mono text-xs text-muted-foreground"
-              title={card.device_id}
-            >
-              device {card.device_id}
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              no machine binding
-            </span>
-          )}
-        </div>
+        {/* Machine / environment, then the runner page the pane sits on */}
+        <MachineRow card={card} />
+        <RunnerPageRow card={card} />
 
         {/* Restore capability + "Resume here…" (plan
             `2026-07-09-runner-session-history-cloud-sync`, Phase 4).

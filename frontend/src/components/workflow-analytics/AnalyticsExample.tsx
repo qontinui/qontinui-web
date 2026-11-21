@@ -190,12 +190,10 @@ export function WorkflowAnalyticsExample() {
     if (!selectedWorkflowId) return [];
 
     return Array.from({ length: 30 }, (_, i) => ({
-      id: `result-${i}`,
-      testCaseId: `test-${i}`,
-      testCaseName: `Test ${i + 1}`,
+      id: `execution-${i}`,
       workflowId: selectedWorkflowId,
       workflowName: selectedWorkflow?.name || "",
-      passed: Math.random() > 0.2,
+      success: Math.random() > 0.2,
       startTime: new Date(
         Date.now() - (30 - i) * 24 * 60 * 60 * 1000
       ).toISOString(),
@@ -203,7 +201,6 @@ export function WorkflowAnalyticsExample() {
         Date.now() - (30 - i) * 24 * 60 * 60 * 1000 + Math.random() * 10000
       ).toISOString(),
       duration: 1000 + Math.random() * 5000,
-      assertions: [],
     }));
   }, [selectedWorkflowId, selectedWorkflow]);
 

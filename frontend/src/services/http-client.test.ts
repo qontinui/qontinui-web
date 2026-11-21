@@ -778,6 +778,8 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/helper-tasks",
     "https://api.test/api/v1/devices/pair-codes",
     "https://api.test/api/v1/agent-registry",
+    "https://api.test/api/v1/spawn-launch-settings",
+    "https://api.test/api/v1/spawn-launch-settings/post_merge",
     // Found by the backend drift guard
     // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
     // the caller's tenant, so a missing entry serves the home project.
@@ -792,6 +794,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // The taste inbox: its queue and labels are the active tenant's.
     "https://api.test/api/v1/taste/inbox?limit=5",
     "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
+    // The design reference library: its corpus and judgements are the active tenant's.
+    "https://api.test/api/v1/design-refs/sites?limit=5",
+    "https://api.test/api/v1/design-refs/principles/00000000-0000-0000-0000-000000000001/approve",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
     // Test-host designation writes: coord binding-checks the device against

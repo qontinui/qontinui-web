@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { usePolicyWritePolicy } from "../_hooks/usePolicyWritePolicy";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   POLICY_WRITE_CONFIRMED_LEVELS,
   POLICY_WRITE_DEFAULT_LEVEL,
@@ -69,9 +71,16 @@ import {
  *   is broken.
  */
 export function PolicyWriteDialControl() {
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen.
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
@@ -91,6 +100,7 @@ export function PolicyWriteDialControl() {
   );
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing the
@@ -132,7 +142,9 @@ export function PolicyWriteDialControl() {
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-write-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 
@@ -264,7 +276,7 @@ export function PolicyWriteDialControl() {
       <RadioGroup
         value={displayLevel ?? undefined}
         onValueChange={(v) => onSelect(v as PolicyWriteLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_WRITE_SELECTABLE_LEVELS.map((level) => (
@@ -362,6 +374,7 @@ export function PolicyWriteDialControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pendingLevel) void setLevel(pendingLevel);
                 setPendingLevel(null);

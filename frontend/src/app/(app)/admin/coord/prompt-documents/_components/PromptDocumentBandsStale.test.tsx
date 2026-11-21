@@ -44,6 +44,8 @@ const hookState = {
 vi.mock("../_hooks/usePromptDocuments", () => ({
   usePromptDocuments: () => ({
     ...hookState,
+    documentsTenant: undefined,
+    newestReadTenant: () => undefined,
     reload: vi.fn(),
     fetchDocument: vi.fn(),
     fetchVersions: vi.fn(),

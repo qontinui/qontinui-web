@@ -49,7 +49,9 @@ export interface FleetHealthDevice {
   /**
    * Coord liveness state — `DeviceHealthSnapshot.state` (Rust
    * `DeviceState`, serde-lowercase): healthy | degraded | **stale** |
-   * ci_offline | partitioned | abandoned. Absent on a device coord has no verdict for,
+   * ci_offline | ci_unrefreshed | partitioned | abandoned. `ci_unrefreshed`
+   * is a derived CI-registration verdict (the registrar has not refreshed
+   * the row recently, and nothing contradicts it) — see `machineHealth.ts`. Absent on a device coord has no verdict for,
    * which renders as `unknown` — never as healthy.
    *
    * `stale` is the fifth and newest, a DERIVED overlay coord never persists
@@ -112,7 +114,11 @@ export interface FleetHealthDevice {
    */
   credential_dark?: DeviceCredentialDark | null;
   /**
-   * Coord's raw CI-runner measurement (`idle` | `busy` | `offline`).
+   * Coord's raw CI-runner measurement (`idle` | `busy` | `offline`), or
+   * `not_listed` when the registration's repo was polled and GitHub no
+   * longer listed it (`registration_presence: "measured_absent"`; that row's
+   * `state` is then `ci_offline`). `not_listed` is a status, not an absence:
+   * `null` keeps meaning "this device is not a CI runner".
    *
    * Coord serves it as a STRING only for a device carrying the `ci_runner`
    * capability and as `null` for every other device (`fleet_health.rs`
@@ -121,6 +127,29 @@ export interface FleetHealthDevice {
    * predates the field: UNKNOWN, and treated as "not known to be a CI runner".
    */
   ci_runner_status?: string | null;
+  /**
+   * Whether this row carries coord's `ci_runner` capability, served outright
+   * (`DeviceHealthSnapshot::is_ci_runner`) so a client need not infer it from
+   * `ci_runner_status`. Absent on a coord predating the field.
+   */
+  is_ci_runner?: boolean;
+  /**
+   * What GitHub's listing says about this CI registration, compared with its
+   * repo's own last poll (`fleet_partition.rs` `RegistrationPresence`):
+   * `listed_at_last_poll` | `measured_absent` | `unmeasured`. `null` on every
+   * non-CI row; absent on a coord predating the field. `unmeasured`, `null`
+   * and absent are all UNKNOWN, never "listed". Typed as a bare string so a
+   * newer value still parses.
+   */
+  registration_presence?: string | null;
+  /**
+   * The push-heartbeat timestamp, verbatim from `coord.devices.last_seen_at`
+   * (RFC 3339). `null` for a device that has never heartbeated; absent on a
+   * coord predating the field. For a CI registration this is when coord's
+   * registrar last refreshed the row, which is what a `ci_unrefreshed` row is
+   * aged by.
+   */
+  last_seen_at?: string | null;
   /**
    * Coord's tri-state liveness evidence (`fleet_health.rs`
    * `DispatchLiveness`): `within_dispatch_window` | `outside_dispatch_window`
@@ -170,6 +199,43 @@ export interface FleetHealthDevice {
    * does not join it.
    */
   runner_reports?: RunnerReportsMeta | null;
+}
+
+/**
+ * Coord's `fleet_partition::FleetPartitionRatio` (`qontinui-coord`
+ * `crates/coord/src/fleet_partition.rs`), served on `GET /coord/fleet/health`.
+ *
+ * Every field is optional here because a proxy may drop one and a newer coord
+ * may rename one; `fleetPartitionRatio.ts` treats a missing or malformed field
+ * as UNKNOWN rather than as zero.
+ *
+ * * `eligible` — the denominator: non-CI rows with a known dispatch liveness
+ *   whose state is neither `abandoned` nor `unknown`.
+ * * `partitioned` — eligible rows reading `partitioned`.
+ * * `pct` — `partitioned / eligible` in percent; `null` when `eligible` is 0
+ *   (no `0%` over nothing) or when `known` is false.
+ * * `known` — `false` when coord's hard ceiling withheld degradable rows
+ *   (`degradable_dropped`), so the ratio is UNKNOWN.
+ * * `scope` — `tenant` (this caller's roster, which is what this route
+ *   serves) or `unscoped` (the alert's aggregation roster).
+ */
+export interface FleetPartitionRatio {
+  scope?: string;
+  partitioned?: number;
+  eligible?: number;
+  pct?: number | null;
+  known?: boolean;
+  fires?: boolean;
+  threshold_pct?: number;
+  min_devices?: number;
+  roster_rows?: number;
+  table_total?: number;
+  roster_truncated?: boolean;
+  degradable_dropped?: number;
+  excluded_ci_rows?: number;
+  excluded_liveness_unknown?: number;
+  excluded_abandoned?: number;
+  excluded_unknown_state?: number;
 }
 
 /**
@@ -342,7 +408,16 @@ export interface FleetHealthPayload {
    * An empty `devices` beside a non-zero count is a binding fault, not an
    * empty fleet. Absent on a coord predating it.
    */
-  excluded?: { unbound?: number; bound_to_other_tenant?: number } | null;
+  excluded?: {
+    unbound?: number;
+    bound_to_other_tenant?: number;
+    /**
+     * Rows coord's device reaper retired (`reaped_at` set) and the roster
+     * therefore omits. NOT a binding fault and not incompleteness: see
+     * `readRosterExclusions`. Absent on a coord predating it.
+     */
+    retired?: number;
+  } | null;
   /** Why coord could not count `excluded`; null when it could. */
   excluded_error?: string | null;
   /**
@@ -363,6 +438,13 @@ export interface FleetHealthPayload {
   degradable_dropped?: number;
   /** The caps applied: `soft` cuts only the non-degradable tail, `hard` everything. */
   row_cap?: { soft?: number; hard?: number };
+  /**
+   * Coord's fleet-partition ratio over the rows that heartbeat — the same
+   * figure its `fleet_partitioned` alert reads, over this caller's roster.
+   * Absent on a coord predating it: UNKNOWN, never `0`. See
+   * {@link FleetPartitionRatio} and `fleetPartitionRatio.ts`.
+   */
+  fleet_partition_ratio?: FleetPartitionRatio | null;
   /**
    * The Conditions rollup. Absent on a coord predating it — see
    * {@link FleetHealthConditions}.

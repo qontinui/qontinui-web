@@ -17,7 +17,8 @@
  * 3. **Absent field, failed request, coord's `unknown` and an unrecognised
  *    status all read UNKNOWN** — never a healthy loop by default.
  * 4. **The silent latch hides the line**: outside the system tenant there is no
- *    auto-publisher of this tenant's to observe.
+ *    auto-publisher of this tenant's to observe. So does the dial's waiting
+ *    line: no observation is shown under a line saying nothing has been read.
  * 5. **The reconcile rests healthy on one idle code of its own.** It does its work
  *    once a day and the ledger keeps only the latest outcome, so `recovery:not_due`
  *    with no work tick is its ordinary state. Beside the ledger's own `not_due`,
@@ -26,7 +27,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  PINNED_PAGE,
+  sectionRenderer,
+  testPageGuard,
+} from "../__fixtures__/pageWriteGuard";
+
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import type { AutoPublishStatusResponse } from "../types";
 
@@ -58,6 +65,12 @@ import {
   PolicyAutoPublishDialControl,
 } from "./PolicyAutoPublishDialControl";
 import { usePublishAll } from "../_hooks/usePublishAll";
+import { useRequiredPageWriteGuard } from "../_hooks/usePageWriteGuardContext";
+
+// A section mounted on its own, under the page's guard once its project is
+// known: the hooks it uses require one, and a settings section reads only
+// under the page's pin (`__fixtures__`).
+const renderSection = sectionRenderer(PINNED_PAGE);
 
 /**
  * The dial over one `usePublishAll` read, as the page wires it. The page-level
@@ -68,7 +81,7 @@ import { usePublishAll } from "../_hooks/usePublishAll";
  * it rather than after a guessed delay; `harness-reload` re-takes the read.
  */
 function Harness() {
-  const state = usePublishAll();
+  const state = usePublishAll(useRequiredPageWriteGuard());
   return (
     <>
       <span data-testid="harness-settled">{String(state.statusSettled)}</span>
@@ -140,7 +153,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -161,7 +174,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -181,7 +194,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     expect(await observed()).toHaveTextContent(
       "Observed: loop alive, no pass body recorded for the current leader"
@@ -204,7 +217,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -230,7 +243,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -254,7 +267,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -276,7 +289,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -296,7 +309,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -316,7 +329,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     expect(await observed()).toHaveTextContent(
       "Observed: no live replica is running the auto-publisher"
@@ -337,7 +350,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -365,7 +378,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(
@@ -389,7 +402,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent("Observed: running but failing");
@@ -410,7 +423,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(UNKNOWN);
@@ -420,7 +433,7 @@ describe("the observed auto-publisher, per worker status", () => {
 
   it("field absent (a coord older than Phase 3): renders UNKNOWN", async () => {
     statusGet.mockResolvedValue(status(undefined));
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(UNKNOWN);
@@ -429,7 +442,7 @@ describe("the observed auto-publisher, per worker status", () => {
 
   it("request failed: renders UNKNOWN, not nothing and not a healthy loop", async () => {
     statusGet.mockResolvedValue(new Response("boom", { status: 500 }));
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observed();
     expect(line).toHaveTextContent(UNKNOWN);
@@ -447,7 +460,7 @@ describe("the observed auto-publisher, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     expect(await observed()).toHaveTextContent(UNKNOWN);
   });
@@ -465,7 +478,7 @@ describe("a later read", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
     expect(await observed()).toHaveTextContent(
       "Observed: last pass 2m ago — ran:published"
     );
@@ -486,7 +499,7 @@ describe("where the observation is withheld", () => {
         status: 403,
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     // The read has definitely settled (failed and latched) before absence is
@@ -503,8 +516,37 @@ describe("where the observation is withheld", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders nothing while the dial waits for the page's project, under its line saying nothing has been read", async () => {
+    // The page's status read can settle while the dial has no project to
+    // read its level in. The dial says it is waiting, and nothing more.
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: minutesAgo(2),
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    sectionRenderer(testPageGuard())(<Harness />);
+
+    await screen.findByTestId("policy-auto-publish-waiting");
+    await waitFor(() =>
+      expect(screen.getByTestId("harness-settled")).toHaveTextContent("true")
+    );
+    expect(statusGet).toHaveBeenCalledTimes(1);
+    expect(policyGet).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId("policy-auto-publish-observed")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("policy-auto-publish-observed-reconcile")
+    ).not.toBeInTheDocument();
+  });
+
   it("renders nothing when the page has not wired an observation", async () => {
-    render(<PolicyAutoPublishDialControl />);
+    renderSection(<PolicyAutoPublishDialControl />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
     expect(
@@ -556,7 +598,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         },
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -577,7 +619,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:not_due",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -597,7 +639,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:not_due",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -616,7 +658,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:not_due",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -637,7 +679,7 @@ describe("the observed recovery reconcile, per worker status", () => {
     statusGet.mockResolvedValue(
       status({ pass: waiting, recovery_reconcile: waiting })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -662,7 +704,7 @@ describe("the observed recovery reconcile, per worker status", () => {
     statusGet.mockResolvedValue(
       status({ pass: staggered, recovery_reconcile: staggered })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -686,7 +728,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "not_due",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -707,7 +749,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:some_future_idle",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -727,7 +769,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: null,
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -747,7 +789,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: null,
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -772,7 +814,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:not_due_after_errors",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -796,7 +838,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "tick_error",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -818,7 +860,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "recovery:reconciled_with_errors",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -841,7 +883,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: "tick_error",
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -864,7 +906,7 @@ describe("the observed recovery reconcile, per worker status", () => {
           last_decision_code: "recovery:not_due",
         })
       );
-      render(<Harness />);
+      renderSection(<Harness />);
 
       const line = await observedReconcile();
       expect(line).toHaveTextContent(
@@ -889,7 +931,7 @@ describe("the observed recovery reconcile, per worker status", () => {
           last_decision_code: "recovery:not_due",
         })
       );
-      render(<Harness />);
+      renderSection(<Harness />);
 
       const line = await observedReconcile();
       expect(line).toHaveTextContent(
@@ -910,7 +952,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: null,
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
@@ -932,7 +974,7 @@ describe("the observed recovery reconcile, per worker status", () => {
         last_decision_code: null,
       })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(RECONCILE_UNKNOWN);
@@ -944,7 +986,7 @@ describe("the observed recovery reconcile, per worker status", () => {
     statusGet.mockResolvedValue(
       reconcileStatus({ status: "hibernating", last_tick_at: minutesAgo(1) })
     );
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(RECONCILE_UNKNOWN);
@@ -956,7 +998,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
   it("absent while the pass is served: UNKNOWN, not inferred from the pass", async () => {
     statusGet.mockResolvedValue(status({ pass: healthyPass }));
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(RECONCILE_UNKNOWN);
@@ -966,7 +1008,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
   it("request failed: UNKNOWN, not nothing", async () => {
     statusGet.mockResolvedValue(new Response("boom", { status: 500 }));
-    render(<Harness />);
+    renderSection(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(RECONCILE_UNKNOWN);

@@ -6,7 +6,6 @@
  * - Input configuration (screenshots, states, variables)
  * - Expected outputs configuration
  * - Assertions builder with multiple types
- * - Run test functionality
  * - Save/cancel with validation
  * - Keyboard shortcuts support
  */
@@ -15,7 +14,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import type { TestCase } from "@/services/workflow-testing-service";
+import type { TestCase } from "@/services/workflow-testing";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import type { ValidationErrors } from "./test-case-editor-types";
 import { buildTestCaseData } from "./test-case-editor-utils";
@@ -33,10 +32,6 @@ import { ExpectedOutputsCard } from "./_components/ExpectedOutputsCard";
 import { AssertionsCard } from "./_components/AssertionsCard";
 import { AdvancedSettingsCard } from "./_components/AdvancedSettingsCard";
 import { ActionFooterCard } from "./_components/ActionFooterCard";
-import { createLogger } from "@/lib/logger";
-
-const log = createLogger("TestCaseEditor");
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -143,60 +138,6 @@ export function TestCaseEditor({
     onSave(getTestCaseData());
   }, [validate, getTestCaseData, onSave]);
 
-  const handleRun = React.useCallback(async () => {
-    if (!validate()) {
-      return;
-    }
-    ui.setIsRunning(true);
-
-    try {
-      const testCaseData = getTestCaseData();
-
-      // Import the test runner API
-      const { runWorkflowTest } = await import("@/lib/api/workflow-testing");
-
-      // Get project ID from workflow or default
-      const projectId =
-        (workflow as { projectId?: string }).projectId || "default-project";
-
-      // Execute the test
-      const result = await runWorkflowTest(testCaseData, workflow, projectId);
-
-      // Store result in test case metadata
-      const existingResults =
-        (testCase?.metadata?.testResults as unknown[]) || [];
-      const updatedResults = [result, ...existingResults].slice(0, 100); // Keep last 100 results
-
-      // Update test case with result
-      testCaseData.metadata = {
-        ...testCaseData.metadata,
-        lastRun: result.endTime,
-        testResults: updatedResults,
-      };
-
-      // Show result notification
-      if (result.passed) {
-        log.debug("Test passed!", result);
-        alert("Test passed! All assertions succeeded.");
-      } else {
-        console.error("Test failed!", result);
-        alert(
-          `Test failed: ${result.error || "Some assertions failed"}\n\nCheck console for details.`
-        );
-      }
-
-      // Save the updated test case
-      onSave(testCaseData);
-    } catch (error) {
-      console.error("Test execution failed:", error);
-      alert(
-        `Test execution failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    } finally {
-      ui.setIsRunning(false);
-    }
-  }, [validate, getTestCaseData, workflow, testCase, onSave, ui]);
-
   // ========================================================================
   // Keyboard shortcuts
   // ========================================================================
@@ -213,16 +154,11 @@ export function TestCaseEditor({
         e.preventDefault();
         onCancel();
       }
-      // Ctrl/Cmd + Enter to run
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleRun();
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, handleRun, onCancel]);
+  }, [handleSave, onCancel]);
 
   // ========================================================================
   // Render
@@ -290,18 +226,11 @@ export function TestCaseEditor({
         onEnabledChange={basicInfo.setEnabled}
       />
 
-      <ActionFooterCard
-        isRunning={ui.isRunning}
-        onRun={handleRun}
-        onSave={handleSave}
-        onCancel={onCancel}
-      />
+      <ActionFooterCard onSave={handleSave} onCancel={onCancel} />
 
       {/* Keyboard shortcuts hint */}
       <div className="text-xs text-muted-foreground text-center space-y-1">
-        <p>
-          Keyboard shortcuts: Ctrl+S to save, Esc to cancel, Ctrl+Enter to run
-        </p>
+        <p>Keyboard shortcuts: Ctrl+S to save, Esc to cancel</p>
       </div>
     </div>
   );

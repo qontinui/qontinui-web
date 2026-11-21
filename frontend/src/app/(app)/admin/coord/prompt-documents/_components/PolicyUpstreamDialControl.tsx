@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, CloudDownload } from "lucide-react";
 import { usePolicyUpstreamPolicy } from "../_hooks/usePolicyUpstreamPolicy";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   POLICY_UPSTREAM_CONFIRMED_LEVELS,
   POLICY_UPSTREAM_DEFAULT_LEVEL,
@@ -47,7 +49,7 @@ import {
  * document is badged instead. Two more things make the automatic arm reversible
  * rather than merely safe: the adoption lands as an ordinary new version, so
  * the previous wording stays in the history a few inches above and is
- * restorable in one click, and a notification is emitted after it.
+ * restorable from it, and a notification is emitted after it.
  *
  * That is why `auto` is the default rather than a click gate: a click gate
  * means every downstream fleet runs stale policy until a human happens to look
@@ -69,9 +71,16 @@ import {
  * - **A failed read-back is UNKNOWN**, not the level that was written.
  */
 export function PolicyUpstreamDialControl() {
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen.
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
@@ -91,6 +100,7 @@ export function PolicyUpstreamDialControl() {
   );
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;
@@ -133,7 +143,9 @@ export function PolicyUpstreamDialControl() {
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-upstream-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 
@@ -263,7 +275,7 @@ export function PolicyUpstreamDialControl() {
       <RadioGroup
         value={displayLevel ?? undefined}
         onValueChange={(v) => onSelect(v as PolicyUpstreamLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_UPSTREAM_SELECTABLE_LEVELS.map((level) => (
@@ -345,9 +357,8 @@ export function PolicyUpstreamDialControl() {
                   At <span className="font-mono">auto</span>, a document you
                   have <strong>never edited</strong> takes a new publication on
                   its own. It lands as an ordinary new version — the previous
-                  wording stays in this page&apos;s version history and is
-                  restorable in one click — and you are told afterwards rather
-                  than asked first.
+                  wording stays in this page&apos;s version history, restorable
+                  from it — and you are told afterwards rather than asked first.
                 </p>
                 <p>
                   This does <strong>not</strong> touch a document you have
@@ -362,6 +373,7 @@ export function PolicyUpstreamDialControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pendingLevel) void setLevel(pendingLevel);
                 setPendingLevel(null);

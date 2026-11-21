@@ -1,6 +1,8 @@
 "use client";
 
+import { useCallback } from "react";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
 import {
   isPolicyUpstreamLevel,
   POLICY_UPSTREAM_DEFAULT_LEVEL,
@@ -23,7 +25,10 @@ import {
  *    Every state transition comes from a READ; the write's own echo is kept
  *    separately (`lastWrite`) so the two can be compared rather than conflated.
  * 2. **A failed read-back is UNKNOWN.** The last known-good value stays on
- *    screen and the error is surfaced.
+ *    screen and the error is surfaced. The page pins this dial's requests,
+ *    so the shared dial reads the level again at once, pinned, and what is
+ *    shown becomes coord's — with the read-back's own warning when that is
+ *    not the level written.
  *
  * What is specific to THIS domain:
  *
@@ -42,16 +47,38 @@ import {
  * about coord writing a body into this tenant from another tenant's
  * publication. An authority setting coord cannot read is not permission to do
  * that.
+ *
+ * **Which project, and when nothing is written.** On the prompt-documents
+ * page the read and the write are sent in the page's project, asked as each
+ * goes out, and nothing is read before the page knows it: the shared dial
+ * reads first then, and says it is waiting until it does. A write is refused
+ * — nothing sent, the page says why — while another tab's project switch is
+ * in effect, or while the page has no project to pin it to. Both come from
+ * the page's provider (`usePageSendGuard`), and the refusal sits here, beside
+ * the send, so no caller can leave it out. It is never mounted outside that provider,
+ * and throws if it is: there is no unguarded mode.
  */
 export function usePolicyUpstreamPolicy() {
-  // Read, write and read-back — with the refresh-vs-write race guard — are
-  // the shared tenant-band dial's; this hook adds only the domain's level
-  // vocabulary below.
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // Read, write and read-back — with the refresh-vs-write race guard and the
+  // send-time pin — are the shared tenant-band dial's; this hook adds the
+  // page's write guard and the domain's level vocabulary below. The shared
+  // dial takes the pin as its optional `resolvePin`: it serves pages with no
+  // such provider too, and they pass nothing.
   const dial = useTenantFleetPolicyDial<PolicyUpstreamLevel>(
     POLICY_UPSTREAM_DOMAIN,
-    "upstream policy updates"
+    "upstream policy updates",
+    "devices resolve",
+    { resolvePin }
   );
-  const { policy } = dial;
+  const { policy, setLevel: sendLevel } = dial;
+
+  /** `dial.setLevel`, refused while the page's guard says no. */
+  const setLevel = useCallback(
+    (level: PolicyUpstreamLevel, changeNote?: string): Promise<boolean> =>
+      writeAllowed() ? sendLevel(level, changeNote) : Promise.resolve(false),
+    [writeAllowed, sendLevel]
+  );
 
   // `"none"` means no row matched, which for this domain is `auto` — NOT off.
   // Mirrors coord's `resolve_policy_upstream_level`; if the two ever disagree
@@ -78,6 +105,8 @@ export function usePolicyUpstreamPolicy() {
 
   return {
     ...dial,
+    /** Write `level` at the tenant band — unless the page's guard says no. */
+    setLevel,
     /**
      * The level actually in force: the no-row case resolved to coord's typed
      * default, an unparseable row resolved fail-closed. Always one of the three

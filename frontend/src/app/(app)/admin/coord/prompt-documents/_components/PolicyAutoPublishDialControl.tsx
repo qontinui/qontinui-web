@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -17,6 +18,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
 import type { PublishAllState } from "../_hooks/usePublishAll";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   describeObservedPass,
   describeObservedReconcile,
@@ -152,9 +154,10 @@ function ObservedLine({
  * the page's ONE auto-publish status read (the list's badges come from the
  * same response). See `../_lib/observedWorker.ts` for the sentence per status.
  * It renders nothing when the page has not wired the observation, before the
- * first read settles, and under the existing silent latch
- * (`not_system_tenant` / `not_proxied`): outside the system tenant there is no
- * auto-publisher of this tenant's to observe.
+ * first read settles, under the existing silent latch
+ * (`not_system_tenant` / `not_proxied`) — outside the system tenant there is
+ * no auto-publisher of this tenant's to observe — and while the dial waits for
+ * the page's project, where its line says nothing has been read yet.
  */
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
@@ -173,9 +176,17 @@ export function PolicyAutoPublishDialControl({
    */
   observed?: AutoPublishObserved;
 } = {}) {
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen. A refused write answers `false`, so the page's
+  // status read is not re-taken.
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
@@ -198,8 +209,12 @@ export function PolicyAutoPublishDialControl({
   };
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
-  const showObserved = observed && observed.settled && !observed.unavailable;
+  // No observed-worker lines under a line that says nothing has been read:
+  // while the dial waits for the page's project, it shows that alone.
+  const showObserved =
+    observed && observed.settled && !observed.unavailable && !waitingForProject;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;
@@ -246,7 +261,9 @@ export function PolicyAutoPublishDialControl({
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-auto-publish-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 
@@ -390,7 +407,7 @@ export function PolicyAutoPublishDialControl({
       <RadioGroup
         value={displayLevel ?? undefined}
         onValueChange={(v) => onSelect(v as PolicyAutoPublishLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS.map((level) => (
@@ -487,6 +504,7 @@ export function PolicyAutoPublishDialControl({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               data-testid="policy-auto-publish-confirm-accept"
               onClick={() => {
                 if (pendingLevel) void applyLevel(pendingLevel);
