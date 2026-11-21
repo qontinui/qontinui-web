@@ -2,8 +2,8 @@
 
 Phases 2 and 3 (the qontinui-web half, which lands FIRST) of plan
 ``2026-06-08-coord-scheduled-maintenance-subsystem``. Creates one new, empty
-table, its comment, its verdict-dedupe unique and its queue index in ONE
-transaction::
+table, its comment, its verdict-dedupe unique, its pending-queue index and
+its two foreign-key indexes in ONE transaction::
 
     coord.maintenance_agent_requests (id, tenant_id, kind, task_id, run_id,
         target_device_id, candidate_key, repo_path, question, prompt,
@@ -12,7 +12,10 @@ transaction::
         answered_at, expires_at)
         ux_maintenance_agent_requests_verdict_dedupe
             UNIQUE (task_id, candidate_key, question) WHERE kind = 'verdict'
-        idx_maintenance_agent_requests_queue  (state, target_device_id)
+        idx_maintenance_agent_requests_pending
+            (target_device_id, tenant_id) WHERE state = 'pending'
+        idx_maintenance_agent_requests_task_id  (task_id)
+        idx_maintenance_agent_requests_run_id   (run_id)
 
 One queue, two kinds
 ====================
@@ -45,7 +48,14 @@ Shape
 * ``kind`` is closed to ``verdict`` / ``compile``; ``state`` to ``pending`` /
   ``claimed`` / ``answered`` / ``failed`` / ``expired`` (default
   ``pending``); ``verdict`` to ``yes`` / ``no`` / ``unknown``; ``confidence``
-  to ``[0, 1]``.
+  and ``min_confidence`` to ``[0, 1]`` (or NULL).
+* ``ck_maintenance_agent_requests_verdict_fields``: a ``verdict`` request must
+  carry ``task_id``, ``candidate_key``, ``target_device_id`` and
+  ``repo_path`` (without them the dedupe unique cannot hold, since NULLs never
+  collide, and no runner could be targeted). A ``compile`` request may leave
+  all four NULL.
+* ``tenant_id`` is ``uuid NOT NULL`` deliberately: coord casts the task's text
+  tenant to uuid, and a task with a NULL tenant never runs.
 * ``task_id`` references ``coord.maintenance_tasks`` ON DELETE CASCADE (a
   deleted task takes its pending requests with it); ``run_id`` references
   ``coord.maintenance_runs`` ON DELETE SET NULL (the run ledger is history, a
@@ -53,13 +63,15 @@ Shape
   compile request has no task yet.
 * The verdict dedupe is a PARTIAL unique, so a coord enqueue naming it as its
   ``ON CONFLICT`` arbiter must restate ``WHERE kind = 'verdict'``.
-* The queue index serves the claim read: pending rows for a device, or for no
-  device.
+* The pending index serves the claim read: pending rows for a device, or for
+  no device within a tenant. It is partial, so answered history never bloats
+  it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
+  NULL) from scanning the queue.
 
 Indexes and lock posture
 ========================
 
-Both indexes are built in the SAME transaction as the table — a plain
+All four indexes are built in the SAME transaction as the table — a plain
 ``CREATE [UNIQUE] INDEX IF NOT EXISTS``, never ``CONCURRENTLY`` — on a table
 this transaction created, so the build is on an empty table and holds no lock
 any reader waits on. coord's migration classifier admits each such build as a
@@ -73,14 +85,14 @@ and ``coord.maintenance_runs`` for the instant of the ``CREATE TABLE``. That
 conflicts with the scheduler tick writing those tables, so the wait is bounded
 with ``SET LOCAL lock_timeout = '3s'`` (as ``journey_03`` / ``journey_04`` do):
 a busy writer fails the migration loudly instead of queueing the tick behind
-it. No existing table is altered.
+it. No existing table is altered. ``downgrade()`` is bounded the same way.
 
 Idempotency / authorship posture
 ================================
 
 * ``CREATE TABLE IF NOT EXISTS`` / ``CREATE [UNIQUE] INDEX IF NOT EXISTS`` /
   re-runnable ``COMMENT ON``; a re-run (or a partial prior apply) is a no-op.
-* ``downgrade()`` drops the two indexes, then the table, all ``IF EXISTS``.
+* ``downgrade()`` drops the four indexes, then the table, all ``IF EXISTS``.
   It drops no table this revision did not create.
 * alembic is the SOLE author of the ``coord.*`` schema (served policy
   ``production-and-cost`` ``alembic-sole-authorship``). coord only INSERTs,
@@ -102,7 +114,7 @@ re-pointed at the new head. A re-point is three coupled edits:
 ``alembic merge`` revision for it.
 
 Revision ID: coord_maint_agent_req_01
-Revises: journey_05_edge_outcome_verdict_unknown
+Revises: coord_policy_outcome_counts_02
 Create Date: 2026-11-21
 
 """
@@ -113,7 +125,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_maint_agent_req_01"
-down_revision: str | None = "journey_05_edge_outcome_verdict_unknown"
+down_revision: str | None = "coord_policy_outcome_counts_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -161,6 +173,15 @@ def upgrade() -> None:
                 CHECK (verdict IN ('yes', 'no', 'unknown')),
             CONSTRAINT ck_maintenance_agent_requests_confidence
                 CHECK (confidence >= 0 AND confidence <= 1),
+            CONSTRAINT ck_maintenance_agent_requests_min_confidence
+                CHECK (min_confidence IS NULL
+                       OR (min_confidence >= 0 AND min_confidence <= 1)),
+            CONSTRAINT ck_maintenance_agent_requests_verdict_fields
+                CHECK (kind <> 'verdict'
+                       OR (task_id IS NOT NULL
+                           AND candidate_key IS NOT NULL
+                           AND target_device_id IS NOT NULL
+                           AND repo_path IS NOT NULL)),
             CONSTRAINT fk_maintenance_agent_requests_task
                 FOREIGN KEY (task_id) REFERENCES coord.maintenance_tasks (id)
                 ON DELETE CASCADE,
@@ -190,20 +211,39 @@ def upgrade() -> None:
             WHERE kind = 'verdict'
         """
     )
-    # The claim read: requests in a state, for a device or for no device.
+    # The claim read: pending requests for a device, or for no device.
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_maintenance_agent_requests_queue
-            ON coord.maintenance_agent_requests (state, target_device_id)
+        CREATE INDEX IF NOT EXISTS idx_maintenance_agent_requests_pending
+            ON coord.maintenance_agent_requests (target_device_id, tenant_id)
+            WHERE state = 'pending'
+        """
+    )
+    # The foreign-key columns, so a task or run delete does not scan the queue.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_maintenance_agent_requests_task_id
+            ON coord.maintenance_agent_requests (task_id)
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_maintenance_agent_requests_run_id
+            ON coord.maintenance_agent_requests (run_id)
         """
     )
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
-    """Drop the two indexes, then the table."""
-    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_agent_requests_queue")
+    """Drop the four indexes, then the table."""
+    # Dropping the table locks the task and run tables through its foreign keys.
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_agent_requests_run_id")
+    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_agent_requests_task_id")
+    op.execute("DROP INDEX IF EXISTS coord.idx_maintenance_agent_requests_pending")
     op.execute(
         "DROP INDEX IF EXISTS coord.ux_maintenance_agent_requests_verdict_dedupe"
     )
     op.execute("DROP TABLE IF EXISTS coord.maintenance_agent_requests")
+    op.execute("SET LOCAL lock_timeout = DEFAULT")

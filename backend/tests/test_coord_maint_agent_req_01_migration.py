@@ -66,13 +66,15 @@ _REVISION_FILENAME = "coord_maint_agent_req_01_maintenance_agent_requests.py"
 
 # Pinned as a literal, not read back from the module: the test must notice a
 # re-point, not follow it.
-_PARENT_REVISION_ID = "journey_05_edge_outcome_verdict_unknown"
+_PARENT_REVISION_ID = "coord_policy_outcome_counts_02"
 
 _SCHEMA = "coord"
 _TABLE = "maintenance_agent_requests"
 _DEDUPE_INDEX = "ux_maintenance_agent_requests_verdict_dedupe"
-_QUEUE_INDEX = "idx_maintenance_agent_requests_queue"
-_INDEXES = (_DEDUPE_INDEX, _QUEUE_INDEX)
+_PENDING_INDEX = "idx_maintenance_agent_requests_pending"
+_TASK_INDEX = "idx_maintenance_agent_requests_task_id"
+_RUN_INDEX = "idx_maintenance_agent_requests_run_id"
+_INDEXES = (_DEDUPE_INDEX, _PENDING_INDEX, _TASK_INDEX, _RUN_INDEX)
 
 # The name coord's new-table proof would match on trunk comments; this
 # revision must never spell it (built from parts so this file does not either).
@@ -107,9 +109,13 @@ _COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
 )
 
 _DOWNGRADE_STATEMENTS = (
-    f"DROP INDEX IF EXISTS {_SCHEMA}.{_QUEUE_INDEX}",
+    "SET LOCAL lock_timeout = '3s'",
+    f"DROP INDEX IF EXISTS {_SCHEMA}.{_RUN_INDEX}",
+    f"DROP INDEX IF EXISTS {_SCHEMA}.{_TASK_INDEX}",
+    f"DROP INDEX IF EXISTS {_SCHEMA}.{_PENDING_INDEX}",
     f"DROP INDEX IF EXISTS {_SCHEMA}.{_DEDUPE_INDEX}",
     f"DROP TABLE IF EXISTS {_SCHEMA}.{_TABLE}",
+    "SET LOCAL lock_timeout = DEFAULT",
 )
 
 _needs_pg = pytest.mark.skipif(
@@ -158,6 +164,26 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
         and pattern.search(f.read_text(encoding="utf-8"))
     ]
     assert len(siblings) == 1, [f.name for f in siblings]
+
+
+def test_no_other_revision_forks_from_the_same_parent() -> None:
+    """A second child of the parent is a fork: re-point this revision."""
+    versions_dir = backend_root() / "alembic" / "versions"
+    pattern = re.compile(
+        r"^down_revision(?::[^=]*)?\s*=\s*[\(\[]?\s*[\"']"
+        rf"{re.escape(_PARENT_REVISION_ID)}[\"']",
+        re.M,
+    )
+    forks = [
+        f.name
+        for f in versions_dir.glob("*.py")
+        if f.name != _REVISION_FILENAME
+        and pattern.search(f.read_text(encoding="utf-8"))
+    ]
+    assert forks == [], (
+        f"{forks} also revise {_PARENT_REVISION_ID!r}; re-point down_revision, "
+        "the Revises: line and _PARENT_REVISION_ID at the current single head"
+    )
 
 
 def test_docstring_header_matches_the_identifiers() -> None:
@@ -246,10 +272,30 @@ def _insert_run(conn: Connection, task_id: uuid.UUID) -> uuid.UUID:
     )
 
 
+_SHARED_TASK = uuid.UUID("00000000-0000-4000-8000-00000000e001")
+
+
+def _shared_task(conn: Connection) -> uuid.UUID:
+    """A task row every default verdict request can name (created once)."""
+    conn.execute(
+        text(
+            """
+            INSERT INTO coord.maintenance_tasks
+                (id, tenant_id, name, target_selector, action, schedule_gate)
+            VALUES (:id, :t, 'shared', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+            ON CONFLICT (id) DO NOTHING
+            """
+        ),
+        {"id": _SHARED_TASK, "t": str(_TENANT)},
+    )
+    return _SHARED_TASK
+
+
 def _insert_request(conn: Connection, **overrides: object) -> uuid.UUID:
     row: dict[str, object] = {
         "tenant_id": _TENANT,
         "kind": "verdict",
+        "task_id": _SHARED_TASK if "task_id" in overrides else _shared_task(conn),
         "target_device_id": _DEVICE,
         "candidate_key": "D:/repo|feature|abc123",
         "repo_path": "D:/repo",
@@ -333,9 +379,16 @@ def test_indexes_by_definition(requests_db: Engine) -> None:
     assert "(task_id, candidate_key, question)" in index_definition(
         requests_db, _DEDUPE_INDEX
     )
-    valid, unique, predicate = index_state(requests_db, _QUEUE_INDEX)
-    assert valid and not unique and predicate == ""
-    assert "(state, target_device_id)" in index_definition(requests_db, _QUEUE_INDEX)
+    valid, unique, predicate = index_state(requests_db, _PENDING_INDEX)
+    assert valid and not unique
+    assert predicate == "(state = 'pending'::text)", predicate
+    assert "(target_device_id, tenant_id)" in index_definition(
+        requests_db, _PENDING_INDEX
+    )
+    for index, column in ((_TASK_INDEX, "task_id"), (_RUN_INDEX, "run_id")):
+        valid, unique, predicate = index_state(requests_db, index)
+        assert valid and not unique and predicate == "", index
+        assert f"({column})" in index_definition(requests_db, index), index
 
 
 @_needs_pg
@@ -361,6 +414,11 @@ def test_a_minimal_request_gets_its_defaults(requests_db: Engine) -> None:
         ({"verdict": "maybe"}, "ck_maintenance_agent_requests_verdict"),
         ({"confidence": 1.5}, "ck_maintenance_agent_requests_confidence"),
         ({"confidence": -0.1}, "ck_maintenance_agent_requests_confidence"),
+        ({"min_confidence": 1.5}, "ck_maintenance_agent_requests_min_confidence"),
+        ({"min_confidence": -0.1}, "ck_maintenance_agent_requests_min_confidence"),
+        ({"task_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
+        ({"target_device_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
+        ({"repo_path": None}, "ck_maintenance_agent_requests_verdict_fields"),
     ],
 )
 def test_closed_vocabularies_refuse_another_word(
@@ -370,6 +428,29 @@ def test_closed_vocabularies_refuse_another_word(
         _insert_request(conn, candidate_key=str(uuid.uuid4()), **overrides)
 
     assert _refused_by(requests_db, write) == constraint
+
+
+@_needs_pg
+def test_a_verdict_needs_its_fields_and_a_compile_does_not(
+    requests_db: Engine,
+) -> None:
+    def no_candidate(conn: Connection) -> None:
+        _insert_request(conn, task_id=_shared_task(conn), candidate_key=None)
+
+    assert (
+        _refused_by(requests_db, no_candidate)
+        == "ck_maintenance_agent_requests_verdict_fields"
+    )
+    with requests_db.begin() as conn:
+        _insert_request(
+            conn,
+            kind="compile",
+            task_id=None,
+            target_device_id=None,
+            candidate_key=None,
+            repo_path=None,
+            min_confidence=None,
+        )
 
 
 @_needs_pg
@@ -418,16 +499,17 @@ def test_one_verdict_request_per_task_candidate_and_question(
             text(
                 f"""
                 INSERT INTO coord.{_TABLE}
-                    (tenant_id, kind, task_id, candidate_key, question, prompt,
-                     requested_by, expires_at)
-                VALUES (:t, 'verdict', :task, 'k|b|1', 'Is this branch abandoned?',
-                        'p', 'coord:maintenance', now() + interval '1 hour')
+                    (tenant_id, kind, task_id, target_device_id, candidate_key,
+                     repo_path, question, prompt, requested_by, expires_at)
+                VALUES (:t, 'verdict', :task, :d, 'k|b|1', 'D:/repo',
+                        'Is this branch abandoned?', 'p', 'coord:maintenance',
+                        now() + interval '1 hour')
                 ON CONFLICT (task_id, candidate_key, question)
                     WHERE kind = 'verdict' DO NOTHING
                 RETURNING id
                 """
             ),
-            {"t": _TENANT, "task": task_id},
+            {"t": _TENANT, "task": task_id, "d": _DEVICE},
         ).all()
     assert inserted == []
 
