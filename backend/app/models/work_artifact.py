@@ -197,19 +197,77 @@ SPAWNED_FOLLOWUP_RELATION = "spawned_followup"
 #: than a bare IntegrityError 500.
 RELATIONS_ALLOWING_OPEN_TARGET: frozenset[str] = frozenset({SPAWNED_FOLLOWUP_RELATION})
 
-#: Whitespace stripped from a follow-up ``note`` before it is compared —
-#: by the blank-note CHECK, by the duplicate-guard index, and by the CRUD
-#: dedup lookup, all three of which MUST agree.
+#: Whitespace stripped from a follow-up ``note`` before it is compared. The
+#: INTENDED set is six ASCII characters: space, tab, newline, carriage return,
+#: form feed and vertical tab. It is spelled out because one-argument ``btrim``
+#: strips **spaces only**: ``btrim(E'\n\t ')`` is ``E'\n\t'``, not ``''``, so the
+#: obvious spelling of "must not be blank" admits a tab-and-newline note. The
+#: API's blank-note check is Python's ``str.strip()``, which strips a SUPERSET of
+#: it (U+001C-U+001F, U+0085, U+00A0 and the other Unicode spaces as well).
 #:
-#: ⚠️ Spelled out because one-argument ``btrim`` strips **spaces only**:
-#: ``btrim(E'\n\t ')`` is ``E'\n\t'``, not ``''``, so the obvious spelling of
-#: "must not be blank" admits a tab-and-newline note. The set matches what
-#: Python's ``str.strip()`` removes for ASCII, which is what the API check uses.
+#: ⚠️ The set is spelled in TWO ways, and they are NOT always the same set:
+#:
+#: * ``NOTE_TRIM_CHARS`` (this constant) holds the intended six, bytes
+#:   ``20 09 0a 0d 0c 0b``. The CRUD lookups (``_find_existing_edge``,
+#:   ``_owned_twin``) BIND it as a parameter, and so does the advisory-lock key
+#:   (``_lock_followup_identity``).
+#: * :data:`NOTE_TRIM_SQL` (below) spells it as a PostgreSQL ``E'...'`` literal,
+#:   and what that literal's ``\v`` means depends on the SERVER VERSION. Measured
+#:   on PostgreSQL 16 - the version the tests, CI and the runner's schema dump
+#:   use - the escape syntax has no ``\v``: a backslash before a character it
+#:   does not define stands for that character, so ``\v`` is the LETTER ``v`` and
+#:   the literal is bytes ``20 09 0a 0d 0c 76``. Coord finding
+#:   c82b4ab4-ff65-4f24-b05b-3aebcecf10cb (2026-11-07) measured PostgreSQL 18.6
+#:   as ``ascii(E'\v') = 11``, a real vertical tab (not re-measured here). So on
+#:   18.6 - presumably on >= 18, with 17 unmeasured - the literal is
+#:   ``20 09 0a 0d 0c 0b`` and equals ``NOTE_TRIM_CHARS``. The blank-note CHECK,
+#:   ``uq_work_artifact_edges_open_followup`` and
+#:   ``uq_work_artifact_edges_owned_followup`` use the literal, and so do the
+#:   blank-text CHECKs further down (:data:`_TRIM_SET_SQL`).
+#:
+#: The literal is lexed once, when the DDL runs, and the CHECK or index stores the
+#: bytes it produced, so the set a database's guards trim with is fixed by the
+#: server version that ran the migration. Production's server version was NOT
+#: checked, so which set its guards trim with is unknown.
+#:
+#: Where the guards were created by a PostgreSQL 16 server, the CHECK and the two
+#: guard indexes agree with one another and differ from the lookups and the lock
+#: key on exactly two characters: the database trims a letter ``v`` and not a
+#: vertical tab, the application the reverse. Consequences there:
+#:
+#: 1. a note that differs from a stored one only by a leading or trailing letter
+#:    ``v`` is the same finding to the guard index and a different one to the
+#:    lookup, so the lookup misses, the INSERT trips the index and the write
+#:    fails with an ``IntegrityError`` (a 500) - measured on PostgreSQL 16;
+#: 2. a note that differs only by a vertical tab is the reverse, folded onto the
+#:    stored row by the lookup, which the indexes alone would not do - measured
+#:    on PostgreSQL 16;
+#: 3. a note made only of letter ``v`` and whitespace characters fails the
+#:    blank-note CHECK, while the API's ``str.strip()`` check refuses only an
+#:    all-whitespace note, so the write reaches the CHECK and fails with an
+#:    ``IntegrityError`` (a 500) - recorded in finding c82b4ab4, not re-measured
+#:    here.
+#:
+#: Where the guards were created by a PostgreSQL 18.6 server none of the three
+#: occurs, because the literal and ``NOTE_TRIM_CHARS`` are the same set.
+#:
+#: Pre-existing: ``plan_library_03_spawned_followup`` spelled the literal this
+#: way, and ``plan_library_12_followup_identity_is_the_note`` reuses it verbatim
+#: for the owned-note index, so that the three guards are spelled alike. It is
+#: NOT corrected there: correcting the literal rebuilds the CHECK and both
+#: indexes, a separate (destructive) migration, recorded as coord finding
+#: c82b4ab4-ff65-4f24-b05b-3aebcecf10cb and as a spawned_followup edge
+#: 00953325-ae1e-40a2-be4e-e441e08f452b on the plan
+#: 2026-11-08-a-plan-can-own-many-followups-from-one-source-plan; no plan or work
+#: unit owns the fix yet.
 NOTE_TRIM_CHARS = " \t\n\r\f\v"
 
-#: The SQL trim expression over ``note``, spelled once. Mirrors
-#: ``uq_work_artifact_edges_open_followup``'s indexed expression exactly, so the
-#: CRUD dedup lookup can be served by that index and shares its grain.
+#: The SQL trim expression over ``note``, spelled once: the expression the
+#: blank-note CHECK, ``uq_work_artifact_edges_open_followup`` and
+#: ``uq_work_artifact_edges_owned_followup`` use, so those three are spelled
+#: alike. It is NOT guaranteed to be :data:`NOTE_TRIM_CHARS` written in SQL: its
+#: ``\v`` is the letter ``v`` on PostgreSQL 16 and a vertical tab on 18.6, see
+#: above. The CRUD lookups do not use it: they bind :data:`NOTE_TRIM_CHARS`.
 NOTE_TRIM_SQL = r"btrim(note, E' \t\n\r\f\v')"
 
 # ── follow-up closure and anchors (``plan_library_11_followup_anchors_and_closure``)
@@ -264,9 +322,27 @@ UNCLAIMED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NULL"
 #:
 #: Composition with qontinui-web#1459 (edge correction, ``retracted_at``): that
 #: PR is not on ``main``. Whichever of the two lands second chains on the
-#: other's revision and adds ``AND retracted_at IS NULL`` here and to the
-#: rebuilt partial index, and ``transition_followup`` refuses a retracted row.
+#: other's revision and adds ``AND retracted_at IS NULL`` here, to
+#: :data:`NON_FOLLOWUP_PAIR_SQL` and :data:`OWNED_FOLLOWUP_SQL` below, and to the
+#: rebuilt partial indexes, and ``transition_followup`` refuses a retracted row.
 OPEN_FOLLOWUP_SQL = f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution IS NULL"
+
+#: The rows whose ``(from_id, to_id, relation)`` triple is their IDENTITY: every
+#: relation but the follow-up. ``uq_work_artifact_edges_from_to_relation_non_followup``
+#: is unique over exactly these, so a ``depends_on`` or ``supersedes`` edge still
+#: cannot be recorded twice. A follow-up is NOT identified by the pair it connects
+#: - one plan may own many of a source's follow-ups - so it is outside this index
+#: (``plan_library_12_followup_identity_is_the_note``). The migration spells this
+#: as a static literal; its test pins the two equal.
+NON_FOLLOWUP_PAIR_SQL = "relation <> 'spawned_followup'"
+
+#: An OWNED follow-up: ``to_id`` names the artifact that holds the work.
+#: ``uq_work_artifact_edges_owned_followup`` keys these by
+#: ``(from_id, to_id, relation, btrim(note))`` - what it says, not just whom it
+#: connects. Its complement among follow-ups is the unowned population
+#: :data:`UNCLAIMED_FOLLOWUP_SQL` selects, which ``uq_work_artifact_edges_open_followup``
+#: keys by note alone.
+OWNED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NOT NULL"
 
 #: An anchor's / a resolution PR's repository: ``owner/name``.
 FOLLOWUP_REPO_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
@@ -278,7 +354,10 @@ FOLLOWUP_PR_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
 FOLLOWUP_COMMIT_PATTERN = "^[0-9a-f]{7,64}$"
 
 #: The whitespace set every blank-text CHECK here strips — :data:`NOTE_TRIM_SQL`'s
-#: set, for the same reason (one-argument ``btrim`` strips spaces only).
+#: set, for the same reason (one-argument ``btrim`` strips spaces only). The same
+#: literal, so also the same server-version dependence: on PostgreSQL 16 its
+#: ``\v`` is the letter ``v``, not a vertical tab (see :data:`NOTE_TRIM_CHARS`).
+#: Correcting the literal means correcting these CHECKs too.
 _TRIM_SET_SQL = r"E' \t\n\r\f\v'"
 
 #: The longest anchor path the store accepts (the API refuses longer first).
@@ -809,12 +888,22 @@ class WorkArtifactEdge(Base):
 
     __tablename__ = "work_artifact_edges"
     __table_args__ = (
+        # The pair is the identity of every relation but the follow-up, so a
+        # ``depends_on`` / ``supersedes`` / ... edge cannot be recorded twice. A
+        # follow-up is its own row, identified by its note
+        # (``uq_work_artifact_edges_owned_followup`` below), so it is outside
+        # this index: one plan may own many of a source's follow-ups. Replaces
+        # the full ``uq_work_artifact_edges_from_to_relation``
+        # (``plan_library_12_followup_identity_is_the_note``), under a NEW name
+        # because ``CREATE ... IF NOT EXISTS`` under the old one is a silent
+        # no-op while the old index exists.
         Index(
-            "uq_work_artifact_edges_from_to_relation",
+            "uq_work_artifact_edges_from_to_relation_non_followup",
             "from_id",
             "to_id",
             "relation",
             unique=True,
+            postgresql_where=text(NON_FOLLOWUP_PAIR_SQL),
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
@@ -840,13 +929,13 @@ class WorkArtifactEdge(Base):
             "id",
             postgresql_where=text(OPEN_FOLLOWUP_SQL),
         ),
-        # The duplicate guard for OPEN follow-ups. The unique index above
-        # cannot constrain them — SQL NULLs are distinct, so every null-target
-        # row is unique to it regardless of content. Two DIFFERENT follow-ups
-        # off one plan must stay legal (a plan can surface several); an
-        # identical re-post must not become a second queue entry. Keyed on the
-        # note, therefore, and PARTIAL so it can never touch the four shipped
-        # relations. Mirrors ``uq_work_artifact_edges_open_followup``.
+        # The duplicate guard for OPEN follow-ups. The pair index above does
+        # not constrain them at all — it excludes the follow-up relation, and
+        # SQL NULLs are distinct besides. Two DIFFERENT follow-ups off one plan
+        # must stay legal (a plan can surface several); an identical re-post
+        # must not become a second queue entry. Keyed on the note, therefore,
+        # and PARTIAL so it can never touch the shipped relations. Mirrors
+        # ``uq_work_artifact_edges_open_followup``.
         Index(
             "uq_work_artifact_edges_open_followup",
             "from_id",
@@ -854,6 +943,25 @@ class WorkArtifactEdge(Base):
             text(NOTE_TRIM_SQL),
             unique=True,
             postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
+        ),
+        # The same guard once the follow-up has an OWNER
+        # (``plan_library_12_followup_identity_is_the_note``): an owner may hold
+        # any number of a source's follow-ups but never the same finding twice.
+        # Keyed by OWNER, so it is the database's answer for the SAME-OWNER twin
+        # only - the claim route's check, and the race between a lookup and a
+        # write. It relates neither an open row to an owned one nor two owned
+        # rows with different owners; across those, ``(source, note)`` is the
+        # identity because the write doors' lookups say so, serialized per
+        # (source, note) by ``create_edge``'s advisory lock. Mirrors
+        # ``uq_work_artifact_edges_owned_followup``.
+        Index(
+            "uq_work_artifact_edges_owned_followup",
+            "from_id",
+            "to_id",
+            "relation",
+            text(NOTE_TRIM_SQL),
+            unique=True,
+            postgresql_where=text(OWNED_FOLLOWUP_SQL),
         ),
         # Mirrors ``ck_work_artifact_edges_open_target``. The four shipped
         # relations keep the target guarantee they had before this revision:
