@@ -29899,7 +29899,10 @@ export interface components {
          *     ``sha`` is the GIT BLOB sha — exactly what
          *     ``GET /repos/{repo}/contents/{path}`` returns, so resolving this
          *     anchor costs the watcher one call it already makes and no separate
-         *     sha lookup.
+         *     sha lookup. It is OPTIONAL, as in coord's parser: without it the
+         *     anchor asserts only that the path exists. Omitted, it is omitted from
+         *     the stored object; present, it must be non-empty (coord would read an
+         *     empty ``sha`` as absent, silently dropping what the writer typed).
          */
         BlobAnchor: {
             /** Path */
@@ -29907,7 +29910,7 @@ export interface components {
             /** Repo */
             repo: string;
             /** Sha */
-            sha: string;
+            sha?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -33284,6 +33287,34 @@ export interface components {
              * @description Number of unresolved conflicts
              */
             unresolved_conflicts: number;
+        };
+        /**
+         * ContentAnchor
+         * @description A regex over a file's contents — coord's ``content_matches`` shape.
+         *
+         *     Symbol-anchored by construction: a pattern does not rot when the file
+         *     grows above it, which is the failure a line-number citation has.
+         *     ``pattern`` is compiled by coord (Rust ``regex``, multi-line), so it is
+         *     NOT checked here beyond its byte cap — Python's ``re`` is a different
+         *     dialect and would refuse or admit the wrong patterns. ``on_ref``
+         *     follows ``region``'s defaulting, but coord holds it to no ref grammar
+         *     here (it is percent-encoded into the contents API query), so neither
+         *     does this door.
+         */
+        ContentAnchor: {
+            /** On Ref */
+            on_ref?: string | null;
+            /** Path */
+            path: string;
+            /** Pattern */
+            pattern: string;
+            /** Repo */
+            repo: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "content";
         };
         /**
          * ContextConfirm
@@ -40559,6 +40590,36 @@ export interface components {
             type: "flag";
         };
         /**
+         * FlagStateAnchor
+         * @description A catalogued flag's STATE — the half ``flag`` (existence) cannot see.
+         *
+         *     ``expect.armed`` is part of the anchor's identity: two claims asserting
+         *     opposite states of one flag are two anchors.
+         */
+        FlagStateAnchor: {
+            expect: components["schemas"]["FlagStateExpectation"];
+            /** Name */
+            name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "flag_state";
+        };
+        /**
+         * FlagStateExpectation
+         * @description The asserted state of a ``flag_state`` anchor's flag.
+         *
+         *     ``armed`` is the state of the BEHAVIOUR the flag governs, not the
+         *     truthiness of its env var: an unset ``*_DISABLED`` kill switch is
+         *     ``armed: true``. Required and a real boolean — a block that names a
+         *     flag but asserts nothing about it has no falsifier.
+         */
+        FlagStateExpectation: {
+            /** Armed */
+            armed: boolean;
+        };
+        /**
          * FleetDeferredQuestionListResponse
          * @description Envelope for the fleet-wide deferred-question read.
          *
@@ -44553,7 +44614,7 @@ export interface components {
          */
         MemoryRecordIn: {
             /** Anchors */
-            anchors?: (components["schemas"]["BlobAnchor"] | components["schemas"]["PRAnchor"] | components["schemas"]["MigrationAnchor"] | components["schemas"]["SchemaAnchor"] | components["schemas"]["FlagAnchor"])[];
+            anchors?: (components["schemas"]["BlobAnchor"] | components["schemas"]["RegionAnchor"] | components["schemas"]["PRAnchor"] | components["schemas"]["MigrationAnchor"] | components["schemas"]["SchemaAnchor"] | components["schemas"]["FlagAnchor"] | components["schemas"]["FlagStateAnchor"] | components["schemas"]["ContentAnchor"] | components["schemas"]["RunOutcomeAnchor"] | components["schemas"]["PublicationAnchor"])[];
             /** Content */
             content: string;
             /** Embedding */
@@ -49097,6 +49158,32 @@ export interface components {
             version: number;
         };
         /**
+         * PublicationAnchor
+         * @description A prompt document published at ``min_version`` or later, intact.
+         *
+         *     Resolved against coord's ``coord.prompt_document_publications``
+         *     channel: confirmed iff the LATEST publication of ``(kind, name)`` has
+         *     ``publication_version >= min_version`` and its stored digest matches
+         *     its stored body. Fleet-scoped — publications are readable by every
+         *     tenant by design.
+         */
+        PublicationAnchor: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "policy" | "response_prompt" | "continuation_rules" | "agent_playbook" | "prompt_template" | "session_briefing" | "claude_settings";
+            /** Min Version */
+            min_version: number;
+            /** Name */
+            name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "publication";
+        };
+        /**
          * PushDeviceRegister
          * @description Schema for registering a push device token.
          */
@@ -50094,6 +50181,40 @@ export interface components {
             uptime_seconds?: number | null;
         };
         /**
+         * RegionAnchor
+         * @description A line span of a file, pinned by a digest of its normalized content.
+         *
+         *     ``digest`` is sha256 over the region with trailing whitespace stripped
+         *     per line, line endings normalized to ``\n`` and the line numbers
+         *     excluded — 64 lowercase hex characters, optionally ``sha256:``-prefixed.
+         *     Line numbers are absolute and 1-based, and they drift; coord's bounded
+         *     re-anchor search finds a region that moved without changing. A
+         *     malformed digest can never equal a live one, so it would read ``moved``
+         *     forever, and is refused here instead.
+         *
+         *     ``on_ref`` is optional: omitted, the region resolves against the repo's
+         *     default-branch head; present, against exactly that ref.
+         */
+        RegionAnchor: {
+            /** Digest */
+            digest: string;
+            /** End Line */
+            end_line: number;
+            /** On Ref */
+            on_ref?: string | null;
+            /** Path */
+            path: string;
+            /** Repo */
+            repo: string;
+            /** Start Line */
+            start_line: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "region";
+        };
+        /**
          * RegisteredRunner
          * @description A runner in the fleet.
          */
@@ -50970,6 +51091,79 @@ export interface components {
              */
             responsibility: string;
         };
+        /**
+         * RunConclusionAnchor
+         * @description ``run_outcome``, CONCLUSION arm: this workflow ran on this ref and concluded X.
+         *
+         *     Resolved from coord's CI twin. ``ref`` is a full 40-hex sha or a branch
+         *     (``refs/heads/`` optional); an abbreviated sha is refused. The NEWEST
+         *     run of the workflow on the ref decides.
+         */
+        RunConclusionAnchor: {
+            /**
+             * Expect
+             * @enum {string}
+             */
+            expect: "success" | "failure" | "cancelled" | "skipped" | "neutral" | "timed_out" | "action_required" | "stale";
+            /** Ref */
+            ref: string;
+            /** Repo */
+            repo: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "run_outcome";
+            /** Workflow */
+            workflow: string;
+        };
+        /**
+         * RunMetricAnchor
+         * @description ``run_outcome``, METRIC arm: the latest run of a task scored at least X.
+         *
+         *     Resolved against the latest ``coord.run_outcomes`` row for
+         *     ``(tenant, source, subject, task)`` — the tenant is the citing record's
+         *     own, bound by coord's memory pass and never read from the JSON, so a
+         *     claim cannot name another tenant's runs. Confirmed iff ``metric`` is
+         *     ``>= at_least`` AND the run executed ``>= min_cases`` cases;
+         *     ``min_cases`` is at least 1, because a floor of 0 is confirmed by a
+         *     run that executed nothing. ``ref``, when present, must be a full sha:
+         *     an outcome row records the commit its dispatch ran, never a branch.
+         */
+        RunMetricAnchor: {
+            /** At Least */
+            at_least: number;
+            /** Metric */
+            metric: string;
+            /** Min Cases */
+            min_cases: number;
+            /** Ref */
+            ref?: string;
+            /** Source */
+            source: string;
+            /** Subject */
+            subject: string;
+            /** Task */
+            task: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "run_outcome";
+        };
+        /**
+         * RunOutcomeAnchor
+         * @description ``run_outcome`` — ONE ``type`` tag over two mutually exclusive arms.
+         *
+         *     A root model rather than two members of :data:`Anchor`'s union: the
+         *     outer union discriminates on ``type`` and ``run_outcome`` is a single
+         *     tag, so the arm is a second, key-driven choice made INSIDE it. A root
+         *     model also gives the OpenAPI discriminator mapping a named schema to
+         *     point at (``oneOf`` the two arms); a bare nested union there is an
+         *     object where the mapping requires a string, and FastAPI refuses to
+         *     build the document at all.
+         */
+        RunOutcomeAnchor: components["schemas"]["RunConclusionAnchor"] | components["schemas"]["RunMetricAnchor"];
         /**
          * RunStatus
          * @description Status of an execution run.
@@ -54817,7 +55011,7 @@ export interface components {
          */
         SupersedeRequest: {
             /** Anchors */
-            anchors?: (components["schemas"]["BlobAnchor"] | components["schemas"]["PRAnchor"] | components["schemas"]["MigrationAnchor"] | components["schemas"]["SchemaAnchor"] | components["schemas"]["FlagAnchor"])[] | null;
+            anchors?: (components["schemas"]["BlobAnchor"] | components["schemas"]["RegionAnchor"] | components["schemas"]["PRAnchor"] | components["schemas"]["MigrationAnchor"] | components["schemas"]["SchemaAnchor"] | components["schemas"]["FlagAnchor"] | components["schemas"]["FlagStateAnchor"] | components["schemas"]["ContentAnchor"] | components["schemas"]["RunOutcomeAnchor"] | components["schemas"]["PublicationAnchor"])[] | null;
             /** Content */
             content: string;
             /** Embedding */
