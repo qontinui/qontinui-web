@@ -92,10 +92,27 @@ citation already written points at the wrong scope.
   `/automation-rules`, `/prompt-documents`) take **R9 (chrome) and R3 (palette)
   only**. R1/R2/R5 are about list surfaces and do not apply to a form.
 
-The general house styling rules still apply underneath this guide, not instead of
-it: `src/styles/components.css` for the CSS classes used in JSX, `src/config/theme.ts`
-for programmatic values. This guide adds _composition_ rules those two files cannot
-express.
+The general house styling layers still apply underneath this guide, not instead of
+it:
+
+- **Components:** `src/components/ui/*` — the shadcn-style primitives (`Button`,
+  `Badge`, `Card`, `Input`, …) imported as `@/components/ui/<name>`. This is the
+  component layer to compose from; the console primitives of
+  [§3](#3-the-primitive-catalogue) are built on top of it.
+- **Legacy classes:** `src/styles/components.css` holds a small set of legacy class
+  families (`.btn-*`, `.card-*`, `.badge-*`, `.form-*`, `.input`, plus typography
+  helpers such as `.text-h1`) that about two dozen files still use. New code does
+  not extend it; reach for the matching `@/components/ui/*` primitive instead.
+- **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
+  `spacing.*`, `reactFlow.*`).
+- **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
+  compiled from `design/language.dtcg.json` by `design-kit compile` (§6.1). They are
+  not hand-edited, `tokens.css` / `tokens.ts` are inert unless imported, and
+  `theme.css` must not be imported in this app — see §6.1. The app's runtime colour
+  variables still come from `@qontinui/design-tokens/css`, imported by
+  `src/app/globals.css`.
+
+This guide adds _composition_ rules those layers cannot express.
 
 ---
 
@@ -2553,7 +2570,8 @@ document.documentElement`.
 - `frontend/docs/architecture-sidebar-navigation.md` — console navigation structure
 - `frontend/docs/STATE_MANAGEMENT.md` — where server state lives (React Query is the
   single source of truth; a health strip derives from it, never re-fetches)
-- `frontend/src/styles/components.css` — the CSS classes used in JSX
+- `frontend/src/components/ui/` — the component primitives to compose from
+- `frontend/src/styles/components.css` — legacy class families new code does not extend
 - `frontend/src/config/theme.ts` — programmatic values (`colors.*`, `spacing.*`)
 - `qontinui-claude-config/knowledge-base/qontinui-specific/shared-frontend-packages.md`
   — the four-layer frontend package split
