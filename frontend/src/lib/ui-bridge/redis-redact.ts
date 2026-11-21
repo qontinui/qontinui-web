@@ -35,15 +35,62 @@ const REDIS_SECRET_ENV_VARS = ["UPSTASH_REDIS_REST_TOKEN"] as const;
  * Extract HOST[:port] from a redis connection string for structured logging.
  * Credentials (`user:pass@`) and path/query are dropped — we never log secrets.
  * Falls back to a constant marker if the URL is unparseable.
+ *
+ * The URL is normalised the way ioredis reads it (and the way
+ * `redis-url.ts` `isParseableRedisUrl` checks it) before parsing: only a
+ * leading `redis://` / `rediss://` counts as a scheme, `//…` is
+ * protocol-relative, and anything else gets `redis://` prepended. A bare
+ * `new URL("default:pw@host:6379")` reads `default:` as the scheme and finds
+ * no host at all, so the scheme-less forms the grammar accepts would otherwise
+ * log `<unknown-host>`. A unix-socket path is reported as a constant marker.
+ *
+ * Normalising makes the parse SUCCEED on values it used to throw on, so the
+ * result is only returned when it is plainly a host, never a credential:
+ *  - a value that is only a pasted password (`AXyz…`) parses as a one-label
+ *    hostname, so a host with no `.`, no explicit port and not `localhost` /
+ *    an IP literal is withheld;
+ *  - `user:1234/pw@h` makes ioredis (and so `new URL`) read the USERNAME as
+ *    the host, so when the value carries an `@`, the host must be what follows
+ *    its last `@`;
+ *  - and the result still goes through the redactor's known-secret pass.
  */
 export function redisHostOnly(url: string): string {
+  let normalised: string;
+  if (/^rediss?:\/\//i.test(url)) normalised = url;
+  else if (url.startsWith("//")) normalised = `redis:${url}`;
+  else if (url.startsWith("/")) return "<unix-socket>";
+  else normalised = `redis://${url}`;
+  let u: URL;
   try {
-    const u = new URL(url);
-    return u.host || "<unknown-host>";
+    u = new URL(normalised);
   } catch {
     return "<unparseable-url>";
   }
+  if (!u.host) return "<unknown-host>";
+  const at = url.lastIndexOf("@");
+  if (
+    at !== -1 &&
+    !url
+      .slice(at + 1)
+      .toLowerCase()
+      .startsWith(u.host.toLowerCase())
+  ) {
+    // Fail-safe on purpose: a host the parser rewrites (`[0:0::1]` → `[::1]`,
+    // port `06379` → `6379`) is withheld too, which costs only a diagnostic.
+    return HOST_WITHHELD;
+  }
+  const hostname = u.hostname;
+  const looksLikeHost =
+    u.port !== "" ||
+    hostname.includes(".") ||
+    hostname.startsWith("[") ||
+    hostname === "localhost";
+  if (!looksLikeHost) return HOST_WITHHELD;
+  return redactRedisSecrets(u.host, [url]);
 }
+
+/** Logged in place of a "host" that could be credential material. */
+const HOST_WITHHELD = "<host-withheld>";
 
 /** Passwords shorter than this are not substituted (they would garble text). */
 const MIN_SECRET_LENGTH = 4;
