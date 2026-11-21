@@ -11,7 +11,8 @@ its two foreign-key indexes in ONE transaction::
         confidence, rationale, result, error, requested_by, created_at,
         answered_at, expires_at)
         ux_maintenance_agent_requests_verdict_dedupe
-            UNIQUE (task_id, candidate_key, question) WHERE kind = 'verdict'
+            UNIQUE (task_id, md5(candidate_key), md5(question))
+            WHERE kind = 'verdict'
         idx_maintenance_agent_requests_pending
             (target_device_id, tenant_id) WHERE state = 'pending'
         idx_maintenance_agent_requests_task_id  (task_id)
@@ -58,21 +59,24 @@ Shape
   ``coord.maintenance_tasks.tenant_id`` is nullable text. That places a
   requirement on the companion coord change: it casts the task's text tenant
   to uuid and never enqueues for a task with a NULL or non-uuid tenant.
-* ``ck_maintenance_agent_requests_text_bounds`` caps ``question`` at 2000
-  characters and ``candidate_key`` at 1024, so a row always fits the btree
-  row-size limit of the verdict-dedupe unique that keys on both.
 * ``ck_maintenance_agent_requests_state_fields`` keeps a row consistent with
   its state: ``claimed`` and ``answered`` carry ``claimed_by_device`` and
-  ``claimed_at``; ``answered`` also carries ``answered_at`` and a ``verdict``
-  or a ``result``; ``failed`` carries ``error``. ``pending`` and ``expired``
+  ``claimed_at``; ``answered`` also carries ``answered_at`` and the answer
+  field of its kind (``verdict`` for a verdict request, ``result`` for a
+  compile request); ``failed`` carries ``error``. ``pending`` and ``expired``
   rows are unconstrained.
-* ``task_id`` references ``coord.maintenance_tasks`` ON DELETE CASCADE (a
-  deleted task takes its pending requests with it); ``run_id`` references
+* ``task_id`` references ``coord.maintenance_tasks`` ON DELETE CASCADE: a
+  deleted task takes ALL its requests with it, pending ones and its answered
+  verdict history alike; ``run_id`` references
   ``coord.maintenance_runs`` ON DELETE SET NULL (the run ledger is history, a
   pruned run row must not delete an answered verdict). Both are nullable: a
   compile request has no task yet.
-* The verdict dedupe is a PARTIAL unique, so a coord enqueue naming it as its
-  ``ON CONFLICT`` arbiter must restate ``WHERE kind = 'verdict'``.
+* The verdict dedupe keys on ``md5(candidate_key)`` and ``md5(question)``
+  rather than the raw text, so a question or candidate key of any length fits
+  the btree index row (a raw-text key fails past btree's 2704-byte row limit).
+  It is PARTIAL and keyed on expressions, so a coord enqueue naming it as its
+  arbiter must spell it exactly: ``ON CONFLICT (task_id, md5(candidate_key),
+  md5(question)) WHERE kind = 'verdict'``.
 * The pending index serves the claim read: pending rows for a device, or for
   no device within a tenant. It is partial, so answered history never bloats
   it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
@@ -85,10 +89,14 @@ All four indexes are built in the SAME transaction as the table — a plain
 ``CREATE [UNIQUE] INDEX IF NOT EXISTS``, never ``CONCURRENTLY`` — on a table
 this transaction created, so the build is on an empty table and holds no lock
 any reader waits on. coord's migration classifier admits each such build as a
-new-table claim, which the merge engine discharges by proving trunk has never
-named the table (``pr_merge::migration_new_table_proof``). The bare table name
-appeared nowhere on trunk at authoring time; a sibling coord PR naming it must
-therefore land AFTER this one.
+new-table claim, which the merge engine discharges by proving this repo's trunk
+has never named the table (``pr_merge::migration_new_table_proof``); the bare
+table name appeared nowhere in this repo at authoring time.
+
+The companion coord PR that reads and writes this table must land AFTER this
+one, because alembic is the sole author of the ``coord.*`` schema and the
+table must exist before its consumer deploys (served policy
+``production-and-cost`` ``alembic-sole-authorship``).
 
 The two foreign keys take ``SHARE ROW EXCLUSIVE`` on ``coord.maintenance_tasks``
 and ``coord.maintenance_runs`` for the instant of the ``CREATE TABLE``. That
@@ -192,18 +200,15 @@ def upgrade() -> None:
                            AND candidate_key IS NOT NULL
                            AND target_device_id IS NOT NULL
                            AND repo_path IS NOT NULL)),
-            CONSTRAINT ck_maintenance_agent_requests_text_bounds
-                CHECK (char_length(question) <= 2000
-                       AND (candidate_key IS NULL
-                            OR char_length(candidate_key) <= 1024)),
             CONSTRAINT ck_maintenance_agent_requests_state_fields
                 CHECK ((state NOT IN ('claimed', 'answered')
                         OR (claimed_by_device IS NOT NULL
                             AND claimed_at IS NOT NULL))
                        AND (state <> 'answered'
                             OR (answered_at IS NOT NULL
-                                AND (verdict IS NOT NULL
-                                     OR result IS NOT NULL)))
+                                AND ((kind = 'verdict' AND verdict IS NOT NULL)
+                                     OR (kind = 'compile'
+                                         AND result IS NOT NULL))))
                        AND (state <> 'failed' OR error IS NOT NULL)),
             CONSTRAINT fk_maintenance_agent_requests_task
                 FOREIGN KEY (task_id) REFERENCES coord.maintenance_tasks (id)
@@ -225,12 +230,15 @@ def upgrade() -> None:
             'the row and runs it verbatim, and posts the answer back.'
         """
     )
-    # One verdict request per task, candidate and question. Partial, so an
-    # upsert naming it as its arbiter must restate WHERE kind = verdict.
+    # One verdict request per task, candidate and question. Keyed on md5 of the
+    # two text columns so any length fits the btree row. Partial and keyed on
+    # expressions, so an upsert arbiter must restate both the md5 expressions
+    # and WHERE kind = verdict.
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_maintenance_agent_requests_verdict_dedupe
-            ON coord.maintenance_agent_requests (task_id, candidate_key, question)
+            ON coord.maintenance_agent_requests
+                (task_id, md5(candidate_key), md5(question))
             WHERE kind = 'verdict'
         """
     )
