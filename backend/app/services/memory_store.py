@@ -29,7 +29,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -283,55 +282,142 @@ _ANCHOR_MERGE_CONFLICT_ACTION = f"""
 """
 
 
-def _scope_params(exclude_scopes: Collection[str]) -> dict[str, Any]:
-    """The bind params of an ``exclude_scopes`` predicate; empty when none.
+# The scope a device-keyed private partition is stored under.
+AGENT_SCOPE = "agent"
 
-    ``exclude_scopes`` is the endpoint's ``withheld_scopes`` answer — the
-    scopes the calling principal may neither read nor write. Every SQL form
-    of that predicate in this module (:func:`_scope_exclusion`,
-    :func:`_target_scope_exclusion`, :func:`_anchor_merge_conflict_action`)
-    binds it under this one name, as an EXPANDING parameter
-    (:func:`_expanding_scope_binds`).
+
+@dataclass(frozen=True)
+class ScopeVisibility:
+    """Which rows the calling principal may see and touch — BOTH halves.
+
+    Plan ``2026-11-04-web-memory-agent-scope-accepts-any-device-scope-ref``
+    D1. The endpoint computes one of these per request from the verified
+    principal (``memory.scope_visibility``) and hands it to every store call
+    that reads or writes a row; it replaced the bare ``exclude_scopes`` set.
+
+    * ``exclude_scopes`` — whole scopes withheld (``session``, for a device
+      JWT: plan ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-
+      caller-session`` D6).
+    * ``clamp_agent`` — the ``agent`` partition is narrowed to the caller's
+      OWN ``scope_ref``. ``agent`` is a PRIVATE per-device partition whose
+      only enforcement is an exact ``scope_ref`` match, so whoever names the
+      ref makes the access decision; a clamped principal may name only its
+      own.
+    * ``own_agent_ref`` — that own ref: the verified ``device_id`` claim,
+      lower-cased. ``None`` with ``clamp_agent`` set means the principal
+      holds NO agent partition and sees no ``agent`` row at all (including a
+      NULL-ref one). Ignored when ``clamp_agent`` is false.
+
+    Some enforcement is SQL (the helpers below) and some is Python
+    (:meth:`hides`); both read this one value, so they cannot drift apart.
+    The default instance restricts nothing — the posture of the server-side
+    jobs and of the admitted principals.
     """
-    if not exclude_scopes:
-        return {}
-    return {"exclude_scopes": sorted(exclude_scopes)}
+
+    exclude_scopes: frozenset[str] = frozenset()
+    clamp_agent: bool = False
+    own_agent_ref: str | None = None
+
+    def hides(self, scope: str | None, scope_ref: str | None) -> bool:
+        """Whether a row with this ``(scope, scope_ref)`` is hidden.
+
+        The Python twin of :func:`_visible_conditions`, used wherever a row
+        has already been read and its scope is tested in Python (the by-id
+        reads, supersede's predecessor, the dedup lookups). Case-insensitive
+        on the ref, exactly like the SQL form, because coord treats an
+        upper-cased device-id ref as the caller's own.
+        """
+        if scope in self.exclude_scopes:
+            return True
+        if scope == AGENT_SCOPE and self.clamp_agent:
+            if self.own_agent_ref is None:
+                return True
+            return scope_ref is None or scope_ref.lower() != self.own_agent_ref
+        return False
+
+
+#: The visibility of a caller nothing is withheld from.
+UNRESTRICTED = ScopeVisibility()
+
+
+def _scope_params(visibility: ScopeVisibility) -> dict[str, Any]:
+    """The bind params of a visibility predicate; empty when it restricts nothing.
+
+    Every SQL form of the predicate in this module (:func:`_scope_exclusion`,
+    :func:`_target_scope_exclusion`, :func:`_anchor_merge_conflict_action`)
+    binds under these names: ``exclude_scopes`` as an EXPANDING parameter
+    (:func:`_expanding_scope_binds`), ``own_agent_ref`` as a plain one. A
+    NULL ``own_agent_ref`` is never bound — see :func:`_visible_conditions`.
+    """
+    params: dict[str, Any] = {}
+    if visibility.exclude_scopes:
+        params["exclude_scopes"] = sorted(visibility.exclude_scopes)
+    if visibility.clamp_agent and visibility.own_agent_ref is not None:
+        params["own_agent_ref"] = visibility.own_agent_ref
+    return params
+
+
+def _visible_conditions(visibility: ScopeVisibility, alias: str) -> list[str]:
+    """The SQL conditions a row aliased ``alias`` must meet to be visible.
+
+    ANDed together by the callers; empty when the visibility restricts
+    nothing. The agent clamp has two arms, and the second is not optional:
+
+    * with an ``own_agent_ref``: ``NOT (scope = 'agent' AND lower(scope_ref)
+      IS DISTINCT FROM :own_agent_ref)`` — a NULL-ref agent row is DISTINCT
+      from any ref, so it is hidden;
+    * with none: ``scope <> 'agent'``. Binding NULL into the form above
+      instead would make ``lower(NULL) IS DISTINCT FROM NULL`` false, and
+      every NULL-ref agent row would leak.
+    """
+    conditions: list[str] = []
+    if visibility.exclude_scopes:
+        conditions.append(f"{alias}.scope NOT IN :exclude_scopes")
+    if visibility.clamp_agent:
+        if visibility.own_agent_ref is None:
+            conditions.append(f"{alias}.scope <> '{AGENT_SCOPE}'")
+        else:
+            conditions.append(
+                f"NOT ({alias}.scope = '{AGENT_SCOPE}'"
+                f" AND lower({alias}.scope_ref) IS DISTINCT FROM :own_agent_ref)"
+            )
+    return conditions
 
 
 def _scope_exclusion(
-    exclude_scopes: Collection[str], alias: str = "r"
+    visibility: ScopeVisibility, alias: str = "r"
 ) -> tuple[str, dict[str, Any]]:
-    """`` AND <alias>.scope NOT IN :exclude_scopes`` plus its params.
+    """`` AND <the visibility conditions on alias>`` plus its params.
 
-    The predicate on a row's OWN scope. Empty ``exclude_scopes`` returns an
-    empty clause and no params, so a statement built for an admitted
-    principal is byte-identical to the one it ran before the predicate
-    existed.
+    The predicate on a row's OWN scope. A visibility that restricts nothing
+    returns an empty clause and no params, so a statement built for an
+    admitted principal is byte-identical to the one it ran before the
+    predicate existed.
     """
-    params = _scope_params(exclude_scopes)
-    if not params:
+    conditions = _visible_conditions(visibility, alias)
+    if not conditions:
         return "", {}
-    return f" AND {alias}.scope NOT IN :exclude_scopes", params
+    return " AND " + " AND ".join(conditions), _scope_params(visibility)
 
 
 def _target_scope_exclusion(
-    target: str, exclude_scopes: Collection[str]
+    target: str, visibility: ScopeVisibility
 ) -> tuple[str, dict[str, Any]]:
-    """`` AND NOT EXISTS (<a withheld record t.memory_id = target>)``.
+    """`` AND NOT EXISTS (<a hidden record t.memory_id = target>)``.
 
-    The predicate on the scope of a record a row POINTS AT — a link's
+    The predicate on the visibility of a record a row POINTS AT — a link's
     target (``target="l.target_id"``) or any of a job's targets
     (``target="ANY(j.target_ids)"``). A pointer to a record that no longer
-    exists passes, exactly as it did before the predicate existed. Empty
-    ``exclude_scopes`` returns an empty clause and no params.
+    exists passes, exactly as it did before the predicate existed. A
+    visibility that restricts nothing returns an empty clause and no params.
     """
-    params = _scope_params(exclude_scopes)
-    if not params:
+    conditions = _visible_conditions(visibility, "t")
+    if not conditions:
         return "", {}
     return (
         " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
-        f" WHERE t.memory_id = {target} AND t.scope IN :exclude_scopes)",
-        params,
+        f" WHERE t.memory_id = {target} AND NOT ({' AND '.join(conditions)}))",
+        _scope_params(visibility),
     )
 
 
@@ -343,34 +429,37 @@ def _expanding_scope_binds(params: dict[str, Any]) -> list[Any]:
 
 
 class DedupAgainstWithheldScope(RuntimeError):
-    """A write's content is already held by a LIVE row the writer is withheld.
+    """A write's content is already held by a LIVE row the writer cannot see.
 
     ``uq_memory_records_tenant_content_hash_live`` is a UNIQUE index on
     ``(tenant_id, content_hash)`` over live rows, with NO scope column: a
     tenant holds at most one live row per content, whatever its scope. So
-    when that row is in a scope withheld from the writer (a ``session`` row,
-    for a device JWT), there is no write that is both honest and allowed —
-    a second live row is forbidden by the index, and deduping onto the
-    existing one would hand the writer that row's ``memory_id`` and merge
-    its anchors into a partition it may not touch. The write is refused
-    instead; the endpoint maps this to a 409 that carries no id.
+    when that row is hidden from the writer (:meth:`ScopeVisibility.hides` —
+    a ``session`` row, or another device's ``agent`` row, for a device JWT),
+    there is no write that is both honest and allowed — a second live row is
+    forbidden by the index, and deduping onto the existing one would hand
+    the writer that row's ``memory_id`` and merge its anchors into a
+    partition it may not touch. The write is refused instead; the endpoint
+    maps this to a 409 that carries no id.
     """
 
 
-def _anchor_merge_conflict_action(exclude_scopes: Collection[str]) -> str:
-    """:data:`_ANCHOR_MERGE_CONFLICT_ACTION`, never merging onto a withheld row.
+def _anchor_merge_conflict_action(visibility: ScopeVisibility) -> str:
+    """:data:`_ANCHOR_MERGE_CONFLICT_ACTION`, never merging onto a hidden row.
 
-    With ``exclude_scopes`` the ``DO UPDATE`` is additionally gated on the
-    EXISTING row's scope, so an anchor-bearing write that collides with a
-    withheld row updates nothing and returns no row — which the callers
-    already read as "conflicted" and resolve through their existing-row
-    lookup, where :class:`DedupAgainstWithheldScope` is raised.
+    With a restricting ``visibility`` the ``DO UPDATE`` is additionally
+    gated on the EXISTING row's visibility, so an anchor-bearing write that
+    collides with a hidden row updates nothing and returns no row — which
+    the callers already read as "conflicted" and resolve through their
+    existing-row lookup, where :class:`DedupAgainstWithheldScope` is raised.
     """
-    if not exclude_scopes:
+    conditions = _visible_conditions(visibility, "memory_records")
+    if not conditions:
         return _ANCHOR_MERGE_CONFLICT_ACTION
     return (
         _ANCHOR_MERGE_CONFLICT_ACTION.rstrip()
-        + "\n          AND memory_records.scope NOT IN :exclude_scopes\n"
+        + "".join(f"\n          AND {c}" for c in conditions)
+        + "\n"
     )
 
 
@@ -543,11 +632,11 @@ _BUCKET_FACET_COLUMNS = "".join(
 async def facets(
     session: AsyncSession,
     tenant_id: UUID,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> MemoryContentFacets:
     """Content facets for ``tenant_id`` over RETRIEVAL-LIVE rows only.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) removes
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) removes
     those scopes' rows at the SOURCE — from the tallies and the title sample
     alike, in the one statement — so every invariant below still holds,
     over the corpus this principal can retrieve. A withheld scope's
@@ -640,7 +729,7 @@ async def facets(
     being ABOVE 0.8. Casting the literal keeps the comparison in the
     column's own precision, where 0.8 is not above 0.8.
     """
-    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    scope_clause, scope_params = _scope_exclusion(visibility)
     agg = (
         await session.execute(
             text(
@@ -740,13 +829,13 @@ async def insert_record(
     anchors: list[dict[str, Any]] | None = None,
     user_id: UUID | None = None,
     device_id: UUID | None = None,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> tuple[UUID, bool]:
     """Insert one record, deduping on ``(tenant_id, content_hash)``
     against LIVE rows only.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer): a
-    collision with a live row in one of those scopes neither merges anchors
+    ``visibility`` (the endpoint's ``scope_visibility`` answer): a
+    collision with a live row it hides neither merges anchors
     onto it nor returns its id — :class:`DedupAgainstWithheldScope` is
     raised, and the caller's transaction rolls back.
 
@@ -790,7 +879,7 @@ async def insert_record(
     which is today's semantics exactly.
     """
     proposed_id = uuid4()
-    scope_params = _scope_params(exclude_scopes)
+    scope_params = _scope_params(visibility)
     returned = (
         await session.execute(
             text(
@@ -810,7 +899,7 @@ async def insert_record(
                      :user_id, :device_id)
                 ON CONFLICT (tenant_id, content_hash)
                     WHERE {_LIVE_DEDUP_PREDICATE}
-                    {_anchor_merge_conflict_action(exclude_scopes)}
+                    {_anchor_merge_conflict_action(visibility)}
                 RETURNING memory_id
                 """
             ).bindparams(*_expanding_scope_binds(scope_params)),
@@ -852,7 +941,7 @@ async def insert_record(
             await session.execute(
                 text(
                     f"""
-                    SELECT memory_id, scope FROM coord.memory_records
+                    SELECT memory_id, scope, scope_ref FROM coord.memory_records
                     WHERE tenant_id = :tenant_id AND content_hash = :content_hash
                       AND {_LIVE_DEDUP_PREDICATE}
                     """
@@ -863,7 +952,7 @@ async def insert_record(
         .mappings()
         .one()
     )
-    if existing["scope"] in exclude_scopes:
+    if visibility.hides(existing["scope"], existing["scope_ref"]):
         raise DedupAgainstWithheldScope(content_hash)
     return UUID(str(existing["memory_id"])), True
 
@@ -896,14 +985,14 @@ async def insert_records_batch(
     items: list[MemoryRecordInsert],
     user_id: UUID | None = None,
     device_id: UUID | None = None,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> list[tuple[UUID, bool]]:
     """Set-based multi-row insert with the same live-row dedup semantics
     as :func:`insert_record`, in ONE round-trip (plus one dedup lookup
     when any row conflicted).
 
-    ``exclude_scopes`` behaves as on :func:`insert_record`: any item that
-    collides with a live row in one of those scopes raises
+    ``visibility`` behaves as on :func:`insert_record`: any item that
+    collides with a live row it hides raises
     :class:`DedupAgainstWithheldScope` (no anchor merge onto that row, no id
     returned), and the caller's transaction rolls the whole batch back.
 
@@ -966,7 +1055,7 @@ async def insert_records_batch(
             union.extend(a for a in item.anchors if a not in union)
             unique[seen] = replace(head, anchors=union)
     proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in unique}
-    scope_params = _scope_params(exclude_scopes)
+    scope_params = _scope_params(visibility)
     stmt = text(
         f"""
         INSERT INTO coord.memory_records
@@ -997,7 +1086,7 @@ async def insert_records_batch(
                     source, anchors)
         ON CONFLICT (tenant_id, content_hash)
             WHERE {_LIVE_DEDUP_PREDICATE}
-            {_anchor_merge_conflict_action(exclude_scopes)}
+            {_anchor_merge_conflict_action(visibility)}
         RETURNING memory_id, content_hash
         """
     ).bindparams(
@@ -1058,7 +1147,7 @@ async def insert_records_batch(
     if conflicted:
         lookup = text(
             f"""
-            SELECT memory_id, content_hash, scope FROM coord.memory_records
+            SELECT memory_id, content_hash, scope, scope_ref FROM coord.memory_records
             WHERE tenant_id = :tenant_id AND content_hash IN :hashes
               AND {_LIVE_DEDUP_PREDICATE}
             """
@@ -1069,7 +1158,7 @@ async def insert_records_batch(
             )
         ).all()
         for r in found:
-            if r.scope in exclude_scopes:
+            if visibility.hides(r.scope, r.scope_ref):
                 raise DedupAgainstWithheldScope(str(r.content_hash))
         existing = {str(r.content_hash): UUID(str(r.memory_id)) for r in found}
 
@@ -1121,19 +1210,19 @@ async def find_by_hash(
     session: AsyncSession,
     tenant_id: UUID,
     content_hash: str,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> UUID | None:
     """The tenant's LIVE record id carrying ``content_hash``, if any.
 
-    Raises :class:`DedupAgainstWithheldScope` when that row is in one of
-    ``exclude_scopes``: its id is never returned to such a caller.
+    Raises :class:`DedupAgainstWithheldScope` when ``visibility`` hides
+    that row: its id is never returned to such a caller.
     """
     found = (
         (
             await session.execute(
                 text(
                     f"""
-                    SELECT memory_id, scope FROM coord.memory_records
+                    SELECT memory_id, scope, scope_ref FROM coord.memory_records
                     WHERE tenant_id = :tenant_id AND content_hash = :content_hash
                       AND {_LIVE_DEDUP_PREDICATE}
                     """
@@ -1146,7 +1235,7 @@ async def find_by_hash(
     )
     if found is None:
         return None
-    if found["scope"] in exclude_scopes:
+    if visibility.hides(found["scope"], found["scope_ref"]):
         raise DedupAgainstWithheldScope(content_hash)
     return UUID(str(found["memory_id"]))
 
@@ -1236,11 +1325,11 @@ _FACET_AGE_DAYS_SQL = (
 async def live_row_count(
     session: AsyncSession,
     tenant_id: UUID,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> int:
     """Count ``tenant_id``'s RETRIEVAL-LIVE rows — the query denominator.
 
-    ``exclude_scopes`` drops the scopes withheld from the caller, exactly as
+    ``visibility`` drops the rows hidden from the caller, exactly as
     :func:`facets` does, so this stays the number ``/stats`` publishes for
     the same principal.
 
@@ -1269,7 +1358,7 @@ async def live_row_count(
     could have matched — which is the direction that keeps "the corpus
     holds N rows and you matched none" true.
     """
-    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    scope_clause, scope_params = _scope_exclusion(visibility)
     stmt = text(
         f"""
         SELECT count(*)
@@ -1299,7 +1388,8 @@ def _validity_filters(
     Tenant binding, tombstone/validity filtering (against ``:as_of`` when
     the caller named an instant, otherwise transaction-consistently — see
     :data:`_EFFECTIVE_NOW_SQL`), the scope rule (``agent``/``session``
-    rows require the matching ``scope_ref``), and the optional
+    rows require the matching ``scope_ref`` — case-insensitively for
+    ``agent``, exactly for ``session``), and the optional
     kind/importance/recency/title-prefix filters.
 
     ``title_prefix`` lives HERE, not beside the tsquery in the FTS arm,
@@ -1316,7 +1406,13 @@ def _validity_filters(
         f"r.valid_from <= {_EFFECTIVE_NOW_SQL}",
         f"(r.valid_until IS NULL OR r.valid_until > {_EFFECTIVE_NOW_SQL})",
         "r.scope IN :scopes",
-        "(r.scope NOT IN ('agent', 'session') OR r.scope_ref = :scope_ref)",
+        # ``agent`` matches case-insensitively, exactly like the visibility
+        # predicate (``_visible_conditions``): a device resolves its query ref
+        # to its lower-cased id, and a row an admitted principal stored under
+        # an upper-cased ref is still that device's. ``session`` stays exact.
+        "(r.scope NOT IN ('agent', 'session')"
+        " OR (r.scope = 'agent' AND lower(r.scope_ref) = lower(:scope_ref))"
+        " OR (r.scope = 'session' AND r.scope_ref = :scope_ref))",
     ]
     params: dict[str, Any] = {"scopes": scopes, "scope_ref": scope_ref}
     if kinds:
@@ -1979,9 +2075,10 @@ async def get_record_by_id(
     exactly a row ``/memory/query`` and ``GET /memory/records`` can return
     on the validity axis. Read-only: ``access_count`` is not touched.
 
-    ``successor_scope`` is the scope of the row ``superseded_by`` names
-    (``None`` when there is none), so the endpoint can withhold a successor
-    id that sits in a scope the caller may not see.
+    ``successor_scope`` / ``successor_scope_ref`` are the partition of the
+    row ``superseded_by`` names (``None`` when there is none), so the
+    endpoint can withhold a successor id its caller may not see
+    (``ScopeVisibility.hides``).
     """
     row = (
         (
@@ -1994,7 +2091,8 @@ async def get_record_by_id(
                        (r.valid_until IS NOT NULL
                         AND r.valid_until <= {_EFFECTIVE_NOW_ROW_SQL})
                            AS is_expired,
-                       s.scope AS successor_scope
+                       s.scope AS successor_scope,
+                       s.scope_ref AS successor_scope_ref
                 FROM coord.memory_records r
                 LEFT JOIN coord.memory_records s
                   ON s.tenant_id = r.tenant_id AND s.memory_id = r.superseded_by
@@ -2076,17 +2174,15 @@ async def tombstone_record(
     session: AsyncSession,
     tenant_id: UUID,
     memory_id: UUID,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> bool:
     """Tombstone one row; False when it doesn't exist for this tenant.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) makes a
-    row in those scopes match nothing, in the same ``UPDATE``: it is not
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) makes a
+    row it hides match nothing, in the same ``UPDATE``: it is not
     tombstoned, and the caller sees the same False as for an unknown id.
     """
-    scope_clause, scope_params = _scope_exclusion(
-        exclude_scopes, alias="memory_records"
-    )
+    scope_clause, scope_params = _scope_exclusion(visibility, alias="memory_records")
     stmt = text(
         f"""
         UPDATE coord.memory_records
@@ -2143,11 +2239,11 @@ async def resolve_link_targets(
     session: AsyncSession,
     tenant_id: UUID,
     refs: list[str],
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> dict[str, UUID]:
     """Resolve link ``target_ref`` strings to LIVE record ids, tenant-bound.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) is applied
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) is applied
     in all three lookups, so a ref naming a withheld record — by id, by
     content hash or by title — resolves to nothing and drops like a
     nonexistent one. That keeps a link write from confirming a withheld id,
@@ -2182,9 +2278,7 @@ async def resolve_link_targets(
     """
     if not refs:
         return {}
-    scope_clause, scope_params = _scope_exclusion(
-        exclude_scopes, alias="memory_records"
-    )
+    scope_clause, scope_params = _scope_exclusion(visibility, alias="memory_records")
     unique_refs = list(dict.fromkeys(refs))
     resolved: dict[str, UUID] = {}
 
@@ -2326,18 +2420,18 @@ async def fetch_outbound_links(
     session: AsyncSession,
     tenant_id: UUID,
     source_ids: list[UUID],
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> dict[UUID, list[dict[str, Any]]]:
     """Outbound edges for ``source_ids``, grouped by source. Tenant-bound.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) drops an
-    edge whose TARGET is a record in one of those scopes, so a visible row's
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) drops an
+    edge whose TARGET is a record it hides, so a visible row's
     links cannot disclose the id of a row the caller may not see. Empty →
     every edge.
     """
     if not source_ids:
         return {}
-    target_clause, scope_params = _target_scope_exclusion("l.target_id", exclude_scopes)
+    target_clause, scope_params = _target_scope_exclusion("l.target_id", visibility)
     stmt = text(
         f"""
         SELECT l.link_id, l.source_id, l.target_id, l.relation, l.description,
@@ -2594,7 +2688,7 @@ async def graph_edges(
     root_id: UUID,
     depth: int,
     relations: list[str] | None,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> list[dict[str, Any]]:
     """Bounded outbound traversal from ``root_id`` over ``coord.memory_links``.
 
@@ -2605,14 +2699,14 @@ async def graph_edges(
     until the cap terminates the recursion, and the final DISTINCT
     collapses the repeats. Returns unique edge rows.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) stops the
-    walk stepping ONTO a record in one of those scopes, in both arms: the
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) stops the
+    walk stepping ONTO a record it hides, in both arms: the
     edge into it is not returned, and since the recursion only continues
     from a returned edge's target, nothing reached solely through it is
     either. The caller checks the root itself. Empty → the walk is
     unchanged.
     """
-    target_clause, scope_params = _target_scope_exclusion("l.target_id", exclude_scopes)
+    target_clause, scope_params = _target_scope_exclusion("l.target_id", visibility)
     walk_clause = (" AND l.relation IN :relations" if relations else "") + target_clause
     stmt = text(
         f"""
@@ -2671,12 +2765,12 @@ async def list_records_page(
     cursor: tuple[datetime, int] | None,
     limit: int,
     now: datetime | None,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> list[dict[str, Any]]:
     """One keyset page of LIVE records, newest-first in WRITE order.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) drops rows
-    in those scopes IN SQL, so the page still holds up to ``limit`` visible
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) drops the rows
+    it hides IN SQL, so the page still holds up to ``limit`` visible
     rows and the keyset cursor stays exact. Empty → no scope predicate.
 
     Liveness = not tombstoned, not superseded, validity not ended
@@ -2711,7 +2805,7 @@ async def list_records_page(
     if since is not None:
         clauses.append("GREATEST(r.updated_at, r.created_at) > :since")
         params["since"] = since
-    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    scope_clause, scope_params = _scope_exclusion(visibility)
     if scope_clause:
         clauses.append(scope_clause.removeprefix(" AND "))
         params.update(scope_params)
@@ -3348,12 +3442,12 @@ async def set_lifecycle_hold(
     memory_id: UUID,
     held: bool,
     now: datetime,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> bool:
     """Apply (``held=True``) or release (``held=False``) one record's hold.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) makes a
-    row in those scopes match NOTHING, inside the same ``UPDATE`` — so it is
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) makes a
+    row it hides match NOTHING, inside the same ``UPDATE`` — so it is
     neither written nor distinguishable from an unknown id (both return
     False → 404).
 
@@ -3397,9 +3491,7 @@ async def set_lifecycle_hold(
     Returns True when a row in ``tenant_id`` matched (False maps to 404;
     a cross-tenant ``memory_id`` is never disclosed as existing).
     """
-    scope_clause, scope_params = _scope_exclusion(
-        exclude_scopes, alias="memory_records"
-    )
+    scope_clause, scope_params = _scope_exclusion(visibility, alias="memory_records")
     updated = (
         await session.execute(
             text(
@@ -3688,6 +3780,14 @@ async def fetch_cluster_candidates(
     every principal in the tenant can read — the private partition
     published by the consolidation sweep.
 
+    **Never an ``agent`` row either** (plan
+    ``2026-11-04-web-memory-agent-scope-accepts-any-device-scope-ref`` D3),
+    for the same reason: an agent row is one device's private partition,
+    and synthesis would publish it as a tenant ``mental_model``. A cluster
+    mixing two devices' agent rows would also be claimable by no device
+    (the claim hides a job with any target the claimer cannot see), so it
+    would sit pending forever.
+
     ## Why ``episode`` only
 
     This selector used to read ``kind IN ('episode', 'observation')``, and that
@@ -3793,7 +3893,7 @@ async def fetch_cluster_candidates(
             FROM coord.memory_records
             WHERE tenant_id = :tenant_id
               AND kind = 'episode'
-              AND scope <> 'session'
+              AND scope NOT IN ('session', 'agent')
               AND is_tombstone = false
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
@@ -4092,14 +4192,39 @@ def cluster_items_from_rows(rows: list[dict[str, Any]]) -> list[ClusterItem]:
     ]
 
 
+@dataclass(frozen=True)
+class ReindexRow:
+    """One row :func:`fetch_reindex_batch` selected for (re-)embedding.
+
+    ``agent_partition`` is the job-grouping key of a private ``agent`` row —
+    ``agent:<lower(scope_ref)>`` (``agent:`` for a NULL ref) — and ``None``
+    for every other scope. The sweep groups its jobs on
+    ``(tenant_id, agent_partition)``.
+    """
+
+    tenant_id: UUID
+    memory_id: UUID
+    content: str
+    agent_partition: str | None
+
+
 async def fetch_reindex_batch(
     session: AsyncSession, *, current_tag: str, limit: int
-) -> list[tuple[UUID, UUID, str]]:
-    """One batch of ``(tenant_id, memory_id, content)`` needing (re-)embedding.
+) -> list[ReindexRow]:
+    """One batch of rows needing (re-)embedding, as :class:`ReindexRow`.
 
     ``tenant_id`` rides along because the sweep now ENQUEUES these rows
     rather than embedding them, and a job is tenant-bound (the claim is);
     the sweep itself stays tenant-agnostic, so its caller groups by tenant.
+
+    ``agent_partition`` rides along for the same reason one level down
+    (plan ``2026-11-04-web-memory-agent-scope-accepts-any-device-scope-ref``
+    D3): a device may claim a job only when it can see EVERY target, and it
+    sees only its own ``agent`` rows. So each device's agent rows go into
+    jobs of their own — a job mixing two devices' agent rows, or one
+    device's agent rows with tenant rows, would be claimable by the owner
+    alone or by nobody, and the tenant rows in it would wait on that one
+    device.
 
     Targets rows whose ``embedding_model`` differs from the deployed tag
     (including NULL) or whose ``embedding`` is NULL (the Bug-1b drift
@@ -4138,7 +4263,10 @@ async def fetch_reindex_batch(
     rows = await session.execute(
         text(
             """
-            SELECT r.tenant_id, r.memory_id, r.content
+            SELECT r.tenant_id, r.memory_id, r.content,
+                   CASE WHEN r.scope = 'agent'
+                        THEN 'agent:' || coalesce(lower(r.scope_ref), '')
+                   END AS agent_partition
             FROM coord.memory_records r
             WHERE r.is_tombstone = false
               AND r.scope <> 'session'
@@ -4160,7 +4288,13 @@ async def fetch_reindex_batch(
         {"current_tag": current_tag, "limit": limit},
     )
     return [
-        (UUID(str(r.tenant_id)), UUID(str(r.memory_id)), str(r.content)) for r in rows
+        ReindexRow(
+            tenant_id=UUID(str(r.tenant_id)),
+            memory_id=UUID(str(r.memory_id)),
+            content=str(r.content),
+            agent_partition=r.agent_partition,
+        )
+        for r in rows
     ]
 
 
@@ -4568,15 +4702,16 @@ async def claim_jobs(
     limit: int,
     kinds: list[str],
     worker: str,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> list[ClaimedMemoryJob]:
     """Atomically claim up to ``limit`` pending jobs of ``kinds``.
 
-    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) skips any
-    job with a target in one of those scopes — its ``target_ids`` and
+    ``visibility`` (the endpoint's ``scope_visibility`` answer) skips any
+    job with a target it hides — its ``target_ids`` and
     ``input_texts`` would hand the claimer a withheld row's id and content.
     Defense in depth: the enqueuers (:func:`fetch_cluster_candidates`,
-    :func:`fetch_reindex_batch`) already never target a ``session`` row.
+    :func:`fetch_reindex_batch`) already never target a ``session`` row,
+    and never put two devices' ``agent`` rows in one job.
 
     ``FOR UPDATE SKIP LOCKED`` is mandatory: two runners polling the same
     tenant concurrently must split the queue, never double-claim a row.
@@ -4588,7 +4723,7 @@ async def claim_jobs(
     if not kinds:
         return []
     target_clause, scope_params = _target_scope_exclusion(
-        "ANY(j.target_ids)", exclude_scopes
+        "ANY(j.target_ids)", visibility
     )
     rows = await session.execute(
         text(
@@ -4635,12 +4770,12 @@ async def get_job_kind(
     session: AsyncSession,
     tenant_id: UUID,
     job_id: UUID,
-    exclude_scopes: Collection[str] = (),
+    visibility: ScopeVisibility = UNRESTRICTED,
 ) -> str | None:
     """This job's ``kind``, or ``None`` when it is not in this tenant.
 
-    Also ``None`` when any of the job's targets is in ``exclude_scopes`` (the
-    endpoint's ``withheld_scopes`` answer), so a principal withheld a row
+    Also ``None`` when ``visibility`` (the endpoint's ``scope_visibility``
+    answer) hides any of the job's targets, so a principal that cannot see a row
     can neither post a result onto it nor tell its job from an unknown one.
 
     An unlocked peek, used only to pick the parser for a posted result:
@@ -4650,7 +4785,7 @@ async def get_job_kind(
     posted in the wrong shape.
     """
     target_clause, scope_params = _target_scope_exclusion(
-        "ANY(j.target_ids)", exclude_scopes
+        "ANY(j.target_ids)", visibility
     )
     kind = (
         await session.execute(
