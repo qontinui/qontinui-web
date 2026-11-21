@@ -784,7 +784,6 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // (backend/tests/test_active_tenant_prefix_drift_guard.py): each resolves
     // the caller's tenant, so a missing entry serves the home project.
     "https://api.test/api/v1/admin/prompt-injections?limit=50",
-    "https://api.test/api/v1/design-policies",
     "https://api.test/api/v1/digital-twin/subspaces",
     "https://api.test/api/v1/memory/records",
     // The image store: rows and object keys are the active tenant's.

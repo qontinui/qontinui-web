@@ -106,10 +106,6 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // to coord itself. Mounted at `/admin`, so the agent-sessions entry above
   // does not cover it.
   "/api/v1/admin/prompt-injections",
-  // Design policies — web-DB rows keyed on the tenant `get_tenant_id` /
-  // `require_coord_tenant_admin` return, which coord's `/me` resolves to the
-  // selected project for a member.
-  "/api/v1/design-policies",
   // Digital twin — coord proxies behind `get_tenant_id` /
   // `capture_caller_bearer`; coord membership-checks the override.
   "/api/v1/digital-twin/",

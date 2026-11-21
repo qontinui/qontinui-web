@@ -80,9 +80,6 @@ vi.mock("./work-units/usePlanDifficulty", () => ({
     refresh: () => Promise.resolve(),
   }),
 }));
-vi.mock("./policies/_components/DesignPoliciesSection", () => ({
-  DesignPoliciesSection: () => null,
-}));
 
 import CoordGatesPage from "./gates/page";
 import CoordFindingsPage from "./findings/page";

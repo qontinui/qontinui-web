@@ -55,7 +55,11 @@ from pathlib import Path
 #: ``endpoints/historical.py`` left with the file when every
 #: ``/api/v1/testing/historical`` route was deleted. A deletion, not a
 #: conversion.
-BASELINE = 789
+#: 786 (from 789), plan 2026-11-19-design-surface-defects-and-stale-records-
+#: found-by-the-design-loop-study Phase 2: the three bare refusals of the
+#: design-policy routes left with them when the design_policies table and its
+#: routes were dropped. A deletion, not a conversion.
+BASELINE = 786
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
