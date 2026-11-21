@@ -169,7 +169,11 @@ describe("CoordTopicsPage", () => {
   });
 
   it("says coord's not-ready topic tables as unknown everywhere, never as none", async () => {
-    fetchTopics.mockResolvedValue({ ...list([]), tables_ready: false });
+    fetchTopics.mockResolvedValue({
+      ...list([]),
+      tables_ready: false,
+      unassigned_subprojects: 0,
+    });
     render(<CoordTopicsPage />);
     expect(
       await screen.findByTestId("coord-topics-tables-not-ready")
@@ -180,6 +184,10 @@ describe("CoordTopicsPage", () => {
     expect(within(tabCount("all")).getByText("–")).toBeInTheDocument();
     expect(screen.getByTestId("coord-topics-empty")).toHaveTextContent(
       "unknown: coord's topic tables are not ready"
+    );
+    const unassigned = screen.getByTestId("coord-topics-unassigned");
+    expect(unassigned).toHaveTextContent(
+      "Subprojects that belong to no topic: – — coord's topic tables are not ready (unknown, not zero)."
     );
   });
 
