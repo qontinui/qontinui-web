@@ -4426,10 +4426,11 @@ export interface paths {
         put?: never;
         /**
          * Complete Capture Job
-         * @description The worker's end of a running job: ``done``, or ``failed`` with the
-         *     reason the Jobs view shows. A non-operator completes only the job it
-         *     claimed (``worker`` = the job's ``claimed_by``); an operator's completion
-         *     is written to the correction log, as the PATCH transition writes it.
+         * @description The one door that ends a running job: ``done``, or ``failed`` with the
+         *     reason the Jobs view shows. A non-operator completes only a job its own
+         *     credential claimed (the caller's principal identity equals the job's
+         *     ``claimed_by_actor``); an operator may complete any running job, and that
+         *     completion is written to the correction log.
          */
         post: operations["api_v1_design_refs_capture_jobs_job_id_complete_post"];
         delete?: never;
@@ -31115,10 +31116,10 @@ export interface components {
         };
         /**
          * CaptureJobComplete
-         * @description The worker's end of a job. ``failed`` carries the reason.
+         * @description The end of a running job. ``failed`` carries the reason.
          *
-         *     ``worker`` is the name the worker claimed the job under: a non-operator
-         *     caller completes only a job it claimed. An operator may omit it.
+         *     Who may send it is decided by the caller's credential, not by the body: the
+         *     credential that claimed the job, or an operator.
          */
         CaptureJobComplete: {
             /** Error */
@@ -31128,8 +31129,6 @@ export interface components {
              * @enum {string}
              */
             outcome: "done" | "failed";
-            /** Worker */
-            worker?: string | null;
         };
         /** CaptureJobCreate */
         CaptureJobCreate: {
@@ -31238,7 +31237,8 @@ export interface components {
         };
         /**
          * CaptureJobUpdate
-         * @description A worker's or operator's move of one job.
+         * @description A worker's or operator's move of one job. Ending a running job is
+         *     ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this.
          */
         CaptureJobUpdate: {
             /** Derived Tier */

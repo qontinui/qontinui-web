@@ -79,6 +79,7 @@ export function JobsView({
     id,
     label,
     count: counts ? counts[id] : null,
+    countIsFloor: truncated,
     attention:
       (id === "failed" || id === "proposed") && (counts?.[id] ?? 0) > 0,
   });
@@ -91,7 +92,12 @@ export function JobsView({
     >
       <FilterTabs<Filter>
         tabs={[
-          { id: "all", label: "All", count: jobs ? jobs.length : null },
+          {
+            id: "all",
+            label: "All",
+            count: jobs ? jobs.length : null,
+            countIsFloor: truncated,
+          },
           tab("proposed", "To approve"),
           tab("queued", "Queued"),
           tab("running", "Capturing"),

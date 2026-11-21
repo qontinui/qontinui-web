@@ -1630,10 +1630,11 @@ _JOB_TRANSITIONS: Final[dict[tuple[str, str], str]] = {
     ("proposed", "cancelled"): "operator",
     ("queued", "cancelled"): "operator",
     ("running", "cancelled"): "operator",
-    ("failed", "queued"): "operator",
-    ("running", "done"): "any",
-    ("running", "failed"): "any",
 }
+# Not here, on purpose: a running job is ended only through
+# ``POST /capture-jobs/{id}/complete`` (claimant or operator), and a failed job
+# is re-queued only through ``POST /capture-jobs/{id}/retry`` (operator). PATCH
+# offering either move would be a second door around those rules.
 
 
 def _check_job_source(principal: MemoryPrincipal, source: str) -> None:
@@ -1711,14 +1712,20 @@ async def create_capture_jobs_batch(
     rest; every other URL gets its own job. Blank and repeated entries of the
     list are skipped."""
     _check_job_source(principal, body.source)
-    created: list[CaptureJob] = []
-    refused: list[CaptureJobBatchRefused] = []
-    seen: set[str] = set()
+    urls: list[str] = []
     for raw in body.urls:
         url = raw.strip()
-        if not url or url in seen:
-            continue
-        seen.add(url)
+        if url and url not in urls:
+            urls.append(url)
+    if not urls:
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "no_urls",
+            "Every entry of the list is blank; send at least one URL.",
+        )
+    created: list[CaptureJob] = []
+    refused: list[CaptureJobBatchRefused] = []
+    for url in urls:
         try:
             created.append(await _new_job(db, principal, url=url, body=body))
         except HTTPException as exc:
@@ -1793,6 +1800,7 @@ async def claim_capture_job(
         return None
     job.state = "running"
     job.claimed_by = body.worker
+    job.claimed_by_actor = _actor_id(principal)
     job.claimed_until = now + timedelta(seconds=body.lease_seconds)
     await db.commit()
     await db.refresh(job)
@@ -1901,6 +1909,7 @@ async def retry_capture_job(
     job.derived_tier = None
     job.tier_reason = None
     job.claimed_by = None
+    job.claimed_by_actor = None
     job.claimed_until = None
     await db.commit()
     await db.refresh(job)
@@ -1911,10 +1920,11 @@ async def retry_capture_job(
 async def complete_capture_job(
     job_id: UUID, body: CaptureJobComplete, principal: Principal, db: Db
 ) -> CaptureJobOut:
-    """The worker's end of a running job: ``done``, or ``failed`` with the
-    reason the Jobs view shows. A non-operator completes only the job it
-    claimed (``worker`` = the job's ``claimed_by``); an operator's completion
-    is written to the correction log, as the PATCH transition writes it."""
+    """The one door that ends a running job: ``done``, or ``failed`` with the
+    reason the Jobs view shows. A non-operator completes only a job its own
+    credential claimed (the caller's principal identity equals the job's
+    ``claimed_by_actor``); an operator may complete any running job, and that
+    completion is written to the correction log."""
     job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
@@ -1936,11 +1946,11 @@ async def complete_capture_job(
                 body.outcome,
             )
         )
-    elif body.worker is None or body.worker != job.claimed_by:
+    elif job.claimed_by_actor is None or job.claimed_by_actor != _actor_id(principal):
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "not_the_claimant",
-            "Only the worker that claimed this capture job completes it.",
+            "Only the credential that claimed this capture job completes it.",
             claimed_by=job.claimed_by,
         )
     job.state = body.outcome

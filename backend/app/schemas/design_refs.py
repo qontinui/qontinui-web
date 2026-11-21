@@ -482,6 +482,11 @@ class CorrectionOut(_Out):
 # ═════════════════════════════ capture jobs ═════════════════════════════
 
 
+#: The most URLs one batch takes. The frontend's ``CAPTURE_JOB_BATCH_MAX_URLS``
+#: (``frontend/src/lib/api/design-refs.ts``) is pinned to this through the
+#: OpenAPI snapshot's ``maxItems``.
+CAPTURE_JOB_BATCH_MAX_URLS = 200
+
 #: One capture-job URL, bounded the same at the single and the batch door.
 JobUrl = Annotated[str, Field(min_length=1, max_length=4000)]
 
@@ -506,7 +511,8 @@ class CaptureJobCreate(_Strict):
 
 
 class CaptureJobUpdate(_Strict):
-    """A worker's or operator's move of one job."""
+    """A worker's or operator's move of one job. Ending a running job is
+    ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this."""
 
     state: JobState | None = None
     derived_tier: Tier | None = None
@@ -518,7 +524,7 @@ class CaptureJobUpdate(_Strict):
 class CaptureJobBatchCreate(_Strict):
     """One job per URL: a pasted list. Scope, notes and flags are shared."""
 
-    urls: list[JobUrl] = Field(min_length=1, max_length=200)
+    urls: list[JobUrl] = Field(min_length=1, max_length=CAPTURE_JOB_BATCH_MAX_URLS)
     scope_kind: JobScope = "page"
     crawl_depth: int | None = Field(default=None, ge=1, le=10)
     flow_goal: str | None = None
@@ -548,15 +554,14 @@ class CaptureJobRetry(_Strict):
 
 
 class CaptureJobComplete(_Strict):
-    """The worker's end of a job. ``failed`` carries the reason.
+    """The end of a running job. ``failed`` carries the reason.
 
-    ``worker`` is the name the worker claimed the job under: a non-operator
-    caller completes only a job it claimed. An operator may omit it.
+    Who may send it is decided by the caller's credential, not by the body: the
+    credential that claimed the job, or an operator.
     """
 
     outcome: Literal["done", "failed"]
     error: str | None = None
-    worker: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def _reason(self) -> CaptureJobComplete:

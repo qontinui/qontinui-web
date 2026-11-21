@@ -10,7 +10,10 @@
  * - the Jobs tab shows a failed job's worker error and a Retry that re-queues
  *   it; an unreadable queue is "unknown", never "no jobs";
  * - a read that filled the page says its counts are a floor, and neither the
- *   strip nor the empty state claims "nothing is waiting".
+ *   strip nor the empty state claims "nothing is waiting"; its tab counts
+ *   read `N+`;
+ * - a list over the batch limit cannot be submitted, and the count line says
+ *   why.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +30,8 @@ import type { CaptureJob } from "@/lib/api/design-refs";
 const api = vi.hoisted(() => ({
   // A small page so a full read is cheap to build.
   CAPTURE_JOBS_PAGE_LIMIT: 2,
+  // A small batch limit, so going over it is cheap to type.
+  CAPTURE_JOB_BATCH_MAX_URLS: 2,
   fetchCaptureJobs: vi.fn(),
   createCaptureJobs: vi.fn(),
   retryCaptureJob: vi.fn(),
@@ -76,6 +81,23 @@ describe("/design-refs", () => {
     api.moveCaptureJob.mockReset();
   });
   afterEach(() => vi.clearAllMocks());
+
+  it("refuses to submit a list over the batch limit and says why", async () => {
+    await renderPage();
+    fireEvent.change(screen.getByTestId("design-refs-add-urls"), {
+      target: {
+        value: "https://a.example\nhttps://b.example\nhttps://c.example",
+      },
+    });
+    expect(screen.getByTestId("design-refs-add-count")).toHaveTextContent(
+      "over the limit of 2 per submission; remove 1 to submit"
+    );
+    expect(screen.getByTestId("design-refs-add-submit")).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("design-refs-add-submit"));
+    });
+    expect(api.createCaptureJobs).not.toHaveBeenCalled();
+  });
 
   it("creates one job per distinct URL and shows the tier as not derived yet", async () => {
     const created = [
@@ -206,12 +228,19 @@ describe("/design-refs", () => {
     const health = screen.getByTestId("design-refs-health");
     expect(health).not.toHaveTextContent("Nothing is waiting to be captured");
     expect(health).toHaveTextContent("among the newest 2 jobs");
+    expect(screen.getByTestId("design-refs-view-jobs")).toHaveTextContent("0+");
     await act(async () => {
       fireEvent.click(screen.getByTestId("design-refs-view-jobs"));
     });
     expect(
       await screen.findByTestId("design-refs-jobs-truncated")
     ).toHaveTextContent("counts are a floor");
+    expect(screen.getByTestId("design-refs-jobs-filter-all")).toHaveTextContent(
+      "2+"
+    );
+    expect(
+      screen.getByTestId("design-refs-jobs-filter-done")
+    ).toHaveTextContent("2+");
     await act(async () => {
       fireEvent.click(screen.getByTestId("design-refs-jobs-filter-queued"));
     });
@@ -230,5 +259,8 @@ describe("/design-refs", () => {
       fireEvent.click(screen.getByTestId("design-refs-view-jobs"));
     });
     expect(screen.queryByTestId("design-refs-jobs-truncated")).toBeNull();
+    expect(
+      screen.getByTestId("design-refs-jobs-filter-all")
+    ).not.toHaveTextContent("+");
   });
 });
