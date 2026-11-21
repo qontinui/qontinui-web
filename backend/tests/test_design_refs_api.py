@@ -998,12 +998,11 @@ class TestStyleNeverRanksUnknownTokens:
         # Its only capture states its tokens are unknown: never ranked, counted.
         await self._capture(a, pages["unknown_only"]["id"], UNKNOWN_TOKENS, 2)
         # Two measurements then the sentinel: ranked on the NEWER measurement
-        # (distance 0.5), never on the older one (1.0) nor the sentinel (1.0).
+        # (distance 0.5), never on the sentinel (1.0) and never on the older
+        # measurement even though it is the CLOSER one (0.0): the selection
+        # is newest measured, not best measured.
         await self._capture(
-            a,
-            pages["newer_measured"]["id"],
-            {"color": {"primary": "#999"}, "radius": {"r": 9}},
-            3,
+            a, pages["newer_measured"]["id"], {"color": {"primary": "#111"}}, 3
         )
         await self._capture(
             a,
@@ -1049,6 +1048,10 @@ class TestStyleNeverRanksUnknownTokens:
         for name, tokens in (
             ("measured", {"color": {"primary": "#111"}}),
             ("unknown", UNKNOWN_TOKENS),
+            # The column default and a set with no token leaves: neither can
+            # be compared, so both are counted too.
+            ("empty", {}),
+            ("leafless", {"color": {}}),
         ):
             components[name] = await a.ok(
                 "POST",
@@ -1081,7 +1084,8 @@ class TestStyleNeverRanksUnknownTokens:
             got = {r["target_id"]: r["token_distance"] for r in response["results"]}
             assert got == {components["measured"]["id"]: 0.0}, response
             assert all(r["level"] == "component" for r in response["results"])
-            assert response["unmeasured_candidates"] == 1, response
+            # unknown, empty, leafless.
+            assert response["unmeasured_candidates"] == 3, response
 
     async def test_a_stated_unknown_query_is_refused(self, a: Harness) -> None:
         site = await reference_site(a)
