@@ -883,13 +883,16 @@ def test_a_verdict_is_claimed_only_by_its_target_device(requests_db: Engine) -> 
     )
     with requests_db.begin() as conn:
         own = _state_row(conn, "claimed", claimed_by_device=_DEVICE, claimed_at=True)
-        # A compile request has no target and may be claimed by any device.
+        # A compile request may be claimed by any device. Its target is set
+        # here (to a device other than the claimant) so that this row is
+        # accepted only through the CHECK's ``kind <> 'verdict'`` arm: with a
+        # NULL target the equality arm would pass it regardless.
         _state_row(
             conn,
             "claimed",
             kind="compile",
             task_id=None,
-            target_device_id=None,
+            target_device_id=_DEVICE,
             candidate_key=None,
             repo_path=None,
             claimed_by_device=other_device,
