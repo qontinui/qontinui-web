@@ -4436,6 +4436,11 @@ export interface paths {
          *     complete any running job, and that completion is written to the correction
          *     log. The deliberate exception is an operator's PATCH ``running ->
          *     cancelled``, which stops a running job without finishing it.
+         *
+         *     A job already ``running`` when ``design_refs_jobs_01`` deployed has
+         *     ``claimed_by_actor`` NULL, so no worker can complete it here: it finishes
+         *     when its lease lapses and a worker re-claims it (which records the
+         *     claimant), or an operator completes it.
          */
         post: operations["api_v1_design_refs_capture_jobs_job_id_complete_post"];
         delete?: never;

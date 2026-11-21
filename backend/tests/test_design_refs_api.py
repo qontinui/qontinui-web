@@ -147,6 +147,9 @@ class Harness:
         self.storage = storage
         self.actor = "device"
         self.device_id = uuid4()
+        #: The user id a principal OTHER than an operator or a device carries
+        #: (a ``coord_service`` that names a user); ``None`` by default.
+        self.service_user_id: UUID | None = None
         self.app = FastAPI()
         self.app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
         self.app.add_exception_handler(
@@ -169,7 +172,9 @@ class Harness:
                 # does the same; a device principal with ``user_id=None`` is a
                 # shape production never produces and hid the claimant bug.
                 user_id=(
-                    self.user.id if self.actor in ("operator", "device") else None
+                    self.user.id
+                    if self.actor in ("operator", "device")
+                    else self.service_user_id
                 ),
             )
 
@@ -1859,11 +1864,19 @@ class TestJobsAndCuration:
             "/corrections",
             params={"target_kind": "capture_job", "target_id": job["id"]},
         )
-        assert {c["field"] for c in log} == {"error", "lease_seconds"}
+        assert {c["field"] for c in log} == {"error", "claimed_until"}
         by_field = {c["field"]: c for c in log}
         assert by_field["error"]["from_value"] is None
         assert by_field["error"]["to_value"] == "operator note"
-        assert by_field["lease_seconds"]["to_value"] == 120
+        # The lease is logged as the end it sets: timestamp -> timestamp, the
+        # new one equal to what the PATCH stored.
+        lease = by_field["claimed_until"]
+        before = datetime.fromisoformat(lease["from_value"])
+        after = datetime.fromisoformat(lease["to_value"])
+        # The claim leased 600 s; the operator set 120 s, so the end moved.
+        assert after != before
+        stored = await a.ok("GET", f"/capture-jobs/{job['id']}")
+        assert datetime.fromisoformat(stored["claimed_until"]) == after
 
     async def test_a_device_credential_without_a_device_id_cannot_claim(
         self, a: Harness
@@ -1948,6 +1961,80 @@ class TestJobsAndCuration:
             "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
         )
         assert done["state"] == "done"
+
+    async def test_a_service_credential_with_only_a_user_id_cannot_claim(
+        self, a: Harness
+    ) -> None:
+        await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://su.example", "source": "cli"}
+        )
+        # Only an operator is keyed by its user id; a service naming a user is
+        # not, since it would be every credential of that user.
+        a.as_("coord_service")
+        a.device_id = None  # type: ignore[assignment]
+        a.service_user_id = a.user.id
+        resp = await a.post("/capture-jobs/claim", {"worker": "svc"})
+        assert resp.status_code == 403 and resp.json()["error"] == "unattributable"
+
+    async def test_a_done_outcome_carries_no_error(self, a: Harness) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://de.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        resp = await a.post(
+            f"/capture-jobs/{job['id']}/complete",
+            {"outcome": "done", "error": "but it failed"},
+        )
+        assert resp.status_code == 422
+
+    async def test_every_job_write_reads_its_row_for_update(self, a: Harness) -> None:
+        """PATCH, /complete and /retry each issue a SELECT ... FOR UPDATE on
+        capture_job before writing, so the claimant check and the write see one
+        row version. Captured from the SQL each handler actually sends."""
+        from sqlalchemy import event
+
+        statements: list[str] = []
+
+        def _capture(
+            conn: Any, cursor: Any, statement: str, *args: Any, **kw: Any
+        ) -> None:
+            statements.append(" ".join(statement.split()))
+
+        def locked() -> bool:
+            return any(
+                "capture_job" in sql
+                and sql.upper().startswith("SELECT")
+                and sql.upper().endswith("FOR UPDATE")
+                for sql in statements
+            )
+
+        engine = a.db.bind.sync_engine
+        event.listen(engine, "before_cursor_execute", _capture)
+        try:
+            job = await a.ok(
+                "POST",
+                "/capture-jobs",
+                json={"url": "https://fu.example", "source": "cli"},
+            )
+            await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+            statements.clear()
+            await a.ok(
+                "PATCH", f"/capture-jobs/{job['id']}", json={"lease_seconds": 60}
+            )
+            assert locked(), ("PATCH", statements)
+            statements.clear()
+            await a.ok(
+                "POST",
+                f"/capture-jobs/{job['id']}/complete",
+                json={"outcome": "failed", "error": "x"},
+            )
+            assert locked(), ("/complete", statements)
+            a.as_("operator")
+            statements.clear()
+            await a.ok("POST", f"/capture-jobs/{job['id']}/retry", json={})
+            assert locked(), ("/retry", statements)
+        finally:
+            event.remove(engine, "before_cursor_execute", _capture)
 
     async def test_a_coord_service_claimant_completes_its_own_job(
         self, a: Harness
@@ -2450,16 +2537,3 @@ class TestReviewFixes:
         assert (await a.ok("POST", f"/principles/{principle}/approve"))[
             "status"
         ] == "approved"
-
-
-async def test_the_job_read_behind_a_write_is_for_update() -> None:
-    """PATCH, /complete and /retry read the job FOR UPDATE, so the claimant
-    check and the write see one row version (a concurrent re-claim waits)."""
-    from sqlalchemy.dialects import postgresql
-
-    sql = str(
-        endpoints._locked_job_query(uuid4(), uuid4()).compile(
-            dialect=postgresql.dialect()
-        )
-    )
-    assert sql.rstrip().endswith("FOR UPDATE")

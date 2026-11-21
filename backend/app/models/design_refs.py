@@ -687,7 +687,8 @@ class CaptureJob(Base):
     )
     #: The worker's self-chosen label, shown in the Jobs view.
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: The claimant's principal identity (``_actor_id``): ``/complete`` is
+    #: The claimant's identity (``_claimant_key``: the device id, or an
+    #: operator's user id): ``/complete`` and a running job's field writes are
     #: authorized against it, never against the self-chosen label.
     claimed_by_actor: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: The worker's lease: a ``running`` job whose lease has passed is
