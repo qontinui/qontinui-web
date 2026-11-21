@@ -31,6 +31,13 @@ async function readJson<T>(res: Response): Promise<T> {
 /** The page size the Jobs view reads: the newest this many jobs. */
 export const CAPTURE_JOBS_PAGE_LIMIT = 200;
 
+/**
+ * The most URLs one batch submission takes. The backend's
+ * `CaptureJobBatchCreate.urls` `maxItems`; `design-refs.test.ts` pins the two
+ * equal against the committed OpenAPI snapshot.
+ */
+export const CAPTURE_JOB_BATCH_MAX_URLS = 200;
+
 /** The newest jobs first; `state` narrows to one lifecycle state. */
 export async function fetchCaptureJobs(
   options: { state?: CaptureJobState; limit?: number } = {}

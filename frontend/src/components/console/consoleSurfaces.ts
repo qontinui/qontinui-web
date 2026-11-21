@@ -137,6 +137,11 @@ import {
   DECISION_POLICY_AUTHOR_GLYPH_KINDS,
   DECISION_POLICY_CLASS,
 } from "@/app/(app)/admin/coord/decision-policies/decisionPolicyStatus";
+// The design reference library's capture queue (/design-refs).
+import {
+  JOB_ATTENTION_BY_KIND,
+  JOB_PALETTE,
+} from "@/app/(app)/design-refs/_lib/jobStatus";
 // Wave 4 surfaces — Family C, the tables.
 import {
   BEHIND_FRESHEN_ATTENTION_BY_KIND,
@@ -1006,6 +1011,18 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: TOPIC_HEADLINE_CLASS,
       authorGlyphKinds: TOPIC_AUTHOR_GLYPH_HEADLINES as ReadonlySet<string>,
+    },
+  },
+  // --- design reference library -----------------------------------------------
+  {
+    // A proposal waits for the operator's approval and a failure for their
+    // retry: both red. A running capture waits on the worker.
+    surface: "capture jobs (/design-refs)",
+    module: "app/(app)/design-refs/_lib/jobStatus.ts",
+    attentionByKind: JOB_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: JOB_PALETTE.badgeClass,
+      authorGlyphKinds: JOB_PALETTE.authorGlyphKinds as ReadonlySet<string>,
     },
   },
 ];

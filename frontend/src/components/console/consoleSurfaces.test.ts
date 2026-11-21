@@ -63,6 +63,9 @@ const CONSOLE_SCOPE = [
   // its own surface rather than under `admin/coord/`; without this entry its
   // registered rows read as phantoms.
   "components/sessions/",
+  // The design reference library (`/design-refs`) is a product route composed
+  // from components/console; its capture-job table is registered too.
+  "app/(app)/design-refs/",
 ];
 
 /** Every non-test `.ts`/`.tsx` module under a directory. */

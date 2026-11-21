@@ -685,7 +685,11 @@ class CaptureJob(Base):
         default="launched",
         server_default=text("'launched'"),
     )
+    #: The worker's self-chosen label, shown in the Jobs view.
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The claimant's principal identity (``_actor_id``): ``/complete`` is
+    #: authorized against it, never against the self-chosen label.
+    claimed_by_actor: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: The worker's lease: a ``running`` job whose lease has passed is
     #: claimable again, so a dead worker's job is re-queued.
     claimed_until: Mapped[datetime | None] = mapped_column(

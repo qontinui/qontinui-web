@@ -31,6 +31,7 @@ import {
   DESIGN_REFS_POLL_MS,
   countByState,
   deriveJobsHealth,
+  isTruncatedPage,
 } from "./_lib/jobStatus";
 
 type View = "add" | "jobs";
@@ -80,7 +81,12 @@ export default function DesignRefsPage() {
         <FilterTabs<View>
           tabs={[
             { id: "add", label: "Add" },
-            { id: "jobs", label: "Jobs", count: open },
+            {
+              id: "jobs",
+              label: "Jobs",
+              count: open,
+              countIsFloor: isTruncatedPage(jobs, CAPTURE_JOBS_PAGE_LIMIT),
+            },
           ]}
           active={view}
           onChange={setView}

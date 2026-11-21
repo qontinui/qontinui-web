@@ -1548,10 +1548,18 @@ class TestJobsAndCuration:
         claimed = await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
         assert claimed["id"] == queued["id"] and claimed["state"] == "running"
         assert await a.ok("POST", "/capture-jobs/claim", json={"worker": "w2"}) is None
+        # PATCH is not a door to end a running job: /complete is the only one.
+        for outcome in ("done", "failed"):
+            resp = await a.http.patch(
+                f"{API}/capture-jobs/{queued['id']}", json={"state": outcome}
+            )
+            assert resp.status_code == 409
+            assert resp.json()["error"] == "invalid_transition"
+        await a.ok(
+            "PATCH", f"/capture-jobs/{queued['id']}", json={"derived_tier": "private"}
+        )
         done = await a.ok(
-            "PATCH",
-            f"/capture-jobs/{queued['id']}",
-            json={"state": "done", "derived_tier": "private"},
+            "POST", f"/capture-jobs/{queued['id']}/complete", json={"outcome": "done"}
         )
         assert done["state"] == "done"
         assert (
@@ -1624,6 +1632,9 @@ class TestJobsAndCuration:
                     "/capture-jobs/batch", {"urls": ["https://ok.example", bad]}
                 )
             ).status_code == 422
+        # A list whose every entry is blank creates nothing and says so.
+        resp = await a.post("/capture-jobs/batch", {"urls": ["  ", "\t "]})
+        assert resp.status_code == 422 and resp.json()["error"] == "no_urls"
         queued = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
         assert "https://ok.example" not in {j["url"] for j in queued}
         a.as_("device")
@@ -1653,49 +1664,48 @@ class TestJobsAndCuration:
         assert prechecked["tier_reason"] == {"robots": "unreachable"}
         # A failed outcome must carry its reason: the body is refused (422).
         assert (
-            await a.post(
-                f"/capture-jobs/{job['id']}/complete",
-                {"outcome": "failed", "worker": "w1"},
-            )
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "failed"})
         ).status_code == 422
-        # Only the worker that claimed the job completes it: another worker, or
-        # one that names no worker, is refused (409) and the job stays running.
-        for other in ({"worker": "w2"}, {}):
-            resp = await a.post(
-                f"/capture-jobs/{job['id']}/complete", {"outcome": "done", **other}
-            )
-            assert (
-                resp.status_code == 409 and resp.json()["error"] == "not_the_claimant"
-            )
-        failed = await a.ok(
-            "POST",
-            f"/capture-jobs/{job['id']}/complete",
-            json={
-                "outcome": "failed",
-                "error": "blocked by a bot challenge",
-                "worker": "w1",
-            },
-        )
-        assert failed["state"] == "failed" and failed["claimed_until"] is None
-        # A job that is not running (here: failed) is not completable.
+        # The body names no claimant: who completes is the caller's credential.
         assert (
             await a.post(
                 f"/capture-jobs/{job['id']}/complete",
                 {"outcome": "done", "worker": "w1"},
             )
+        ).status_code == 422
+        # Another device credential of the same tenant cannot end the job, even
+        # though it could name the worker label; the job stays running.
+        claimant = a.device_id
+        a.device_id = uuid4()
+        resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        assert resp.status_code == 409 and resp.json()["error"] == "not_the_claimant"
+        a.device_id = claimant
+        failed = await a.ok(
+            "POST",
+            f"/capture-jobs/{job['id']}/complete",
+            json={"outcome": "failed", "error": "blocked by a bot challenge"},
+        )
+        assert failed["state"] == "failed" and failed["claimed_until"] is None
+        # A job that is not running (here: failed) is not completable.
+        assert (
+            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
         ).status_code == 409
         # Nor is a queued job that no worker has claimed.
         queued = await a.ok(
             "POST", "/capture-jobs", json={"url": "https://q.example", "source": "cli"}
         )
         resp = await a.post(
-            f"/capture-jobs/{queued['id']}/complete",
-            {"outcome": "done", "worker": "w1"},
+            f"/capture-jobs/{queued['id']}/complete", {"outcome": "done"}
         )
         assert resp.status_code == 409 and resp.json()["error"] == "invalid_transition"
         # Retry is the operator's: a device is refused.
         assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 403
         a.as_("operator")
+        # PATCH is not a retry door, even for an operator: /retry is the only one.
+        resp = await a.http.patch(
+            f"{API}/capture-jobs/{job['id']}", json={"state": "queued"}
+        )
+        assert resp.status_code == 409 and resp.json()["error"] == "invalid_transition"
         retried = await a.ok(
             "POST", f"/capture-jobs/{job['id']}/retry", json={"browser": "attached"}
         )
@@ -1719,8 +1729,8 @@ class TestJobsAndCuration:
         )
         await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
         a.as_("operator")
-        # An operator may end a job a worker holds; the move is logged as the
-        # PATCH transition logs an operator's state change.
+        # An operator may end a job another credential claimed; the move is
+        # written to the correction log.
         done = await a.ok(
             "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
         )

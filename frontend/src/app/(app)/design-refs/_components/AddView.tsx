@@ -23,7 +23,10 @@ import type {
   CaptureJobBatchResult,
   CaptureJobBrowser,
 } from "@/lib/api/design-refs";
-import { createCaptureJobs } from "@/lib/api/design-refs";
+import {
+  CAPTURE_JOB_BATCH_MAX_URLS,
+  createCaptureJobs,
+} from "@/lib/api/design-refs";
 import {
   JOB_PALETTE,
   jobStatus,
@@ -54,7 +57,8 @@ export function AddView({ jobs, onSubmitted }: AddViewProps) {
 
   const urls = useMemo(() => parseUrlList(text), [text]);
   const needsGoal = scope === "flow" && goal.trim() === "";
-  const canSubmit = urls.length > 0 && !needsGoal && !busy;
+  const tooMany = urls.length > CAPTURE_JOB_BATCH_MAX_URLS;
+  const canSubmit = urls.length > 0 && !tooMany && !needsGoal && !busy;
 
   // The submitted jobs, kept current from the page's poll so the derived tier
   // appears here without a second request.
@@ -120,7 +124,9 @@ export function AddView({ jobs, onSubmitted }: AddViewProps) {
           >
             {urls.length === 0
               ? "One URL per line."
-              : `${urls.length} URL${urls.length === 1 ? "" : "s"} — one job each.`}
+              : tooMany
+                ? `${urls.length} URLs — over the limit of ${CAPTURE_JOB_BATCH_MAX_URLS} per submission; remove ${urls.length - CAPTURE_JOB_BATCH_MAX_URLS} to submit.`
+                : `${urls.length} URL${urls.length === 1 ? "" : "s"} — one job each.`}
           </span>
         </label>
 

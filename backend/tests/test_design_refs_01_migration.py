@@ -373,5 +373,81 @@ def test_jobs_01_adds_the_browser_column_to_existing_rows() -> None:
                 text("UPDATE design_refs.capture_job SET browser = 'attached'")
             )
 
+        assert _columns(engine)["capture_job"]["claimed_by_actor"] is True
+
         run_alembic(cwd, url, "downgrade", _JOBS_PARENT_REVISION_ID)
         assert "browser" not in _columns(engine)["capture_job"]
+        assert "claimed_by_actor" not in _columns(engine)["capture_job"]
+
+
+def _browser_constraints(engine: Engine) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_constraint "
+                    "WHERE conname = 'ck_capture_job_browser'"
+                )
+            ).scalar_one()
+        )
+
+
+def test_jobs_01_adopts_pieces_that_already_match() -> None:
+    """Every step of ``design_refs_jobs_01`` is guarded: a database that
+    already carries the columns (with the declared type and nullability) and
+    the CHECK upgrades cleanly, leaving one constraint, not a duplicate."""
+    cwd = backend_root()
+    with ephemeral_database(admin_database_url(), "design_refs_jobs_01_adopt") as (
+        engine,
+        url,
+    ):
+        run_alembic(cwd, url, "upgrade", _JOBS_PARENT_REVISION_ID)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE design_refs.capture_job "
+                    "ADD COLUMN browser varchar(16) NOT NULL DEFAULT 'launched', "
+                    "ADD COLUMN claimed_by_actor text, "
+                    "ADD CONSTRAINT ck_capture_job_browser "
+                    "CHECK (browser IN ('launched', 'attached'))"
+                )
+            )
+
+        run_alembic(cwd, url, "upgrade", _JOBS_REVISION_ID)
+        assert _browser_constraints(engine) == 1
+
+
+def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
+    """A pre-existing column with another type or nullability is not adopted
+    silently: the upgrade fails, naming the column, and leaves the database at
+    the parent revision (the DDL is transactional)."""
+    cwd = backend_root()
+    with ephemeral_database(admin_database_url(), "design_refs_jobs_01_refuse") as (
+        engine,
+        url,
+    ):
+        run_alembic(cwd, url, "upgrade", _JOBS_PARENT_REVISION_ID)
+        for existing in (
+            "browser text NOT NULL DEFAULT 'launched'",  # wrong type
+            "browser varchar(16)",  # nullable
+            "browser varchar(64) NOT NULL DEFAULT 'launched'",  # wrong length
+            "claimed_by_actor varchar(16)",  # wrong type
+        ):
+            column = existing.split()[0]
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"ALTER TABLE design_refs.capture_job ADD COLUMN {existing}")
+                )
+
+            result = run_alembic(
+                cwd, url, "upgrade", _JOBS_REVISION_ID, expect_success=False
+            )
+            assert f"design_refs.capture_job.{column} exists" in (
+                result.stdout + result.stderr
+            ), existing
+            assert _browser_constraints(engine) == 0
+
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"ALTER TABLE design_refs.capture_job DROP COLUMN {column}")
+                )
