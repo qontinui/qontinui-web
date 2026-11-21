@@ -11175,11 +11175,16 @@
             },
             "title": "Results",
             "type": "array"
+          },
+          "unmeasured_candidates": {
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "fidelity_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "CompareResponse",
         "type": "object"
@@ -57704,11 +57709,16 @@
             ],
             "title": "Style Arm",
             "type": "string"
+          },
+          "unmeasured_candidates": {
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "style_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "SimilarByStyleResponse",
         "type": "object"

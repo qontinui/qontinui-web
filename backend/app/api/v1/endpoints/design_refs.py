@@ -1993,18 +1993,52 @@ async def get_example(
 async def _page_tokens(
     db: AsyncSession, tenant_id: UUID, page_ids: list[UUID]
 ) -> dict[UUID, dict[str, Any]]:
-    """The newest capture's tokens per page."""
-    tokens: dict[UUID, dict[str, Any]] = {}
+    """The newest MEASURED capture's tokens per page.
+
+    A newer capture that carries the stated-unknown sentinel does not hide an
+    older measurement: an older measurement is still a measurement. A page
+    with no measured capture at all maps to its newest stated-unknown set, so
+    the caller can count it as unmeasured rather than drop it silently."""
+    measured: dict[UUID, dict[str, Any]] = {}
+    unknown: dict[UUID, dict[str, Any]] = {}
     if not page_ids:
-        return tokens
+        return measured
     rows = await db.execute(
         select(Capture.page_id, Capture.tokens)
         .where(Capture.tenant_id == tenant_id, Capture.page_id.in_(page_ids))
-        .order_by(Capture.created_at)
+        .order_by(Capture.created_at, Capture.id)
     )
     for page_id, value in rows.all():
-        tokens[page_id] = value or {}
-    return tokens
+        value = value or {}
+        if svc.is_measured_token_set(value):
+            measured[page_id] = value
+        elif svc.is_stated_unknown_token_set(value):
+            unknown[page_id] = value
+    return {**unknown, **measured}
+
+
+def _require_measured_query(tokens: dict[str, Any]) -> None:
+    """A query token set that states it is unknown (or is empty) has no
+    distance to anything: refuse it rather than rank every candidate 1.0."""
+    if not svc.is_measured_token_set(tokens):
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "tokens_not_measured",
+            "The query tokens are not a measurement: they are empty or carry the "
+            'stated-unknown sentinel {"state": "unknown"}. Comparing an unknown '
+            "token set against anything is not a distance; capture measured "
+            "tokens first.",
+        )
+
+
+def _split_measured(
+    candidates: list[tuple[Any, Site, dict[str, Any]]],
+) -> tuple[list[tuple[Any, Site, dict[str, Any]]], int]:
+    """The candidates that can be ranked, and how many were left out because
+    their token set is the stated-unknown sentinel."""
+    measured = [c for c in candidates if svc.is_measured_token_set(c[2])]
+    unmeasured = sum(1 for c in candidates if svc.is_stated_unknown_token_set(c[2]))
+    return measured, unmeasured
 
 
 async def _style_candidates(
@@ -2035,17 +2069,20 @@ async def similar_by_style(
     The UI Bridge ``/design/style-fingerprint`` primitive does not exist yet,
     so the arm is ``tokens_only`` and the response says so."""
     include = gate_include_holdout(principal, body.include_holdout)
-    candidates = await _style_candidates(db, principal, body.level, body.role, include)
+    _require_measured_query(body.tokens)
+    candidates, unmeasured = _split_measured(
+        await _style_candidates(db, principal, body.level, body.role, include)
+    )
     ranked = sorted(
         (
             (svc.token_distance(body.tokens, tokens), row, site)
             for row, site, tokens in candidates
-            if tokens
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
     return SimilarByStyleResponse(
         style_arm="tokens_only",
+        unmeasured_candidates=unmeasured,
         results=[
             StyleHit(
                 level=body.level,
@@ -2076,19 +2113,20 @@ async def compare_to_references(
     level: Literal["page", "component"] = (
         "component" if body.snapshot.role is not None else "page"
     )
-    candidates = await _style_candidates(
-        db, principal, level, body.snapshot.role, include
+    _require_measured_query(body.snapshot.tokens)
+    candidates, unmeasured = _split_measured(
+        await _style_candidates(db, principal, level, body.snapshot.role, include)
     )
     ranked = sorted(
         (
             (svc.token_distance(body.snapshot.tokens, tokens), row, site, tokens)
             for row, site, tokens in candidates
-            if tokens
         ),
         key=lambda item: (item[0], -item[1].created_at.timestamp()),
     )[: body.limit]
     return CompareResponse(
         fidelity_arm="tokens_only",
+        unmeasured_candidates=unmeasured,
         results=[
             CompareHit(
                 target_id=row.id,
