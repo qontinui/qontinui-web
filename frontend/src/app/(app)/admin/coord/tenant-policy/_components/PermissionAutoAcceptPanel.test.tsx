@@ -752,4 +752,105 @@ describe("PermissionAutoAcceptPanel", () => {
       view?.unmount();
     }
   });
+
+  it("outside act, a bridge action invoked right after a non-discrete commit sees the role the panel shows", async () => {
+    // The action-handler half of the same gap: a handler closing over
+    // canEdit must see the committed render's value, not the previous one.
+    type Registry = NonNullable<
+      ReturnType<typeof useUIBridgeOptional>
+    >["registry"];
+    let registry: Registry | null = null;
+    function GrabRegistry() {
+      const bridge = useUIBridgeOptional();
+      useLayoutEffect(() => {
+        registry = bridge?.registry ?? null;
+      }, [bridge]);
+      return null;
+    }
+    let passiveRanForReadOnly = false;
+    function PassiveCanary({ canEdit }: { canEdit: boolean | null }) {
+      useEffect(() => {
+        if (canEdit === false) passiveRanForReadOnly = true;
+      }, [canEdit]);
+      return null;
+    }
+    const setLevel = vi.fn<HookState["setLevel"]>().mockResolvedValue(true);
+    const setters = new Set<(p: FleetPolicyView) => void>();
+    usePolicyMock.mockImplementation(() => {
+      const [policy, set] = useState<FleetPolicyView>(ON_TENANT);
+      setters.add(set);
+      return hookState(policy, { setLevel });
+    });
+    function CanaryFromPolicy() {
+      return (
+        <PassiveCanary canEdit={usePolicyMock().policy?.can_edit ?? null} />
+      );
+    }
+    const invoke = () =>
+      (registry as Registry | null)
+        ?.getComponent("coord-tenant-permission-auto-accept")
+        ?.actions?.find((a) => a.id === "set-permission-auto-accept")
+        ?.handler({ level: "off" });
+    const readOnlyShown = () =>
+      screen.queryByTestId("permission-auto-accept-readonly") !== null;
+
+    let view: RenderResult | undefined;
+    const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnv = g.IS_REACT_ACT_ENVIRONMENT;
+    try {
+      view = render(
+        <UIBridgeProvider>
+          <GrabRegistry />
+          <PermissionAutoAcceptPanel />
+          <CanaryFromPolicy />
+        </UIBridgeProvider>
+      );
+      expect(readOnlyShown()).toBe(false);
+      const panel = screen.getByTestId("permission-auto-accept-policy");
+      g.IS_REACT_ACT_ENVIRONMENT = false;
+      let observer: MutationObserver | null = null;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const sampled = new Promise<{
+        outcome: Promise<unknown> | undefined;
+        passiveRan: boolean;
+      }>((resolve, reject) => {
+        observer = new MutationObserver(() => {
+          try {
+            if (!readOnlyShown()) return;
+            observer?.disconnect();
+            clearTimeout(timer);
+            const outcome = invoke();
+            outcome?.catch(() => undefined);
+            resolve({ outcome, passiveRan: passiveRanForReadOnly });
+          } catch (e) {
+            observer?.disconnect();
+            clearTimeout(timer);
+            reject(e);
+          }
+        });
+        observer.observe(panel, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+        });
+        timer = setTimeout(() => {
+          observer?.disconnect();
+          reject(new Error("the read-only notice never showed"));
+        }, 3000);
+      });
+      // A role read-back resolving: a non-discrete (default-lane) update.
+      void Promise.resolve().then(() =>
+        setters.forEach((set) => set({ ...ON_TENANT, can_edit: false }))
+      );
+      const { outcome, passiveRan } = await sampled;
+      expect(passiveRan).toBe(false);
+      await expect(outcome).rejects.toThrow(/read-only/);
+      expect(setLevel).not.toHaveBeenCalled();
+    } finally {
+      g.IS_REACT_ACT_ENVIRONMENT = previousActEnv;
+      usePolicyMock.mockReset();
+      view?.unmount();
+    }
+  });
 });
