@@ -99,10 +99,22 @@ it:
   `Badge`, `Card`, `Input`, …) imported as `@/components/ui/<name>`. This is the
   component layer to compose from; the console primitives of
   [§3](#3-the-primitive-catalogue) are built on top of it.
-- **Legacy classes:** `src/styles/components.css` holds a small set of legacy class
-  families (`.btn-*`, `.card-*`, `.badge-*`, `.form-*`, `.input`, plus typography
-  helpers such as `.text-h1`) that about two dozen files still use. New code does
-  not extend it; reach for the matching `@/components/ui/*` primitive instead.
+- **Class families:** `src/styles/components.css` holds about 130 classes in two
+  groups.
+  - _Families with a primitive equivalent_ — `.btn-*`, `.card*`, `.badge*`,
+    `.input`, `.select`, `.checkbox`, `.radio` and `.form-*` — are legacy. New
+    code uses `Button`, `Card`, `Badge`, `Input`, `Select`, `Checkbox`,
+    `RadioGroup` and `Label` from `@/components/ui/*`, and does not extend these
+    families. To count the files that still use a prefixed one, run
+    `git grep -lE 'className="[^"]*(btn|card|badge|form)-' -- frontend/src | wc -l`
+    from the repo root.
+  - _The remaining families have no primitive yet_ and stay in `components.css`:
+    `.panel*`, `.explorer-panel*`, `.item-card*`, `.tab-*` (the accent and
+    container classes; `ui/tabs` carries no accent variants), `.log-*`,
+    `.status-*`, `.empty-state*`, `.scroll-area*` / `.scroll-container` (plain
+    overflow utilities, unlike the Radix `ui/scroll-area`), `.scrollbar-*`,
+    `.z-*`, `.elevation-*`, `.glow-*`, `.grid-*`, `.animate-*`,
+    `.layout-full-height` and the `.text-*` typography scale.
 - **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
   `spacing.*`, `reactFlow.*`).
 - **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
@@ -2571,7 +2583,7 @@ document.documentElement`.
 - `frontend/docs/STATE_MANAGEMENT.md` — where server state lives (React Query is the
   single source of truth; a health strip derives from it, never re-fetches)
 - `frontend/src/components/ui/` — the component primitives to compose from
-- `frontend/src/styles/components.css` — legacy class families new code does not extend
+- `frontend/src/styles/components.css` — class families: legacy where a `ui/` primitive exists, current where none does
 - `frontend/src/config/theme.ts` — programmatic values (`colors.*`, `spacing.*`)
 - `qontinui-claude-config/knowledge-base/qontinui-specific/shared-frontend-packages.md`
   — the four-layer frontend package split
