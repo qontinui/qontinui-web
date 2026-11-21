@@ -92,10 +92,49 @@ citation already written points at the wrong scope.
   `/automation-rules`, `/prompt-documents`) take **R9 (chrome) and R3 (palette)
   only**. R1/R2/R5 are about list surfaces and do not apply to a form.
 
-The general house styling rules still apply underneath this guide, not instead of
-it: `src/styles/components.css` for the CSS classes used in JSX, `src/config/theme.ts`
-for programmatic values. This guide adds _composition_ rules those two files cannot
-express.
+The general house styling layers still apply underneath this guide, not instead of
+it:
+
+- **Components:** `src/components/ui/*` — the shadcn-style primitives (`Button`,
+  `Badge`, `Card`, `Input`, …) imported as `@/components/ui/<name>`. This is the
+  component layer to compose from; the console primitives of
+  [§3](#3-the-primitive-catalogue) are built on top of it.
+- **Class families:** `src/styles/components.css` holds about 130 classes in two
+  groups.
+  - _Families with a primitive equivalent_ are legacy: `.btn-*` (`Button`),
+    `.card*` (`Card`), `.badge*` (`Badge`), `.input` (`Input`), `.select`
+    (`Select`), `.checkbox` (`Checkbox`), `.radio` (`RadioGroup`) and
+    `.form-label` (`Label`), all from `@/components/ui/*`. New code uses the
+    primitive and does not extend these families.
+  - _The remaining families have no primitive yet_ and stay in `components.css`:
+    `.form-group` and `.form-error`, `.panel*`, `.explorer-panel*`,
+    `.item-card*`, `.tab-*` (the accent and container classes; `ui/tabs` carries
+    no accent variants), `.log-*`, `.status-*`, `.empty-state*`, `.scroll-area*`
+    / `.scroll-container` (plain overflow utilities, unlike the Radix
+    `ui/scroll-area`), `.scrollbar-*`, `.z-*`, `.elevation-*`, `.glow-*`,
+    `.pulse-glow`, `.gradient-text`, `.grid-*`, `.animate-*`,
+    `.layout-full-height`, the `.text-*` typography scale, and
+    `.text-ellipsis-start`, which is a truncation utility rather than
+    typography.
+  - To see how much code still uses the legacy families, run from the repo root
+    `git grep -lE 'className="([^"]* )?(btn-|card-|badge-|form-label)' -- 'frontend/src/*.tsx' 'frontend/src/*.ts' | wc -l`.
+    It returned **18** on 2026-11-21. It counts `.ts`/`.tsx` files under
+    `frontend/src` containing a literal `className="..."` string with a class
+    that starts with `btn-`, `card-` or `badge-`, or is `form-label`. Every
+    class it matched that day is defined in `components.css`, and none of the
+    18 files restyles one locally, so all 18 are legacy-family uses. It misses
+    the bare `.card`, `.badge`, `.input`, `.select`, `.checkbox` and `.radio`
+    classes, and any class passed through `className={...}` or `cn()`.
+- **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
+  `spacing.*`, `reactFlow.*`).
+- **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
+  compiled from `design/language.dtcg.json` by `design-kit compile` (§6.1). They are
+  not hand-edited, `tokens.css` / `tokens.ts` are inert unless imported, and
+  `theme.css` must not be imported in this app — see §6.1. The app's runtime colour
+  variables still come from `@qontinui/design-tokens/css`, imported by
+  `src/app/globals.css`.
+
+This guide adds _composition_ rules those layers cannot express.
 
 ---
 
@@ -2553,7 +2592,8 @@ document.documentElement`.
 - `frontend/docs/architecture-sidebar-navigation.md` — console navigation structure
 - `frontend/docs/STATE_MANAGEMENT.md` — where server state lives (React Query is the
   single source of truth; a health strip derives from it, never re-fetches)
-- `frontend/src/styles/components.css` — the CSS classes used in JSX
+- `frontend/src/components/ui/` — the component primitives to compose from
+- `frontend/src/styles/components.css` — class families: legacy where a `ui/` primitive exists, current where none does
 - `frontend/src/config/theme.ts` — programmatic values (`colors.*`, `spacing.*`)
 - `qontinui-claude-config/knowledge-base/qontinui-specific/shared-frontend-packages.md`
   — the four-layer frontend package split

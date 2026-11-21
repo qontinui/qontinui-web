@@ -5,7 +5,6 @@ import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial
 import { usePageSendGuard } from "./usePageWriteGuardContext";
 import {
   isPolicyWriteLevel,
-  POLICY_WRITE_DEFAULT_LEVEL,
   POLICY_WRITE_DOMAIN,
   POLICY_WRITE_FAIL_CLOSED_LEVEL,
   type PolicyWriteLevel,
@@ -36,25 +35,27 @@ import {
  *
  * Three things are specific to THIS domain:
  *
- * **`"none"` does not mean `off`.** Coord answers `effective_level: "off"` for
- * both "nobody ever wrote a row" and "an operator turned it off", and for
- * `policy_write` those resolve in OPPOSITE directions: no row means the code
- * default `tightening_only` — today's shipped behaviour — while a disabled row
- * genuinely means off. Rendering the raw `effective_level` would tell every
- * tenant that has never touched the dial that agent policy writes are disabled,
- * when they are working normally. [`displayLevel`] applies the same rule coord's
- * `resolve_policy_write_level` applies, and `isDefaulted` says which case it is
- * so the UI can label it rather than imply an operator chose it.
+ * **`"none"` does not mean `off`.** With no row, coord serves the domain's
+ * typed default (`tightening_only` — today's shipped behaviour) as
+ * `effective_level`, while `resolved_scope` stays `"none"`
+ * (qontinui-coord#4239; before it, a no-row answer read `"off"` and this
+ * console kept its own copy of the default to paper over it). A disabled row
+ * genuinely means off.
+ * [`displayLevel`] therefore reads the served level directly, and `isDefaulted`
+ * says which case it is so the UI can label it rather than imply an operator
+ * chose it.
  *
- * **An unparseable level is `off`, not the default.** `level` is free text on
+ * **An unparseable row is `off`, not the default.** `level` is free text on
  * every layer, so a hand-written or typo'd row reaches this hook verbatim: the
  * generic fleet-policy GET is domain-agnostic and does not parse it, while
  * coord's enforcement path runs `parse_fail_closed` and refuses everything.
  * [`displayLevel`] therefore resolves an unrecognized string the way the fleet
- * resolves it, and [`unrecognizedLevel`] carries the raw value so the UI can say
- * which row to fix rather than presenting `off` as an operator's choice. Note
- * this is the OPPOSITE direction from the no-row case above, and deliberately
- * so — "nobody ruled" and "somebody ruled unreadably" are different facts.
+ * resolves it, and [`unrecognizedLevel`] carries the raw value so the UI can
+ * say which row to fix rather than presenting `off` as an operator's choice.
+ * A NO-ROW answer whose level is unparseable is vocabulary skew — coord
+ * serving a default this console does not know — and coord enforces that
+ * default, so it is UNKNOWN here ([`defaultUnreadable`], `displayLevel`
+ * `null`), never `off` and never a guessed default.
  *
  * **The dial is subtractive.** It never grants authority — the per-document
  * `agent_write_tier` control decides whether an agent may write a document at all,
@@ -95,34 +96,33 @@ export function usePolicyWritePolicy() {
     [writeAllowed, sendLevel]
   );
 
-  // `"none"` means no row matched, which for this domain is the code default —
-  // NOT off. Mirrors coord's `resolve_policy_write_level`; if the two ever
-  // disagree the console misreports the fleet.
+  // `"none"` means no row matched, so `effective_level` is coord's served typed
+  // default (qontinui-coord#4239) — NOT an operator's choice.
   const isDefaulted = policy?.resolved_scope === "none";
 
-  // A row exists but its level is not in the vocabulary. Coord's GET is
-  // domain-agnostic and hands back the raw stored string, while coord's
-  // ENFORCEMENT path runs `parse_fail_closed` and resolves the same string to
-  // `off`. Rendering the raw value here would show a typo'd row as the level in
-  // force while agents are in fact being refused outright — so this resolves it
-  // the way the fleet does, and keeps the raw string to say WHY.
-  //
-  // Note this is deliberately NOT the no-row default: no row means nobody
-  // expressed an opinion (today's shipped behaviour applies); an unparseable
-  // row means somebody expressed one coord cannot read, which is the more
-  // alarming fact and resolves in the opposite direction.
+  // The served level is not in the vocabulary. Coord's GET is domain-agnostic
+  // and hands back the raw stored string, while coord's ENFORCEMENT path runs
+  // `parse_fail_closed` and resolves the same string to `off`. Rendering the
+  // raw value here would show a typo'd row as the level in force while agents
+  // are in fact being refused outright — so this keeps the raw string to say
+  // WHY. It is named on a no-row answer too (see `defaultUnreadable`).
   const unrecognizedLevel: string | null =
-    policy && !isDefaulted && !isPolicyWriteLevel(policy.effective_level)
+    policy && !isPolicyWriteLevel(policy.effective_level)
       ? policy.effective_level
       : null;
+
+  // A no-row answer this console cannot read is UNKNOWN, not `off`: with no
+  // row coord enforces its own typed default, which is a real level that only
+  // this console's vocabulary is missing (vocabulary skew). Claiming `off`
+  // there would be false; a ROW coord cannot parse genuinely fails closed.
+  const defaultUnreadable = isDefaulted && unrecognizedLevel !== null;
 
   // Calls the guard again rather than branching on `unrecognizedLevel`, so the
   // narrowing is TypeScript's own and no cast is needed to reach a
   // `PolicyWriteLevel`. A cast here would be checked by nothing.
-  const displayLevel: PolicyWriteLevel | null = !policy
-    ? null
-    : isDefaulted
-      ? POLICY_WRITE_DEFAULT_LEVEL
+  const displayLevel: PolicyWriteLevel | null =
+    !policy || defaultUnreadable
+      ? null
       : isPolicyWriteLevel(policy.effective_level)
         ? policy.effective_level
         : POLICY_WRITE_FAIL_CLOSED_LEVEL;
@@ -132,19 +132,26 @@ export function usePolicyWritePolicy() {
     /** Write `level` at the tenant band — unless the page's guard says no. */
     setLevel,
     /**
-     * The level actually in force: the no-row case resolved to the code
-     * default, an unparseable row resolved fail-closed the way coord enforces
-     * it. Always one of the four known levels, or `null` before the first read.
+     * The level actually in force: coord's served level (its typed default
+     * when no row exists), or fail-closed `off` for a row whose level coord
+     * cannot parse, the way coord enforces it. One of the four known levels,
+     * or `null` before the first read or when `defaultUnreadable`.
      * Prefer this over `policy.effective_level` in the UI.
      */
     displayLevel,
-    /** True when no row exists, so `displayLevel` is coord's built-in default. */
+    /** True when no row exists, so the served level is coord's default. */
     isDefaulted,
     /**
-     * The raw level string coord returned when it is NOT one this console
-     * knows. `displayLevel` has already been resolved fail-closed; this exists
-     * so the UI can name the row that needs fixing instead of silently
-     * presenting `off` as though an operator chose it.
+     * True when no row exists AND coord's served default is a level this
+     * console does not recognise. What coord enforces is then UNKNOWN here,
+     * so `displayLevel` is `null` — distinct from "not read yet", which has
+     * no `policy`.
+     */
+    defaultUnreadable,
+    /**
+     * The raw level string coord served when it is NOT one this console
+     * knows — the value, and the row that holds it if there is one — so the
+     * UI can name it rather than present `off` as an operator's choice.
      */
     unrecognizedLevel,
   };
