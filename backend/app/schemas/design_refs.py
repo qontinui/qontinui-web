@@ -620,6 +620,10 @@ class StyleHit(BaseModel):
 class SimilarByStyleResponse(BaseModel):
     style_arm: Literal["fingerprint", "tokens_only"]
     results: list[StyleHit]
+    #: Candidates left out of ``results`` because their token set states it is
+    #: unknown (no measured capture): how much of the corpus could not be
+    #: compared. A count, not a verdict.
+    unmeasured_candidates: int
 
 
 class CompareSnapshot(_Strict):
@@ -654,6 +658,9 @@ class CompareHit(BaseModel):
 class CompareResponse(BaseModel):
     fidelity_arm: Literal["design_compare", "tokens_only"]
     results: list[CompareHit]
+    #: Candidates left out of ``results`` because their token set states it is
+    #: unknown (no measured capture). A count, not a verdict.
+    unmeasured_candidates: int
 
 
 # ═════════════════════════════ judgements ═════════════════════════════
