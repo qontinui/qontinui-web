@@ -392,6 +392,15 @@ def _browser_constraints(engine: Engine) -> int:
         )
 
 
+def _alembic_version(engine: Engine) -> str:
+    """The revision the database stands at: a refused upgrade must leave it at
+    the parent (the failed migration's DDL rolled back with its transaction)."""
+    with engine.connect() as conn:
+        return str(
+            conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        )
+
+
 def _expected_twins(engine: Engine) -> int:
     """The adopt guard's scratch constraint must never outlive the guard."""
     with engine.connect() as conn:
@@ -462,7 +471,7 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
             assert f"design_refs.capture_job.{column} exists" in (
                 result.stdout + result.stderr
             ), existing
-            assert _browser_constraints(engine) == 0
+            assert _alembic_version(engine) == _JOBS_PARENT_REVISION_ID, existing
 
             with engine.begin() as conn:
                 conn.execute(
@@ -487,16 +496,7 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
         assert "constraint ck_capture_job_browser exists as" in (
             result.stdout + result.stderr
         )
-        with engine.connect() as conn:
-            assert (
-                conn.execute(
-                    text(
-                        "SELECT count(*) FROM pg_constraint "
-                        "WHERE conname = 'ck_capture_job_browser_expected'"
-                    )
-                ).scalar_one()
-                == 0
-            )
+        assert _alembic_version(engine) == _JOBS_PARENT_REVISION_ID
 
         # The same body, but NOT VALID: refused, and the message says so.
         with engine.begin() as conn:
@@ -517,4 +517,4 @@ def test_jobs_01_refuses_a_column_it_did_not_define() -> None:
             cwd, url, "upgrade", _JOBS_REVISION_ID, expect_success=False
         )
         assert "exists but is NOT VALID" in (result.stdout + result.stderr)
-        assert _expected_twins(engine) == 0
+        assert _alembic_version(engine) == _JOBS_PARENT_REVISION_ID

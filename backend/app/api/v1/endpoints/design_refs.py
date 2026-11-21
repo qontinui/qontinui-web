@@ -298,28 +298,21 @@ def _claimant_key(principal: MemoryPrincipal) -> str:
 
     ``_actor_id`` prefers ``user_id``, and every device of one user carries
     that user's id, so it would make all of a user's devices one claimant. A
-    claim belongs to the credential that made it: the device id comes first,
-    then the user id — but only for a non-device actor (a human session has no
-    device). A ``device`` principal without a device id is refused rather than
-    keyed by its user, which would make it every device of that user. A
-    principal with neither id cannot be told apart from any other (403).
+    claim belongs to the credential that made it: the device id comes first;
+    the user id is used only for an ``operator`` (a human session, which has no
+    device). Any other principal without a device id — a device, or a service,
+    carrying only a user id — is refused rather than keyed by that user, which
+    would make it every credential of that user (403 ``unattributable``).
     """
     if principal.device_id is not None:
         return f"{principal.actor}:device:{principal.device_id}"
-    if principal.actor == "device":
-        raise _refusal(
-            status.HTTP_403_FORBIDDEN,
-            "unattributable",
-            "This device credential carries no device id, so a capture job it "
-            "held could not be told apart from its user's other devices'.",
-        )
-    if principal.user_id is not None:
+    if principal.actor == "operator" and principal.user_id is not None:
         return f"{principal.actor}:{principal.user_id}"
     raise _refusal(
         status.HTTP_403_FORBIDDEN,
         "unattributable",
-        "This credential carries neither a device nor a user id, so a capture "
-        "job it held could not be told apart from anyone else's.",
+        "This credential carries no device id, so a capture job it held could "
+        "not be told apart from its user's other credentials'.",
     )
 
 
@@ -1715,6 +1708,7 @@ def _log_job_field_writes(
     principal: MemoryPrincipal,
     job: CaptureJob,
     body: CaptureJobUpdate,
+    lease_until: datetime | None,
 ) -> None:
     """One correction row per job field this PATCH changes (call before the
     write, so ``from_value`` is the stored value)."""
@@ -1725,12 +1719,14 @@ def _log_job_field_writes(
         changes.append(("tier_reason", job.tier_reason, body.tier_reason))
     if body.error is not None and body.error != job.error:
         changes.append(("error", job.error, body.error))
-    if body.lease_seconds is not None:
+    if lease_until is not None:
+        # Logged as the lease END it sets (timestamp -> timestamp): the same
+        # value the PATCH then writes.
         changes.append(
             (
-                "lease_seconds",
+                "claimed_until",
                 job.claimed_until.isoformat() if job.claimed_until else None,
-                body.lease_seconds,
+                lease_until.isoformat(),
             )
         )
     for field, before, after in changes:
@@ -1941,6 +1937,11 @@ async def update_capture_job(
     #   - a running job: its claimant, or an operator (logged when the
     #     operator is not the claimant);
     #   - a queued or proposed job: an operator only (logged).
+    lease_until = (
+        datetime.now(UTC) + timedelta(seconds=body.lease_seconds)
+        if body.lease_seconds is not None
+        else None
+    )
     log_field_writes = False
     if writes_fields:
         if job.state in _JOB_TERMINAL_STATES:
@@ -1958,7 +1959,7 @@ async def update_capture_job(
             require_operator(principal, f"write to a {job.state} capture job")
             log_field_writes = True
     if log_field_writes:
-        _log_job_field_writes(db, principal, job, body)
+        _log_job_field_writes(db, principal, job, body, lease_until)
     if body.state is not None and body.state != job.state:
         who = _JOB_TRANSITIONS.get((job.state, body.state))
         if who is None:
@@ -2003,7 +2004,7 @@ async def update_capture_job(
                 "not_running",
                 "Only a running job's lease is extended.",
             )
-        job.claimed_until = datetime.now(UTC) + timedelta(seconds=body.lease_seconds)
+        job.claimed_until = lease_until
     await db.commit()
     await db.refresh(job)
     return CaptureJobOut.model_validate(job)
@@ -2090,7 +2091,12 @@ async def complete_capture_job(
     ``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may
     complete any running job, and that completion is written to the correction
     log. The deliberate exception is an operator's PATCH ``running ->
-    cancelled``, which stops a running job without finishing it."""
+    cancelled``, which stops a running job without finishing it.
+
+    A job already ``running`` when ``design_refs_jobs_01`` deployed has
+    ``claimed_by_actor`` NULL, so no worker can complete it here: it finishes
+    when its lease lapses and a worker re-claims it (which records the
+    claimant), or an operator completes it."""
     job = await _locked_job(db, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")

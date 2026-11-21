@@ -21,7 +21,10 @@ curated record, the append-only ``correction`` log). This adds two columns:
 - ``claimed_by_actor``: the principal identity of the caller that claimed the
   job (``claimed_by`` stays the worker's self-chosen label). ``/complete``
   authorizes against it, so only the claimant's credential (or an operator)
-  can end a running job. Nullable: an unclaimed job has none.
+  can end a running job. Nullable: an unclaimed job has none, and neither has
+  a job already ``running`` when this revision deploys — no worker can
+  complete that one; it finishes when its lease lapses and a worker re-claims
+  it (recording the claimant), or when an operator completes it.
 
 Every step is guarded so a re-run, or a database that already carries a piece,
 does not fail on a duplicate. A guard that finds a column already present

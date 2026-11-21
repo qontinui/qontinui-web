@@ -86227,7 +86227,7 @@
     },
     "/api/v1/design-refs/capture-jobs/{job_id}/complete": {
       "post": {
-        "description": "The one door that FINISHES a running job: ``done``, or ``failed`` with\nthe reason the Jobs view shows. A non-operator completes only a job its own\ncredential claimed (its ``_claimant_key`` equals the job's\n``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may\ncomplete any running job, and that completion is written to the correction\nlog. The deliberate exception is an operator's PATCH ``running ->\ncancelled``, which stops a running job without finishing it.",
+        "description": "The one door that FINISHES a running job: ``done``, or ``failed`` with\nthe reason the Jobs view shows. A non-operator completes only a job its own\ncredential claimed (its ``_claimant_key`` equals the job's\n``claimed_by_actor``; otherwise 403 ``not_the_claimant``); an operator may\ncomplete any running job, and that completion is written to the correction\nlog. The deliberate exception is an operator's PATCH ``running ->\ncancelled``, which stops a running job without finishing it.\n\nA job already ``running`` when ``design_refs_jobs_01`` deployed has\n``claimed_by_actor`` NULL, so no worker can complete it here: it finishes\nwhen its lease lapses and a worker re-claims it (which records the\nclaimant), or an operator completes it.",
         "operationId": "api_v1_design_refs_capture_jobs_job_id_complete_post",
         "parameters": [
           {

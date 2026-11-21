@@ -576,6 +576,8 @@ class CaptureJobComplete(_Strict):
     def _reason(self) -> CaptureJobComplete:
         if self.outcome == "failed" and not self.error:
             raise ValueError("a failed job carries its error")
+        if self.outcome == "done" and self.error is not None:
+            raise ValueError("a done job carries no error")
         return self
 
 
