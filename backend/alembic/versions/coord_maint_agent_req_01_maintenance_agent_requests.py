@@ -60,6 +60,9 @@ Shape
   ``coord.maintenance_tasks.tenant_id`` is nullable text. That places a
   requirement on the companion coord change: it casts the task's text tenant
   to uuid and never enqueues for a task with a NULL or non-uuid tenant.
+* ``ck_maintenance_agent_requests_verdict_claimant``: a ``verdict`` request
+  may be claimed only by its own ``target_device_id`` (the checkout it asks
+  about lives there). A ``compile`` request may be claimed by any device.
 * ``ck_maintenance_agent_requests_answer_kind`` forbids the other kind's
   answer fields: only a ``verdict`` request may carry ``verdict`` or
   ``confidence``, and only a ``compile`` request may carry ``result``.
@@ -108,6 +111,13 @@ Shape
   only once its own ``expires_at`` (its TTL) has passed, never on every tick.
   A ``pending`` or ``claimed`` row, and an unexpired ``answered`` row, are left
   untouched (the statement returns no row for them).
+* ``expires_at`` changes meaning once, by decision. Until a verdict is
+  answered it is the pending / claim deadline. Coord's answer route then
+  REWRITES it to the verdict TTL, and that TTL is what the re-arm arm above
+  (``state = 'answered' AND expires_at < now()``) and the "unexpired answered
+  verdict is left untouched" rule read. A ``pending`` or ``claimed`` row past
+  its deadline is NOT re-armed by the enqueue; it is re-asked only once its
+  state has become ``expired``.
 * The pending index serves the claim read: pending rows for a device, or for
   no device within a tenant. It is partial, so answered history never bloats
   it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
@@ -233,6 +243,10 @@ def upgrade() -> None:
                            AND candidate_key IS NOT NULL
                            AND target_device_id IS NOT NULL
                            AND repo_path IS NOT NULL)),
+            CONSTRAINT ck_maintenance_agent_requests_verdict_claimant
+                CHECK (kind <> 'verdict'
+                       OR claimed_by_device IS NULL
+                       OR claimed_by_device = target_device_id),
             CONSTRAINT ck_maintenance_agent_requests_answer_kind
                 CHECK ((kind = 'verdict'
                         OR (verdict IS NULL AND confidence IS NULL))

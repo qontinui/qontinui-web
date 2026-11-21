@@ -674,6 +674,8 @@ def test_a_kind_refuses_the_other_kinds_answer_fields(
     )
 
 
+# The test's own copy of the documented arbiter: it proves the index and the
+# CHECKs accept this statement, not that coord sends it.
 _REARM = f"""
     INSERT INTO coord.{_TABLE}
         (tenant_id, kind, task_id, target_device_id, candidate_key, repo_path,
@@ -760,6 +762,10 @@ _PRIOR_ROWS: dict[str, tuple[str, dict[str, object], bool]] = {
     ),
     "pending": ("pending", {**_OLD}, False),
     "claimed": ("claimed", {**_OLD, **_CLAIM, "claimed_at": True}, False),
+    # Past the pending / claim deadline but not yet marked expired: the
+    # enqueue must leave them alone.
+    "pending-past-ttl": ("pending", {**_OLD}, True),
+    "claimed-past-ttl": ("claimed", {**_OLD, **_CLAIM, "claimed_at": True}, True),
 }
 _REARMED = {"expired", "failed", "answered-past-ttl"}
 
@@ -863,6 +869,33 @@ def test_two_devices_with_the_same_candidate_get_two_rows(requests_db: Engine) -
             {"task": task_id, "key": key},
         ).scalar_one()
     assert count == 2
+
+
+@_needs_pg
+def test_a_verdict_is_claimed_only_by_its_target_device(requests_db: Engine) -> None:
+    other_device = uuid.UUID("00000000-0000-4000-8000-00000000d003")
+
+    def foreign_claim(conn: Connection) -> None:
+        _state_row(conn, "claimed", claimed_by_device=other_device, claimed_at=True)
+
+    assert _refused_by(requests_db, foreign_claim) == (
+        "ck_maintenance_agent_requests_verdict_claimant"
+    )
+    with requests_db.begin() as conn:
+        own = _state_row(conn, "claimed", claimed_by_device=_DEVICE, claimed_at=True)
+        # A compile request has no target and may be claimed by any device.
+        _state_row(
+            conn,
+            "claimed",
+            kind="compile",
+            task_id=None,
+            target_device_id=None,
+            candidate_key=None,
+            repo_path=None,
+            claimed_by_device=other_device,
+            claimed_at=True,
+        )
+        assert _request_row(conn, own)["claimed_by_device"] == _DEVICE
 
 
 @_needs_pg
