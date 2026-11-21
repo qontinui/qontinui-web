@@ -25,7 +25,8 @@ table. A revision that cannot be run this way fails the test rather than
 being skipped.
 
 Scope: table-lock statements only (``ALTER TABLE``, ``DROP TABLE``,
-``LOCK TABLE``, ``TRUNCATE``). A DELETE pair that removes the versions rows
+``LOCK TABLE``, ``TRUNCATE``, and ``CREATE INDEX ... ON``, whose SHARE lock
+blocks coord's snapshot INSERT), with or without quoted identifiers. A DELETE pair that removes the versions rows
 before the parent rows (cihost_01, ciorch_01, fleet_policy_egress_01) is
 required by the foreign key and takes row locks, not table locks.
 
@@ -46,11 +47,12 @@ _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 _PARENT = "fleet_runtime_policy"
 _VERSIONS = "fleet_runtime_policy_versions"
 
-# Group 1 is "_versions" for the snapshot table; the trailing \b stops the
-# parent pattern matching a longer table name.
+# Group 1 is "_versions" for the snapshot table; the trailing (?![\w]) stops
+# the parent pattern matching a longer table name. Identifiers may be quoted.
 _TABLE_LOCK = re.compile(
-    r"\b(?:ALTER\s+TABLE|DROP\s+TABLE|LOCK\s+TABLE|TRUNCATE(?:\s+TABLE)?)\s+"
-    r"(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?coord\.fleet_runtime_policy(_versions)?\b",
+    r"\b(?:ALTER\s+TABLE|DROP\s+TABLE|LOCK\s+TABLE|TRUNCATE(?:\s+TABLE)?"
+    r"|CREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*?\bON)\s+"
+    r"(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?\"?coord\"?\.\"?fleet_runtime_policy(_versions)?\"?(?![\w])",
     re.IGNORECASE,
 )
 
@@ -146,6 +148,10 @@ def test_the_scan_reaches_every_revision_that_locks_both_tables(
         ("sess_guard_01_session_protection_floor_columns.py", ("upgrade", "downgrade")),
         ("fleet_res_tel_03_fleet_policy_control_columns.py", ("upgrade", "downgrade")),
         ("fleet_res_tel_02_fleet_runtime_policy_versions.py", ("downgrade",)),
+        (
+            "wthr_01_worktree_headroom_mode_cpu_busy_permille.py",
+            ("upgrade", "downgrade"),
+        ),
     ):
         for direction in directions:
             assert (revision, direction) in both, (
@@ -175,5 +181,11 @@ def test_the_order_check_fires_on_a_versions_first_sequence() -> None:
     recorder = _RecordingOp()
     recorder.execute("DROP TABLE IF EXISTS coord.fleet_runtime_policy_versions")
     recorder.add_column(_VERSIONS, object())
-    recorder.execute("ALTER TABLE coord.fleet_runtime_policy DROP COLUMN x")
-    assert _lock_order(recorder.statements) == "VVP"
+    recorder.execute(
+        "CREATE INDEX IF NOT EXISTS ix ON coord.fleet_runtime_policy_versions (policy_id)"
+    )
+    recorder.execute('ALTER TABLE "coord"."fleet_runtime_policy" DROP COLUMN x')
+    recorder.execute(
+        "ALTER TABLE coord.fleet_runtime_policy_versions_old DROP COLUMN x"
+    )
+    assert _lock_order(recorder.statements) == "VVVP"
