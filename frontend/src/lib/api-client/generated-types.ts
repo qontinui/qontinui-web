@@ -32558,6 +32558,8 @@ export interface components {
             fidelity_arm: "design_compare" | "tokens_only";
             /** Results */
             results: components["schemas"]["CompareHit"][];
+            /** Unmeasured Candidates */
+            unmeasured_candidates: number;
         };
         /** CompareSnapshot */
         CompareSnapshot: {
@@ -53269,6 +53271,8 @@ export interface components {
              * @enum {string}
              */
             style_arm: "fingerprint" | "tokens_only";
+            /** Unmeasured Candidates */
+            unmeasured_candidates: number;
         };
         /** SiteCreate */
         SiteCreate: {
