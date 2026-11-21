@@ -101,20 +101,31 @@ it:
   [§3](#3-the-primitive-catalogue) are built on top of it.
 - **Class families:** `src/styles/components.css` holds about 130 classes in two
   groups.
-  - _Families with a primitive equivalent_ — `.btn-*`, `.card*`, `.badge*`,
-    `.input`, `.select`, `.checkbox`, `.radio` and `.form-*` — are legacy. New
-    code uses `Button`, `Card`, `Badge`, `Input`, `Select`, `Checkbox`,
-    `RadioGroup` and `Label` from `@/components/ui/*`, and does not extend these
-    families. To count the files that still use a prefixed one, run
-    `git grep -lE 'className="[^"]*\b(btn|card|badge|form)-' -- frontend/src | wc -l`
-    from the repo root.
+  - _Families with a primitive equivalent_ are legacy: `.btn-*` (`Button`),
+    `.card*` (`Card`), `.badge*` (`Badge`), `.input` (`Input`), `.select`
+    (`Select`), `.checkbox` (`Checkbox`), `.radio` (`RadioGroup`) and
+    `.form-label` (`Label`), all from `@/components/ui/*`. New code uses the
+    primitive and does not extend these families.
   - _The remaining families have no primitive yet_ and stay in `components.css`:
-    `.panel*`, `.explorer-panel*`, `.item-card*`, `.tab-*` (the accent and
-    container classes; `ui/tabs` carries no accent variants), `.log-*`,
-    `.status-*`, `.empty-state*`, `.scroll-area*` / `.scroll-container` (plain
-    overflow utilities, unlike the Radix `ui/scroll-area`), `.scrollbar-*`,
-    `.z-*`, `.elevation-*`, `.glow-*`, `.grid-*`, `.animate-*`,
-    `.layout-full-height` and the `.text-*` typography scale.
+    `.form-group` and `.form-error`, `.panel*`, `.explorer-panel*`,
+    `.item-card*`, `.tab-*` (the accent and container classes; `ui/tabs` carries
+    no accent variants), `.log-*`, `.status-*`, `.empty-state*`, `.scroll-area*`
+    / `.scroll-container` (plain overflow utilities, unlike the Radix
+    `ui/scroll-area`), `.scrollbar-*`, `.z-*`, `.elevation-*`, `.glow-*`,
+    `.pulse-glow`, `.gradient-text`, `.grid-*`, `.animate-*`,
+    `.layout-full-height`, the `.text-*` typography scale, and
+    `.text-ellipsis-start`, which is a truncation utility rather than
+    typography.
+  - To see how much code still uses the prefixed families, run from the repo
+    root `git grep -lE 'className="[^"]*\b(btn|card|badge|form)-' -- frontend/src | wc -l`.
+    It returned **22** on 2026-11-21. It counts files containing a literal
+    `className="..."` string with a dash-prefixed `btn-`, `card-`, `badge-` or
+    `form-` member, and nothing else: it misses the bare `.card`, `.badge` and
+    `.input` classes and any class passed through `className={...}` or `cn()`.
+    One of the 22, `EditPresetDialog.tsx`, matches only through `form-*`
+    classes it styles itself in an inline `<style>` block (`.form-group`,
+    `.form-input`, `.form-select`, `.form-textarea`, `.form-section`); of
+    those, only `.form-group` also exists in `components.css`.
 - **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
   `spacing.*`, `reactFlow.*`).
 - **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
