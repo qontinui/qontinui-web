@@ -299,11 +299,20 @@ def _claimant_key(principal: MemoryPrincipal) -> str:
     ``_actor_id`` prefers ``user_id``, and every device of one user carries
     that user's id, so it would make all of a user's devices one claimant. A
     claim belongs to the credential that made it: the device id comes first,
-    then the user id (a human session has no device). A principal with neither
-    cannot be told apart from any other, so it may not claim (403).
+    then the user id — but only for a non-device actor (a human session has no
+    device). A ``device`` principal without a device id is refused rather than
+    keyed by its user, which would make it every device of that user. A
+    principal with neither id cannot be told apart from any other (403).
     """
     if principal.device_id is not None:
         return f"{principal.actor}:device:{principal.device_id}"
+    if principal.actor == "device":
+        raise _refusal(
+            status.HTTP_403_FORBIDDEN,
+            "unattributable",
+            "This device credential carries no device id, so a capture job it "
+            "held could not be told apart from its user's other devices'.",
+        )
     if principal.user_id is not None:
         return f"{principal.actor}:{principal.user_id}"
     raise _refusal(
@@ -1672,6 +1681,71 @@ _JOB_TRANSITIONS: Final[dict[tuple[str, str], str]] = {
 # rules. The one deliberate exception is ``running -> cancelled`` above: an
 # operator may stop a running job through PATCH without completing it.
 
+#: States a job does not leave through PATCH: its fields are no longer written.
+#: (``failed`` leaves only through ``/retry``, which clears them itself.)
+_JOB_TERMINAL_STATES: Final[frozenset[str]] = frozenset(
+    {"done", "failed", "cancelled", "rejected"}
+)
+
+
+def _locked_job_query(tenant_id: UUID, job_id: UUID) -> Any:
+    """One capture job of the tenant, ``FOR UPDATE``: the authorization check
+    and the write that follows it see the same row version, so a concurrent
+    re-claim cannot slip between them. ``populate_existing`` refreshes a row
+    the session already holds, rather than trusting the identity map's copy."""
+    return (
+        select(CaptureJob)
+        .where(CaptureJob.tenant_id == tenant_id, CaptureJob.id == job_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def _locked_job(
+    db: AsyncSession, tenant_id: UUID, job_id: UUID
+) -> CaptureJob | None:
+    job: CaptureJob | None = (
+        await db.execute(_locked_job_query(tenant_id, job_id))
+    ).scalar_one_or_none()
+    return job
+
+
+def _log_job_field_writes(
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    job: CaptureJob,
+    body: CaptureJobUpdate,
+) -> None:
+    """One correction row per job field this PATCH changes (call before the
+    write, so ``from_value`` is the stored value)."""
+    changes: list[tuple[str, Any, Any]] = []
+    if body.derived_tier is not None and body.derived_tier != job.derived_tier:
+        changes.append(("derived_tier", job.derived_tier, body.derived_tier))
+    if body.tier_reason is not None and body.tier_reason != job.tier_reason:
+        changes.append(("tier_reason", job.tier_reason, body.tier_reason))
+    if body.error is not None and body.error != job.error:
+        changes.append(("error", job.error, body.error))
+    if body.lease_seconds is not None:
+        changes.append(
+            (
+                "lease_seconds",
+                job.claimed_until.isoformat() if job.claimed_until else None,
+                body.lease_seconds,
+            )
+        )
+    for field, before, after in changes:
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                field,
+                before,
+                after,
+            )
+        )
+
 
 def _check_job_source(principal: MemoryPrincipal, source: str) -> None:
     if source == "operator" and not is_operator(principal):
@@ -1854,17 +1928,37 @@ async def claim_capture_job(
 async def update_capture_job(
     job_id: UUID, body: CaptureJobUpdate, principal: Principal, db: Db
 ) -> CaptureJobOut:
-    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    job = await _locked_job(db, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
     writes_fields = any(
         v is not None
         for v in (body.derived_tier, body.tier_reason, body.error, body.lease_seconds)
     )
-    if writes_fields and job.state == "running":
-        # A running job's pre-check result, error and lease are its claimant's
-        # to write (or an operator's), not any device's of the tenant.
-        _require_claimant(principal, job, "write to it while it runs")
+    # Who may write a job's pre-check result, error and lease depends on the
+    # state it is in when the write arrives (read under the row lock above):
+    #   - a finished job (done/failed/cancelled/rejected): nobody (409);
+    #   - a running job: its claimant, or an operator (logged when the
+    #     operator is not the claimant);
+    #   - a queued or proposed job: an operator only (logged).
+    log_field_writes = False
+    if writes_fields:
+        if job.state in _JOB_TERMINAL_STATES:
+            raise _refusal(
+                status.HTTP_409_CONFLICT,
+                "invalid_state",
+                f"A {job.state} capture job's fields are not written any more.",
+            )
+        if job.state == "running":
+            _require_claimant(principal, job, "write to it while it runs")
+            log_field_writes = is_operator(principal) and (
+                job.claimed_by_actor != _claimant_key(principal)
+            )
+        else:
+            require_operator(principal, f"write to a {job.state} capture job")
+            log_field_writes = True
+    if log_field_writes:
+        _log_job_field_writes(db, principal, job, body)
     if body.state is not None and body.state != job.state:
         who = _JOB_TRANSITIONS.get((job.state, body.state))
         if who is None:
@@ -1922,7 +2016,7 @@ async def retry_capture_job(
     """Re-queue a failed job (operator only), optionally as ``attached``. The
     derived tier is cleared so the worker's pre-check derives it afresh."""
     require_operator(principal, "retry a capture job")
-    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    job = await _locked_job(db, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
     if job.state != "failed":
@@ -1955,6 +2049,25 @@ async def retry_capture_job(
             )
         )
         job.browser = body.browser
+    # The retry clears what the failed attempt left; each cleared value is
+    # logged so the correction log shows what the operator wiped.
+    for field, before in (
+        ("error", job.error),
+        ("derived_tier", job.derived_tier),
+        ("tier_reason", job.tier_reason),
+    ):
+        if before is not None:
+            db.add(
+                _correction(
+                    principal.tenant_id,
+                    principal,
+                    "capture_job",
+                    job.id,
+                    field,
+                    before,
+                    None,
+                )
+            )
     job.state = "queued"
     job.error = None
     job.derived_tier = None
@@ -1978,7 +2091,7 @@ async def complete_capture_job(
     complete any running job, and that completion is written to the correction
     log. The deliberate exception is an operator's PATCH ``running ->
     cancelled``, which stops a running job without finishing it."""
-    job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
+    job = await _locked_job(db, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
     if job.state != "running":
@@ -1999,6 +2112,19 @@ async def complete_capture_job(
                 body.outcome,
             )
         )
+        new_error = body.error if body.outcome == "failed" else None
+        if new_error != job.error:
+            db.add(
+                _correction(
+                    principal.tenant_id,
+                    principal,
+                    "capture_job",
+                    job.id,
+                    "error",
+                    job.error,
+                    new_error,
+                )
+            )
     else:
         _require_claimant(principal, job, "complete it")
     job.state = body.outcome
