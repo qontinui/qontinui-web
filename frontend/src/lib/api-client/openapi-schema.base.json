@@ -10935,6 +10935,7 @@
             "type": "array"
           },
           "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
             "title": "Unmeasured Candidates",
             "type": "integer"
           }
@@ -56865,6 +56866,7 @@
             "type": "string"
           },
           "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
             "title": "Unmeasured Candidates",
             "type": "integer"
           }

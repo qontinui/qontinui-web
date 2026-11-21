@@ -32639,7 +32639,10 @@ export interface components {
             fidelity_arm: "design_compare" | "tokens_only";
             /** Results */
             results: components["schemas"]["CompareHit"][];
-            /** Unmeasured Candidates */
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
             unmeasured_candidates: number;
         };
         /** CompareSnapshot */
@@ -53352,7 +53355,10 @@ export interface components {
              * @enum {string}
              */
             style_arm: "fingerprint" | "tokens_only";
-            /** Unmeasured Candidates */
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
             unmeasured_candidates: number;
         };
         /** SiteCreate */

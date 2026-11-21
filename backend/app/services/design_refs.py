@@ -553,10 +553,11 @@ def is_stated_unknown_token_set(tokens: dict[str, Any]) -> bool:
 
 
 def is_measured_token_set(tokens: dict[str, Any]) -> bool:
-    """True only for a token set that can be compared: non-empty and not the
-    stated-unknown sentinel. Ranking anything else would report a distance
-    (``1.0``, nothing shared) that measures nothing."""
-    return bool(tokens) and not is_stated_unknown_token_set(tokens)
+    """True only for a token set that can be compared: it carries at least one
+    token leaf and is not the stated-unknown sentinel. Ranking anything else
+    (``{}``, a leafless ``{"color": {}}``, the sentinel) would report a
+    distance (``1.0``, nothing shared) that measures nothing."""
+    return not is_stated_unknown_token_set(tokens) and bool(_flatten(tokens))
 
 
 def token_distance(ours: dict[str, Any], theirs: dict[str, Any]) -> float:
