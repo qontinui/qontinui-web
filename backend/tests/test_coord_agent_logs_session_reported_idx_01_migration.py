@@ -46,7 +46,7 @@ from tests._alembic_harness import (
     upgrade_execute_calls,
 )
 
-_PARENT_REVISION_ID = "ci_job_res_02"
+_PARENT_REVISION_ID = "cfo_02_continuation_deferred_load_index"
 _IDX_REVISION_ID = "coord_agent_logs_session_reported_idx_01"
 _REVISION_FILENAME = "coord_agent_logs_session_reported_idx_01.py"
 

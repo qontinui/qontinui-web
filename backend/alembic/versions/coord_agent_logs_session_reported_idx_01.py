@@ -1,7 +1,7 @@
 """coord.agent_logs — partial covering index on session_reported rows
 
 Revision ID: coord_agent_logs_session_reported_idx_01
-Revises: ci_job_res_02
+Revises: cfo_02_continuation_deferred_load_index
 Create Date: 2026-11-04
 
 Adds ``idx_agent_logs_session_reported`` to ``coord.agent_logs``:
@@ -62,7 +62,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_logs_session_reported_idx_01"
 # `ci_job_res_02` is the single head on origin/main 5b2803fb5.
-down_revision: str | Sequence[str] | None = "ci_job_res_02"
+down_revision: str | Sequence[str] | None = "cfo_02_continuation_deferred_load_index"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
