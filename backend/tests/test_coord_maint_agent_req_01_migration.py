@@ -393,16 +393,25 @@ def test_indexes_by_definition(requests_db: Engine) -> None:
 
 @_needs_pg
 def test_a_minimal_request_gets_its_defaults(requests_db: Engine) -> None:
+    """Only the NOT NULL columns with no default: the rest default or are NULL."""
     with requests_db.begin() as conn:
-        request_id = _insert_request(conn, kind="compile", candidate_key=None)
         row = conn.execute(
             text(
-                f"SELECT state, created_at IS NOT NULL, verdict, result "
-                f"FROM coord.{_TABLE} WHERE id = :id"
+                f"""
+                INSERT INTO coord.{_TABLE}
+                    (tenant_id, kind, question, prompt, requested_by, expires_at)
+                VALUES (:t, 'compile', 'describe a rule', 'p', 'operator:test',
+                        now() + interval '1 hour')
+                RETURNING id IS NOT NULL, state, created_at IS NOT NULL,
+                          task_id, run_id, target_device_id, candidate_key,
+                          repo_path, min_confidence, claimed_by_device,
+                          claimed_at, verdict, confidence, rationale, result,
+                          error, answered_at
+                """
             ),
-            {"id": request_id},
+            {"t": _TENANT},
         ).one()
-    assert tuple(row) == ("pending", True, None, None)
+    assert tuple(row) == (True, "pending", True) + (None,) * 14
 
 
 @_needs_pg
@@ -419,6 +428,7 @@ def test_a_minimal_request_gets_its_defaults(requests_db: Engine) -> None:
         ({"task_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
         ({"target_device_id": None}, "ck_maintenance_agent_requests_verdict_fields"),
         ({"repo_path": None}, "ck_maintenance_agent_requests_verdict_fields"),
+        ({"question": "q" * 2001}, "ck_maintenance_agent_requests_text_bounds"),
     ],
 )
 def test_closed_vocabularies_refuse_another_word(
@@ -454,12 +464,120 @@ def test_a_verdict_needs_its_fields_and_a_compile_does_not(
 
 
 @_needs_pg
+def test_the_dedupe_key_text_is_bounded(requests_db: Engine) -> None:
+    def long_key(conn: Connection) -> None:
+        _insert_request(conn, candidate_key="k" * 1025)
+
+    assert _refused_by(requests_db, long_key) == (
+        "ck_maintenance_agent_requests_text_bounds"
+    )
+    with requests_db.begin() as conn:
+        _insert_request(conn, candidate_key="k" * 1024, question="q" * 2000)
+
+
+_CLAIM = {"claimed_by_device": _DEVICE}
+_ANSWER = {**_CLAIM, "verdict": "no", "confidence": 0.5}
+
+
+def _state_row(conn: Connection, state: str, **fields: object) -> uuid.UUID:
+    """A verdict request in ``state``; ``*_at`` fields given as True are now()."""
+    stamps = {k for k, v in fields.items() if v is True}
+    values = {k: v for k, v in fields.items() if k not in stamps}
+    request_id = _insert_request(
+        conn, candidate_key=str(uuid.uuid4()), state="pending", **values
+    )
+    sets = ", ".join(["state = :state"] + [f"{k} = now()" for k in sorted(stamps)])
+    conn.execute(
+        text(f"UPDATE coord.{_TABLE} SET {sets} WHERE id = :id"),
+        {"state": state, "id": request_id},
+    )
+    return request_id
+
+
+@_needs_pg
+@pytest.mark.parametrize(
+    ("state", "fields"),
+    [
+        ("claimed", {"claimed_at": True}),
+        ("claimed", {**_CLAIM}),
+        ("answered", {**_ANSWER, "answered_at": True}),
+        ("answered", {**_CLAIM, "verdict": "no", "claimed_at": True}),
+        (
+            "answered",
+            {"claimed_by_device": _DEVICE, "claimed_at": True, "answered_at": True},
+        ),
+        ("failed", {**_CLAIM, "claimed_at": True}),
+    ],
+    ids=[
+        "claimed-no-claimed-at",
+        "claimed-no-device",
+        "answered-no-claimed-at",
+        "answered-no-answered-at",
+        "answered-no-verdict-or-result",
+        "failed-no-error",
+    ],
+)
+def test_a_state_refuses_a_row_missing_its_fields(
+    requests_db: Engine, state: str, fields: dict[str, object]
+) -> None:
+    def write(conn: Connection) -> None:
+        _state_row(conn, state, **fields)
+
+    assert _refused_by(requests_db, write) == (
+        "ck_maintenance_agent_requests_state_fields"
+    )
+
+
+@_needs_pg
+@pytest.mark.parametrize(
+    ("state", "fields"),
+    [
+        ("pending", {}),
+        ("expired", {}),
+        ("claimed", {**_CLAIM, "claimed_at": True}),
+        ("answered", {**_ANSWER, "claimed_at": True, "answered_at": True}),
+        (
+            "answered",
+            {
+                **_CLAIM,
+                "result": '{"name": "reset"}',
+                "claimed_at": True,
+                "answered_at": True,
+            },
+        ),
+        ("failed", {"error": "unparseable claude output: x"}),
+    ],
+    ids=[
+        "pending",
+        "expired",
+        "claimed",
+        "answered-verdict",
+        "answered-result",
+        "failed-unclaimed",
+    ],
+)
+def test_a_state_accepts_a_row_carrying_its_fields(
+    requests_db: Engine, state: str, fields: dict[str, object]
+) -> None:
+    with requests_db.begin() as conn:
+        request_id = _state_row(conn, state, **fields)
+        got = conn.execute(
+            text(f"SELECT state FROM coord.{_TABLE} WHERE id = :id"),
+            {"id": request_id},
+        ).scalar_one()
+    assert got == state
+
+
+@_needs_pg
 def test_the_answer_shapes_are_accepted(requests_db: Engine) -> None:
     with requests_db.begin() as conn:
         _insert_request(
             conn,
             candidate_key=str(uuid.uuid4()),
             state="answered",
+            claimed_by_device=_DEVICE,
+            claimed_at="2026-11-21T00:00:00Z",
+            answered_at="2026-11-21T00:01:00Z",
             verdict="yes",
             confidence=0.9,
             rationale="merged upstream",
@@ -470,6 +588,9 @@ def test_the_answer_shapes_are_accepted(requests_db: Engine) -> None:
             target_device_id=None,
             candidate_key=None,
             state="answered",
+            claimed_by_device=_DEVICE,
+            claimed_at="2026-11-21T00:00:00Z",
+            answered_at="2026-11-21T00:01:00Z",
             result='{"name": "reset", "predicates": []}',
         )
 

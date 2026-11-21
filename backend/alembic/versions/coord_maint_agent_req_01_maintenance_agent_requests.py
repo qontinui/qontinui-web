@@ -54,8 +54,18 @@ Shape
   ``repo_path`` (without them the dedupe unique cannot hold, since NULLs never
   collide, and no runner could be targeted). A ``compile`` request may leave
   all four NULL.
-* ``tenant_id`` is ``uuid NOT NULL`` deliberately: coord casts the task's text
-  tenant to uuid, and a task with a NULL tenant never runs.
+* ``tenant_id`` is ``uuid NOT NULL`` deliberately, while
+  ``coord.maintenance_tasks.tenant_id`` is nullable text. That places a
+  requirement on the companion coord change: it casts the task's text tenant
+  to uuid and never enqueues for a task with a NULL or non-uuid tenant.
+* ``ck_maintenance_agent_requests_text_bounds`` caps ``question`` at 2000
+  characters and ``candidate_key`` at 1024, so a row always fits the btree
+  row-size limit of the verdict-dedupe unique that keys on both.
+* ``ck_maintenance_agent_requests_state_fields`` keeps a row consistent with
+  its state: ``claimed`` and ``answered`` carry ``claimed_by_device`` and
+  ``claimed_at``; ``answered`` also carries ``answered_at`` and a ``verdict``
+  or a ``result``; ``failed`` carries ``error``. ``pending`` and ``expired``
+  rows are unconstrained.
 * ``task_id`` references ``coord.maintenance_tasks`` ON DELETE CASCADE (a
   deleted task takes its pending requests with it); ``run_id`` references
   ``coord.maintenance_runs`` ON DELETE SET NULL (the run ledger is history, a
@@ -131,8 +141,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Every SQL string below is a STATIC literal. The coord merge-train migration
 # classifier extracts string literals from each execute call and rejects a call
-# with none as dynamic. Keep these comments free of apostrophes and of the
-# op-dot-call spelling: the classifier lexer does not skip Python comments.
+# with none as dynamic.
 
 
 def upgrade() -> None:
@@ -172,7 +181,8 @@ def upgrade() -> None:
             CONSTRAINT ck_maintenance_agent_requests_verdict
                 CHECK (verdict IN ('yes', 'no', 'unknown')),
             CONSTRAINT ck_maintenance_agent_requests_confidence
-                CHECK (confidence >= 0 AND confidence <= 1),
+                CHECK (confidence IS NULL
+                       OR (confidence >= 0 AND confidence <= 1)),
             CONSTRAINT ck_maintenance_agent_requests_min_confidence
                 CHECK (min_confidence IS NULL
                        OR (min_confidence >= 0 AND min_confidence <= 1)),
@@ -182,6 +192,19 @@ def upgrade() -> None:
                            AND candidate_key IS NOT NULL
                            AND target_device_id IS NOT NULL
                            AND repo_path IS NOT NULL)),
+            CONSTRAINT ck_maintenance_agent_requests_text_bounds
+                CHECK (char_length(question) <= 2000
+                       AND (candidate_key IS NULL
+                            OR char_length(candidate_key) <= 1024)),
+            CONSTRAINT ck_maintenance_agent_requests_state_fields
+                CHECK ((state NOT IN ('claimed', 'answered')
+                        OR (claimed_by_device IS NOT NULL
+                            AND claimed_at IS NOT NULL))
+                       AND (state <> 'answered'
+                            OR (answered_at IS NOT NULL
+                                AND (verdict IS NOT NULL
+                                     OR result IS NOT NULL)))
+                       AND (state <> 'failed' OR error IS NOT NULL)),
             CONSTRAINT fk_maintenance_agent_requests_task
                 FOREIGN KEY (task_id) REFERENCES coord.maintenance_tasks (id)
                 ON DELETE CASCADE,
