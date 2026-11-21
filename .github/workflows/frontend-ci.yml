@@ -243,8 +243,9 @@ jobs:
       # The kit is installed OUTSIDE frontend/ from
       # frontend/design/kit/package-lock.json (the git tag v0.1.0 resolved to
       # its commit, plus the EXACT ui-bridge peers validate-guide drives).
-      # frontend/ pins older ui-bridge-wrapper / -headless versions for its own
-      # e2e use, so the kit is never resolved through frontend/node_modules:
+      # frontend/ resolves its own ui-bridge-wrapper / -headless versions for
+      # its e2e use and prod probes, independent of the kit's exact pins, so
+      # the kit is never resolved through frontend/node_modules:
       # `--root` points validate-guide at the tool directory, where it finds
       # its own wrapper.
       - name: Install design-kit (pinned by frontend/design/kit/package-lock.json)
