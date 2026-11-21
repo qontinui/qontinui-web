@@ -28,11 +28,16 @@ async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** The page size the Jobs view reads: the newest this many jobs. */
+export const CAPTURE_JOBS_PAGE_LIMIT = 200;
+
 /** The newest jobs first; `state` narrows to one lifecycle state. */
 export async function fetchCaptureJobs(
   options: { state?: CaptureJobState; limit?: number } = {}
 ): Promise<CaptureJob[]> {
-  const query = new URLSearchParams({ limit: String(options.limit ?? 200) });
+  const query = new URLSearchParams({
+    limit: String(options.limit ?? CAPTURE_JOBS_PAGE_LIMIT),
+  });
   if (options.state) query.set("state", options.state);
   const res = await httpClient.fetch(
     `/api/v1/design-refs/capture-jobs?${query}`,

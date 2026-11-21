@@ -7,7 +7,8 @@ thing worth checking is that it builds what the models declare:
 1. Upgrade from the parent builds the ``design_refs`` tables, the split
    trigger and the seeded vocabularies equal to the model constants; upgrading
    on through ``design_refs_split_intake_01`` (the split is assigned at
-   intake) to ``design_refs_jobs_01`` (``capture_job.browser``) leaves exactly the models' columns and nullability, exactly their CHECK and
+   intake) to ``design_refs_jobs_01`` (``capture_job.browser``) leaves
+   exactly the models' columns and nullability, exactly their CHECK and
    UNIQUE constraints by name, and every declared index.
 2. The split trigger refuses a change of an assigned split and allows the
    first assignment.

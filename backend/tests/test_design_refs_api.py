@@ -1593,7 +1593,7 @@ class TestJobsAndCuration:
                     "https://one.example/a",
                     "  https://two.example  ",
                     "https://one.example/a",
-                    "",
+                    "   ",
                     "https://gone.example/x",
                 ],
                 "notes": "from the list",
@@ -1616,6 +1616,16 @@ class TestJobsAndCuration:
         ]
         listed = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
         assert {j["url"] for j in listed} == {j["url"] for j in batch["created"]}
+        # Each item is bounded like the single door's ``url``: an empty item or
+        # one over 4000 characters refuses the whole list, creating nothing.
+        for bad in ("", "https://long.example/" + "a" * 4000):
+            assert (
+                await a.post(
+                    "/capture-jobs/batch", {"urls": ["https://ok.example", bad]}
+                )
+            ).status_code == 422
+        queued = await a.ok("GET", "/capture-jobs", params={"state": "queued"})
+        assert "https://ok.example" not in {j["url"] for j in queued}
         a.as_("device")
         assert (
             await a.post(
@@ -1641,19 +1651,48 @@ class TestJobsAndCuration:
         )
         assert prechecked["derived_tier"] == "private"
         assert prechecked["tier_reason"] == {"robots": "unreachable"}
-        # A queued job is not completable; a failed one needs its reason.
+        # A failed outcome must carry its reason: the body is refused (422).
         assert (
-            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "failed"})
+            await a.post(
+                f"/capture-jobs/{job['id']}/complete",
+                {"outcome": "failed", "worker": "w1"},
+            )
         ).status_code == 422
+        # Only the worker that claimed the job completes it: another worker, or
+        # one that names no worker, is refused (409) and the job stays running.
+        for other in ({"worker": "w2"}, {}):
+            resp = await a.post(
+                f"/capture-jobs/{job['id']}/complete", {"outcome": "done", **other}
+            )
+            assert (
+                resp.status_code == 409 and resp.json()["error"] == "not_the_claimant"
+            )
         failed = await a.ok(
             "POST",
             f"/capture-jobs/{job['id']}/complete",
-            json={"outcome": "failed", "error": "blocked by a bot challenge"},
+            json={
+                "outcome": "failed",
+                "error": "blocked by a bot challenge",
+                "worker": "w1",
+            },
         )
         assert failed["state"] == "failed" and failed["claimed_until"] is None
+        # A job that is not running (here: failed) is not completable.
         assert (
-            await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+            await a.post(
+                f"/capture-jobs/{job['id']}/complete",
+                {"outcome": "done", "worker": "w1"},
+            )
         ).status_code == 409
+        # Nor is a queued job that no worker has claimed.
+        queued = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://q.example", "source": "cli"}
+        )
+        resp = await a.post(
+            f"/capture-jobs/{queued['id']}/complete",
+            {"outcome": "done", "worker": "w1"},
+        )
+        assert resp.status_code == 409 and resp.json()["error"] == "invalid_transition"
         # Retry is the operator's: a device is refused.
         assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 403
         a.as_("operator")
@@ -1673,6 +1712,27 @@ class TestJobsAndCuration:
         }
         # Only a failed job is retried.
         assert (await a.post(f"/capture-jobs/{job['id']}/retry", {})).status_code == 409
+
+    async def test_an_operator_completing_a_job_is_logged(self, a: Harness) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://op.example", "source": "cli"}
+        )
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        a.as_("operator")
+        # An operator may end a job a worker holds; the move is logged as the
+        # PATCH transition logs an operator's state change.
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
+        log = await a.ok(
+            "GET",
+            "/corrections",
+            params={"target_kind": "capture_job", "target_id": job["id"]},
+        )
+        assert [(c["field"], c["from_value"], c["to_value"]) for c in log] == [
+            ("state", "running", "done")
+        ]
 
     async def test_curation_is_operator_only_and_logged(self, a: Harness) -> None:
         site = await reference_site(a)

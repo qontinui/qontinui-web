@@ -34,10 +34,28 @@ def upgrade() -> None:
         "ALTER TABLE design_refs.capture_job "
         "ADD COLUMN IF NOT EXISTS browser varchar(16) NOT NULL DEFAULT 'launched'"
     )
+    # Guarded like the column add above, so a re-run (or a database that
+    # already carries the constraint) does not fail on a duplicate name.
     op.execute(
-        "ALTER TABLE design_refs.capture_job "
-        "ADD CONSTRAINT ck_capture_job_browser "
-        "CHECK (browser IN ('launched', 'attached'))"
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'design_refs'
+                   AND t.relname = 'capture_job'
+                   AND c.conname = 'ck_capture_job_browser'
+            ) THEN
+                ALTER TABLE design_refs.capture_job
+                    ADD CONSTRAINT ck_capture_job_browser
+                    CHECK (browser IN ('launched', 'attached'));
+            END IF;
+        END
+        $$;
+        """
     )
 
 

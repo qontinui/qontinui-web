@@ -18,12 +18,18 @@ import {
 } from "@/components/console";
 import { Button } from "@/components/ui/button";
 import type { CaptureJob, CaptureJobState } from "@/lib/api/design-refs";
-import { moveCaptureJob, retryCaptureJob } from "@/lib/api/design-refs";
+import {
+  CAPTURE_JOBS_PAGE_LIMIT,
+  moveCaptureJob,
+  retryCaptureJob,
+} from "@/lib/api/design-refs";
 import {
   JOB_PALETTE,
   countByState,
+  isTruncatedPage,
   jobStatus,
   tierReading,
+  truncatedNote,
 } from "../_lib/jobStatus";
 
 type Filter = "all" | CaptureJobState;
@@ -34,15 +40,23 @@ export interface JobsViewProps {
   readFailed: boolean;
   /** Re-read the queue now. */
   onChanged: () => void;
+  /** The page size `jobs` was read with; a full page means counts are a floor. */
+  limit?: number;
 }
 
-export function JobsView({ jobs, readFailed, onChanged }: JobsViewProps) {
+export function JobsView({
+  jobs,
+  readFailed,
+  onChanged,
+  limit = CAPTURE_JOBS_PAGE_LIMIT,
+}: JobsViewProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const counts = useMemo(() => (jobs ? countByState(jobs) : null), [jobs]);
+  const truncated = isTruncatedPage(jobs, limit);
   const shown = useMemo(
     () => (jobs ?? []).filter((j) => filter === "all" || j.state === filter),
     [jobs, filter]
@@ -91,6 +105,15 @@ export function JobsView({ jobs, readFailed, onChanged }: JobsViewProps) {
         testIdPrefix="design-refs-jobs-filter"
       />
 
+      {truncated && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="design-refs-jobs-truncated"
+        >
+          {truncatedNote(limit)}
+        </p>
+      )}
+
       {error !== null && (
         <div
           role="alert"
@@ -121,8 +144,9 @@ export function JobsView({ jobs, readFailed, onChanged }: JobsViewProps) {
               className="text-sm text-muted-foreground italic"
               data-testid="design-refs-jobs-empty"
             >
-              No jobs{filter === "all" ? "" : " in this state"}. Add URLs on the
-              Add tab.
+              {truncated
+                ? `No jobs${filter === "all" ? "" : " in this state"} among the newest ${limit}; older jobs were not read.`
+                : `No jobs${filter === "all" ? "" : " in this state"}. Add URLs on the Add tab.`}
             </p>
           )
         }

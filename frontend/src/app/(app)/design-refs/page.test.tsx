@@ -8,7 +8,9 @@
  *   worker's pre-check wrote one, then the tier and its reason;
  * - the Add form sends no tier field at all (the submitter does not pick it);
  * - the Jobs tab shows a failed job's worker error and a Retry that re-queues
- *   it; an unreadable queue is "unknown", never "no jobs".
+ *   it; an unreadable queue is "unknown", never "no jobs";
+ * - a read that filled the page says its counts are a floor, and neither the
+ *   strip nor the empty state claims "nothing is waiting".
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +25,8 @@ import {
 import type { CaptureJob } from "@/lib/api/design-refs";
 
 const api = vi.hoisted(() => ({
+  // A small page so a full read is cheap to build.
+  CAPTURE_JOBS_PAGE_LIMIT: 2,
   fetchCaptureJobs: vi.fn(),
   createCaptureJobs: vi.fn(),
   retryCaptureJob: vi.fn(),
@@ -191,5 +195,40 @@ describe("/design-refs", () => {
       await screen.findByTestId("design-refs-jobs-unknown")
     ).toBeInTheDocument();
     expect(screen.queryByTestId("design-refs-jobs-empty")).toBeNull();
+  });
+
+  it("says counts are a floor when the read filled the page", async () => {
+    api.fetchCaptureJobs.mockResolvedValue([
+      job({ id: "j1", state: "done" }),
+      job({ id: "j2", state: "done" }),
+    ]);
+    await renderPage();
+    const health = screen.getByTestId("design-refs-health");
+    expect(health).not.toHaveTextContent("Nothing is waiting to be captured");
+    expect(health).toHaveTextContent("among the newest 2 jobs");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("design-refs-view-jobs"));
+    });
+    expect(
+      await screen.findByTestId("design-refs-jobs-truncated")
+    ).toHaveTextContent("counts are a floor");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("design-refs-jobs-filter-queued"));
+    });
+    expect(screen.getByTestId("design-refs-jobs-empty")).toHaveTextContent(
+      "among the newest 2; older jobs were not read"
+    );
+  });
+
+  it("shows no floor note when the read is shorter than the page", async () => {
+    api.fetchCaptureJobs.mockResolvedValue([job({ id: "j1", state: "done" })]);
+    await renderPage();
+    expect(screen.getByTestId("design-refs-health")).toHaveTextContent(
+      "Nothing is waiting to be captured"
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("design-refs-view-jobs"));
+    });
+    expect(screen.queryByTestId("design-refs-jobs-truncated")).toBeNull();
   });
 });
