@@ -572,12 +572,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Exact reverse of upgrade(): Part 3, then Part 2, then Part 1.
+    """Reverse of upgrade(): Part 3, then Part 2, then Part 1.
 
     Within the two policy tables the parent is altered before its versions
     table, the order coord's write path locks them in (``FOR UPDATE`` on the
     parent, then the snapshot INSERT), so a downgrade run against a live coord
-    cannot deadlock against a coord write (the order capmodel_02 set).
+    cannot deadlock against coord's policy writes (the order capmodel_02 set).
 
     Comments go with their columns and table — a comment has no independent
     existence to drop. Any recorded advice goes with the table.

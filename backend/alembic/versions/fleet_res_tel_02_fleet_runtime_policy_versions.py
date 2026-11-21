@@ -260,11 +260,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the snapshots and the current_version column. Reverse of upgrade()."""
-    op.execute("DROP TABLE IF EXISTS coord.fleet_runtime_policy_versions")
+    """Drop the current_version column and the snapshots, reversing upgrade().
+
+    The parent is altered before the versions table is dropped: both take
+    ACCESS EXCLUSIVE, and coord's write path locks the parent first
+    (``FOR UPDATE``, then the snapshot INSERT), so this order cannot deadlock
+    against a live coord write. Neither statement depends on the other: the
+    snapshots' foreign key references the parent's ``id``, not
+    ``current_version``.
+    """
     op.execute(
         """
         ALTER TABLE coord.fleet_runtime_policy
             DROP COLUMN IF EXISTS current_version
         """
     )
+    op.execute("DROP TABLE IF EXISTS coord.fleet_runtime_policy_versions")

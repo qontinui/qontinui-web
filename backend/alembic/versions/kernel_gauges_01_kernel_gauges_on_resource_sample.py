@@ -625,12 +625,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop every column upgrade() added, from all three tables. Exact reverse.
+    """Drop every column upgrade() added, from all three tables, reversing upgrade().
 
     Within the two policy tables the parent is altered before its versions
     table, the order coord's write path locks them in (``FOR UPDATE`` on the
     parent, then the snapshot INSERT), so a downgrade run against a live coord
-    cannot deadlock against a coord write (the order capmodel_02 set).
+    cannot deadlock against coord's policy writes (the order capmodel_02 set).
 
     The COMMENTs go with their columns. Both policy tables are dropped
     together for the reason sess_guard_01 gives: leaving the snapshot columns

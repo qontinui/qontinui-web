@@ -590,7 +590,7 @@ def downgrade() -> None:
     Within the two policy tables the parent is altered before its versions
     table, the order coord's write path locks them in (``FOR UPDATE`` on the
     parent, then the snapshot INSERT), so a downgrade run against a live coord
-    cannot deadlock against a coord write (the order capmodel_02 set).
+    cannot deadlock against coord's policy writes (the order capmodel_02 set).
     """
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_mints")
     op.execute("DROP TABLE IF EXISTS coord.secrets_broker_ops")
