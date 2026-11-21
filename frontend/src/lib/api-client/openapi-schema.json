@@ -5232,7 +5232,7 @@
       },
       "BlobAnchor": {
         "additionalProperties": false,
-        "description": "A file at a known content revision.\n\n``sha`` is the GIT BLOB sha \u2014 exactly what\n``GET /repos/{repo}/contents/{path}`` returns, so resolving this\nanchor costs the watcher one call it already makes and no separate\nsha lookup.",
+        "description": "A file at a known content revision.\n\n``sha`` is the GIT BLOB sha \u2014 exactly what\n``GET /repos/{repo}/contents/{path}`` returns, so resolving this\nanchor costs the watcher one call it already makes and no separate\nsha lookup. It is OPTIONAL, as in coord's parser: without it the\nanchor asserts only that the path exists. Omitted, it is omitted from\nthe stored object; present, it must be non-empty (coord would read an\nempty ``sha`` as absent, silently dropping what the writer typed).",
         "properties": {
           "path": {
             "maxLength": 1024,
@@ -5247,10 +5247,17 @@
             "type": "string"
           },
           "sha": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Sha",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
           },
           "type": {
             "const": "blob",
@@ -5261,8 +5268,7 @@
         "required": [
           "type",
           "repo",
-          "path",
-          "sha"
+          "path"
         ],
         "title": "BlobAnchor",
         "type": "object"
@@ -40289,6 +40295,7 @@
         "description": "A pull request, resolved against coord's PR twin.",
         "properties": {
           "number": {
+            "maximum": 2147483647.0,
             "minimum": 1.0,
             "title": "Number",
             "type": "integer"

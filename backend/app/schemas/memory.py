@@ -146,12 +146,17 @@ MAX_ANCHORED_TO_CLAUSES = 16
 # ``qontinui-coord@010dfa1b5d5b``: the same required fields and the same
 # refusals, each pinned by ``tests/test_memory_anchor_schema.py``. Numbers
 # are STRICT (coord's ``as_u64`` / ``as_i64`` / ``as_bool`` refuse a numeric
-# string, a float and a boolean, so pydantic's lax coercion would accept
-# anchors coord then reads as malformed). Where this door is stricter than
-# coord it is because coord would silently reinterpret the value: an empty
-# or non-string ``on_ref`` (coord reads it as "no ref", dropping what the
-# writer typed), and a ``content`` pattern over coord's resolve-time cap
-# (which the parser admits but the resolver can never compile).
+# string, a float and a boolean; pydantic's lax mode would instead coerce
+# ``true`` to PR #1 or ``"yes"`` to armed, and teach writers a grammar
+# coord's own doors refuse). Where this door is stricter than coord it is
+# because coord would silently reinterpret the value, or because the value
+# is past any honest use: an empty or non-string optional string (``sha``,
+# ``on_ref`` — coord reads it as absent, dropping what the writer typed), a
+# ``content`` pattern over coord's resolve-time cap (which the parser admits
+# but the resolver can never compile), extra keys inside nested objects
+# (``flag_state.expect``), and length caps coord does not have (256 bytes on
+# ``repo`` / ``workflow`` / ``name`` / ``ref`` / ``on_ref``, 1024 on
+# ``path``).
 #
 # Every variant forbids extra keys. Anchor IDENTITY is the whole JSON
 # object (that is what the dedup-merge in ``memory_store.insert_record``
@@ -320,13 +325,18 @@ class BlobAnchor(_AnchorBase):
     ``sha`` is the GIT BLOB sha — exactly what
     ``GET /repos/{repo}/contents/{path}`` returns, so resolving this
     anchor costs the watcher one call it already makes and no separate
-    sha lookup.
+    sha lookup. It is OPTIONAL, as in coord's parser: without it the
+    anchor asserts only that the path exists. Omitted, it is omitted from
+    the stored object; present, it must be non-empty (coord would read an
+    empty ``sha`` as absent, silently dropping what the writer typed).
     """
 
     type: Literal["blob"]
     repo: str = Field(min_length=1, max_length=256)
     path: str = Field(min_length=1, max_length=1024)
-    sha: str = Field(min_length=1, max_length=64)
+    sha: str | None = Field(
+        default=None, min_length=1, max_length=64, exclude_if=_omitted
+    )
 
 
 class PRAnchor(_AnchorBase):
@@ -334,7 +344,10 @@ class PRAnchor(_AnchorBase):
 
     type: Literal["pr"]
     repo: str = Field(min_length=1, max_length=256)
-    number: int = Field(ge=1)
+    # Strict and i32-bounded, as coord's ``as_i64`` + ``i32::try_from``: a
+    # number coord cannot narrow reads UNRESOLVED forever, which freezes the
+    # whole record's ``anchor_state``, and ``true`` must not store as PR #1.
+    number: int = Field(strict=True, ge=1, le=_I32_MAX)
 
 
 class MigrationAnchor(_AnchorBase):

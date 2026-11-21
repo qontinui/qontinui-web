@@ -4258,16 +4258,26 @@ class TestAnchorWritePath:
             "/api/v1/memory/records",
             json={
                 "records": [
-                    # A blob anchor with no sha: the watcher would have
-                    # nothing to compare against.
+                    # A blob anchor with no PATH: there is nothing for the
+                    # watcher to look up. (A sha-less blob is VALID — it
+                    # asserts the path exists, as coord's parser reads it.)
                     _record(
-                        "the shaless fact",
-                        anchors=[{"type": "blob", "repo": "r", "path": "p"}],
+                        "the pathless fact",
+                        anchors=[{"type": "blob", "repo": "r", "sha": "a" * 40}],
                     )
                 ]
             },
         )
         assert resp.status_code == 422, resp.text
+
+    def test_a_shaless_blob_anchor_is_stored_without_a_sha_key(
+        self, mc: MemoryClient
+    ) -> None:
+        """coord's parser reads a blob with no ``sha`` as "the path exists";
+        an omitted sha must not round-trip as an explicit ``null``."""
+        shaless = {"type": "blob", "repo": "qontinui/qontinui-web", "path": "README.md"}
+        memory_id = _write_one(mc, "the path-exists fact", anchors=[shaless])
+        assert _anchors_of(mc, memory_id) == [shaless]
 
     def test_writer_supplied_anchor_state_is_422(self, mc: MemoryClient) -> None:
         """anchor_state is derived — the watcher's, never a writer's.
@@ -4779,10 +4789,13 @@ class TestNewAnchorVariantsRoundTrip:
             mc, content, anchors=[{**_REGION_ANCHOR, "on_ref": None}]
         )
         assert _anchors_of(mc, memory_id) == [_REGION_ANCHOR]
-        mc.client.post(
+        second = mc.client.post(
             "/api/v1/memory/records",
             json={"records": [_record(content, anchors=[_REGION_ANCHOR])]},
         )
+        assert second.status_code == 200, second.text
+        (r2,) = second.json()["records"]
+        assert r2["deduped"] is True
         assert _anchors_of(mc, memory_id) == [_REGION_ANCHOR]
 
     def test_the_single_row_path_round_trips_them_too(

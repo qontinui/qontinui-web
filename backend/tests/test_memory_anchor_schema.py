@@ -153,6 +153,39 @@ def _refused_at(anchor: dict[str, Any], *field: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# The two pre-existing variants coord reads differently than this door used to
+# ---------------------------------------------------------------------------
+
+
+class TestBlob:
+    def test_sha_is_optional_and_omitted_when_absent(self) -> None:
+        # coord: "without it the anchor asserts only that the path exists".
+        shaless = _with("blob", sha=_DROP)
+        assert _dump(shaless) == shaless
+
+    def test_a_null_sha_is_the_same_anchor_as_an_omitted_one(self) -> None:
+        # coord's `opt_s` reads a null sha as absent, so the two must store
+        # as one object (the same rule `on_ref` follows).
+        assert _dump(_with("blob", sha=None)) == _with("blob", sha=_DROP)
+
+    @pytest.mark.parametrize("value", ["", 7])
+    def test_a_present_sha_is_a_non_empty_string(self, value: Any) -> None:
+        _refused_at(_with("blob", sha=value), "sha")
+
+
+class TestPr:
+    @pytest.mark.parametrize("value", [2**31, 0, -1, True, "5", 5.0])
+    def test_number_is_a_strict_positive_i32(self, value: Any) -> None:
+        # Above i32 coord cannot narrow it (unresolved forever, freezing the
+        # record's anchor_state); a bool, string or float is not an integer.
+        _refused_at(_with("pr", number=value), "number")
+
+    def test_the_largest_i32_is_accepted(self) -> None:
+        anchor = _with("pr", number=2**31 - 1)
+        assert _dump(anchor) == anchor
+
+
+# ---------------------------------------------------------------------------
 # The vocabulary
 # ---------------------------------------------------------------------------
 
@@ -604,7 +637,9 @@ class TestRunOutcomeMetricArm:
 
     def test_an_integer_threshold_is_accepted(self) -> None:
         # coord's `as_f64` reads any JSON number; the dump is the equal float.
-        assert _dump(_with(_METRIC, at_least=1))["at_least"] == 1.0
+        dumped = _dump(_with(_METRIC, at_least=1))["at_least"]
+        assert dumped == 1.0
+        assert type(dumped) is float
 
     @pytest.mark.parametrize("field", ["source", "subject", "task"])
     @pytest.mark.parametrize(
