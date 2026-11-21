@@ -10,7 +10,7 @@
  * registered state getter stays live inside a real provider.
  */
 
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { UNKNOWN_AMBER } from "@/components/console";
@@ -628,5 +628,76 @@ describe("PermissionAutoAcceptPanel", () => {
       resolvedScope: null,
       error: "HTTP 502",
     });
+  });
+
+  it("outside act, a bridge read sampled right after a non-discrete commit reports the level the badge shows", async () => {
+    // RTL's render/rerender wrap in act(), which flushes every effect before
+    // returning, so the test above cannot see a state ref refreshed in a
+    // passive effect. Here the update lands from a resolved promise (not a
+    // discrete input event) with act disabled, and the registry is sampled
+    // from a MutationObserver callback on the panel's own DOM: a microtask
+    // after the commit and before React's passive-effect flush.
+    type Registry = NonNullable<
+      ReturnType<typeof useUIBridgeOptional>
+    >["registry"];
+    let registry: Registry | null = null;
+    function GrabRegistry() {
+      const bridge = useUIBridgeOptional();
+      useLayoutEffect(() => {
+        registry = bridge?.registry ?? null;
+      }, [bridge]);
+      return null;
+    }
+    let setPolicy: ((p: FleetPolicyView) => void) | null = null;
+    usePolicyMock.mockImplementation(() => {
+      const [policy, set] = useState<FleetPolicyView>(ON_TENANT);
+      setPolicy = set;
+      return hookState(policy);
+    });
+
+    const view = render(
+      <UIBridgeProvider>
+        <GrabRegistry />
+        <PermissionAutoAcceptPanel />
+      </UIBridgeProvider>
+    );
+    const readState = () =>
+      (registry as Registry | null)
+        ?.getComponent("coord-tenant-permission-auto-accept")
+        ?.getState?.() as Record<string, unknown> | undefined;
+    expect(readState()).toMatchObject({ resolvedLevel: "on" });
+    const panel = screen.getByTestId("permission-auto-accept-policy");
+    const badge = () =>
+      screen.getByTestId("permission-auto-accept-effective").textContent;
+    expect(badge()).toBe("on");
+
+    const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActEnv = g.IS_REACT_ACT_ENVIRONMENT;
+    g.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      const sampled = new Promise<{ shown: string | null; state: unknown }>(
+        (resolve) => {
+          const observer = new MutationObserver(() => {
+            if (badge() !== "off") return;
+            observer.disconnect();
+            resolve({ shown: badge(), state: readState()?.resolvedLevel });
+          });
+          observer.observe(panel, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+          });
+        }
+      );
+      // A write's read-back resolving: a non-discrete (default-lane) update.
+      void Promise.resolve().then(() =>
+        setPolicy?.({ ...ON_TENANT, effective_level: "off" })
+      );
+      expect(await sampled).toEqual({ shown: "off", state: "off" });
+    } finally {
+      g.IS_REACT_ACT_ENVIRONMENT = previousActEnv;
+      view.unmount();
+    }
   });
 });
