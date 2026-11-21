@@ -4619,6 +4619,211 @@ class TestAnchoredProactiveRecall:
         assert resp.status_code == 422
 
 
+# ---------------------------------------------------------------------------
+# coord's memory-admissible anchor types past the 2026-07-29 five — recall
+# and the round trip (plan
+# 2026-11-21-web-memory-write-schema-refuses-anchor-types-coord-resolves,
+# Phase 2). The per-rule refusals are pure-schema and live in
+# test_memory_anchor_schema.py.
+# ---------------------------------------------------------------------------
+
+_REGION_ANCHOR = {
+    "type": "region",
+    "repo": "qontinui-web",
+    "path": "backend/app/schemas/memory.py",
+    "start_line": 170,
+    "end_line": 186,
+    "digest": "0f" * 32,
+}
+_CONTENT_ANCHOR = {
+    "type": "content",
+    "repo": "qontinui-web",
+    "path": "backend/app/services/memory_store.py",
+    "pattern": "async def anchored_search",
+}
+_FLAG_STATE_ANCHOR = {
+    "type": "flag_state",
+    "name": "MEMORY_ANCHORED_RECALL_ENABLED",
+    "expect": {"armed": False},
+}
+_RUN_CONCLUSION_ANCHOR = {
+    "type": "run_outcome",
+    "repo": "qontinui-web",
+    "workflow": "backend-ci.yml",
+    "ref": "main",
+    "expect": "success",
+}
+_RUN_METRIC_ANCHOR = {
+    "type": "run_outcome",
+    "source": "eval",
+    "subject": "memory-recall",
+    "task": "anchored",
+    "metric": "recall_at_8",
+    "at_least": 0.9,
+    "min_cases": 12,
+}
+_PUBLICATION_ANCHOR = {
+    "type": "publication",
+    "kind": "policy",
+    "name": "coordination",
+    "min_version": 9,
+}
+
+#: Every new variant, with each optional field both omitted and present.
+_NEW_VARIANT_ANCHORS: dict[str, dict[str, Any]] = {
+    "region": _REGION_ANCHOR,
+    "region_on_ref": {**_REGION_ANCHOR, "on_ref": "a" * 40},
+    "flag_state": _FLAG_STATE_ANCHOR,
+    "content": _CONTENT_ANCHOR,
+    "content_on_ref": {**_CONTENT_ANCHOR, "on_ref": "main"},
+    "run_outcome_conclusion": _RUN_CONCLUSION_ANCHOR,
+    "run_outcome_metric": _RUN_METRIC_ANCHOR,
+    "run_outcome_metric_ref": {**_RUN_METRIC_ANCHOR, "ref": "b" * 40},
+    "publication": _PUBLICATION_ANCHOR,
+}
+
+_NO_LEXICAL_MATCH = "zzzznothinglexicallymatching"
+
+
+def _canonical(anchors: list[dict[str, Any]]) -> list[str]:
+    """An order-free, value-exact view of an anchor array."""
+    return sorted(json.dumps(a, sort_keys=True) for a in anchors)
+
+
+class TestPathBearingAnchorsJoinAnchoredRecall:
+    """``region`` and ``content`` name a file, so they are path hits (D3).
+
+    ``anchored_search`` reads ``path`` off ANY array element, so no query
+    change was needed — these tests are what make that a shown property
+    rather than an asserted one.
+    """
+
+    def _anchored_hits(self, mc: MemoryClient, path_glob: str) -> list[str]:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": _NO_LEXICAL_MATCH,
+                "anchored_to": [{"repo": "qontinui-web", "path_glob": path_glob}],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["anchored_arm"] == "ran"
+        return [h["memory_id"] for h in body["anchored_hits"]]
+
+    def test_a_region_anchor_is_recalled_by_its_path(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        region_fact = _write_one(
+            mc, "the region anchored fact", anchors=[_REGION_ANCHOR]
+        )
+        _write_one(mc, "the store blob fact", anchors=[_STORE_BLOB])
+        assert self._anchored_hits(mc, "backend/app/schemas/*") == [region_fact]
+
+    def test_a_content_anchor_is_recalled_by_its_path(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        content_fact = _write_one(
+            mc, "the content anchored fact", anchors=[_CONTENT_ANCHOR]
+        )
+        _write_one(mc, "the endpoint blob fact", anchors=[_ENDPOINT_BLOB])
+        assert self._anchored_hits(mc, "backend/app/services/*") == [content_fact]
+
+    def test_pathless_anchors_are_never_path_hits(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        """``publication`` / ``flag_state`` carry neither repo nor path;
+        ``run_outcome`` carries the repo but no path, so it passes the GIN
+        containment stage and must still fail the path match. The region
+        record is the positive control: the arm ran and matched something.
+        """
+        region_fact = _write_one(mc, "the positive control", anchors=[_REGION_ANCHOR])
+        _write_one(mc, "the published policy fact", anchors=[_PUBLICATION_ANCHOR])
+        _write_one(mc, "the flag state fact", anchors=[_FLAG_STATE_ANCHOR])
+        _write_one(mc, "the green ci fact", anchors=[_RUN_CONCLUSION_ANCHOR])
+        _write_one(mc, "the metric floor fact", anchors=[_RUN_METRIC_ANCHOR])
+        assert self._anchored_hits(mc, "*") == [region_fact]
+
+
+class TestNewAnchorVariantsRoundTrip:
+    """Each new variant is stored as exactly the object written, so the
+    dedup-merge's identity (the whole JSON object) holds for it."""
+
+    @pytest.mark.parametrize("name", sorted(_NEW_VARIANT_ANCHORS))
+    def test_written_and_read_back_unchanged(self, mc: MemoryClient, name: str) -> None:
+        anchor = _NEW_VARIANT_ANCHORS[name]
+        memory_id = _write_one(mc, f"the {name} round-trip fact", anchors=[anchor])
+        assert _anchors_of(mc, memory_id) == [anchor]
+
+    def test_rewriting_the_same_anchors_dedups_onto_one_set(
+        self, mc: MemoryClient
+    ) -> None:
+        content = "one claim, every new anchor type"
+        anchors = list(_NEW_VARIANT_ANCHORS.values())
+        memory_id = _write_one(mc, content, anchors=anchors)
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=anchors)]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["records"][0] == {"memory_id": memory_id, "deduped": True}
+        assert _canonical(_anchors_of(mc, memory_id)) == _canonical(anchors)
+
+    def test_a_null_on_ref_and_an_omitted_one_are_one_anchor(
+        self, mc: MemoryClient
+    ) -> None:
+        """coord reads both as "no ref"; an explicit ``null`` stored as a key
+        would make them two objects to the merge."""
+        content = "the null-versus-omitted on_ref fact"
+        memory_id = _write_one(
+            mc, content, anchors=[{**_REGION_ANCHOR, "on_ref": None}]
+        )
+        assert _anchors_of(mc, memory_id) == [_REGION_ANCHOR]
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(content, anchors=[_REGION_ANCHOR])]},
+        )
+        assert _anchors_of(mc, memory_id) == [_REGION_ANCHOR]
+
+    def test_the_single_row_path_round_trips_them_too(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """``insert_record`` (the supersede door and the race fallback)."""
+        from pydantic import TypeAdapter
+
+        from app.schemas.memory import Anchor
+
+        anchors = [
+            TypeAdapter(Anchor).validate_python(a).model_dump(mode="json")
+            for a in _NEW_VARIANT_ANCHORS.values()
+        ]
+        content = "written through the single-row path, every new anchor"
+
+        async def _go() -> UUID:
+            maker = async_sessionmaker(db, class_=AsyncSession, expire_on_commit=False)
+            async with maker() as session:
+                memory_id, _ = await store.insert_record(
+                    session,
+                    tenant_id=mc.tenant_id,
+                    scope="tenant",
+                    scope_ref=None,
+                    kind="fact",
+                    title="single-row anchors",
+                    content=content,
+                    content_hash=_content_sha256(content),
+                    embedding=None,
+                    embedding_model=None,
+                    importance=0.5,
+                    source={},
+                    anchors=anchors,
+                )
+                await session.commit()
+                return memory_id
+
+        memory_id = str(asyncio.run(_go()))
+        assert _anchors_of(mc, memory_id) == list(_NEW_VARIANT_ANCHORS.values())
+
+
 class TestGlobTranslation:
     """Pure-function cover for the glob -> POSIX ARE translation."""
 

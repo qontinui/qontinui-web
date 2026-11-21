@@ -20,11 +20,24 @@ rows). There is no server-side embed fallback.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Any, Final, Literal, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    RootModel,
+    Tag,
+    ValidationInfo,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
 
 from app.core.bounded_read import BoundedReadMeta
 from app.services.memory_vectors import ACCEPTED_EMBEDDING_MODEL_TAGS, EMBEDDING_DIM
@@ -97,22 +110,204 @@ MAX_ANCHORED_TO_CLAUSES = 16
 # Anchors — typed references to the ground truth a record asserts about
 # --------------------------------------------------------------------------
 #
-# Plan ``2026-07-29-memory-anchored-derived-records`` §3.1. Five variants,
-# discriminated on ``type``, each chosen because coord already knows how to
-# read it. There is deliberately **no ``symbol`` variant**: coord's
+# The vocabulary is COORD'S MEMORY-ADMISSIBLE SET: every type
+# ``parse_memory_anchor`` (``qontinui-coord`` ``crates/coord/src/
+# anchor_observer.rs``) resolves on a memory record — ``blob``, ``region``,
+# ``pr``, ``migration``, ``schema``, ``flag``, ``flag_state``, ``content``,
+# ``run_outcome`` (both arms) and ``publication``, discriminated on ``type``.
+# This door is the only writer of memory records (coord's
+# ``coord_memory_record`` proxies here), so the two lists must agree in BOTH
+# directions: an anchor coord cannot check is worse than no anchor, and an
+# anchor coord CAN check that this door refuses is a capability nobody can
+# switch on. The 2026-07-29 set (plan
+# ``2026-07-29-memory-anchored-derived-records`` §3.1) was five types; coord
+# learned the other five later and this union caught up in plan
+# ``2026-11-21-web-memory-write-schema-refuses-anchor-types-coord-resolves``.
+#
+# Two coord types are absent ON PURPOSE, and refused as unknown tags:
+#
+# * ``sql_count`` asserts where a live, tenant-scoped POPULATION sits
+#   against a threshold. It moves with fleet traffic rather than with an
+#   artifact, so it would flip a record's ``anchor_state`` for reasons
+#   unrelated to the record's truth.
+# * ``worker`` asserts that a ledger worker is ticking right now — a live
+#   operational state, not artifact truth.
+#
+# Both belong in a ``domain_spec`` probe block; ``parse_memory_anchor``
+# refuses them for exactly these reasons.
+#
+# There is also deliberately **no ``symbol`` variant**: coord's
 # ``symbol_claims`` are coordination claims about who is EDITING a symbol,
-# not a symbol index, and coord has no parser for any fleet language — so a
-# ``symbol`` resolver would be larger than the rest of the plan. A record
-# that wants symbol granularity anchors the ``blob``.
+# not a symbol index, and coord has no parser for any fleet language. A
+# record that wants sub-file granularity anchors a ``region`` (a line span
+# with a content digest) or a ``content`` pattern.
+#
+# **The field rules mirror ``parse_anchor_typed`` rule for rule**, as of
+# ``qontinui-coord@010dfa1b5d5b``: the same required fields and the same
+# refusals, each pinned by ``tests/test_memory_anchor_schema.py``. Numbers
+# are STRICT (coord's ``as_u64`` / ``as_i64`` / ``as_bool`` refuse a numeric
+# string, a float and a boolean, so pydantic's lax coercion would accept
+# anchors coord then reads as malformed). Where this door is stricter than
+# coord it is because coord would silently reinterpret the value: an empty
+# or non-string ``on_ref`` (coord reads it as "no ref", dropping what the
+# writer typed), and a ``content`` pattern over coord's resolve-time cap
+# (which the parser admits but the resolver can never compile).
 #
 # Every variant forbids extra keys. Anchor IDENTITY is the whole JSON
 # object (that is what the dedup-merge in ``memory_store.insert_record``
 # unions on), so an unconstrained extra key would mint a second anchor
 # that is "the same anchor" to a human and a distinct one to the store.
+# The same reason governs the optional fields: an omitted ``on_ref`` /
+# metric ``ref`` is OMITTED from the stored object (``exclude_if``), never
+# serialised as an explicit ``null`` — ``{"on_ref": null}`` and no
+# ``on_ref`` are one anchor to coord, so they must be one object here.
+# String values are validated, never rewritten: a ``sha256:``-prefixed
+# digest and its bare form, or ``refs/heads/main`` and ``main``, stay two
+# stored objects that coord parses to one anchor — at worst one redundant
+# array element, never a lost or mis-resolved one. (A metric ``at_least``
+# written as an integer is stored as the equal float; jsonb compares
+# numbers by value, so that changes no identity.)
 #
 # ``anchor_state`` is NOT here and never will be: it is the watcher's
 # roll-up verdict, writer-inaccessible by construction (see
 # ``MemoryRecordIn._anchor_state_is_writer_inaccessible``).
+
+# --- Mirrored coord constants ---------------------------------------------
+#
+# Each is a COPY of a value in ``qontinui-coord`` at ``010dfa1b5d5b``. The
+# cited file is the authority; ``tests/test_memory_anchor_schema.py`` pins
+# every copy by value, so changing one here is a red test, and a change on
+# coord's side is found by re-reading the cited definition (plan D4 — a
+# shared schema package is the end state that would make drift impossible).
+
+# ``crates/coord/src/anchor_observer.rs`` ``REGION_MAX_LINES``: the largest
+# line span one ``region`` anchor may claim. A larger "region" is a file
+# anchor in disguise.
+REGION_MAX_LINES: Final = 2_000
+
+# ``crates/coord/src/gates.rs`` ``MAX_PATTERN_LEN``, in BYTES: the longest
+# ``content`` pattern coord's resolver will compile. ``parse_anchor_typed``
+# admits a longer one, but ``probe_content_matches`` then answers
+# ``PatternInvalid`` on every tick, so the anchor reads UNRESOLVED forever.
+CONTENT_PATTERN_MAX_BYTES: Final = 512
+
+# ``crates/coord/src/prompt_document_publications.rs`` ``PUBLISHABLE_KINDS``
+# (line 79), each ``KIND_*`` resolved to its string in
+# ``crates/coord/src/prompt_documents.rs``. Any other kind can never have a
+# publication row, so a ``publication`` anchor naming it would read
+# CONTRADICTED forever.
+PublishableKind = Literal[
+    "policy",
+    "response_prompt",
+    "continuation_rules",
+    "agent_playbook",
+    "prompt_template",
+    "session_briefing",
+    "claude_settings",
+]
+PUBLISHABLE_KINDS: tuple[str, ...] = get_args(PublishableKind)
+
+# ``crates/coord/src/anchor_observer.rs`` ``RUN_CONCLUSIONS``: the GitHub
+# Actions conclusions a ``run_outcome`` conclusion arm may ``expect``.
+RunConclusion = Literal[
+    "success",
+    "failure",
+    "cancelled",
+    "skipped",
+    "neutral",
+    "timed_out",
+    "action_required",
+    "stale",
+]
+RUN_CONCLUSIONS: tuple[str, ...] = get_args(RunConclusion)
+
+# ``crates/coord/src/anchor_observer.rs`` ``RUN_OUTCOME_LABEL_MAX_BYTES`` /
+# ``RUN_OUTCOME_METRIC_NAME_MAX_BYTES``.
+RUN_OUTCOME_LABEL_MAX_BYTES: Final = 200
+RUN_OUTCOME_METRIC_NAME_MAX_BYTES: Final = 128
+
+# ``crates/coord/src/anchor_observer.rs`` ``RUN_CONCLUSION_KEYS`` /
+# ``RUN_METRIC_KEYS``: which keys select which ``run_outcome`` arm. ``ref``
+# is in neither — both arms carry it.
+RUN_CONCLUSION_KEYS: tuple[str, ...] = ("repo", "workflow", "expect")
+RUN_METRIC_KEYS: tuple[str, ...] = (
+    "source",
+    "subject",
+    "task",
+    "metric",
+    "at_least",
+    "min_cases",
+)
+
+# Integer ranges coord's parser narrows into (``u32::try_from``,
+# ``i32::try_from``, ``i64::try_from``). Out of range is refused, never
+# truncated.
+_U32_MAX: Final = 2**32 - 1
+_I32_MAX: Final = 2**31 - 1
+_I64_MAX: Final = 2**63 - 1
+
+# Rust's ``char::is_whitespace`` set (Unicode ``White_Space``), which is what
+# coord's ``str::trim`` strips. Spelled out rather than taken from
+# ``str.isspace``, whose set differs (it also counts U+001C..U+001F).
+_RUST_WHITESPACE: Final = frozenset(
+    "\t\n\x0b\x0c\r \x85\xa0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000"
+)
+_SAFE_GIT_REF_RE: Final = re.compile(r"[A-Za-z0-9._/-]+")
+_SHA256_HEX_RE: Final = re.compile(r"[0-9a-f]{64}")
+_HEX_RE: Final = re.compile(r"[0-9A-Fa-f]+")
+_METRIC_NAME_RE: Final = re.compile(
+    rf"[A-Za-z0-9_.:-]{{1,{RUN_OUTCOME_METRIC_NAME_MAX_BYTES}}}"
+)
+
+
+def _utf8_len(s: str) -> int | None:
+    """``len(s)`` in UTF-8 bytes — the unit coord's ``str::len`` counts.
+
+    ``None`` for a string that has no UTF-8 encoding (a lone surrogate,
+    which ``json.loads`` produces from a ``\\ud800`` escape and coord's
+    ``serde_json`` refuses outright).
+    """
+    try:
+        return len(s.encode("utf-8"))
+    except UnicodeEncodeError:
+        return None
+
+
+def _is_safe_git_ref(r: str) -> bool:
+    """coord's ``is_safe_git_ref``: ``[A-Za-z0-9._/-]``, no ``-`` lead, no ``..``."""
+    return (
+        bool(_SAFE_GIT_REF_RE.fullmatch(r)) and not r.startswith("-") and ".." not in r
+    )
+
+
+def _run_ref_kind(raw: str) -> Literal["sha", "branch"]:
+    """coord's ``normalize_run_ref``: classify a ``run_outcome`` ref, or refuse.
+
+    ``refs/heads/`` is stripped first. All-hex input is a sha and must be a
+    FULL 40 characters (an abbreviated sha never equals a recorded
+    ``head_sha``); anything else is a branch held to the safe-ref rule.
+    Classification only — the stored value is the writer's, unrewritten.
+    """
+    r = raw.removeprefix("refs/heads/")
+    if _HEX_RE.fullmatch(r):
+        if len(r) == 40:
+            return "sha"
+        raise ValueError(
+            "an all-hex ref must be a full 40-character sha; abbreviated shas "
+            "never match a run"
+        )
+    if _is_safe_git_ref(r):
+        return "branch"
+    raise ValueError(
+        "must be a plain git ref or sha ([A-Za-z0-9._/-], no leading `-`, no `..`)"
+    )
+
+
+def _omitted(value: object) -> bool:
+    """``exclude_if`` predicate: an unset optional field is not serialised."""
+    return value is None
 
 
 class _AnchorBase(BaseModel):
@@ -163,12 +358,317 @@ class FlagAnchor(_AnchorBase):
     name: str = Field(min_length=1, max_length=256)
 
 
+class RegionAnchor(_AnchorBase):
+    """A line span of a file, pinned by a digest of its normalized content.
+
+    ``digest`` is sha256 over the region with trailing whitespace stripped
+    per line, line endings normalized to ``\\n`` and the line numbers
+    excluded — 64 lowercase hex characters, optionally ``sha256:``-prefixed.
+    Line numbers are absolute and 1-based, and they drift; coord's bounded
+    re-anchor search finds a region that moved without changing. A
+    malformed digest can never equal a live one, so it would read ``moved``
+    forever, and is refused here instead.
+
+    ``on_ref`` is optional: omitted, the region resolves against the repo's
+    default-branch head; present, against exactly that ref.
+    """
+
+    type: Literal["region"]
+    repo: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=1024)
+    start_line: int = Field(strict=True, ge=1, le=_U32_MAX)
+    end_line: int = Field(strict=True, ge=1, le=_U32_MAX)
+    digest: str
+    on_ref: str | None = Field(default=None, max_length=256, exclude_if=_omitted)
+
+    @field_validator("end_line")
+    @classmethod
+    def _span_is_a_sub_file_region(cls, v: int, info: ValidationInfo) -> int:
+        start = info.data.get("start_line")
+        if start is None:
+            # ``start_line`` was already refused; one error per bad field.
+            return v
+        if v < start:
+            raise ValueError("must not be before `start_line`")
+        if v - start + 1 > REGION_MAX_LINES:
+            raise ValueError(
+                f"span exceeds REGION_MAX_LINES ({REGION_MAX_LINES}) — anchor "
+                "a sub-file region, not a file"
+            )
+        return v
+
+    @field_validator("digest")
+    @classmethod
+    def _digest_is_sha256_hex(cls, v: str) -> str:
+        if not _SHA256_HEX_RE.fullmatch(v.removeprefix("sha256:")):
+            raise ValueError(
+                "must be 64 lowercase hex characters (sha256 of the normalized "
+                "region), optionally prefixed `sha256:`"
+            )
+        return v
+
+    @field_validator("on_ref")
+    @classmethod
+    def _on_ref_is_a_safe_git_ref(cls, v: str | None) -> str | None:
+        if v is not None and not _is_safe_git_ref(v):
+            raise ValueError(
+                "must be a plain git ref or sha ([A-Za-z0-9._/-], no leading "
+                "`-`, no `..`)"
+            )
+        return v
+
+
+class FlagStateExpectation(BaseModel):
+    """The asserted state of a ``flag_state`` anchor's flag.
+
+    ``armed`` is the state of the BEHAVIOUR the flag governs, not the
+    truthiness of its env var: an unset ``*_DISABLED`` kill switch is
+    ``armed: true``. Required and a real boolean — a block that names a
+    flag but asserts nothing about it has no falsifier.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    armed: bool = Field(strict=True)
+
+
+class FlagStateAnchor(_AnchorBase):
+    """A catalogued flag's STATE — the half ``flag`` (existence) cannot see.
+
+    ``expect.armed`` is part of the anchor's identity: two claims asserting
+    opposite states of one flag are two anchors.
+    """
+
+    type: Literal["flag_state"]
+    name: str = Field(min_length=1, max_length=256)
+    expect: FlagStateExpectation
+
+
+class ContentAnchor(_AnchorBase):
+    """A regex over a file's contents — coord's ``content_matches`` shape.
+
+    Symbol-anchored by construction: a pattern does not rot when the file
+    grows above it, which is the failure a line-number citation has.
+    ``pattern`` is compiled by coord (Rust ``regex``, multi-line), so it is
+    NOT checked here beyond its byte cap — Python's ``re`` is a different
+    dialect and would refuse or admit the wrong patterns. ``on_ref``
+    follows ``region``'s defaulting, but coord holds it to no ref grammar
+    here (it is percent-encoded into the contents API query), so neither
+    does this door.
+    """
+
+    type: Literal["content"]
+    repo: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=1024)
+    pattern: str = Field(min_length=1)
+    on_ref: str | None = Field(
+        default=None, min_length=1, max_length=256, exclude_if=_omitted
+    )
+
+    @field_validator("pattern")
+    @classmethod
+    def _pattern_within_coord_cap(cls, v: str) -> str:
+        size = _utf8_len(v)
+        if size is None or size > CONTENT_PATTERN_MAX_BYTES:
+            raise ValueError(
+                f"must be at most {CONTENT_PATTERN_MAX_BYTES} bytes of UTF-8 "
+                "(coord's MAX_PATTERN_LEN; a non-ASCII literal costs more than "
+                "one byte)"
+            )
+        return v
+
+
+class RunConclusionAnchor(_AnchorBase):
+    """``run_outcome``, CONCLUSION arm: this workflow ran on this ref and concluded X.
+
+    Resolved from coord's CI twin. ``ref`` is a full 40-hex sha or a branch
+    (``refs/heads/`` optional); an abbreviated sha is refused. The NEWEST
+    run of the workflow on the ref decides.
+    """
+
+    type: Literal["run_outcome"]
+    repo: str = Field(min_length=1, max_length=256)
+    workflow: str = Field(min_length=1, max_length=256)
+    ref: str = Field(min_length=1, max_length=256)
+    expect: RunConclusion
+
+    @field_validator("ref")
+    @classmethod
+    def _ref_can_match_a_run(cls, v: str) -> str:
+        _run_ref_kind(v)
+        return v
+
+
+def _check_run_outcome_label(v: str) -> str:
+    """coord's ``is_valid_run_outcome_label`` (non-emptiness is ``min_length``)."""
+    size = _utf8_len(v)
+    if (
+        size is None
+        or size > RUN_OUTCOME_LABEL_MAX_BYTES
+        or v[0] in _RUST_WHITESPACE
+        or v[-1] in _RUST_WHITESPACE
+        or any(unicodedata.category(c) == "Cc" for c in v)
+    ):
+        raise ValueError(
+            f"must be at most {RUN_OUTCOME_LABEL_MAX_BYTES} bytes, with no "
+            "control characters and no leading or trailing whitespace"
+        )
+    return v
+
+
+class RunMetricAnchor(_AnchorBase):
+    """``run_outcome``, METRIC arm: the latest run of a task scored at least X.
+
+    Resolved against the latest ``coord.run_outcomes`` row for
+    ``(tenant, source, subject, task)`` — the tenant is the citing record's
+    own, bound by coord's memory pass and never read from the JSON, so a
+    claim cannot name another tenant's runs. Confirmed iff ``metric`` is
+    ``>= at_least`` AND the run executed ``>= min_cases`` cases;
+    ``min_cases`` is at least 1, because a floor of 0 is confirmed by a
+    run that executed nothing. ``ref``, when present, must be a full sha:
+    an outcome row records the commit its dispatch ran, never a branch.
+    """
+
+    type: Literal["run_outcome"]
+    source: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
+    task: str = Field(min_length=1)
+    metric: str
+    at_least: float = Field(strict=True, allow_inf_nan=False)
+    min_cases: int = Field(strict=True, ge=1, le=_I64_MAX)
+    # Optional, but never ``null``: coord refuses a present non-string ``ref``
+    # on this arm, so the schema advertises a plain string.
+    ref: Annotated[str | None, WithJsonSchema({"type": "string", "title": "Ref"})] = (
+        Field(default=None, exclude_if=_omitted)
+    )
+
+    @field_validator("source", "subject", "task")
+    @classmethod
+    def _labels_are_lookup_keys(cls, v: str) -> str:
+        return _check_run_outcome_label(v)
+
+    @field_validator("metric")
+    @classmethod
+    def _metric_name_grammar(cls, v: str) -> str:
+        if not _METRIC_NAME_RE.fullmatch(v):
+            raise ValueError(
+                f"must be 1-{RUN_OUTCOME_METRIC_NAME_MAX_BYTES} characters of "
+                "[A-Za-z0-9_.:-]"
+            )
+        return v
+
+    @field_validator("ref", mode="before")
+    @classmethod
+    def _present_ref_is_a_string(cls, v: Any) -> Any:
+        if v is None:
+            raise ValueError("must be a string when present; omit it for no ref")
+        return v
+
+    @field_validator("ref")
+    @classmethod
+    def _ref_is_a_full_sha(cls, v: str | None) -> str | None:
+        if v is not None and _run_ref_kind(v) != "sha":
+            raise ValueError(
+                "on the metric arm must be a full 40-character sha: an outcome "
+                "row records the commit its dispatch ran, never a branch"
+            )
+        return v
+
+
+def _run_outcome_arm(v: Any) -> str | None:
+    """Pick a ``run_outcome`` arm by WHICH keys are present — coord's rule.
+
+    Any metric key selects the metric arm; otherwise the conclusion arm
+    (so a bare ``{"type": "run_outcome"}`` is refused for the conclusion
+    arm's missing fields, as coord refuses it). Keys of BOTH arms answer
+    ``None``, which the discriminator turns into the mixed-arms refusal: a
+    claim naming a workflow AND a metric asserted two things, and resolving
+    it as either would silently drop the other's falsifier.
+    """
+    if isinstance(v, RunMetricAnchor):
+        return "metric"
+    if not isinstance(v, dict):
+        return "conclusion"
+    has_conclusion = any(k in v for k in RUN_CONCLUSION_KEYS)
+    has_metric = any(k in v for k in RUN_METRIC_KEYS)
+    if has_conclusion and has_metric:
+        return None
+    return "metric" if has_metric else "conclusion"
+
+
+class RunOutcomeAnchor(
+    RootModel[
+        Annotated[
+            Annotated[RunConclusionAnchor, Tag("conclusion")]
+            | Annotated[RunMetricAnchor, Tag("metric")],
+            Discriminator(
+                _run_outcome_arm,
+                custom_error_type="run_outcome_mixed_arms",
+                custom_error_message=(
+                    "type: run_outcome mixes the conclusion arm ("
+                    + ", ".join(RUN_CONCLUSION_KEYS)
+                    + ") with the metric arm ("
+                    + ", ".join(RUN_METRIC_KEYS)
+                    + ") — write two anchors"
+                ),
+            ),
+        ]
+    ]
+):
+    """``run_outcome`` — ONE ``type`` tag over two mutually exclusive arms.
+
+    A root model rather than two members of :data:`Anchor`'s union: the
+    outer union discriminates on ``type`` and ``run_outcome`` is a single
+    tag, so the arm is a second, key-driven choice made INSIDE it. A root
+    model also gives the OpenAPI discriminator mapping a named schema to
+    point at (``oneOf`` the two arms); a bare nested union there is an
+    object where the mapping requires a string, and FastAPI refuses to
+    build the document at all.
+    """
+
+    @property
+    def type(self) -> Literal["run_outcome"]:
+        """The tag, read off the arm — so a built instance re-validates.
+
+        :data:`Anchor`'s discriminator reads ``type`` as an ATTRIBUTE when it
+        is handed a model instance (``MemoryRecordIn(anchors=[...])`` in
+        Python), and a root model has no field of that name.
+        """
+        return self.root.type
+
+
+class PublicationAnchor(_AnchorBase):
+    """A prompt document published at ``min_version`` or later, intact.
+
+    Resolved against coord's ``coord.prompt_document_publications``
+    channel: confirmed iff the LATEST publication of ``(kind, name)`` has
+    ``publication_version >= min_version`` and its stored digest matches
+    its stored body. Fleet-scoped — publications are readable by every
+    tenant by design.
+    """
+
+    type: Literal["publication"]
+    kind: PublishableKind
+    name: str = Field(min_length=1, max_length=256)
+    min_version: int = Field(strict=True, ge=1, le=_I32_MAX)
+
+
 # Discriminated on ``type`` so an unrecognized type is a clean 422 naming
 # the tag, never a silently-accepted blob-shaped object that the watcher
 # would later fail to resolve (and, failing, leave in whatever state it
 # was already in — an anchor nothing can check is worse than no anchor).
+# Member order follows coord's ``Anchor`` enum.
 Anchor = Annotated[
-    BlobAnchor | PRAnchor | MigrationAnchor | SchemaAnchor | FlagAnchor,
+    BlobAnchor
+    | RegionAnchor
+    | PRAnchor
+    | MigrationAnchor
+    | SchemaAnchor
+    | FlagAnchor
+    | FlagStateAnchor
+    | ContentAnchor
+    | RunOutcomeAnchor
+    | PublicationAnchor,
     Field(discriminator="type"),
 ]
 
