@@ -1,12 +1,10 @@
 "use client";
 
 /**
- * /admin/coord/policies — coordination policy surface.
- *
- *  - Autonomous next-step state (READ-ONLY): platform master-flag
- *    (master_enabled) + fleet table of tenants with non-default
- *    autonomy_level opt-ins. Plan `2026-05-30-decision-engine-tenant-ui.md`
- *    Phase 2 (§6.4).
+ * /admin/coord/policies — coordination policy surface: the autonomous
+ * next-step state (READ-ONLY), i.e. the platform master-flag
+ * (master_enabled) + fleet table of tenants with non-default autonomy_level
+ * opt-ins. Plan `2026-05-30-decision-engine-tenant-ui.md` Phase 2 (§6.4).
  *
  * Page gated by is_superuser via the coord admin layout.
  *

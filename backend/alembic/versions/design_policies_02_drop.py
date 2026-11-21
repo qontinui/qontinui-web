@@ -6,14 +6,14 @@ Create Date: 2026-11-21
 
 Plan ``2026-11-19-design-surface-defects-and-stale-records-found-by-the-design-loop-study``
 Phase 2. The design-policies store (``design_policies_01``) was read only by its
-own editor on ``/admin/coord/policies``; the served prompt documents
-(``policy/ux-priorities``, ``domain_spec/visual-system``) already carry the
-rules, so the store is deleted rather than kept beside them.
+own editor on ``/admin/coord/policies``. Plan
+``2026-11-19-design-surface-defects-and-stale-records-found-by-the-design-loop-study``
+resolved to delete the store; the served prompt documents
+(``policy/ux-priorities``, ``domain_spec/visual-system``) are the canonical
+home for UX rules, and the seven seeded built-ins were never tenant content.
 
-Before this revision was written, every production row was exported read-only
-(2026-11-21): 14 rows across 2 tenants, all seven built-ins per tenant, none
-custom and none edited from the seed — so dropping the table loses no
-tenant-authored content.
+Production export 2026-11-21: no tenant-authored or edited rows — see coord
+finding 218f2eee-39d9-42d9-9b09-56162e73925c.
 
 The downgrade recreates the table exactly as ``design_policies_01`` created it
 (empty; the built-ins were seeded lazily by the deleted CRUD layer).
