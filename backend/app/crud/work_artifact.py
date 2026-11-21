@@ -79,6 +79,7 @@ from sqlalchemy import (
     false,
     func,
     literal,
+    literal_column,
     or_,
     select,
     text,
@@ -97,7 +98,6 @@ from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
     NOTE_TRIM_CHARS,
     OPEN_FOLLOWUP_SQL,
-    SEARCH_TSVECTOR_SQL,
     SPEC_ARTIFACT_KINDS,
     TERMINAL_STATUSES,
     UNCLAIMED_FOLLOWUP_SQL,
@@ -549,12 +549,20 @@ def _search_predicate(q: str) -> ColumnElement[bool]:
     metacharacters escaped so ``%`` and ``_`` match themselves rather than
     everything.
 
-    The slug arm is unindexed, and it is gated on :func:`_slug_needle`
-    judging the input identifier-shaped — which is not only about matching
-    too much. A leading-wildcard ``ILIKE`` that no index can serve, OR-ed
-    with the full-text arm, leaves the planner nothing to combine and costs
-    the GIN arm its index too; the gate is what keeps an ordinary prose query
-    on the indexed path.
+    Each arm has its own GIN index
+    (``plan_library_12_search_tsv_and_slug_trgm``), so the OR is a BitmapOr
+    of two index scans rather than a filter evaluated per row. The full-text
+    arm matches the STORED ``search_tsv`` (``ix_work_artifacts_search_tsv``)
+    — never ``to_tsvector(...)`` of the body, which re-parsed every ~26 KB
+    body on any plan that left the old expression index (20-32 s per request
+    on prod, for rare, common and zero-hit terms alike, with or without the
+    slug arm). Because the value is stored, even a plan that does NOT use the
+    index — a seq-scan count for a term most rows carry, a keyset walk that
+    filters — reads a vector instead of parsing. The slug arm's
+    leading-wildcard ``ILIKE`` is served by the trigram index
+    ``ix_work_artifacts_slug_trgm``; :func:`_slug_needle`'s 3-character floor
+    is also the shortest needle a trigram index can serve. The gate is about
+    matching too much, not about cost.
 
     A ``q`` that leaves neither arm anything to ask for — whitespace, bare
     glue, or a needle too short to be an identifier — matches NOTHING, the
@@ -565,16 +573,17 @@ def _search_predicate(q: str) -> ColumnElement[bool]:
     arms: list[ColumnElement[bool]] = []
     words = _full_text_query(q)
     if words:
-        # Spelled to match ix_work_artifacts_search's indexed expression.
-        # A ``TextClause`` is a boolean SQL expression here, which the stubs
-        # cannot know; ``or_`` accepts it at runtime exactly as ``where`` does.
-        # (`typing.cast`, not the bare name — `cast` is SQLAlchemy's in this
-        # module.) The OR list is parenthesised by ``BooleanClauseList`` when
-        # it is AND-ed with the other filters, not by anything asked for here.
-        full_text = text(
-            f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :plan_lib_q)"
-        ).bindparams(plan_lib_q=words)
-        arms.append(typing.cast("ColumnElement[bool]", full_text))
+        # The stored column, so ix_work_artifacts_search_tsv can serve it and
+        # no plan parses a body. Read off the Table: it is deliberately not a
+        # mapped attribute (see the model). The regconfig is explicit for the
+        # same reason the generation expression's is: the one-argument form
+        # reads ``default_text_search_config``. The OR list is parenthesised
+        # by ``BooleanClauseList`` when it is AND-ed with the other filters.
+        arms.append(
+            WorkArtifact.__table__.c.search_tsv.bool_op("@@")(
+                func.plainto_tsquery(literal_column("'english'::regconfig"), words)
+            )
+        )
     needle = _slug_needle(q)
     if needle:
         arms.append(
