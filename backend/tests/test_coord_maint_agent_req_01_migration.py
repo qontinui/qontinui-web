@@ -16,8 +16,9 @@ Without a database (always runs):
    the only DROPs are in ``downgrade()``; the column-drop guard reads the
    upgrade path as dropping nothing; no build is CONCURRENTLY and every index
    targets the table this revision creates (a provable new-table claim).
-3. The source never names the retired store name the coord new-table proof
-   greps for.
+3. The created table is not named ``maintenance_`` + ``verdicts``: that name
+   already appears on web trunk (the Phase 1 migration), and the new-table
+   proof greps trunk for the created table's name, so it would be refuted.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
@@ -77,8 +78,10 @@ _TASK_INDEX = "idx_maintenance_agent_requests_task_id"
 _RUN_INDEX = "idx_maintenance_agent_requests_run_id"
 _INDEXES = (_DEDUPE_INDEX, _PENDING_INDEX, _TASK_INDEX, _RUN_INDEX)
 
-# The name coord's new-table proof would match on trunk comments; this
-# revision must never spell it (built from parts so this file does not either).
+# The table must not be given this name: it already appears on web trunk (the
+# Phase 1 migration), and coord's new-table proof greps trunk for the created
+# table's name, so a table of this name could never be proven new. Built from
+# parts so this file does not spell it either.
 _RETIRED_NAME = "maintenance_" + "verdicts"
 
 # (name, information_schema data_type, nullable, default-substring or None),
@@ -199,7 +202,16 @@ def test_docstring_header_matches_the_identifiers() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_source_never_names_the_retired_store() -> None:
+def test_the_created_table_is_not_the_name_trunk_already_carries() -> None:
+    create = re.compile(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w.]+)", re.I)
+    created = [
+        m.group(1).lower()
+        for call in upgrade_execute_calls(_revision_path())
+        if (m := create.search(_collapsed(call.sql)))
+    ]
+    assert created == [f"{_SCHEMA}.{_TABLE}"], created
+    assert all(name.split(".")[-1] != _RETIRED_NAME for name in created)
+    # And the revision text never spells it, so no reader mistakes the two.
     assert _RETIRED_NAME not in _revision_source().lower()
 
 
@@ -521,9 +533,8 @@ def _state_row(conn: Connection, state: str, **fields: object) -> uuid.UUID:
     """A verdict request in ``state``; ``*_at`` fields given as True are now()."""
     stamps = {k for k, v in fields.items() if v is True}
     values = {k: v for k, v in fields.items() if k not in stamps}
-    request_id = _insert_request(
-        conn, candidate_key=str(uuid.uuid4()), state="pending", **values
-    )
+    values.setdefault("candidate_key", str(uuid.uuid4()))
+    request_id = _insert_request(conn, state="pending", **values)
     sets = ", ".join(["state = :state"] + [f"{k} = now()" for k in sorted(stamps)])
     conn.execute(
         text(f"UPDATE coord.{_TABLE} SET {sets} WHERE id = :id"),
@@ -547,33 +558,17 @@ def _state_row(conn: Connection, state: str, **fields: object) -> uuid.UUID:
         ("failed", {**_CLAIM, "claimed_at": True}),
         (
             "answered",
-            {
-                **_CLAIM,
-                "result": '{"name": "reset"}',
-                "claimed_at": True,
-                "answered_at": True,
-            },
-        ),
-        (
-            "answered",
-            {
-                **_CLAIM,
-                "kind": "compile",
-                "verdict": "yes",
-                "claimed_at": True,
-                "answered_at": True,
-            },
+            {**_CLAIM, "kind": "compile", "claimed_at": True, "answered_at": True},
         ),
     ],
     ids=[
-        "claimed-no-claimed-at",
         "claimed-no-device",
+        "claimed-no-claimed-at",
         "answered-no-claimed-at",
         "answered-no-answered-at",
         "answered-no-verdict-or-result",
         "failed-no-error",
-        "answered-verdict-kind-with-only-result",
-        "answered-compile-kind-with-only-verdict",
+        "answered-compile-no-result",
     ],
 )
 def test_a_state_refuses_a_row_missing_its_fields(
@@ -626,6 +621,141 @@ def test_a_state_accepts_a_row_carrying_its_fields(
             {"id": request_id},
         ).scalar_one()
     assert got == state
+
+
+@_needs_pg
+@pytest.mark.parametrize(
+    ("state", "fields"),
+    [
+        ("pending", {"kind": "compile", "verdict": "yes"}),
+        ("pending", {"kind": "compile", "confidence": 0.5}),
+        ("pending", {"result": '{"name": "reset"}'}),
+        (
+            "answered",
+            {
+                **_CLAIM,
+                "kind": "compile",
+                "verdict": "yes",
+                "claimed_at": True,
+                "answered_at": True,
+            },
+        ),
+        (
+            "answered",
+            {
+                **_CLAIM,
+                "result": '{"name": "reset"}',
+                "claimed_at": True,
+                "answered_at": True,
+            },
+        ),
+    ],
+    ids=[
+        "compile-carrying-verdict",
+        "compile-carrying-confidence",
+        "verdict-carrying-result",
+        "answered-compile-with-only-verdict",
+        "answered-verdict-with-only-result",
+    ],
+)
+def test_a_kind_refuses_the_other_kinds_answer_fields(
+    requests_db: Engine, state: str, fields: dict[str, object]
+) -> None:
+    def write(conn: Connection) -> None:
+        _state_row(conn, state, **fields)
+
+    assert _refused_by(requests_db, write) == (
+        "ck_maintenance_agent_requests_answer_kind"
+    )
+
+
+_REARM = f"""
+    INSERT INTO coord.{_TABLE}
+        (tenant_id, kind, task_id, target_device_id, candidate_key, repo_path,
+         question, prompt, requested_by, expires_at)
+    VALUES (:t, 'verdict', :task, :d, :key, 'D:/repo', :q, 'prompt v2',
+            'coord:maintenance', now() + interval '2 hours')
+    ON CONFLICT (task_id, md5(candidate_key), md5(question))
+        WHERE kind = 'verdict'
+    DO UPDATE SET state = 'pending', claimed_by_device = NULL,
+        claimed_at = NULL, answered_at = NULL, verdict = NULL,
+        confidence = NULL, rationale = NULL, error = NULL,
+        expires_at = EXCLUDED.expires_at, run_id = EXCLUDED.run_id,
+        prompt = EXCLUDED.prompt
+    WHERE {_TABLE}.state IN ('expired', 'failed')
+    RETURNING id
+"""
+
+
+@_needs_pg
+def test_the_rearm_upsert_resets_a_failed_verdict_and_keeps_an_answered_one(
+    requests_db: Engine,
+) -> None:
+    question = "Is this branch abandoned?"
+    with requests_db.begin() as conn:
+        task_id = _insert_task(conn)
+        failed = _state_row(
+            conn,
+            "failed",
+            task_id=task_id,
+            candidate_key="rearm|b|1",
+            claimed_by_device=_DEVICE,
+            claimed_at=True,
+            error="unparseable claude output: x",
+        )
+        answered = _state_row(
+            conn,
+            "answered",
+            task_id=task_id,
+            candidate_key="rearm|b|2",
+            claimed_by_device=_DEVICE,
+            verdict="no",
+            confidence=0.5,
+            claimed_at=True,
+            answered_at=True,
+        )
+
+    def rearm(conn: Connection, key: str) -> list[uuid.UUID]:
+        return [
+            _uuid(row[0])
+            for row in conn.execute(
+                text(_REARM),
+                {
+                    "t": _TENANT,
+                    "task": task_id,
+                    "d": _DEVICE,
+                    "key": key,
+                    "q": question,
+                },
+            ).all()
+        ]
+
+    with requests_db.begin() as conn:
+        assert rearm(conn, "rearm|b|1") == [failed]
+        assert rearm(conn, "rearm|b|2") == []
+        rows = {
+            row[0]: tuple(row[1:])
+            for row in conn.execute(
+                text(
+                    f"""
+                    SELECT id, state, claimed_by_device, claimed_at IS NULL,
+                           answered_at IS NULL, verdict, error, prompt
+                      FROM coord.{_TABLE} WHERE id IN (:a, :b)
+                    """
+                ),
+                {"a": failed, "b": answered},
+            ).all()
+        }
+    assert rows[failed] == ("pending", None, True, True, None, None, "prompt v2")
+    assert rows[answered] == (
+        "answered",
+        _DEVICE,
+        False,
+        False,
+        "no",
+        None,
+        "full prompt",
+    )
 
 
 @_needs_pg

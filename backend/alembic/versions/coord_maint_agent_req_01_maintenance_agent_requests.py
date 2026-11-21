@@ -59,6 +59,9 @@ Shape
   ``coord.maintenance_tasks.tenant_id`` is nullable text. That places a
   requirement on the companion coord change: it casts the task's text tenant
   to uuid and never enqueues for a task with a NULL or non-uuid tenant.
+* ``ck_maintenance_agent_requests_answer_kind`` forbids the other kind's
+  answer fields: only a ``verdict`` request may carry ``verdict`` or
+  ``confidence``, and only a ``compile`` request may carry ``result``.
 * ``ck_maintenance_agent_requests_state_fields`` keeps a row consistent with
   its state: ``claimed`` and ``answered`` carry ``claimed_by_device`` and
   ``claimed_at``; ``answered`` also carries ``answered_at`` and the answer
@@ -77,6 +80,22 @@ Shape
   It is PARTIAL and keyed on expressions, so a coord enqueue naming it as its
   arbiter must spell it exactly: ``ON CONFLICT (task_id, md5(candidate_key),
   md5(question)) WHERE kind = 'verdict'``.
+* The dedupe holds across ALL states, so answered verdict history is kept and a
+  candidate is never asked the same question twice while an answer stands. An
+  ``expired`` or ``failed`` verdict is RE-ARMED in place, never re-inserted;
+  the companion coord enqueue does it with::
+
+      ON CONFLICT (task_id, md5(candidate_key), md5(question))
+          WHERE kind = 'verdict'
+      DO UPDATE SET state = 'pending', claimed_by_device = NULL,
+          claimed_at = NULL, answered_at = NULL, verdict = NULL,
+          confidence = NULL, rationale = NULL, error = NULL,
+          expires_at = EXCLUDED.expires_at, run_id = EXCLUDED.run_id,
+          prompt = EXCLUDED.prompt
+      WHERE maintenance_agent_requests.state IN ('expired', 'failed')
+
+  A pending, claimed or answered row is left untouched (the statement returns
+  no row for it).
 * The pending index serves the claim read: pending rows for a device, or for
   no device within a tenant. It is partial, so answered history never bloats
   it. The two foreign-key indexes keep a task or run delete (CASCADE / SET
@@ -99,8 +118,8 @@ table must exist before its consumer deploys (served policy
 ``production-and-cost`` ``alembic-sole-authorship``).
 
 The two foreign keys take ``SHARE ROW EXCLUSIVE`` on ``coord.maintenance_tasks``
-and ``coord.maintenance_runs`` for the instant of the ``CREATE TABLE``. That
-conflicts with the scheduler tick writing those tables, so the wait is bounded
+and ``coord.maintenance_runs``, held until the migration transaction commits
+(not just for the ``CREATE TABLE`` statement). That conflicts with the scheduler tick writing those tables, so the wait is bounded
 with ``SET LOCAL lock_timeout = '3s'`` (as ``journey_03`` / ``journey_04`` do):
 a busy writer fails the migration loudly instead of queueing the tick behind
 it. No existing table is altered. ``downgrade()`` is bounded the same way.
@@ -200,6 +219,10 @@ def upgrade() -> None:
                            AND candidate_key IS NOT NULL
                            AND target_device_id IS NOT NULL
                            AND repo_path IS NOT NULL)),
+            CONSTRAINT ck_maintenance_agent_requests_answer_kind
+                CHECK ((kind = 'verdict'
+                        OR (verdict IS NULL AND confidence IS NULL))
+                       AND (kind = 'compile' OR result IS NULL)),
             CONSTRAINT ck_maintenance_agent_requests_state_fields
                 CHECK ((state NOT IN ('claimed', 'answered')
                         OR (claimed_by_device IS NOT NULL
