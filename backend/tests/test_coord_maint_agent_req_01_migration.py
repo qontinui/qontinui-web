@@ -68,7 +68,7 @@ _REVISION_FILENAME = "coord_maint_agent_req_01_maintenance_agent_requests.py"
 
 # Pinned as a literal, not read back from the module: the test must notice a
 # re-point, not follow it.
-_PARENT_REVISION_ID = "fleet_res_tel_06"
+_PARENT_REVISION_ID = "cfo_02_continuation_deferred_load_index"
 
 _SCHEMA = "coord"
 _TABLE = "maintenance_agent_requests"

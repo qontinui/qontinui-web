@@ -178,7 +178,7 @@ is three coupled edits: ``down_revision``, the ``Revises:`` line below, and
 ``alembic merge`` revision for it.
 
 Revision ID: coord_maint_agent_req_01
-Revises: fleet_res_tel_06
+Revises: cfo_02_continuation_deferred_load_index
 Create Date: 2026-11-21
 
 """
@@ -189,7 +189,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_maint_agent_req_01"
-down_revision: str | None = "fleet_res_tel_06"
+down_revision: str | None = "cfo_02_continuation_deferred_load_index"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
