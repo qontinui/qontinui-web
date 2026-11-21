@@ -20,7 +20,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { FilterTabs, HealthStrip, RefreshButton } from "@/components/console";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { fetchCaptureJobs, type CaptureJob } from "@/lib/api/design-refs";
+import {
+  CAPTURE_JOBS_PAGE_LIMIT,
+  fetchCaptureJobs,
+  type CaptureJob,
+} from "@/lib/api/design-refs";
 import { AddView } from "./_components/AddView";
 import { JobsView } from "./_components/JobsView";
 import {
@@ -50,7 +54,7 @@ export default function DesignRefsPage() {
   const { refresh } = useSingleFlightPoll(poll, DESIGN_REFS_POLL_MS);
 
   const health = useMemo(
-    () => deriveJobsHealth(jobs, readFailed),
+    () => deriveJobsHealth(jobs, readFailed, CAPTURE_JOBS_PAGE_LIMIT),
     [jobs, readFailed]
   );
   const counts = useMemo(() => (jobs ? countByState(jobs) : null), [jobs]);

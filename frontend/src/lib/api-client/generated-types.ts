@@ -4427,7 +4427,9 @@ export interface paths {
         /**
          * Complete Capture Job
          * @description The worker's end of a running job: ``done``, or ``failed`` with the
-         *     reason the Jobs view shows.
+         *     reason the Jobs view shows. A non-operator completes only the job it
+         *     claimed (``worker`` = the job's ``claimed_by``); an operator's completion
+         *     is written to the correction log, as the PATCH transition writes it.
          */
         post: operations["api_v1_design_refs_capture_jobs_job_id_complete_post"];
         delete?: never;
@@ -31114,6 +31116,9 @@ export interface components {
         /**
          * CaptureJobComplete
          * @description The worker's end of a job. ``failed`` carries the reason.
+         *
+         *     ``worker`` is the name the worker claimed the job under: a non-operator
+         *     caller completes only a job it claimed. An operator may omit it.
          */
         CaptureJobComplete: {
             /** Error */
@@ -31123,6 +31128,8 @@ export interface components {
              * @enum {string}
              */
             outcome: "done" | "failed";
+            /** Worker */
+            worker?: string | null;
         };
         /** CaptureJobCreate */
         CaptureJobCreate: {

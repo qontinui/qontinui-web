@@ -109,14 +109,42 @@ describe("deriveJobsHealth", () => {
     );
     expect(h.level).toBe("green");
   });
+
+  it("does not claim nothing is waiting when the read filled the page", () => {
+    const h = deriveJobsHealth(
+      [job({ state: "done" }), job({ id: "j2", state: "done" })],
+      false,
+      2
+    );
+    expect(h.headline).not.toMatch(/Nothing is waiting to be captured/);
+    expect(h.headline).toMatch(/newest 2 jobs/);
+    expect(h.detail).toMatch(/counts are a floor/);
+  });
+
+  it("says nothing is waiting when the read is shorter than the page", () => {
+    const h = deriveJobsHealth([job({ state: "done" })], false, 2);
+    expect(h.headline).toBe("Nothing is waiting to be captured.");
+    expect(h.detail).toBe("");
+  });
 });
 
 describe("parseUrlList", () => {
   it("makes one entry per distinct URL", () => {
     expect(
       parseUrlList(
-        "https://a.example\n\n  https://b.example ,https://a.example\n"
+        "https://a.example\n\n  https://b.example \thttps://a.example\n"
       )
     ).toEqual(["https://a.example", "https://b.example"]);
+  });
+
+  it("keeps a comma inside a URL's query as part of that URL", () => {
+    expect(
+      parseUrlList(
+        "https://a.example/search?tags=red,blue&x=1\nhttps://b.example"
+      )
+    ).toEqual([
+      "https://a.example/search?tags=red,blue&x=1",
+      "https://b.example",
+    ]);
   });
 });

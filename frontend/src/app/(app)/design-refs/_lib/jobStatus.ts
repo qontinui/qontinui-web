@@ -144,10 +144,27 @@ export interface JobsHealth {
   badges: HealthBadge[];
 }
 
+/**
+ * True when the read returned a full page: older jobs exist that were not
+ * read, so every count is a floor, not a total.
+ */
+export function isTruncatedPage(
+  jobs: readonly CaptureJob[] | null,
+  limit: number
+): boolean {
+  return jobs !== null && jobs.length >= limit;
+}
+
+/** The note shown beside counts read from a full page. */
+export function truncatedNote(limit: number): string {
+  return `Showing the newest ${limit} jobs — counts are a floor; older jobs were not read.`;
+}
+
 /** The strip. A failed read is amber and says so; it is never "no jobs". */
 export function deriveJobsHealth(
   jobs: readonly CaptureJob[] | null,
-  readFailed: boolean
+  readFailed: boolean,
+  limit: number = Number.POSITIVE_INFINITY
 ): JobsHealth {
   if (jobs === null) {
     return {
@@ -177,11 +194,18 @@ export function deriveJobsHealth(
   const stale = readFailed
     ? " The last read failed; these counts are from the previous one."
     : "";
+  const truncated = isTruncatedPage(jobs, limit);
+  const floor = truncated ? truncatedNote(limit) : "";
   if (n.failed > 0 || n.proposed > 0) {
     return {
       level: "red",
       headline: `${n.failed} failed, ${n.proposed} awaiting approval.${stale}`,
-      detail: "Failed jobs can be retried; proposals wait for an operator.",
+      detail: [
+        "Failed jobs can be retried; proposals wait for an operator.",
+        floor,
+      ]
+        .filter(Boolean)
+        .join(" "),
       badges,
     };
   }
@@ -189,7 +213,7 @@ export function deriveJobsHealth(
     return {
       level: "amber",
       headline: "The last read failed; showing the previous queue.",
-      detail: "",
+      detail: floor,
       badges,
     };
   }
@@ -198,17 +222,22 @@ export function deriveJobsHealth(
     headline:
       n.queued + n.running > 0
         ? `${n.queued} queued, ${n.running} capturing.`
-        : "Nothing is waiting to be captured.",
-    detail: "",
+        : truncated
+          ? `Nothing is waiting among the newest ${limit} jobs; older jobs were not read.`
+          : "Nothing is waiting to be captured.",
+    detail: floor,
     badges,
   };
 }
 
-/** One URL per line (commas tolerated); blanks and repeats collapse. */
+/**
+ * One URL per line or whitespace-separated; blanks and repeats collapse. A
+ * comma is NOT a separator: it is legal inside a URL (a query value).
+ */
 export function parseUrlList(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of text.split(/[\n,]+/)) {
+  for (const raw of text.split(/\s+/)) {
     const url = raw.trim();
     if (url && !seen.has(url)) {
       seen.add(url);

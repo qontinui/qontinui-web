@@ -17,7 +17,7 @@ Two rules shape every schema here:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -482,8 +482,12 @@ class CorrectionOut(_Out):
 # ═════════════════════════════ capture jobs ═════════════════════════════
 
 
+#: One capture-job URL, bounded the same at the single and the batch door.
+JobUrl = Annotated[str, Field(min_length=1, max_length=4000)]
+
+
 class CaptureJobCreate(_Strict):
-    url: str = Field(min_length=1, max_length=4000)
+    url: JobUrl
     scope_kind: JobScope = "page"
     crawl_depth: int | None = Field(default=None, ge=1, le=10)
     flow_goal: str | None = None
@@ -514,7 +518,7 @@ class CaptureJobUpdate(_Strict):
 class CaptureJobBatchCreate(_Strict):
     """One job per URL: a pasted list. Scope, notes and flags are shared."""
 
-    urls: list[str] = Field(min_length=1, max_length=200)
+    urls: list[JobUrl] = Field(min_length=1, max_length=200)
     scope_kind: JobScope = "page"
     crawl_depth: int | None = Field(default=None, ge=1, le=10)
     flow_goal: str | None = None
@@ -544,10 +548,15 @@ class CaptureJobRetry(_Strict):
 
 
 class CaptureJobComplete(_Strict):
-    """The worker's end of a job. ``failed`` carries the reason."""
+    """The worker's end of a job. ``failed`` carries the reason.
+
+    ``worker`` is the name the worker claimed the job under: a non-operator
+    caller completes only a job it claimed. An operator may omit it.
+    """
 
     outcome: Literal["done", "failed"]
     error: str | None = None
+    worker: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def _reason(self) -> CaptureJobComplete:

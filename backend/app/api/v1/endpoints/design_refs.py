@@ -1912,7 +1912,9 @@ async def complete_capture_job(
     job_id: UUID, body: CaptureJobComplete, principal: Principal, db: Db
 ) -> CaptureJobOut:
     """The worker's end of a running job: ``done``, or ``failed`` with the
-    reason the Jobs view shows."""
+    reason the Jobs view shows. A non-operator completes only the job it
+    claimed (``worker`` = the job's ``claimed_by``); an operator's completion
+    is written to the correction log, as the PATCH transition writes it."""
     job = await _owned(db, CaptureJob, principal.tenant_id, job_id)
     if job is None:
         raise _not_found("capture_job")
@@ -1921,6 +1923,25 @@ async def complete_capture_job(
             status.HTTP_409_CONFLICT,
             "invalid_transition",
             f"Only a running capture job is completed; this one is {job.state}.",
+        )
+    if is_operator(principal):
+        db.add(
+            _correction(
+                principal.tenant_id,
+                principal,
+                "capture_job",
+                job.id,
+                "state",
+                job.state,
+                body.outcome,
+            )
+        )
+    elif body.worker is None or body.worker != job.claimed_by:
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "not_the_claimant",
+            "Only the worker that claimed this capture job completes it.",
+            claimed_by=job.claimed_by,
         )
     job.state = body.outcome
     job.error = body.error if body.outcome == "failed" else None

@@ -7642,6 +7642,8 @@
           },
           "urls": {
             "items": {
+              "maxLength": 4000,
+              "minLength": 1,
               "type": "string"
             },
             "maxItems": 200,
@@ -7728,7 +7730,7 @@
       },
       "CaptureJobComplete": {
         "additionalProperties": false,
-        "description": "The worker's end of a job. ``failed`` carries the reason.",
+        "description": "The worker's end of a job. ``failed`` carries the reason.\n\n``worker`` is the name the worker claimed the job under: a non-operator\ncaller completes only a job it claimed. An operator may omit it.",
         "properties": {
           "error": {
             "anyOf": [
@@ -7748,6 +7750,19 @@
             ],
             "title": "Outcome",
             "type": "string"
+          },
+          "worker": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker"
           }
         },
         "required": [
@@ -88389,7 +88404,7 @@
     },
     "/api/v1/design-refs/capture-jobs/{job_id}/complete": {
       "post": {
-        "description": "The worker's end of a running job: ``done``, or ``failed`` with the\nreason the Jobs view shows.",
+        "description": "The worker's end of a running job: ``done``, or ``failed`` with the\nreason the Jobs view shows. A non-operator completes only the job it\nclaimed (``worker`` = the job's ``claimed_by``); an operator's completion\nis written to the correction log, as the PATCH transition writes it.",
         "operationId": "api_v1_design_refs_capture_jobs_job_id_complete_post",
         "parameters": [
           {
