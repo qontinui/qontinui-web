@@ -1176,6 +1176,9 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         closed_fields=("browser",),
         store="design_refs_capture_jobs",
         correction=_CAPTURE_JOB_OPEN_FIX,
+        aspects=(
+            ("a job that ended done, cancelled or rejected", _CAPTURE_JOB_END_GAP),
+        ),
     ),
     ("POST", f"{_DESIGN_REFS}/capture-jobs/claim"): Ephemeral(
         "leases the oldest queued capture job to this worker — a lease that "

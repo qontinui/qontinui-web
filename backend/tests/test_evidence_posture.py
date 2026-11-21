@@ -86,8 +86,9 @@ from app.core.evidence_posture import (
 #: ``2026-11-19-design-surface-defects-and-stale-records-found-by-the-design-loop-study``):
 #: a job that ended ``done`` (or was cancelled or rejected) has no door back,
 #: on ``POST /design-refs/capture-jobs``, ``…/capture-jobs/batch``,
-#: ``PATCH …/capture-jobs/{job_id}`` and ``POST …/{job_id}/complete``.
-GAP_COUNT_PIN = 14
+#: ``PATCH …/capture-jobs/{job_id}`` and ``POST …/{job_id}/complete``; a
+#: fifth on ``POST …/{job_id}/retry``, whose re-queued job can end the same way.
+GAP_COUNT_PIN = 15
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;

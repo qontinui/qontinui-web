@@ -298,14 +298,17 @@ def _claimant_key(principal: MemoryPrincipal) -> str:
 
     ``_actor_id`` prefers ``user_id``, and every device of one user carries
     that user's id, so it would make all of a user's devices one claimant. A
-    claim belongs to the credential that made it: the device id comes first;
-    the user id is used only for an ``operator`` (a human session, which has no
-    device). Any other principal without a device id — a device, or a service,
-    carrying only a user id — is refused rather than keyed by that user, which
-    would make it every credential of that user (403 ``unattributable``).
+    claim belongs to the DEVICE that made it: any principal carrying a device
+    id is keyed ``device:<device_id>``, whatever its actor, so the device's own
+    JWT and a coord_service token naming the same device are one claimant,
+    while another device is not. The user id is used only for an ``operator``
+    (a human session, which has no device). Any other principal without a
+    device id — a device, or a service, carrying only a user id — is refused
+    rather than keyed by that user, which would make it every credential of
+    that user (403 ``unattributable``).
     """
     if principal.device_id is not None:
-        return f"{principal.actor}:device:{principal.device_id}"
+        return f"device:{principal.device_id}"
     if principal.actor == "operator" and principal.user_id is not None:
         return f"{principal.actor}:{principal.user_id}"
     raise _refusal(
@@ -1935,7 +1938,9 @@ async def update_capture_job(
     # state it is in when the write arrives (read under the row lock above):
     #   - a finished job (done/failed/cancelled/rejected): nobody (409);
     #   - a running job: its claimant, or an operator (logged when the
-    #     operator is not the claimant);
+    #     operator is not the claimant — a claimant's own writes are the worker
+    #     path and are not corrections; by contrast EVERY operator /complete is
+    #     logged, since an operator completion always overrides that path);
     #   - a queued or proposed job: an operator only (logged).
     lease_until = (
         datetime.now(UTC) + timedelta(seconds=body.lease_seconds)

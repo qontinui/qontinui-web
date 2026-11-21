@@ -2001,11 +2001,22 @@ class TestJobsAndCuration:
             statements.append(" ".join(statement.split()))
 
         def locked() -> bool:
-            return any(
-                "capture_job" in sql
-                and sql.upper().startswith("SELECT")
-                and sql.upper().endswith("FOR UPDATE")
-                for sql in statements
+            """At least one SELECT on capture_job before the write, and every
+            one of them carries FOR UPDATE: no unlocked read the check could
+            rely on. Reads AFTER the handler's UPDATE are the post-commit
+            ``refresh`` of the row it just wrote, which decides nothing."""
+            before_write: list[str] = []
+            for sql in statements:
+                if sql.upper().startswith("UPDATE DESIGN_REFS.CAPTURE_JOB"):
+                    break
+                before_write.append(sql)
+            selects = [
+                sql
+                for sql in before_write
+                if sql.upper().startswith("SELECT") and "design_refs.capture_job" in sql
+            ]
+            return bool(selects) and all(
+                sql.upper().endswith("FOR UPDATE") for sql in selects
             )
 
         engine = a.db.bind.sync_engine
@@ -2035,6 +2046,27 @@ class TestJobsAndCuration:
             assert locked(), ("/retry", statements)
         finally:
             event.remove(engine, "before_cursor_execute", _capture)
+
+    async def test_a_claim_belongs_to_the_device_not_the_token(
+        self, a: Harness
+    ) -> None:
+        job = await a.ok(
+            "POST", "/capture-jobs", json={"url": "https://dv.example", "source": "cli"}
+        )
+        device = a.device_id
+        await a.ok("POST", "/capture-jobs/claim", json={"worker": "w1"})
+        # A coord_service token naming a DIFFERENT device is refused ...
+        a.as_("coord_service")
+        a.device_id = uuid4()
+        resp = await a.post(f"/capture-jobs/{job['id']}/complete", {"outcome": "done"})
+        assert resp.status_code == 403 and resp.json()["error"] == "not_the_claimant"
+        # ... one naming the device that claimed (through its device JWT) is
+        # that claimant.
+        a.device_id = device
+        done = await a.ok(
+            "POST", f"/capture-jobs/{job['id']}/complete", json={"outcome": "done"}
+        )
+        assert done["state"] == "done"
 
     async def test_a_coord_service_claimant_completes_its_own_job(
         self, a: Harness
