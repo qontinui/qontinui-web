@@ -9,12 +9,19 @@
 # needed.
 #
 # The object store is versitygw, the S3 store qontinui-stack adopted in place
-# of the archived MinIO (plan 2026-11-22-fetches-stop-depending-on-upstreams,
-# Phase 2). It is built from the sibling checkout's
-# qontinui-stack/object-store/Dockerfile — the same pinned release and base
-# both stacks run — so qontinui-stack must be checked out beside this repo, as
-# the canonical-PG note above already requires. Its conformance (the D7 S3
-# subset) is proven by qontinui-stack's `s3 store conformance` CI job.
+# of MinIO, whose GitHub repository reports `archived: true` (plan
+# 2026-11-22-fetches-stop-depending-on-upstreams, Phase 2). This file pulls the
+# project's own image by digest, so it needs no sibling checkout to build.
+#
+# Version: v1.10.0, not the v1.11.0 qontinui-stack runs. The v1.11.0 image
+# digest was pushed 2026-11-10, inside the plan's 14-day release-age cooldown
+# on the pin date, so qontinui-stack builds v1.11.0 from its release tarball
+# instead; this file avoids that build dependency by taking the newest image
+# outside the cooldown. The binary IN this image was run against the D7
+# conformance subset on nilan on 2026-11-22 (7/7 PASS, plus the bucket-policy
+# and listing checks of qontinui-stack/scripts/s3-store-check.sh). Move it to
+# v1.11.0 once that digest is 14 days old (2026-11-24) and re-run the check.
+# `released:` is Docker Hub's tag_last_pushed for this digest, read 2026-11-22.
 
 services:
   # Redis Cache & Queue
@@ -36,11 +43,12 @@ services:
   # STORAGE_ENDPOINT_URL=http://localhost:9000 with the S3_ACCESS_KEY /
   # S3_SECRET_KEY pair below (see backend/.env.example).
   object-store:
-    build:
-      context: ../qontinui-stack/object-store
-      dockerfile: Dockerfile
-    image: qontinui-canonical-object-store:latest
+    image: versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316 # released: 2026-10-22 pinned: 2026-11-22
     container_name: qontinui-object-store
+    # The image's entrypoint runs explicit arguments as-is. /health is the
+    # unauthenticated liveness route the healthcheck reads; metadata is kept in
+    # xattrs on the volume (Docker local volumes support them).
+    command: ["--port", ":9000", "--health", "/health", "posix", "/data"]
     environment:
       ROOT_ACCESS_KEY: ${S3_ACCESS_KEY:-qontinui_dev_s3}
       ROOT_SECRET_KEY: ${S3_SECRET_KEY:-qontinui_dev_s3_secret}

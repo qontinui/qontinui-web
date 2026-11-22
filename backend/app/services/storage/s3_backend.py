@@ -32,11 +32,27 @@ class S3Backend(StorageBackend):
 
         # Configure boto3 client
         s3_addressing_style = "path" if endpoint_url else "auto"
+        # A self-hosted store (an endpoint URL: the docker-compose versitygw)
+        # gets checksums only where the S3 API requires them. botocore's
+        # default since 1.36 adds CRC32 trailers to every PUT, which the store
+        # was not conformance-tested with: qontinui-stack's D7 subset runs
+        # boto3 with "when_required" (plan
+        # 2026-11-22-fetches-stop-depending-on-upstreams). Real AWS keeps the
+        # SDK default.
+        checksum_kwargs: dict[str, str] = (
+            {
+                "request_checksum_calculation": "when_required",
+                "response_checksum_validation": "when_required",
+            }
+            if endpoint_url
+            else {}
+        )
         config = Config(
             region_name=region,
             signature_version="s3v4",
             retries={"max_attempts": 3, "mode": "standard"},
             s3={"addressing_style": s3_addressing_style},
+            **checksum_kwargs,
         )
 
         if endpoint_url:
