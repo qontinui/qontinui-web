@@ -34,6 +34,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
 from tests._alembic_harness import (
@@ -198,8 +199,8 @@ def test_downgrade_restores_run_outcomes_01_text_and_drops_the_column() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _insert_dispatch(conn: object, dispatch_id: str) -> None:
-    conn.execute(  # type: ignore[attr-defined]
+def _insert_dispatch(conn: Connection, dispatch_id: str) -> None:
+    conn.execute(
         text(
             "INSERT INTO coord.ci_dispatches "
             "(dispatch_id, tenant_id, repo, proposal_id, head_sha, device_id, "
@@ -215,6 +216,24 @@ def _insert_dispatch(conn: object, dispatch_id: str) -> None:
             "dev": str(uuid4()),
         },
     )
+
+
+def _constraint_exists(engine: Engine) -> bool:
+    return bool(
+        scalar(
+            engine,
+            "SELECT EXISTS (SELECT 1 FROM pg_constraint "
+            "WHERE conname = :c AND conrelid = 'coord.ci_dispatches'::regclass)",
+            c=_CONSTRAINT,
+        )
+    )
+
+
+def _run_outcomes_table_comment(engine: Engine) -> str:
+    comment = scalar(
+        engine, "SELECT obj_description('coord.run_outcomes'::regclass, 'pg_class')"
+    )
+    return str(comment or "")
 
 
 @_needs_pg
@@ -271,11 +290,28 @@ def test_upgrade_is_idempotent_and_round_trips() -> None:
         assert column_info(engine, _TABLE, _COLUMN) == ("jsonb", "YES", None)
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) is None
+        assert not _constraint_exists(engine)
         assert "qontinui-measurement" not in (
             column_comment(engine, "run_outcomes", "check_name") or ""
         )
+        assert "qontinui-measurement" not in _run_outcomes_table_comment(engine)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) == ("jsonb", "YES", None)
+        assert _constraint_exists(engine)
         assert "qontinui-measurement" in (
             column_comment(engine, "run_outcomes", "check_name") or ""
         )
+        assert "qontinui-measurement" in _run_outcomes_table_comment(engine)
+        # The re-applied CHECK still refuses a non-object.
+        dispatch_id = str(uuid4())
+        with engine.begin() as conn:
+            _insert_dispatch(conn, dispatch_id)
+        with pytest.raises(IntegrityError, match=_CONSTRAINT):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE coord.ci_dispatches SET measurement = '[]'::jsonb "
+                        "WHERE dispatch_id = :d"
+                    ),
+                    {"d": dispatch_id},
+                )

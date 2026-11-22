@@ -6,10 +6,10 @@ Create Date: 2026-11-22
 
 Phase 4 (web DDL half) of plan
 ``2026-11-22-phase1-envelope-frozen-and-measurement-dispatch-proven``
-(decisions D3 and D5). The coord half — ``crates/coord/src/ci_measurement.rs``
-in qontinui-coord, the plan's Phase 5 — reads and writes this column, so this
-revision lands and applies first (served policy ``production-and-cost``
-``alembic-sole-authorship``).
+(decisions D3 and D5). Coord's ``ci_measurement`` module will read and write
+this column (the plan's Phase 5, qontinui-coord ``crates/coord/src/ci_measurement.rs``,
+not yet written), so this revision lands and applies first (served policy
+``production-and-cost`` ``alembic-sole-authorship``).
 
 The column
 ==========================================================================
@@ -17,14 +17,14 @@ The column
 * ``measurement JSONB NULL`` — the declaration snapshot at dispatch time for a
   measurement dispatch (``check_name = 'qontinui-measurement'``): the entry of
   the measured repo's ``.qontinui/measurements.toml`` that was dispatched
-  (``name``, ``source``, ``subject``, ``task``; grammar in qontinui-schemas
-  ``qontinui-types`` ``measurement_decl``) plus ``evidence_grade``, and the
-  ``executed_case_count`` the first result POST parses and stores BEFORE it
-  writes the derived ``coord.run_outcomes`` row, so a retried POST re-derives
-  the same row rather than losing it or writing 0 cases. Coord labels that
-  row from this snapshot, never from a request body.
+  (``name``, ``source``, ``subject``, ``task``; grammar in ``qontinui-types``
+  ``measurement_decl``, Phase 4, qontinui-schemas) plus ``evidence_grade``,
+  and the ``executed_case_count`` the first result POST will parse and store
+  BEFORE it writes the derived ``coord.run_outcomes`` row, so a retried POST
+  re-derives the same row rather than losing it or writing 0 cases. Coord
+  will label that row from this snapshot, never from a request body.
 
-  For a measurement dispatch ``proposal_id`` (``NOT NULL``) holds a
+  For a measurement dispatch ``proposal_id`` (``NOT NULL``) will hold a
   deterministic UUIDv5 over ``(tenant, repo, measurement name)``, so the
   existing single-flight index ``uq_ci_dispatches_active_proposal`` and the
   supersede logic in ``claim_dispatch`` allow at most one live dispatch per
@@ -46,8 +46,11 @@ Shaped like ``cinode_05_dispatch_model_access_and_ledger``: ``ADD COLUMN IF
 NOT EXISTS`` of a nullable column with no default, static ``op.execute``
 literals, and a ``lock_timeout`` put back with ``SET LOCAL lock_timeout =
 DEFAULT`` so it does not leak into later revisions (``env.py`` runs the whole
-upgrade in one transaction). The inline CHECK validates existing rows, which
-are all NULL; the table is small (thousands of rows).
+upgrade in one transaction). The inline CHECK's validation scan is over a
+column that is NULL on every existing row; the last measurement of the table's
+size is ``cinode_03``'s (read-only on prod, 2026-09-28: 1984 rows, 2.1 MB in
+total by ``pg_total_relation_size``). It has not been re-measured for this
+revision.
 
 ``down_revision`` chains off main's single head when this was authored
 (``coord_maint_agent_req_01``; ``scripts/ci/count_alembic_heads.py`` read
