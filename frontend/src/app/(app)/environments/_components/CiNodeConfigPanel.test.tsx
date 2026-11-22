@@ -778,7 +778,7 @@ describe("CiNodeConfigPanel — model access", () => {
           dispatch_status: 502,
           dispatch_error: "stored_for_next_connect",
           dispatch_detail:
-            "Saved by the coordinator; the machine applies these settings the next time it connects to the coordinator.",
+            "Saved by the coordinator, which could not send them just now. A runner that fetches saved settings on connect receives them the next time it connects; an older runner does not, so apply them again once it is connected.",
         })
       )
     );
@@ -793,6 +793,9 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(box).toHaveAttribute("data-deferred", "true");
     expect(box.className).not.toMatch(/text-destructive/);
     expect(box).toHaveAttribute("data-fixable-here", "false");
+    // The detail tells an older runner's owner to apply again, so Apply must
+    // stay usable on a clean draft while delivery is deferred.
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
   });
 
   it("a plain coordinator refusal keeps the destructive tone", async () => {
@@ -801,9 +804,9 @@ describe("CiNodeConfigPanel — model access", () => {
         state({
           configured: true,
           dispatched: false,
-          dispatch_status: 502,
-          dispatch_error: "directive_publish_failed",
-          dispatch_detail: "The directive could not be published.",
+          dispatch_status: 404,
+          dispatch_error: "device_not_found_in_tenant",
+          dispatch_detail: "device d-1 is not registered to your tenant",
         })
       )
     );
@@ -811,6 +814,8 @@ describe("CiNodeConfigPanel — model access", () => {
     const box = await screen.findByTestId("ci-node-dispatch-refusal");
     expect(box).toHaveAttribute("data-deferred", "false");
     expect(box.className).toMatch(/text-destructive/);
+    // Not deferred: a clean draft cannot be re-sent.
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
   });
 
   it("configsEqual treats a config predating the field as unset, not as a change", () => {
