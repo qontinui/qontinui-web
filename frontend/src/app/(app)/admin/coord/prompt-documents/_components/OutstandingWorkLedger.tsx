@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +78,7 @@ export function OutstandingWorkLedger({
   degraded,
   error,
 }: LedgerProps) {
+  const pageLocked = usePageLocked();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<OutstandingState | typeof ALL>(
     ALL
@@ -172,6 +174,7 @@ export function OutstandingWorkLedger({
               onValueChange={(v) =>
                 setStateFilter(v as OutstandingState | typeof ALL)
               }
+              disabled={pageLocked}
             >
               <SelectTrigger
                 className="h-8 w-44"
@@ -197,6 +200,7 @@ export function OutstandingWorkLedger({
             <Select
               value={sortKey}
               onValueChange={(v) => setSortKey(v as SortKey)}
+              disabled={pageLocked}
             >
               <SelectTrigger
                 className="h-8 w-40"

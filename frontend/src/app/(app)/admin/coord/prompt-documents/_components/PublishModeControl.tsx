@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Check, Send } from "lucide-react";
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import {
   isPublishMode,
   PUBLISH_MODE_CONFIRMED,
@@ -177,6 +178,9 @@ export function PublishModeControl({
   undecidedDefault,
   onSet,
 }: PublishModeControlProps) {
+  // The cross-tab lock (D3): an explicit `disabled`, so the Radix trigger does
+  // not depend on the page's fieldset reaching it (#6).
+  const pageLocked = usePageLocked();
   /** The mode awaiting confirmation, or `null` when nothing is pending. */
   const [pending, setPending] = useState<PublishMode | null>(null);
   const resolved = resolve(doc);
@@ -190,7 +194,7 @@ export function PublishModeControl({
     void onSet(mode);
   };
 
-  const disabled = saving || resolved.state === "unknown";
+  const disabled = saving || resolved.state === "unknown" || pageLocked;
 
   return (
     <>
@@ -218,6 +222,7 @@ export function PublishModeControl({
           {PUBLISH_MODES.map((mode) => (
             <DropdownMenuItem
               key={mode}
+              disabled={pageLocked}
               onSelect={() => choose(mode)}
               className="flex flex-col items-start gap-0.5"
               data-testid={`doc-publish-mode-${mode}-${doc.kind}-${doc.name}`}
@@ -298,6 +303,7 @@ export function PublishModeControl({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               data-testid="publish-mode-confirm-accept"
               onClick={() => {
                 if (pending) void onSet(pending);

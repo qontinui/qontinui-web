@@ -3,6 +3,7 @@ import {
   basisSentence,
   deriveTopicStatus,
   inTopicTab,
+  intentRefWords,
   lifecycleWords,
   sortMembers,
   topicReadFailureWords,
@@ -146,4 +147,23 @@ it("names the lifecycle filter and the states the list served", () => {
   ).toBe(
     "Listed under coord's default lifecycle filter (active 2, proposed 1); topics in other states may not be shown."
   );
+});
+
+describe("intentRefWords", () => {
+  it("is null for no anchor", () => {
+    expect(intentRefWords(null)).toBeNull();
+    expect(intentRefWords(undefined)).toBeNull();
+    expect(intentRefWords({})).toBeNull();
+  });
+  it("names kind/name and the claim when present", () => {
+    expect(intentRefWords({ kind: "product_intent", name: "roadmap" })).toBe(
+      "product_intent/roadmap"
+    );
+    expect(
+      intentRefWords({ kind: "domain_spec", name: "coord", claim: "c-1" })
+    ).toBe('domain_spec/coord, claim "c-1"');
+  });
+  it("keeps an unrecognised shape visible as JSON", () => {
+    expect(intentRefWords({ uri: "x" })).toBe('{"uri":"x"}');
+  });
 });

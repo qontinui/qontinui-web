@@ -252,12 +252,37 @@ export function describeEmptyTopics(i: {
   failure: SubprojectReadFailure | null;
   query: string;
   loadedRows: number;
+  /** `false` when coord answered `tables_ready: false`; absent is ready. */
+  tablesReady?: boolean;
 }): string {
   if (i.failure && !i.loaded)
     return `Whether any topic is in this view is unknown: ${topicReadFailureWords(i.failure)}.`;
+  if (i.tablesReady === false)
+    return "Whether any topic is in this view is unknown: coord's topic tables are not ready.";
   if (i.query && i.loadedRows > 0)
     return `No topic in this view matches "${i.query}".`;
   return `${EMPTY_VIEW[i.tab]}.`;
+}
+
+// ─────────────────────────────── intent anchor ─────────────────────────────
+
+/** A topic's `intent_ref` (`{kind, name, claim?}`, D1) as one phrase, e.g.
+ *  `product_intent/roadmap, claim "…"`. Returns `null` when coord sent no
+ *  anchor (`null`/`{}`) — the page then says nothing, since an unanchored topic
+ *  is a normal state, not an unknown one. Only `kind`, `name` and a string
+ *  `claim` are named; an anchor carrying neither `kind` nor `name` is rendered
+ *  as its JSON rather than dropped, so a reshaped anchor stays visible. */
+export function intentRefWords(
+  ref: Record<string, unknown> | null | undefined
+): string | null {
+  if (!ref || typeof ref !== "object" || Object.keys(ref).length === 0)
+    return null;
+  const kind = typeof ref.kind === "string" ? ref.kind : null;
+  const name = typeof ref.name === "string" ? ref.name : null;
+  const claim = typeof ref.claim === "string" ? ref.claim : null;
+  if (!kind && !name) return JSON.stringify(ref);
+  const doc = [kind, name].filter(Boolean).join("/");
+  return claim ? `${doc}, claim "${claim}"` : doc;
 }
 
 // ─────────────────────────────── read failures ─────────────────────────────

@@ -16,6 +16,9 @@ vi.mock("ioredis", () => ({
   },
 }));
 
+/** The structured `host` field, however many times the log line is escaped. */
+const HOST_FIELD = /host\W+host\.example:6379/;
+
 const URLS = [
   "redis://default:secret@host.example:6379",
   "default:secret@host.example:6379",
@@ -57,6 +60,9 @@ describe.each(URLS)("limiter logging with %s", (url) => {
     expect(handler).toBeTypeOf("function");
     handler!(new Error(`Redis connect failed: ${url}`));
     expect(logged()).toContain("redis_error_failing_open");
+    // The `host` field names the host, scheme-less or not (the redacted
+    // error text alone also carries `***@host.example`, so match the field).
+    expect(logged()).toMatch(HOST_FIELD);
     expect(logged()).not.toContain("secret");
   });
 
@@ -67,6 +73,7 @@ describe.each(URLS)("limiter logging with %s", (url) => {
     const mod = await import("./_rate-limit");
     await mod.checkRateLimit?.("u1", "read").catch(() => undefined);
     expect(logged()).toContain("redis_init_failed_failing_open");
+    expect(logged()).toMatch(HOST_FIELD);
     expect(logged()).not.toContain("secret");
   });
 

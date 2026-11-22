@@ -16,6 +16,51 @@ describe("redisHostOnly", () => {
     expect(redisHostOnly(SCHEMED)).toBe("host.example:6379");
     expect(redisHostOnly("not a url")).toBe("<unparseable-url>");
   });
+
+  // The relay's degraded-init warning logs this for every URL the strict
+  // grammar (redis-url.ts) accepts. A bare `new URL` reads the scheme-less
+  // forms' `user:` / `host:` as a SCHEME, so they used to log `<unknown-host>`.
+  it("keeps the host of a scheme-less URL, as ioredis reads it", () => {
+    expect(redisHostOnly(SCHEMELESS)).toBe("host.example:6379");
+    expect(redisHostOnly("host.example:6379")).toBe("host.example:6379");
+    expect(redisHostOnly("localhost")).toBe("localhost");
+    expect(redisHostOnly("rediss://u:pw@h.example")).toBe("h.example");
+    expect(redisHostOnly("REDISS://u:pw@h.example:1/0")).toBe("h.example:1");
+    expect(redisHostOnly("//u:pw@h.example:6380")).toBe("h.example:6380");
+    expect(redisHostOnly("default:pw@Host.Example:6379")).toBe(
+      "Host.Example:6379"
+    );
+  });
+
+  it("never returns credentials or a socket path", () => {
+    for (const url of [SCHEMED, SCHEMELESS, "//default:secret@h:1"]) {
+      expect(redisHostOnly(url)).not.toContain("secret");
+    }
+    expect(redisHostOnly("/var/run/redis.sock")).toBe("<unix-socket>");
+  });
+
+  // The grammar accepts a bare token as a one-label hostname, and ioredis
+  // reads `user:<digits>/…@h` as host=user, port=<digits>.
+  it("withholds a 'host' that is really a pasted password or a username", () => {
+    expect(redisHostOnly("AXyzSECRETtoken123")).toBe("<host-withheld>");
+    for (const url of [
+      "default:12345/SECRETX@h.example:6379",
+      "SECRETUSER:4242#pw@h.example",
+      "//SECRETUSER:4242/pw@h.example",
+      "redis://SECRETUSER:4242/x@h.example",
+    ]) {
+      const out = redisHostOnly(url);
+      expect(out).toBe("<host-withheld>");
+    }
+    // A one-label host is kept when it carries a port (a compose `redis:6379`).
+    expect(redisHostOnly("redis:6379")).toBe("redis:6379");
+    expect(redisHostOnly("[::1]:6379")).toBe("[::1]:6379");
+  });
+
+  it("substitutes a known secret even inside a host-shaped value", () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "tok.SECRETVALUE.x");
+    expect(redisHostOnly("tok.SECRETVALUE.x")).not.toContain("SECRETVALUE");
+  });
 });
 
 describe("redactRedisSecrets", () => {
