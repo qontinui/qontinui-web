@@ -59,6 +59,7 @@ import type { WorktreeSlotsResponse } from "./useFleetWorktreeSlots";
 export const DEVOPS_SOURCES = {
   fleetHealth: "coord fleet health",
   worktreeSlots: "coord worktree slots",
+  fleetCapacity: "coord fleet capacity",
   ciRunnerMirror: "coord CI runner mirror",
   faultToVisibility: "coord fault-to-visibility",
   runnerInventory: "runner inventory",

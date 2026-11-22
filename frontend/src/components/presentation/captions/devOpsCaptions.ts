@@ -77,6 +77,18 @@ export const DEV_OPS_CAPTIONS = {
     whyItMatters:
       "Agents usually work in their own isolated copy of the code, so many can work in parallel without overwriting each other; the limit caps how many such copies one machine holds.",
   },
+  "dev-ops.capacity": {
+    title: "Free capacity per machine",
+    // What coord's capacity read serves (`fleet_placement::capacity_read`):
+    // free CPU and memory from each machine's newest sample, and how many
+    // units of each kind of work that leaves room for. Not "work is placed
+    // only where there is room": each consumer reads the model only while the
+    // capacity-model dial permits it, and falls back to its older reader on
+    // an UNKNOWN (plan D9).
+    oneLiner:
+      "How much processor and memory each machine has free, and how many more sessions, builds and CI jobs that leaves room for.",
+    whyItMatters: copy`Work is matched to the room a machine actually has rather than to a fixed count per machine, and a machine that cannot be measured is shown as ${term("unknown")} rather than as full or empty.`,
+  },
   "dev-ops.audit": {
     title: "Change history",
     // Not "every change": coord's audit writer is best-effort

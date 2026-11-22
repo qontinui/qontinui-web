@@ -75,7 +75,7 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens NINE POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
  * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
@@ -96,7 +96,12 @@
  * looks like right now; one poll per route is one read per fact, which is the
  * shape this page is built on — worktree-slot occupancy is a fact from a
  * DIFFERENT coord route than resource samples, so it gets its own poll
- * rather than folding into `FleetResourcesSection`'s.
+ * rather than folding into `FleetResourcesSection`'s. The eighth and ninth
+ * are the Capacity section's (plan
+ * `2026-11-05-one-free-resource-model-places-sessions-builds-and-ci`
+ * Phase 11): `/fleet/capacity` at 30 s (coord caches one answer per tenant
+ * for 15 s) and the capacity-model dial `/fleet/capacity-model` at 60 s,
+ * re-read at once after a write from this page.
  *
  * The drain poll (plan
  * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
@@ -155,6 +160,7 @@ import {
   FleetOverview,
   FleetResourcesSection,
   FleetRolesSection,
+  FleetCapacitySection,
   FleetWorktreeSlotsSection,
   OperatorAuditPanel,
 } from "@/components/operations";
@@ -165,6 +171,7 @@ import {
 } from "@/components/operations/devOpsHeadline";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
+import { useFleetCapacity } from "@/components/operations/useFleetCapacity";
 import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { isLiveMachine } from "@/components/admin/coord/machineHealth";
@@ -229,6 +236,10 @@ export default function CoordDevOpsPage() {
   // section's table and the presentation headline's workspace figure read
   // the SAME answer, so they cannot disagree about which machines count.
   const worktreeSlotsRead = useFleetWorktreeSlots();
+  // Each machine's free capacity and the capacity-model dial (plan
+  // `2026-11-05-one-free-resource-model-places-sessions-builds-and-ci`
+  // Phase 11): two routes, two polls, owned here like every other read.
+  const fleetCapacity = useFleetCapacity();
   // The presentation lens (plan `2026-10-23-console-presentation-spaces`).
   // Rendering only — every read above runs the same in both modes.
   const { presenting } = usePresentationMode();
@@ -771,6 +782,19 @@ export default function CoordDevOpsPage() {
           uses, so a machine with no worktree-slots entry still gets a row,
           rendered unknown rather than dropped. */}
       <FleetWorktreeSlotsSection devices={devices} slots={worktreeSlots} />
+
+      {/* Capacity — each machine's FREE capacity as the one resource model
+          serves it (plan
+          `2026-11-05-one-free-resource-model-places-sessions-builds-and-ci`
+          Phase 11): free CPU and RAM, the binding resource, slots per work
+          class with their cost basis, every UNKNOWN with its reason, and the
+          legacy-versus-model parity, plus the capacity-model dial. It is the
+          page's one capacity surface; the separate Placement panel plan
+          `2026-10-17-fleet-work-placement-minimizes-time-to-merged-pr` Phase 8
+          described is superseded by it. Its spine is coord's capacity plan
+          rather than `devices`: a machine the plan does not carry has no
+          slot counts to show, and the Resources section above still lists it. */}
+      <FleetCapacitySection capacity={fleetCapacity} />
 
       {/* 5. Who changed what. Plan
           `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.

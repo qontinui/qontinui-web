@@ -44,6 +44,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -12040,6 +12041,215 @@ async def put_fleet_policy(
         versioned=versioned if isinstance(versioned, bool) else None,
         version=version if isinstance(version, int) else None,
         updated_by=updated_by if isinstance(updated_by, str) else None,
+        effective=effective,
+        readback_error=readback_error,
+    )
+
+
+# ---- Fleet capacity model (read + D9 dial) ---------------------------------
+#
+# Plan ``2026-11-05-one-free-resource-model-places-sessions-builds-and-ci``
+# Phase 11: the Dev Ops page's Capacity panel.
+#
+# * ``GET /fleet/capacity`` passes coord's per-device capacity read through
+#   verbatim. Coord serves it to operators on ``/coord/fleet/capacity/operator``
+#   (its ``/coord/fleet/capacity`` twin is a device/agent ``require_jwt`` door
+#   that refuses this proxy's Cognito bearer). Every UNKNOWN in it is a typed
+#   ``{"state": "unknown", "reason": …}`` and stays one: nothing here reads,
+#   floors or defaults a value.
+# * ``GET`` / ``PUT /fleet/capacity-model`` read and write the D9 dial,
+#   ``capacity_model_mode`` and ``capacity_model_off_consumers``. Both columns
+#   live on the tenant's ``fleet_resources`` controls row, which the generic
+#   ``PUT /fleet-policy`` above refuses because its body cannot express the
+#   row's other controls. This door can be narrower than that: coord merges a
+#   controls PUT field by field (``apply_policy_edit_tx``: an absent field
+#   keeps its stored value), so a body naming ONLY the two dial fields leaves
+#   the memory floors, CI caps, session bounds and drain map exactly as stored.
+
+#: ``level`` / ``master_enabled`` of the controls row. The level/master axis is
+#: meaningless for that domain; coord writes the same pair (``CONTROLS_LEVEL``)
+#: when it creates the row.
+_CONTROLS_ROW_LEVEL = "controls"
+
+#: The dial's two modes (coord ``CapacityModelMode``; web ``capmodel_01``'s CHECK).
+CapacityModelMode = Literal["off", "enforce"]
+
+
+class CapacityModelDial(BaseModel):
+    """The D9 dial as coord resolves it (``CapacityModelDial::view``).
+
+    ``mode_source`` is ``"default"`` when the row stores NULL, which D9 reads
+    as ``enforce``; ``"stored"`` otherwise. ``consumers`` is every consumer
+    this coord build knows — the vocabulary the off list may name.
+    """
+
+    mode: CapacityModelMode
+    mode_source: Literal["default", "stored"]
+    off_consumers: list[str]
+    ignored_off_consumers: list[str]
+    permitted_consumers: list[str]
+    consumers: list[str]
+
+
+class CapacityModelView(BaseModel):
+    """The dial, or why it is UNKNOWN.
+
+    ``dial is None`` is UNKNOWN, never ``enforce``: D9 forbids resolving an
+    unread dial to NULL's default. ``unknown_reason`` names which read failed
+    to produce it.
+    """
+
+    dial: CapacityModelDial | None
+    unknown_reason: str | None = None
+    #: The tenant-admin rule ``require_coord_tenant_admin`` applies to the PUT.
+    can_edit: bool
+
+
+class CapacityModelPut(BaseModel):
+    """Closed body for the dial write. ``extra="forbid"``: coord's PUT is
+    ``deny_unknown_fields``, so a stray key is refused here, legibly."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: CapacityModelMode
+    #: Coord refuses a name outside its consumer vocabulary, or a duplicate,
+    #: with a typed 400 that passes through as structured ``detail``.
+    off_consumers: list[str] = Field(..., max_length=64)
+    change_note: str | None = Field(None, max_length=2000)
+
+
+class CapacityModelWriteResult(BaseModel):
+    """What the write did, and the dial as a SEPARATE read now resolves it.
+
+    ``effective is None`` with ``readback_error`` set is UNKNOWN — the write
+    may well have landed, and the written values are not what devices read
+    until a read says so.
+    """
+
+    ok: bool
+    version: int | None = None
+    versioned: bool | None = None
+    effective: CapacityModelView | None = None
+    readback_error: str | None = None
+
+
+def _capacity_model_view(payload: Any, *, can_edit: bool) -> CapacityModelView:
+    """Project coord's ``GET /coord/fleet-policy?domain=fleet_resources`` onto
+    the dial. A block coord did not send, or sent in a shape this proxy cannot
+    read whole, is UNKNOWN with its reason — never a default."""
+    body = payload if isinstance(payload, dict) else {}
+    if body.get("controls_available") is False:
+        reason = "coord cannot read the fleet-resource controls row"
+    elif body.get("capacity_controls_available") is False:
+        reason = "coord's controls read did not project the capacity-model columns"
+    elif "capacity_model" not in body:
+        reason = "this coord build serves no capacity-model dial"
+    elif body.get("capacity_model") is None:
+        reason = "coord read the row but could not resolve the dial (a stored mode outside the vocabulary)"
+    else:
+        try:
+            dial = CapacityModelDial.model_validate(body["capacity_model"])
+        except ValidationError as exc:
+            return CapacityModelView(
+                dial=None,
+                unknown_reason=f"coord's capacity_model block did not parse: {exc.error_count()} error(s)",
+                can_edit=can_edit,
+            )
+        return CapacityModelView(dial=dial, can_edit=can_edit)
+    return CapacityModelView(dial=None, unknown_reason=reason, can_edit=can_edit)
+
+
+@router.get("/fleet/capacity")
+async def get_fleet_capacity(
+    device_id: UUID | None = Query(None, description="Only this device"),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Coord's per-device capacity read, status and body verbatim."""
+    params = {"device_id": str(device_id)} if device_id is not None else None
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/fleet/capacity/operator",
+        tenant_id=tenant_id,
+        params=params,
+    )
+
+
+@router.get("/fleet/capacity-model", response_model=CapacityModelView)
+async def get_fleet_capacity_model(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> CapacityModelView:
+    """The D9 dial as coord resolves it, plus whether the caller may edit it
+    (the same effective-tenant rule :func:`get_fleet_policy` uses)."""
+    payload = await _proxy_coord_get(
+        "/coord/fleet-policy",
+        params={"domain": _FLEET_POLICY_CONTROLS_DOMAIN},
+        tenant_id=tenant_id,
+    )
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _capacity_model_view(payload, can_edit=can_edit)
+
+
+@router.put("/fleet/capacity-model", response_model=CapacityModelWriteResult)
+async def put_fleet_capacity_model(
+    body: CapacityModelPut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> CapacityModelWriteResult:
+    """Write the D9 dial, then READ BACK what coord resolves.
+
+    Tenant-admin gated here; coord re-checks with ``rbac::is_tenant_admin``.
+    Coord's typed vocabulary refusal (``invalid_capacity_model_mode``,
+    ``unknown_capacity_model_consumer``, ``duplicate_capacity_model_consumer``)
+    reaches the browser as a structured ``detail``.
+    """
+    written = await _proxy_coord_put(
+        "/coord/fleet-policy",
+        {
+            "domain": _FLEET_POLICY_CONTROLS_DOMAIN,
+            "scope_band": "tenant",
+            "scope_key": None,
+            "level": _CONTROLS_ROW_LEVEL,
+            "master_enabled": True,
+            "controls": {
+                "capacity_model_mode": body.mode,
+                "capacity_model_off_consumers": body.off_consumers,
+            },
+            "change_note": body.change_note
+            or "Dev Ops capacity panel: capacity-model dial",
+        },
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    echo = written if isinstance(written, dict) else {}
+
+    effective: CapacityModelView | None = None
+    readback_error: str | None = None
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy",
+            params={"domain": _FLEET_POLICY_CONTROLS_DOMAIN},
+            tenant_id=tenant_id,
+        )
+        effective = _capacity_model_view(payload, can_edit=True)
+    except HTTPException as exc:
+        readback_error = f"read-back failed: coord returned {exc.status_code}"
+    except Exception as exc:  # noqa: BLE001 — the WRITE succeeded; don't lose it
+        readback_error = f"read-back failed: {exc}"
+    if readback_error is not None:
+        logger.warning("capacity_model.readback_failed", detail=readback_error)
+
+    version = echo.get("version")
+    versioned = echo.get("versioned")
+    return CapacityModelWriteResult(
+        ok=bool(echo.get("ok", True)),
+        version=version if isinstance(version, int) else None,
+        versioned=versioned if isinstance(versioned, bool) else None,
         effective=effective,
         readback_error=readback_error,
     )
