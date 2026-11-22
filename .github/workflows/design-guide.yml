@@ -106,7 +106,7 @@ jobs:
           node-version: "22"
 
       # The kit is installed OUTSIDE frontend/ from
-      # frontend/design/kit/package-lock.json (the git tag v0.1.0 resolved to
+      # frontend/design/kit/package-lock.json (the git tag v0.2.0 resolved to
       # its commit, plus the EXACT ui-bridge peers validate-guide drives).
       # frontend/ pins older ui-bridge-wrapper / -headless versions for its own
       # e2e use, so the kit is never resolved through frontend/node_modules:

@@ -136,6 +136,9 @@ export const tokens = {
   },
   "space": {
     "depth": {
+      "glow-primary": "0px 0px 12px 0px rgba(74, 144, 217, 0.2)",
+      "glow-secondary": "0px 0px 12px 0px rgba(139, 107, 181, 0.2)",
+      "glow-success": "0px 0px 12px 0px rgba(77, 184, 157, 0.2)",
       "lg": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
       "md": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
       "none": "none",
@@ -179,11 +182,12 @@ export const tokens = {
     },
     "leading": {
       "body": "1.5",
-      "loose": "2",
+      "loose": "1.35",
       "none": "1",
-      "relaxed": "1.625",
-      "snug": "1.375",
-      "tight": "1.25"
+      "normal": "1.25",
+      "relaxed": "1.3",
+      "snug": "1.15",
+      "tight": "1.1"
     },
     "scale": {
       "body": "14px",
@@ -197,9 +201,9 @@ export const tokens = {
       "normal": "0em",
       "tight": "-0.025em",
       "tighter": "-0.05em",
-      "wide": "0.025em",
-      "wider": "0.05em",
-      "widest": "0.1em"
+      "wide": "0.04em",
+      "wider": "0.08em",
+      "widest": "0.12em"
     },
     "unit": "0.5",
     "weight": {
@@ -346,6 +350,9 @@ export const vars = {
   },
   "space": {
     "depth": {
+      "glow-primary": "var(--dk-space-depth-glow-primary)",
+      "glow-secondary": "var(--dk-space-depth-glow-secondary)",
+      "glow-success": "var(--dk-space-depth-glow-success)",
       "lg": "var(--dk-space-depth-lg)",
       "md": "var(--dk-space-depth-md)",
       "none": "var(--dk-space-depth-none)",
@@ -391,6 +398,7 @@ export const vars = {
       "body": "var(--dk-type-leading-body)",
       "loose": "var(--dk-type-leading-loose)",
       "none": "var(--dk-type-leading-none)",
+      "normal": "var(--dk-type-leading-normal)",
       "relaxed": "var(--dk-type-leading-relaxed)",
       "snug": "var(--dk-type-leading-snug)",
       "tight": "var(--dk-type-leading-tight)"
@@ -432,6 +440,8 @@ export const undeclared = [
   "color.role.muted",
   "color.role.surface",
   "color.role.text",
+  "color.text.disabled",
+  "color.text.tertiary",
   "type.family.mono",
   "type.family.sans"
 ] as const;
