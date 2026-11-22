@@ -81,11 +81,12 @@ async def post_to_coord(
     * 502 on any other transport error (single attempt).
 
     ``accept_gateway_status`` lets a caller recognise a response in
-    ``_RETRYABLE_GATEWAY_STATUSES`` that coord's APPLICATION sent (it carries
-    a body only coord writes), so it is returned at once instead of being
-    retried as a gateway failure. A gateway's own 502 never matches the
-    caller's predicate, so it is still retried. ``None`` (the default) keeps
-    every gateway status retryable.
+    ``_RETRYABLE_GATEWAY_STATUSES`` that coord's APPLICATION sent, so it is
+    returned at once instead of being retried as a gateway failure. The
+    caller's obligations: the predicate must match only a body coord's
+    application writes (never a gateway's own error page, which must stay
+    retryable), and it must not raise — an exception escapes this function.
+    ``None`` (the default) keeps every gateway status retryable.
 
     ``log_event`` prefixes the structured-log events
     (``<log_event>_coord_*``); extra ``log_fields`` are attached to each.

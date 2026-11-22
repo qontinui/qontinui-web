@@ -1135,7 +1135,7 @@ CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
 #: stored directive is not lost: it reaches the machine on its next connect.
 CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
     "Saved by the coordinator; the machine applies these settings the next "
-    "time it connects to the coordinator. Apply again to try sending them now."
+    "time it connects to the coordinator."
 )
 
 
@@ -1347,6 +1347,14 @@ async def set_ci_node_config(
 
     if resp.status_code >= 400:
         if _coord_stored_directive(resp):
+            # The proxy no longer logs this as a gateway failure, so say here
+            # that coord could not publish: a publish outage stays visible.
+            logger.warning(
+                "devenv_ci_node_dispatch_stored_unpublished",
+                machine_id=str(machine.id),
+                target_device_id=str(machine.coord_device_id),
+                status=resp.status_code,
+            )
             # STORED BUT NOT PUBLISHED: coord kept the directive and the runner
             # fetches it on its next connect, so this is not a refusal. Still
             # ``dispatched=False`` (nothing reached the machine now), and

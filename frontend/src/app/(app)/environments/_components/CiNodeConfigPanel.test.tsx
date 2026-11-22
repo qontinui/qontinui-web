@@ -778,7 +778,7 @@ describe("CiNodeConfigPanel — model access", () => {
           dispatch_status: 502,
           dispatch_error: "stored_for_next_connect",
           dispatch_detail:
-            "Saved by the coordinator; the machine applies these settings the next time it connects to the coordinator. Apply again to try sending them now.",
+            "Saved by the coordinator; the machine applies these settings the next time it connects to the coordinator.",
         })
       )
     );

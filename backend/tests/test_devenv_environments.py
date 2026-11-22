@@ -4031,7 +4031,7 @@ class _CiNodeCoordTransport:
 
 _STORED_DETAIL = (
     "Saved by the coordinator; the machine applies these settings the next "
-    "time it connects to the coordinator. Apply again to try sending them now."
+    "time it connects to the coordinator."
 )
 _COORD_PUBLISH_FAILED_MESSAGE = "The directive could not be published (redis down)."
 
@@ -4159,6 +4159,8 @@ class TestCiNodeStoredButUnpublished:
             _publish_failed(502, {"stored": "true"}),
             httpx.Response(502, content=b"<html>bad gateway</html>"),
             httpx.Response(502, json=[{"stored": True}]),
+            _publish_failed(503, {"stored": True}),
+            _publish_failed(504, {"stored": True}),
         ],
         ids=[
             "absent_older_coord",
@@ -4166,6 +4168,8 @@ class TestCiNodeStoredButUnpublished:
             "stored_not_a_bool",
             "unparseable_body",
             "non_object_body",
+            "stored_beside_a_503",
+            "stored_beside_a_504",
         ],
     )
     async def test_ci_node_502_without_stored_true_reads_as_today(
