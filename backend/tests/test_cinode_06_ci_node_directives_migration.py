@@ -8,18 +8,20 @@ Without a database (always runs):
 
 1. Chain wiring: the parent is ``ci_measure_01_dispatch_measurement`` (main's
    single head when this was authored) and the ``Revises:`` header agrees.
-2. The upgrade is ONE ``create_table`` in schema ``coord`` with exactly the
-   plan's eight columns (types, nullability, the ``device_id`` primary key),
-   a comment on every column and on the table, and the ``credential_arm``
-   CHECK. The downgrade drops exactly that table in schema ``coord``.
+2. The upgrade checks ``has_table`` first and is then ONE ``create_table`` in
+   schema ``coord`` with exactly the plan's eight columns (types,
+   nullability, the ``device_id`` primary key), a comment on every column and
+   on the table, and the two named CHECKs; with the table already present it
+   does nothing. The downgrade drops exactly that table in schema ``coord``.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
 3. The table appears with the column types, nullability and comments, the
-   ``updated_at`` ``now()`` default, the table comment and the named CHECK all
-   read back from the catalog; the CHECK refuses an unknown arm, and a second
-   row for the same device is refused (one row per device).
+   ``updated_at`` ``now()`` default, the table comment and the named arm CHECK
+   all read back from the catalog; each constraint refuses its own violation
+   (the primary key a second row for the same device, the arm CHECK an unknown
+   arm, the payload CHECK a non-object payload).
 4. Downgrade removes the table; up, down, up round-trips.
 """
 
@@ -113,13 +115,33 @@ class _RecordingOp:
     def drop_table(self, *args: Any, **kwargs: Any) -> None:
         self.calls.append(("drop_table", args, kwargs))
 
+    def get_bind(self) -> object:
+        return self
 
-def _record(step: str, monkeypatch: pytest.MonkeyPatch) -> _RecordingOp:
+
+class _Inspector:
+    """What ``inspect(op.get_bind())`` returns: reports whether the table
+    already exists, and records the lookup."""
+
+    def __init__(self, exists: bool) -> None:
+        self.exists = exists
+        self.lookups: list[tuple[str, str | None]] = []
+
+    def has_table(self, name: str, schema: str | None = None) -> bool:
+        self.lookups.append((name, schema))
+        return self.exists
+
+
+def _record(
+    step: str, monkeypatch: pytest.MonkeyPatch, *, table_exists_already: bool = False
+) -> tuple[_RecordingOp, _Inspector]:
     module = _module()
     recorder = _RecordingOp()
+    inspector = _Inspector(table_exists_already)
     monkeypatch.setattr(module, "op", recorder)
+    monkeypatch.setattr(module, "inspect", lambda _bind: inspector)
     getattr(module, step)()
-    return recorder
+    return recorder, inspector
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +168,8 @@ def test_revision_chains_off_its_parent() -> None:
 def test_upgrade_is_one_create_table_in_coord_with_the_plan_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = _record("upgrade", monkeypatch)
+    recorder, inspector = _record("upgrade", monkeypatch)
+    assert inspector.lookups == [(_TABLE, _SCHEMA)]
     assert [c[0] for c in recorder.calls] == ["create_table"]
     _, args, kwargs = recorder.calls[0]
     assert args[0] == _TABLE
@@ -174,17 +197,33 @@ def test_upgrade_is_one_create_table_in_coord_with_the_plan_columns(
     assert "LATEST" in device_comment
     assert "connect" in device_comment
 
-    checks = [a for a in args[1:] if isinstance(a, sa.CheckConstraint)]
-    assert len(checks) == 1
-    assert " ".join(str(checks[0].sqltext).split()) == (
-        "credential_arm IN ('operator', 'device')"
-    )
+    checks = {
+        a.name: " ".join(str(a.sqltext).split())
+        for a in args[1:]
+        if isinstance(a, sa.CheckConstraint)
+    }
+    assert checks == {
+        "ci_node_directives_credential_arm_check": (
+            "credential_arm IN ('operator', 'device')"
+        ),
+        "ci_node_directives_payload_object_check": "jsonb_typeof(payload) = 'object'",
+    }
+
+
+def test_upgrade_is_skipped_when_the_table_already_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The idempotency guard coord's migration classifier requires: a table
+    already in place (a prior partial apply) is left alone."""
+    recorder, inspector = _record("upgrade", monkeypatch, table_exists_already=True)
+    assert inspector.lookups == [(_TABLE, _SCHEMA)]
+    assert recorder.calls == []
 
 
 def test_downgrade_drops_exactly_the_table_in_coord(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = _record("downgrade", monkeypatch)
+    recorder, _ = _record("downgrade", monkeypatch)
     assert recorder.calls == [("drop_table", (_TABLE,), {"schema": _SCHEMA})]
 
 
@@ -193,7 +232,12 @@ def test_downgrade_drops_exactly_the_table_in_coord(
 # ---------------------------------------------------------------------------
 
 
-def _insert(engine: sa.Engine, device_id: uuid.UUID, arm: str) -> None:
+def _insert(
+    engine: sa.Engine,
+    device_id: uuid.UUID,
+    arm: str,
+    payload: str = '{"enabled": true}',
+) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -206,7 +250,7 @@ def _insert(engine: sa.Engine, device_id: uuid.UUID, arm: str) -> None:
                 "d": device_id,
                 "t": uuid.uuid4(),
                 "i": uuid.uuid4(),
-                "p": '{"enabled": true}',
+                "p": payload,
                 "a": arm,
             },
         )
@@ -246,10 +290,16 @@ def test_upgrade_creates_the_table_and_downgrade_removes_it() -> None:
 
         device = uuid.uuid4()
         _insert(engine, device, "operator")
-        with pytest.raises(IntegrityError):
-            _insert(engine, device, "device")  # one row per device
-        with pytest.raises(IntegrityError):
-            _insert(engine, uuid.uuid4(), "someone_else")  # CHECK
+        # Same arm, so only the primary key can refuse it: one row per device.
+        with pytest.raises(IntegrityError) as dup:
+            _insert(engine, device, "operator")
+        assert "ci_node_directives_pkey" in str(dup.value)
+        with pytest.raises(IntegrityError) as arm:
+            _insert(engine, uuid.uuid4(), "someone_else")
+        assert "ci_node_directives_credential_arm_check" in str(arm.value)
+        with pytest.raises(IntegrityError) as scalar_payload:
+            _insert(engine, uuid.uuid4(), "device", payload='"enabled"')
+        assert "ci_node_directives_payload_object_check" in str(scalar_payload.value)
 
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, _SCHEMA, _TABLE)

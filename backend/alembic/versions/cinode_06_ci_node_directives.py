@@ -49,7 +49,8 @@ No index beyond the primary key: the only read is by ``device_id``.
 Shape
 ==========================================================================
 
-A pure ``CREATE TABLE`` in schema ``coord`` with a CHECK and column comments;
+A guarded ``CREATE TABLE`` in schema ``coord`` with two CHECKs (the arm, and
+``payload`` is a JSON object) and column comments;
 no data is touched, so it is safe for a running coord on the prior schema
 (coord reads nothing from it yet). ``downgrade`` drops exactly the table it
 created.
@@ -62,6 +63,7 @@ Coord re-points it at land time if main moves again.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -77,7 +79,15 @@ _TABLE = "ci_node_directives"
 
 
 def upgrade() -> None:
-    """Create coord.ci_node_directives with its CHECK and comments."""
+    """Create coord.ci_node_directives with its CHECKs and comments.
+
+    Idempotent: a prior partial apply (or an out-of-band create) leaves the
+    table in place, and the whole body is skipped so ``alembic upgrade head``
+    succeeds either way. Coord's merge-time migration classifier also admits
+    only a guarded ``create_table``.
+    """
+    if inspect(op.get_bind()).has_table(_TABLE, schema=_SCHEMA):
+        return
     op.create_table(
         _TABLE,
         sa.Column(
@@ -153,6 +163,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "credential_arm IN ('operator', 'device')",
             name="ci_node_directives_credential_arm_check",
+        ),
+        sa.CheckConstraint(
+            "jsonb_typeof(payload) = 'object'",
+            name="ci_node_directives_payload_object_check",
         ),
         schema=_SCHEMA,
         comment=(
