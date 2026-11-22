@@ -21,8 +21,13 @@
  *     2 (refused/misused/crashed: the kit maps any thrown error that is not an
  *     `unknown(...)` to 2), it exited outside 0-3 or by signal, it ran past the
  *     per-route bound, or exit 0/1/3 came without a readable `--json` report.
- *   - Each test writes its own record to disk, and the LAST test of this file
- *     aggregates the records into `design-guide-sweep.json`.
+ *   - Each test writes its own record to disk and then REWRITES
+ *     `design-guide-sweep.json` from every record of this run (`complete:
+ *     false`), so a run cancelled or timed out mid-sweep still leaves a report
+ *     covering every route that finished. The LAST test of this file writes it
+ *     once more with `complete: true`, after every route has had its turn.
+ *   - On a per-route timeout the kit's WHOLE process tree is killed: the CLI,
+ *     the wrapper's inject-cli and the Chromium it launched (see killTree).
  *
  * WHY A FINAL TEST AND NOT globalTeardown. globalTeardown is config-wide: it
  * runs for every project (chromium shards included), and it would need its own
@@ -33,7 +38,18 @@
  * `fullyParallel: false` with one worker: the file's tests run in declaration
  * order, and after a failed test Playwright starts a fresh worker and goes on
  * with the NEXT test, so the aggregator still runs last. Records live on disk,
- * not in memory, because that fresh worker re-imports this module.
+ * not in memory, because that fresh worker re-imports this module. The
+ * per-route rewrite is what covers the case the final test cannot: a run that
+ * never reaches it.
+ *
+ * TIMEOUT CEILING. The kit's own door kills its wrapper at 180 s
+ * (src/door/inject.ts `timeoutMs ?? 180_000` in design-kit v0.2.0), after which
+ * the CLI answers exit 3 `unknown(instrument-cannot-read)`. A per-route timeout
+ * much above ~185 s therefore buys nothing; this harness kills the tree 5 s
+ * before Playwright's own timeout (the "kill bound", printed per route).
+ *
+ * The project exists only when DESIGN_GUIDE_SWEEP=1 (playwright.config.ts), so
+ * a bare `playwright test` never runs it.
  *
  * Env:
  *   DESIGN_KIT_BIN                 the CLI (default frontend/design/kit/node_modules/.bin/design-kit;
@@ -106,6 +122,9 @@ const ENUM = enumerate(listPageFiles(APP_DIR));
 const SWEPT: SweepRoute[] =
   LIMIT === null ? ENUM.static_routes : ENUM.static_routes.slice(0, LIMIT);
 
+/** Rule id -> its severity and the element ids that failed it. */
+type FailuresByRule = Record<string, { severity: string; elements: string[] }>;
+
 /** What one route's test leaves on disk for the aggregator. */
 interface RouteRecord {
   run_id: string;
@@ -117,16 +136,22 @@ interface RouteRecord {
   signal: string | null;
   elements: number | null;
   rules: number | null;
-  /** Rule id -> the element ids that failed it, as the kit's `failuresByRule`. */
-  failures_by_rule: Record<string, string[]> | null;
+  /** Built from the kit's `failures` (each carries its rule's severity); null when the kit evaluated nothing. */
+  failures_by_rule: FailuresByRule | null;
+  /** Failure count per severity (`error` fails a page under the kit, `warning`/`info` do not); null as above. */
+  failures_by_severity: Record<string, number> | null;
   unmatchedRules: string[] | null;
   stylesheets: unknown;
   unknown_reason: string | null;
   instrument: string | null;
   duration_ms: number;
+  kill_bound_ms: number;
   harness_error: string | null;
   output_tail: string | null;
 }
+
+/** Per-route test bound minus a margin, so the record is written before Playwright gives up. */
+const KILL_BOUND_MS = Math.max(1_000, TIMEOUT_MS - 5_000);
 
 /** The command that runs the CLI. On Windows a `.bin` shim is a .cmd, so the package's JS entry is run with node instead. */
 function kitCommand(): { cmd: string; pre: string[] } | null {
@@ -155,6 +180,61 @@ function kitCommand(): { cmd: string; pre: string[] } | null {
   return fs.existsSync(KIT_BIN) ? { cmd: KIT_BIN, pre: [] } : null;
 }
 
+/**
+ * Kill a process and everything under it. The kit's door spawns
+ * `ui-bridge-inject`, which launches Chromium through Playwright, and
+ * Playwright starts the browser in a process group of its own on POSIX, so a
+ * group kill alone can miss it: the descendants are therefore read from `ps`
+ * FIRST (before the kill reparents them), then the group and each pid get
+ * SIGKILL. On Windows `taskkill /T` walks the tree from that one pid.
+ */
+function killTree(pid: number): void {
+  if (process.platform === "win32") {
+    try {
+      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Already gone, or nothing left to kill.
+    }
+    return;
+  }
+  const pids = [pid];
+  try {
+    const table = execFileSync("ps", ["-A", "-o", "pid=,ppid="], {
+      encoding: "utf8",
+    });
+    const children = new Map<number, number[]>();
+    for (const line of table.split("\n")) {
+      const [c, p] = line.trim().split(/\s+/).map(Number);
+      if (
+        c === undefined ||
+        p === undefined ||
+        Number.isNaN(c) ||
+        Number.isNaN(p)
+      )
+        continue;
+      children.set(p, [...(children.get(p) ?? []), c]);
+    }
+    for (let i = 0; i < pids.length; i++)
+      pids.push(...(children.get(pids[i]!) ?? []));
+  } catch {
+    // No `ps`: the group kill below still reaches everything that kept the group.
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // The group is already gone.
+  }
+  for (const p of pids) {
+    try {
+      process.kill(p, "SIGKILL");
+    } catch {
+      // Already exited.
+    }
+  }
+}
+
 function run(cmd: string, args: string[], timeoutMs: number) {
   return new Promise<{
     code: number | null;
@@ -172,10 +252,13 @@ function run(cmd: string, args: string[], timeoutMs: number) {
       env.PLAYWRIGHT_BROWSERS_PATH =
         process.env.DESIGN_KIT_PLAYWRIGHT_BROWSERS_PATH;
     }
+    // `detached` on POSIX makes the CLI a process-group leader, so killTree
+    // can signal the whole group; on Windows it would open a console instead.
     const child = spawn(cmd, args, {
       cwd: FRONTEND_DIR,
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
     let output = "";
     let timedOut = false;
@@ -186,7 +269,8 @@ function run(cmd: string, args: string[], timeoutMs: number) {
     child.stderr.on("data", keep);
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      if (child.pid !== undefined) killTree(child.pid);
+      else child.kill("SIGKILL");
     }, timeoutMs);
     child.on("error", (e) => {
       clearTimeout(timer);
@@ -224,9 +308,36 @@ function readJson(file: string): Record<string, unknown> | null {
   }
 }
 
+/** Write via a temp file and rename, so a run killed mid-write never leaves a torn report. */
 function writeJsonFile(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
+  fs.renameSync(tmp, file);
+}
+
+/** The kit's `failures` grouped by rule, keeping each rule's severity. */
+function groupFailures(failures: unknown): {
+  byRule: FailuresByRule;
+  bySeverity: Record<string, number>;
+} | null {
+  if (!Array.isArray(failures)) return null;
+  const byRule: FailuresByRule = {};
+  const bySeverity: Record<string, number> = {};
+  for (const f of failures as {
+    ruleId?: unknown;
+    elementId?: unknown;
+    severity?: unknown;
+  }[]) {
+    const rule = String(f.ruleId);
+    const severity = typeof f.severity === "string" ? f.severity : "unknown";
+    const entry = (byRule[rule] ??= { severity, elements: [] });
+    if (entry.severity !== severity) entry.severity = "mixed";
+    const el = String(f.elementId);
+    if (!entry.elements.includes(el)) entry.elements.push(el);
+    bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
+  }
+  return { byRule, bySeverity };
 }
 
 for (const r of SWEPT) {
@@ -250,11 +361,13 @@ for (const r of SWEPT) {
       elements: null,
       rules: null,
       failures_by_rule: null,
+      failures_by_severity: null,
       unmatchedRules: null,
       stylesheets: null,
       unknown_reason: null,
       instrument: null,
       duration_ms: 0,
+      kill_bound_ms: KILL_BOUND_MS,
       harness_error: null,
       output_tail: null,
     };
@@ -279,17 +392,16 @@ for (const r of SWEPT) {
           GUIDE,
           url,
         ];
-        // Kill the CLI before Playwright's own timeout, so the record is written and names the cause.
-        const res = await run(
-          kit.cmd,
-          args,
-          Math.max(1_000, TIMEOUT_MS - 5_000)
+        // Kill the CLI's tree before Playwright's own timeout, so the record is written and names the cause.
+        process.stdout.write(
+          `design-guide-sweep ${r.route}: per-route timeout ${TIMEOUT_MS} ms, kill bound ${KILL_BOUND_MS} ms\n`
         );
+        const res = await run(kit.cmd, args, KILL_BOUND_MS);
         rec.exit_code = res.code;
         rec.signal = res.signal;
         const report = readJson(jsonFile);
         if (res.timedOut)
-          rec.harness_error = `validate-guide ran past ${TIMEOUT_MS - 5_000} ms and was killed`;
+          rec.harness_error = `validate-guide ran past the ${KILL_BOUND_MS} ms kill bound and its process tree was killed`;
         else if (res.code === 0 || res.code === 1 || res.code === 3) {
           if (!report)
             rec.harness_error = `validate-guide exited ${res.code} but wrote no readable --json report at ${jsonFile}`;
@@ -304,8 +416,9 @@ for (const r of SWEPT) {
           rec.elements =
             typeof report.elements === "number" ? report.elements : null;
           rec.rules = typeof report.rules === "number" ? report.rules : null;
-          rec.failures_by_rule =
-            (report.failuresByRule as Record<string, string[]> | null) ?? null;
+          const grouped = groupFailures(report.failures);
+          rec.failures_by_rule = grouped?.byRule ?? null;
+          rec.failures_by_severity = grouped?.bySeverity ?? null;
           rec.unmatchedRules =
             (report.unmatchedRules as string[] | null) ?? null;
           rec.stylesheets = report.stylesheets ?? null;
@@ -321,10 +434,19 @@ for (const r of SWEPT) {
     } finally {
       rec.duration_ms = Date.now() - started;
       writeJsonFile(recordFile, rec);
+      // Best effort: a report that cannot be rewritten here is rewritten by the
+      // next route and by the final test, which DOES fail on it.
+      try {
+        writeReport(false);
+      } catch (e) {
+        console.warn(
+          `design-guide-sweep: interim report not written: ${(e as Error).message}`
+        );
+      }
     }
     info.annotations.push({
       type: "validate-guide",
-      description: `exit ${String(rec.exit_code)} in ${rec.duration_ms} ms`,
+      description: `exit ${String(rec.exit_code)} in ${rec.duration_ms} ms (kill bound ${KILL_BOUND_MS} ms)`,
     });
     if (rec.harness_error)
       throw new Error(
@@ -365,13 +487,18 @@ function kitVersion(): {
   };
 }
 
-// Declared LAST: see "WHY A FINAL TEST" above. It fails only when it cannot
-// write the report; harness errors were already reported by their own tests.
-test("write design-guide-sweep.json", async () => {
-  const routes: (
-    | RouteRecord
-    | { route: string; files: string[]; harness_error: string }
-  )[] = SWEPT.map((r) => {
+type ReportRoute =
+  | RouteRecord
+  | { route: string; files: string[]; status: "not_run" | "stale_record_only" };
+
+/**
+ * design-guide-sweep.json from every record of THIS run. `complete: false`
+ * while routes are still running (or when the run was cut short); the final
+ * test writes `complete: true`. A route with no record of this run is listed
+ * with its status, never dropped and never counted as a measurement.
+ */
+function writeReport(complete: boolean): void {
+  const routes: ReportRoute[] = SWEPT.map((r) => {
     const rec = readJson(
       path.join(RECORD_DIR, `${slugOf(r.route)}.json`)
     ) as RouteRecord | null;
@@ -379,52 +506,76 @@ test("write design-guide-sweep.json", async () => {
     return {
       route: r.route,
       files: r.files,
-      harness_error: rec
-        ? "only a record from an earlier run exists"
-        : "no record: the route's test did not run",
+      status: rec ? "stale_record_only" : "not_run",
     };
   });
   const byExit: Record<string, number> = {};
-  const byRule: Record<string, { routes: number; elements: number }> = {};
+  const byRule: Record<
+    string,
+    { severity: string; routes: number; elements: number }
+  > = {};
+  const bySeverity: Record<string, { routes: number; failures: number }> = {};
   const byUnknown: Record<string, number> = {};
+  let recorded = 0;
   for (const r of routes) {
-    const key = r.harness_error
-      ? "harness_error"
-      : String((r as RouteRecord).exit_code);
-    byExit[key] = (byExit[key] ?? 0) + 1;
-    const full = r as Partial<RouteRecord>;
-    for (const [rule, els] of Object.entries(full.failures_by_rule ?? {})) {
-      const t = (byRule[rule] ??= { routes: 0, elements: 0 });
-      t.routes += 1;
-      t.elements += els.length;
+    if ("status" in r) {
+      byExit[r.status] = (byExit[r.status] ?? 0) + 1;
+      continue;
     }
-    if (full.unknown_reason) {
+    recorded += 1;
+    const key = r.harness_error ? "harness_error" : String(r.exit_code);
+    byExit[key] = (byExit[key] ?? 0) + 1;
+    for (const [rule, f] of Object.entries(r.failures_by_rule ?? {})) {
+      const t = (byRule[rule] ??= {
+        severity: f.severity,
+        routes: 0,
+        elements: 0,
+      });
+      if (t.severity !== f.severity) t.severity = "mixed";
+      t.routes += 1;
+      t.elements += f.elements.length;
+    }
+    for (const [sev, n] of Object.entries(r.failures_by_severity ?? {})) {
+      const t = (bySeverity[sev] ??= { routes: 0, failures: 0 });
+      t.routes += 1;
+      t.failures += n;
+    }
+    if (r.unknown_reason) {
       const kind =
-        /^unknown\([^)]*\)/.exec(full.unknown_reason)?.[0] ??
-        full.unknown_reason;
+        /^unknown\([^)]*\)/.exec(r.unknown_reason)?.[0] ?? r.unknown_reason;
       byUnknown[kind] = (byUnknown[kind] ?? 0) + 1;
     }
   }
-  const report = {
-    schema: 1,
+  writeJsonFile(path.join(OUT_DIR, "design-guide-sweep.json"), {
+    schema: 2,
+    complete,
     generated_at: new Date().toISOString(),
+    run_id: RUN_ID,
     sha: gitSha(),
     kit: kitVersion(),
     guide: path.relative(FRONTEND_DIR, GUIDE).split(path.sep).join("/"),
     origin: ORIGIN,
     per_route_timeout_ms: TIMEOUT_MS,
+    kill_bound_ms: KILL_BOUND_MS,
     page_count: ENUM.page_count,
     static_count: ENUM.static_routes.length,
     limited_to: LIMIT,
     swept_count: SWEPT.length,
+    recorded_count: recorded,
     not_swept: ENUM.not_swept,
     not_a_route: ENUM.not_a_route,
     totals: {
       by_exit_code: byExit,
       by_rule: byRule,
+      by_severity: bySeverity,
       by_unknown_reason: byUnknown,
     },
     routes,
-  };
-  writeJsonFile(path.join(OUT_DIR, "design-guide-sweep.json"), report);
+  });
+}
+
+// Declared LAST: see "WHY A FINAL TEST" above. It fails only when it cannot
+// write the report; harness errors were already reported by their own tests.
+test("write design-guide-sweep.json", async () => {
+  writeReport(true);
 });

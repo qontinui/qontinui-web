@@ -26,7 +26,12 @@
  *                     an intercepting route: it renders only on a SOFT
  *                     navigation from inside the app, and a direct hit on its
  *                     URL serves the route it intercepts instead. Recorded
- *                     `not_swept: "intercepting route"`.
+ *                     `not_swept: "intercepting route"`, and its `route` is the
+ *                     URL it INTERCEPTS, resolved the way Next resolves it:
+ *                     `(.)` the same level, each `(..)` one route segment up
+ *                     (groups and slots are not segments), `(...)` the app
+ *                     root. That URL has its own page, which the sweep visits
+ *                     when it is static.
  *
  * Deliberately left out:
  *   - `route.ts` handlers, `default.tsx` slot fallbacks, `layout.tsx`,
@@ -85,7 +90,12 @@ export function routeOf(relFile: string): RouteEntry {
   for (const seg of parts) {
     if (isIntercepting(seg)) {
       intercepting = true;
-      urlSegs.push(seg.replace(/^(\(\.{1,3}\))+/, ""));
+      const markers = /^(\(\.{1,3}\))+/.exec(seg)?.[0] ?? "";
+      for (const m of markers.match(/\(\.{1,3}\)/g) ?? []) {
+        if (m === "(...)") urlSegs.length = 0;
+        else if (m === "(..)") urlSegs.pop();
+      }
+      urlSegs.push(seg.slice(markers.length));
       continue;
     }
     if (isGroup(seg) || isSlot(seg)) continue;
@@ -152,17 +162,25 @@ export function enumerate(relFiles: readonly string[]): Enumeration {
   };
 }
 
-/** A file-name-safe, collision-free slug for a route (`/` -> `index`). */
+/**
+ * A file-name-safe slug for a route, injective over routes: `r` plus the route
+ * with each `/` written `~` and every other character outside `[A-Za-z0-9._-]`
+ * (`~` and `%` included) percent-escaped. So `/` -> `r~`, `/index` -> `r~index`,
+ * `/a/b` -> `r~a~b`, and `/a~b` -> `r~a%7Eb`.
+ */
 export function slugOf(route: string): string {
-  if (route === "/") return "index";
-  return route
-    .slice(1)
-    .split("/")
-    .map((s) =>
-      s.replace(
-        /[^A-Za-z0-9._-]/g,
-        (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
+  return (
+    "r~" +
+    route
+      .slice(1)
+      .split("/")
+      .map((s) =>
+        s.replace(
+          /[^A-Za-z0-9._-]/g,
+          (c) =>
+            `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
+        )
       )
-    )
-    .join("~");
+      .join("~")
+  );
 }

@@ -86,7 +86,7 @@ on:
         required: true
       # Declared here as well as under workflow_dispatch so `inputs.*` reads
       # the same in both contexts. No caller passes them: under workflow_call
-      # the sweep is always off and the two values are unused.
+      # the sweep is always off and all three inputs are unused.
       design_guide_sweep:
         description: Run the design-guide route sweep (dispatch only; see below).
         type: boolean
@@ -96,7 +96,8 @@ on:
         type: string
         default: ''
       design_guide_sweep_timeout_ms:
-        description: Per-route test timeout in ms (empty = the spec's 120000).
+        description: >-
+          Per-route test timeout in ms (empty = the spec's default, 120000). The harness kills the kit's process tree 5000 ms before it (the kill bound, printed per route). Values much above ~185000 buy nothing: the kit's own door kills its wrapper at 180 s and the route then reads exit 3 unknown(instrument-cannot-read).
         type: string
         default: ''
 
@@ -130,7 +131,8 @@ on:
         type: string
         default: ''
       design_guide_sweep_timeout_ms:
-        description: Per-route test timeout in ms (empty = the spec's default, 120000).
+        description: >-
+          Per-route test timeout in ms (empty = the spec's default, 120000). The harness kills the kit's process tree 5000 ms before it (the kill bound, printed per route). Values much above ~185000 buy nothing: the kit's own door kills its wrapper at 180 s and the route then reads exit 3 unknown(instrument-cannot-read).
         type: string
         default: ''
 
@@ -165,7 +167,14 @@ jobs:
     # fast on, green outcome or not. So this is the backstop for everything
     # else; the step bound is the part that trades a rare slow green for a
     # fast, correctly-labelled red.
-    timeout-minutes: 60
+    #
+    # The design-guide sweep (dispatch only) gets 180: one validate-guide per
+    # static route (269 at 7e3c67a73) on top of the stack's own ~12 min p50,
+    # unmeasured until the 10-route sizing sample runs. The expression is the
+    # literal 60 for every called run, because `design_guide_sweep` defaults
+    # false under workflow_call. JOB_TIMEOUT_MINUTES below carries the same
+    # expression text, which is what test_ci_timeout_marker.py pins.
+    timeout-minutes: ${{ inputs.design_guide_sweep && 180 || 60 }}
 
     services:
       postgres:
@@ -775,6 +784,26 @@ jobs:
             echo "DESIGN_KIT_BIN=$kit/node_modules/.bin/design-kit"
           } >> "$GITHUB_ENV"
 
+      # Fail ONCE, here, rather than 269 times in the sweep: --storage-state
+      # and --json arrived in design-kit 0.2.0, and an older kit refuses them
+      # (exit 2), which the spec would report per route as a harness error.
+      - name: Require design-kit 0.2.0 or later for the route sweep
+        if: inputs.design_guide_sweep
+        timeout-minutes: 1
+        working-directory: ${{ runner.temp }}/design-kit
+        run: |
+          set -euo pipefail
+          node -e '
+            const v = require("./node_modules/@qontinui/design-kit/package.json").version;
+            const [maj, min] = String(v).split(".").map(Number);
+            const ok = Number.isInteger(maj) && Number.isInteger(min) && (maj > 0 || min >= 2);
+            if (!ok) {
+              console.log(`::error title=design-kit too old for the route sweep::installed @qontinui/design-kit is ${v}; validate-guide --storage-state/--json need 0.2.0 or later. Move frontend/design/kit/package.json and its lock to v0.2.0+ first.`);
+              process.exit(1);
+            }
+            console.log(`design-kit ${v}: ok for the route sweep`);
+          '
+
       # The apt half, gated on a hosted runner the way the apt step above and
       # style-gate.yml's are: the lane flips to the self-hosted pool through
       # one repo variable, and that pool has no sudo (its host carries the
@@ -956,8 +985,11 @@ jobs:
           PW_SHARD_WEIGHTS: ${{ inputs.shard_weights }}
           PW_SPEC_FILES: ${{ inputs.spec_files }}
           # The design-guide sweep mode (dispatch only; see the trigger). The
-          # spec reads the two values, and DESIGN_KIT_ROOT / DESIGN_KIT_BIN
-          # (and DESIGN_KIT_PLAYWRIGHT_BROWSERS_PATH when set) from $GITHUB_ENV.
+          # spec reads the limit and the timeout below, and DESIGN_KIT_ROOT /
+          # DESIGN_KIT_BIN (and DESIGN_KIT_PLAYWRIGHT_BROWSERS_PATH when set)
+          # from $GITHUB_ENV. The run block exports DESIGN_GUIDE_SWEEP=1 in
+          # this mode only, which is what makes playwright.config.ts declare
+          # the project at all.
           PW_DESIGN_GUIDE_SWEEP: ${{ inputs.design_guide_sweep }}
           DESIGN_GUIDE_SWEEP_LIMIT: ${{ inputs.design_guide_sweep_limit }}
           DESIGN_GUIDE_SWEEP_TIMEOUT_MS: ${{ inputs.design_guide_sweep_timeout_ms }}
@@ -991,8 +1023,20 @@ jobs:
             exit 1
           fi
           if [ "$PW_DESIGN_GUIDE_SWEEP" = "true" ]; then
+            for v in "$DESIGN_GUIDE_SWEEP_LIMIT" "$DESIGN_GUIDE_SWEEP_TIMEOUT_MS"; do
+              if [ -n "$v" ] && ! [[ "$v" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::e2e-playwright-stack: design_guide_sweep_limit and design_guide_sweep_timeout_ms must be empty or a positive integer; got '$v'."
+                exit 1
+              fi
+            done
+            export DESIGN_GUIDE_SWEEP=1
             args=(--project=design-guide-sweep)
-            echo "Mode: design-guide route sweep (limit=${DESIGN_GUIDE_SWEEP_LIMIT:-all}, per-route timeout=${DESIGN_GUIDE_SWEEP_TIMEOUT_MS:-spec default} ms, kit=${DESIGN_KIT_ROOT:-unset})"
+            t="${DESIGN_GUIDE_SWEEP_TIMEOUT_MS:-120000}"
+            kill_bound=$(( t - 5000 > 1000 ? t - 5000 : 1000 ))
+            echo "Mode: design-guide route sweep (limit=${DESIGN_GUIDE_SWEEP_LIMIT:-all}, per-route timeout=${t} ms, kill bound=${kill_bound} ms, kit=${DESIGN_KIT_ROOT:-unset})"
+            if [ "$t" -gt 185000 ]; then
+              echo "::notice::per-route timeout ${t} ms is above ~185000: the kit's own door kills its wrapper at 180 s, so the extra time cannot help a slow route."
+            fi
           elif [ -n "$PW_SHARD" ]; then
             export PWTEST_SHARD_WEIGHTS="$PW_SHARD_WEIGHTS"
             args+=("--shard=${PW_SHARD}/${PW_SHARD_COUNT}")
@@ -1118,7 +1162,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
           # declared at this job's `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '60'
+          JOB_TIMEOUT_MINUTES: ${{ inputs.design_guide_sweep && 180 || 60 }}
           EXTERNAL_CANCEL_NOTE: >-
             this reusable workflow carries no `concurrency:` of its own, so the `concurrency:` of the workflow that calls it (e2e-tests.yml) governs, and that one supersedes a running job only on first-attempt pull_request events (it is an expression, `github.event_name == 'pull_request' && github.run_attempt == 1`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here). On a first-attempt pull_request run, a newer push to the same PR supersedes it; on a push, schedule or re-run it does not, and a manual cancel is then the only external cause. A coord merge-train reap is NOT one of them: the shard caller's `if:` skips every refs/heads/merge-candidate ref and the changed-specs caller runs on pull_request only, so this job never runs on a candidate ref to be reaped
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this

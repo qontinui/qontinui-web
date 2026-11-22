@@ -5,8 +5,9 @@
  *
  * The load-bearing assertions are the literals: a route group adds no URL
  * segment, and a dynamic segment is recorded `not_swept`, never swept and never
- * dropped. A sweep that kept `(app)` in its URLs would hit 260 404s and report
- * them as the app's design.
+ * dropped. A sweep that kept `(app)` in its URLs would send every static `(app)`
+ * route (223 at 7e3c67a73, of 260 `(app)` pages) to a 404 and report that as
+ * the app's design.
  */
 import { describe, it, expect } from "vitest";
 import path from "node:path";
@@ -74,15 +75,22 @@ describe("routeOf", () => {
     });
   });
 
-  it("records an intercepting route as not_swept, not as a group", () => {
-    expect(routeOf("feed/(..)photo/page.tsx")).toMatchObject({
+  it("records an intercepting route as not_swept, under the URL it intercepts", () => {
+    expect(routeOf("feed/(..)photo/page.tsx")).toEqual({
       kind: "not_swept",
+      route: "/photo",
+      file: "feed/(..)photo/page.tsx",
+      reason: "intercepting route",
+    });
+    expect(routeOf("feed/(.)photo/page.tsx")).toMatchObject({
       route: "/feed/photo",
       reason: "intercepting route",
     });
-    expect(routeOf("(.)x/page.tsx")).toMatchObject({
-      reason: "intercepting route",
+    // Groups and slots are not route segments, so `(..)` climbs past neither.
+    expect(routeOf("(app)/a/(shop)/b/(..)(..)x/page.tsx")).toMatchObject({
+      route: "/x",
     });
+    expect(routeOf("a/b/@m/(...)x/page.tsx")).toMatchObject({ route: "/x" });
   });
 
   it("accepts either separator and refuses a non-page file", () => {
@@ -139,9 +147,32 @@ describe("enumerate", () => {
 });
 
 describe("slugOf", () => {
-  it("is file-name safe and distinguishes routes", () => {
-    expect(slugOf("/")).toBe("index");
-    expect(slugOf("/admin/coord")).toBe("admin~coord");
-    expect(slugOf("/a~b")).not.toBe(slugOf("/a/b"));
+  it("is file-name safe", () => {
+    expect(slugOf("/")).toBe("r~");
+    expect(slugOf("/index")).toBe("r~index");
+    expect(slugOf("/admin/coord")).toBe("r~admin~coord");
+    expect(slugOf("/a~b")).toBe("r~a%7Eb");
+    expect(slugOf("/a%7Eb")).toBe("r~a%257Eb");
+  });
+
+  it("never gives two routes one slug", () => {
+    const routes = [
+      "/",
+      "/index",
+      "/root",
+      "/r",
+      "/a/b",
+      "/a~b",
+      "/a%7Eb",
+      "/a%2Fb",
+      "/_x",
+      "/%5Fx",
+    ];
+    expect(new Set(routes.map(slugOf)).size).toBe(routes.length);
+    const real = enumerate(
+      listPageFiles(path.resolve(__dirname, "../../../src/app"))
+    );
+    const slugs = real.static_routes.map((r) => slugOf(r.route));
+    expect(new Set(slugs).size).toBe(slugs.length);
   });
 });

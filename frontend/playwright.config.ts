@@ -17,7 +17,18 @@ const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
  * authed project lists it in `testIgnore`; scripts/ci/list_changed_e2e_specs.py
  * mirrors that so the changed-specs lane never hands it to `--project=chromium`.
  */
-const DESIGN_GUIDE_SWEEP_TEST_MATCH = /design-guide-sweep\.spec\.ts/;
+// Anchored on the file name (either separator: Playwright matches the absolute
+// path, which is `\`-separated on Windows), the same file the classifier skips.
+const DESIGN_GUIDE_SWEEP_TEST_MATCH = /(^|[\\/])design-guide-sweep\.spec\.ts$/;
+
+/**
+ * The sweep project exists only when DESIGN_GUIDE_SWEEP=1 (set by
+ * e2e-playwright-stack.yml's sweep mode), so a bare `playwright test` or
+ * `npm run test:e2e` never runs its ~270 tests. Asking for
+ * `--project design-guide-sweep` without it is Playwright's own
+ * "project not found" error, not a silent empty run.
+ */
+const DESIGN_GUIDE_SWEEP_ENABLED = process.env.DESIGN_GUIDE_SWEEP === "1";
 
 // One id per `playwright test` invocation, set in the main process before any
 // worker forks (workers inherit it; `??=` keeps it when a worker re-reads this
@@ -362,18 +373,23 @@ export default defineConfig({
     // declaration order on one worker, hence `fullyParallel: false` and
     // `workers: 1` (one wrapper browser per route also keeps routes from
     // competing for the CI box). Dispatched through e2e-playwright-stack.yml's
-    // `design_guide_sweep` input; see the spec's header.
-    {
-      name: "design-guide-sweep",
-      testMatch: DESIGN_GUIDE_SWEEP_TEST_MATCH,
-      dependencies: ["setup"],
-      fullyParallel: false,
-      workers: 1,
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: STORAGE_STATE_PATH,
-      },
-    },
+    // `design_guide_sweep` input; see the spec's header. Present only under
+    // DESIGN_GUIDE_SWEEP=1 (see DESIGN_GUIDE_SWEEP_ENABLED above).
+    ...(DESIGN_GUIDE_SWEEP_ENABLED
+      ? [
+          {
+            name: "design-guide-sweep",
+            testMatch: DESIGN_GUIDE_SWEEP_TEST_MATCH,
+            dependencies: ["setup"],
+            fullyParallel: false,
+            workers: 1,
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState: STORAGE_STATE_PATH,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start the frontend before the tests — a production build by default,
