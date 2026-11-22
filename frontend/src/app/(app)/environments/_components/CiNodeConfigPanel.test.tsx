@@ -774,11 +774,15 @@ describe("CiNodeConfigPanel — model access", () => {
       jsonResponse(
         state({
           configured: true,
+          reachability: "offline",
           dispatched: false,
           dispatch_status: 502,
           dispatch_error: "stored_for_next_connect",
+          // What a real PUT answers: saved now, never accepted for sending.
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
           dispatch_detail:
-            "Saved by the coordinator, which could not send them just now. A runner that fetches saved settings on connect receives them the next time it connects; an older runner does not, so apply them again once it is connected.",
+            "Saved by the coordinator, which could not send them just now. Apply again to send them; a runner that fetches saved settings on connect also receives them the next time it connects.",
         })
       )
     );
@@ -793,9 +797,65 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(box).toHaveAttribute("data-deferred", "true");
     expect(box.className).not.toMatch(/text-destructive/);
     expect(box).toHaveAttribute("data-fixable-here", "false");
-    // The detail tells an older runner's owner to apply again, so Apply must
-    // stay usable on a clean draft while delivery is deferred.
+    // The detail says to apply again, so Apply stays usable on a clean draft.
     expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("for a connected runner, stored-but-unsent says it was not sent and Apply re-sends", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          reachability: "online",
+          dispatched: false,
+          dispatch_status: 502,
+          dispatch_error: "stored_for_next_connect",
+          // What a real PUT answers: saved now, never accepted for sending.
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+          dispatch_detail:
+            "Saved by the coordinator, which could not send them just now. Apply again to send them; a runner that fetches saved settings on connect also receives them the next time it connects.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box.textContent).toMatch(/Not sent yet/);
+    expect(box.textContent).not.toMatch(/next connect\./);
+    expect(box).toHaveAttribute("data-deferred", "true");
+  });
+
+  it("settings saved after the last send stay re-sendable after a reload", async () => {
+    // GET-shaped: a read carries no dispatched verdict.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: null,
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: "2026-11-21T12:00:00Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("settings already sent since they were saved cannot be re-sent unchanged", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: null,
+          requested_at: "2026-11-21T12:00:00Z",
+          dispatched_at: "2026-11-22T12:00:00Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
   });
 
   it("a plain coordinator refusal keeps the destructive tone", async () => {
@@ -814,8 +874,6 @@ describe("CiNodeConfigPanel — model access", () => {
     const box = await screen.findByTestId("ci-node-dispatch-refusal");
     expect(box).toHaveAttribute("data-deferred", "false");
     expect(box.className).toMatch(/text-destructive/);
-    // Not deferred: a clean draft cannot be re-sent.
-    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
   });
 
   it("configsEqual treats a config predating the field as unset, not as a change", () => {

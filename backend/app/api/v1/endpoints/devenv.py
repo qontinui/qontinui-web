@@ -1135,15 +1135,15 @@ CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
 #: stored directive is not lost: it reaches a runner carrying Phase 3 on its next
 #: connect. An older runner never fetches it, which the detail says too.
 CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
-    "Saved by the coordinator, which could not send them just now. A runner "
-    "that fetches saved settings on connect receives them the next time it "
-    "connects; an older runner does not, so apply them again once it is "
-    "connected."
+    "Saved by the coordinator, which could not send them just now. Apply "
+    "again to send them; a runner that fetches saved settings on connect also "
+    "receives them the next time it connects."
 )
 
 
 def _coord_stored_directive(resp: httpx.Response) -> bool:
-    """True only for coord's failed-publish 502 carrying ``stored: true``.
+    """True only for coord's ``directive_publish_failed`` 502 carrying
+    ``stored: true``.
 
     Under plan Phase 2, coord writes the directive to its per-device store
     before it publishes, and a publish that fails after the store answers 502
@@ -1159,7 +1159,11 @@ def _coord_stored_directive(resp: httpx.Response) -> bool:
         body = resp.json()
     except ValueError:
         return False
-    return isinstance(body, dict) and body.get("stored") is True
+    return (
+        isinstance(body, dict)
+        and body.get("error") == "directive_publish_failed"
+        and body.get("stored") is True
+    )
 
 
 def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
