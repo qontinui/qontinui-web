@@ -18,7 +18,8 @@ path, which is the path that exists at ``--head``.
 
 WHAT IT SKIPS, WITH A REASON ON THE LOG: spec files the ``chromium`` project in
 ``frontend/playwright.config.ts`` ignores (``testIgnore``) -- ``login.spec.ts``
-runs under ``chromium-login``, ``style-gate/*`` under ``style-gate``. Handing
+runs under ``chromium-login``, ``style-gate/*`` under ``style-gate``,
+``design-guide-sweep.spec.ts`` under ``design-guide-sweep``. Handing
 one of those to ``npx playwright test --project=chromium <file>`` yields
 "No tests found" and exit 1: a red that says nothing about the spec. The lane
 mirrors the shard suite, which is ``--project=chromium`` only, so those specs
@@ -72,13 +73,19 @@ def chromium_ignores(repo_path: str) -> str | None:
     Mirrors the ``testIgnore`` of the ``chromium`` project in
     ``frontend/playwright.config.ts``: ``/login\\.spec\\.ts/`` and the
     style-gate capture spec (``style-gate/style-capture.spec.ts``, matched
-    here by directory so a second style-gate spec is treated the same way).
+    here by directory so a second style-gate spec is treated the same way),
+    and the design-guide route sweep (``design-guide-sweep.spec.ts``).
     """
     name = PurePosixPath(repo_path).name
     if name.endswith("login.spec.ts"):
         return "runs under the chromium-login project, not chromium"
     if repo_path.startswith(E2E_PREFIX + "style-gate/"):
         return "runs under the style-gate project, not chromium"
+    if name == "design-guide-sweep.spec.ts":
+        return (
+            "runs under the design-guide-sweep project, not chromium "
+            "(dispatched through e2e-playwright-stack.yml's design_guide_sweep input)"
+        )
     return None
 
 
