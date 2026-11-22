@@ -4,8 +4,9 @@
 # Plan 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check
 # Phase 1. The `design-guide` job below was a job of frontend-ci.yml, which
 # filters `pull_request` to the bases `main` and `develop` and to its `paths:`
-# list (frontend/**, docs/** and a few pinned files), and builds only `main` and
-# `develop` on `push`. A context produced there never reports on a PR that
+# list (frontend/**, docs/**, the workflow itself, and a few named files and
+# action directories), and on `push` builds only `main` and `develop`, under
+# the same `paths:` list. A context produced there never reports on a PR that
 # touches none of those paths, on a stacked PR, or on coord's merge-candidate
 # refs, so it could not be made a required check: a required context that
 # nothing produces leaves every such PR on "Expected -- waiting for status".
@@ -28,10 +29,10 @@
 name: Design guide
 
 on:
-  # The triggers are web-guards.yml's, a required check with no filter that
-  # also builds `main` and the merge-candidate refs. No `branches:` or `paths:`
-  # filter: the context must report on every PR, including a stacked one and
-  # a backend-only one.
+  # The triggers are web-guards.yml's: a required check whose `pull_request`
+  # trigger has no filter, and which also builds `main` and the merge-candidate
+  # refs. No `branches:` or `paths:` filter on `pull_request`: the context must
+  # report on every PR, including a stacked one and a backend-only one.
   pull_request:
   push:
     branches:
