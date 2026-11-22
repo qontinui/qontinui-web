@@ -16,6 +16,12 @@ from app.services.storage.base import StorageBackend
 logger = structlog.get_logger(__name__)
 
 
+def _supports_checksum_config() -> bool:
+    """True when this botocore's Config knows the checksum-posture options
+    (botocore >= 1.36)."""
+    return "request_checksum_calculation" in getattr(Config, "OPTION_DEFAULTS", {})
+
+
 class S3Backend(StorageBackend):
     """AWS S3 storage backend."""
 
@@ -32,11 +38,36 @@ class S3Backend(StorageBackend):
 
         # Configure boto3 client
         s3_addressing_style = "path" if endpoint_url else "auto"
+        # A self-hosted store (an endpoint URL: the docker-compose versitygw)
+        # gets checksums only where the S3 API requires them. botocore's
+        # default since 1.36 adds CRC32 trailers to every PUT, which the store
+        # was not conformance-tested with: qontinui-stack's D7 subset runs
+        # boto3 with "when_required" (plan
+        # 2026-11-22-fetches-stop-depending-on-upstreams). Real AWS keeps the
+        # SDK default.
+        #
+        # pyproject allows boto3 ^1.35, and these two Config options arrived in
+        # botocore 1.36 (the same release that made CRC32 the default). On an
+        # older botocore the option does not exist AND the default it would
+        # override does not exist either, so it is skipped, never passed: an
+        # unknown Config kwarg raises TypeError.
+        checksum_kwargs: dict[str, str] = {}
+        if endpoint_url:
+            if _supports_checksum_config():
+                checksum_kwargs = {
+                    "request_checksum_calculation": "when_required",
+                    "response_checksum_validation": "when_required",
+                }
+            else:
+                logger.info(
+                    "s3_checksum_config_unsupported_by_botocore", endpoint=endpoint_url
+                )
         config = Config(
             region_name=region,
             signature_version="s3v4",
             retries={"max_attempts": 3, "mode": "standard"},
             s3={"addressing_style": s3_addressing_style},
+            **checksum_kwargs,
         )
 
         if endpoint_url:
