@@ -24,7 +24,8 @@ operator-page successor (an outcome row, say) counts as a decision dated at
 its own ``recorded_at``. A genuinely newer answer is then refused.
 
 The cheap fix -- skip a row whose label equals its predecessor's -- was
-rejected in review (finding A2 on qontinui-coord#4319): an operator who
+rejected (qontinui-coord ``verify_relay_is_fresh`` docstring at bb4cf4a6a,
+recorded on qontinui-coord#4319 as a Coord-Handoff-Rejected line): an operator who
 RE-AFFIRMS the same label writes a row identical in its label columns to an
 inheriting one, and dropping it would let an older answer overwrite the
 re-affirmation. The two cases differ only in whether the write path chose the
@@ -70,8 +71,9 @@ The plan's Design decision weighed four shapes and resolved on this one
   the predecessor's, a labelled root, or a ``label_question_id``) still leaves
   the identical-label rows undecidable, so NULL stays necessary; and it is DML
   in a migration, inspected by coord's migration classifier, that changes no
-  decision on today's data -- production held 362 rows, all unlabelled, on
-  2026-11-16 (finding ``8d4f3678``). Rejected.
+  decision on today's data -- production held 335 interventions (362 history
+  rows), none labelled by any source, on 2026-11-16 (finding
+  ``8d4f3678-2064-49d8-b7f6-f03fd8adb9ef``). Rejected.
 
 NULL is therefore not a permanent shim: once every new row carries the marker,
 NULL rows are exactly the legacy rows that cannot be re-derived, and the NULL
