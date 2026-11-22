@@ -20,7 +20,6 @@ import { usePolicyUpstreamPolicy } from "../_hooks/usePolicyUpstreamPolicy";
 import { WaitingForProject } from "./WaitingForProject";
 import {
   POLICY_UPSTREAM_CONFIRMED_LEVELS,
-  POLICY_UPSTREAM_DEFAULT_LEVEL,
   POLICY_UPSTREAM_LEVEL_HELP,
   POLICY_UPSTREAM_SELECTABLE_LEVELS,
   type PolicyUpstreamLevel,
@@ -65,7 +64,8 @@ import {
  *   sharper than for the other one: D6 warns that an unregistered domain
  *   resolves `off` for every tenant, so publications would land and nothing
  *   would fan out, with no error anywhere.
- * - **A level coord cannot parse resolves to `off`, and says so.**
+ * - **A row coord cannot parse resolves to `off`, and says so**; a no-row
+ *   default this console cannot parse (vocabulary skew) is UNKNOWN.
  * - **Which scope band answered**, so a write that will stay overridden is not
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
@@ -85,6 +85,7 @@ export function PolicyUpstreamDialControl() {
     error,
     displayLevel,
     isDefaulted,
+    defaultUnreadable,
     unrecognizedLevel,
     readbackError,
     lastWrite,
@@ -192,6 +193,10 @@ export function PolicyUpstreamDialControl() {
         A row exists whose level coord cannot parse. Resolve it the way the most
         restrictive reading demands and name the row, because nothing else on
         this page can.
+
+        A NO-ROW answer whose served default is unparseable is vocabulary skew:
+        coord enforces a level this console does not know, so it is UNKNOWN
+        here — named, never shown as `off`.
       */}
       {unrecognizedLevel !== null ? (
         <div
@@ -200,16 +205,28 @@ export function PolicyUpstreamDialControl() {
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-muted-foreground">
-            The <span className="font-mono">{policy?.resolved_scope}</span>-band
-            row stores the level{" "}
-            <code className="font-mono">{unrecognizedLevel}</code>, which coord
-            does not recognise. What this dial authorises is coord writing a
-            body into this tenant from a publication — an authority setting it
-            cannot read is not permission to do that — so the level in force is{" "}
-            <span className="font-mono">off</span>.{" "}
-            {policy?.resolved_scope === "tenant"
-              ? "Setting a level below rewrites that row and clears this."
-              : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+            {isDefaulted ? (
+              <>
+                No row is set, and coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here. Setting a level below writes a tenant row
+                this console can read.
+              </>
+            ) : (
+              <>
+                The <span className="font-mono">{policy?.resolved_scope}</span>
+                -band row stores the level{" "}
+                <code className="font-mono">{unrecognizedLevel}</code>, which
+                coord does not recognise. What this dial authorises is coord
+                writing a body into this tenant from a publication — an
+                authority setting it cannot read is not permission to do that —
+                so the level in force is <span className="font-mono">off</span>.{" "}
+                {policy?.resolved_scope === "tenant"
+                  ? "Setting a level below rewrites that row and clears this."
+                  : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+              </>
+            )}
           </p>
         </div>
       ) : null}
@@ -221,18 +238,27 @@ export function PolicyUpstreamDialControl() {
         >
           <span className="text-muted-foreground">In force:</span>
           <Badge variant="secondary" className="font-mono">
-            {displayLevel}
+            {defaultUnreadable ? "unknown" : displayLevel}
           </Badge>
-          {isDefaulted ? (
+          {unrecognizedLevel !== null ? (
+            isDefaulted ? (
+              <span className="text-muted-foreground">
+                — coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                — the fail-closed reading of an unrecognised{" "}
+                <span className="font-mono">{policy.resolved_scope}</span>-band
+                row
+              </span>
+            )
+          ) : isDefaulted ? (
             <span className="text-muted-foreground">
-              — coord&apos;s built-in default ({POLICY_UPSTREAM_DEFAULT_LEVEL});
-              no one has set this tenant&apos;s dial
-            </span>
-          ) : unrecognizedLevel !== null ? (
-            <span className="text-muted-foreground">
-              — the fail-closed reading of an unrecognised{" "}
-              <span className="font-mono">{policy.resolved_scope}</span>-band
-              row
+              — coord&apos;s built-in default ({displayLevel}); no one has set
+              this tenant&apos;s dial
             </span>
           ) : (
             <span className="text-muted-foreground">
@@ -273,7 +299,10 @@ export function PolicyUpstreamDialControl() {
       ) : null}
 
       <RadioGroup
-        value={displayLevel ?? undefined}
+        // `""` rather than `undefined`: the group stays CONTROLLED with nothing
+        // selected while the level is unknown, so a cancelled confirmation
+        // cannot leave a radio checked that the fleet is not on.
+        value={displayLevel ?? ""}
         onValueChange={(v) => onSelect(v as PolicyUpstreamLevel)}
         disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"

@@ -21,7 +21,6 @@ import { usePageSendGuard } from "./usePageWriteGuardContext";
 import { pinForWrite } from "./usePageWriteGuard";
 import {
   isPolicyAutoPublishLevel,
-  POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
   POLICY_AUTO_PUBLISH_DOMAIN,
   POLICY_AUTO_PUBLISH_FAIL_CLOSED_LEVEL,
   type PolicyAutoPublishLevel,
@@ -61,18 +60,22 @@ const RESOLVERS: Resolvers = "the worker resolves";
  * publishes from the system tenant and nowhere else, so a downstream tenant's
  * row is inert. The control says so rather than implying otherwise.
  *
- * **"No row" is `on`, and getting it wrong ships the feature dark.** Coord
- * answers `effective_level: "off"` both for "nobody ever wrote a row" and for
- * "an operator turned it off". Reading the first literally would mean the
- * worker decides no publish modes, holds nothing and publishes nothing, with no
- * error anywhere — which is indistinguishable from the eight silent days this
- * plan exists to end. `isDefaulted` says which case produced the displayed
- * level so the control can label it rather than imply an operator chose it.
+ * **"No row" is `on`, and getting it wrong ships the feature dark.** Reading
+ * no row as `off` would mean the worker decides no publish modes, holds
+ * nothing and publishes nothing, with no error anywhere — which is
+ * indistinguishable from the eight silent days this plan exists to end. With
+ * no row, coord serves the typed default `on` as `effective_level` while
+ * `resolved_scope` stays `"none"` (qontinui-coord#4239; before it, a no-row
+ * answer read `"off"` and this console kept its own copy of the default).
+ * `isDefaulted` says which case produced the displayed level so the control
+ * can label it rather than imply an operator chose it.
  *
- * **An unparseable level is `off`, not the default.** "Nobody ruled" and
- * "somebody ruled unreadably" are different facts, and the second one is about
- * this tenant's policy bodies reaching the whole fleet with no human in the
- * loop. An authority setting coord cannot read is not permission to do that.
+ * **An unparseable row is `off`.** What is at stake is this tenant's policy
+ * bodies reaching the whole fleet with no human in the loop, and an authority
+ * setting coord cannot read is not permission to do that. A NO-ROW answer
+ * whose level is unparseable is vocabulary skew (coord serving a default this
+ * console does not know); coord enforces that default, so it is UNKNOWN here
+ * (`defaultUnreadable`), not `off`.
  *
  * **What this dial does NOT switch off:** publish-all, the single-document
  * Publish button, and the auto-publisher's daily recovery reconcile. D5 is
@@ -232,25 +235,30 @@ export function usePolicyAutoPublishPolicy() {
     [read, sendPin, writeAllowed]
   );
 
-  // `"none"` means no row matched, which for this domain is `on` — NOT off.
-  // Mirrors coord's `resolve_policy_auto_publish_level`; if the two ever
-  // disagree the console misreports the fleet.
+  // `"none"` means no row matched, so `effective_level` is coord's served typed
+  // default (qontinui-coord#4239) — NOT an operator's choice.
   const isDefaulted = policy?.resolved_scope === "none";
 
-  // A row exists but its level is not in the vocabulary. Resolve it the most
-  // restrictive way and keep the raw string so the UI can name the row to fix,
-  // rather than presenting `off` as an operator's choice.
+  // The served level is not in the vocabulary. Resolve it the most restrictive
+  // way and keep the raw string so the UI can name it, rather than presenting
+  // `off` as an operator's choice. It is named on a no-row answer too, which
+  // is UNKNOWN rather than `off` (see `defaultUnreadable`).
   const unrecognizedLevel: string | null =
-    policy && !isDefaulted && !isPolicyAutoPublishLevel(policy.effective_level)
+    policy && !isPolicyAutoPublishLevel(policy.effective_level)
       ? policy.effective_level
       : null;
 
+  // A no-row answer this console cannot read is UNKNOWN, not `off`: with no
+  // row coord enforces its own typed default, which is a real level that only
+  // this console's vocabulary is missing (vocabulary skew). Claiming `off`
+  // there would be false; a ROW coord cannot parse genuinely fails closed.
+  const defaultUnreadable = isDefaulted && unrecognizedLevel !== null;
+
   // Calls the guard again rather than branching on `unrecognizedLevel`, so the
   // narrowing is TypeScript's own and no cast is needed.
-  const displayLevel: PolicyAutoPublishLevel | null = !policy
-    ? null
-    : isDefaulted
-      ? POLICY_AUTO_PUBLISH_DEFAULT_LEVEL
+  const displayLevel: PolicyAutoPublishLevel | null =
+    !policy || defaultUnreadable
+      ? null
       : isPolicyAutoPublishLevel(policy.effective_level)
         ? policy.effective_level
         : POLICY_AUTO_PUBLISH_FAIL_CLOSED_LEVEL;
@@ -263,18 +271,26 @@ export function usePolicyAutoPublishPolicy() {
     /** No project to read in yet: nothing has been read, or is shown as read. */
     waitingForProject,
     /**
-     * The level actually in force: the no-row case resolved to coord's typed
-     * default, an unparseable row resolved fail-closed. Always one of the two
-     * known levels, or `null` before the first read. Prefer this over
-     * `policy.effective_level` in the UI.
+     * The level actually in force: coord's served level (its typed default
+     * when no row exists), or fail-closed `off` for a row whose level coord
+     * cannot parse, the way coord enforces it. One of the two known levels,
+     * or `null` before the first read or when `defaultUnreadable`.
+     * Prefer this over `policy.effective_level` in the UI.
      */
     displayLevel,
-    /** True when no row exists, so `displayLevel` is coord's typed default. */
+    /** True when no row exists, so the served level is coord's default. */
     isDefaulted,
     /**
-     * The raw level string coord returned when it is NOT one this console
-     * knows. `displayLevel` has already been resolved fail-closed; this exists
-     * so the UI can name the row that needs fixing.
+     * True when no row exists AND coord's served default is a level this
+     * console does not recognise. What coord enforces is then UNKNOWN here,
+     * so `displayLevel` is `null` — distinct from "not read yet", which has
+     * no `policy`.
+     */
+    defaultUnreadable,
+    /**
+     * The raw level string coord served when it is NOT one this console
+     * knows — the value, and the row that holds it if there is one — so the
+     * UI can name it rather than present `off` as an operator's choice.
      */
     unrecognizedLevel,
     /** Set only when the last write's read-back failed. UNKNOWN, not "off". */

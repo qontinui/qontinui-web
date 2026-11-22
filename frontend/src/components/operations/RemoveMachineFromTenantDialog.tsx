@@ -31,7 +31,7 @@
  * the controls nor their UI Bridge registration exist in presentation mode.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useUIElement } from "@qontinui/ui-bridge/react";
@@ -639,19 +639,6 @@ export function RemoveMachineButton({
     () => openFor(m, machines, roster),
     [m, machines, openFor, roster]
   );
-  // The UI Bridge may hold the handler from an earlier registration: it reads
-  // these refs, so it always acts on the machine as the roster now reads it
-  // and on whether a removal is in flight now.
-  const openRef = useRef(open);
-  const effectRef = useRef(effect);
-  const busyRef = useRef(busy);
-  const openKeyRef = useRef(openKey);
-  useEffect(() => {
-    openRef.current = open;
-    effectRef.current = effect;
-    busyRef.current = busy;
-    openKeyRef.current = openKey;
-  }, [open, effect, busy, openKey]);
   // While mounted with rows, this row shows the machine's acknowledgement.
   useEffect(
     () => (hasRows ? showAck(m.key) : undefined),
@@ -677,23 +664,27 @@ export function RemoveMachineButton({
         // Declared, not re-derived: the action this control leads to removes
         // bindings, so an autonomous walk must exclude it.
         effect: "destructive",
+        // Closes over this render's values: the SDK (>= 0.54) runs the
+        // handler of the latest COMMITTED declaration, so it acts on the
+        // machine as the roster now reads it and on whether a removal is in
+        // flight now.
         handler: async () => {
-          if (busyRef.current) {
+          if (busy) {
             return { opened: false, reason: "a removal is in flight" };
           }
           // Never replace an open dialog — not even this machine's own,
           // whose retry scope and typed phrase would be reset.
-          if (openKeyRef.current !== null) {
+          if (openKey !== null) {
             return {
               opened: false,
               reason:
-                openKeyRef.current === m.key
+                openKey === m.key
                   ? "this machine's removal dialog is already open"
                   : "another machine's removal dialog is open",
             };
           }
-          openRef.current();
-          return { opened: true, effect: effectRef.current };
+          open();
+          return { opened: true, effect };
         },
       },
     },
