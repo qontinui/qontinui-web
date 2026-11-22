@@ -18,6 +18,7 @@ import {
   UNREAD_COUNT,
   answeredCount,
   classifySubprojectReadFailure,
+  combineTopicsAvailability,
   countNoteOf,
   countText,
   countsFromFacet,
@@ -34,6 +35,7 @@ import {
   foldedReason,
   gateVerdictWords,
   githubPrUrl,
+  groupByTopic,
   headlineKindOf,
   historyEventWords,
   isRouteMissing,
@@ -54,6 +56,8 @@ import {
   readFailureWords,
   reasonWords,
   refTarget,
+  rowTopicOf,
+  rowTopicWords,
   safeExternalUrl,
   sessionWorkWords,
   sessionsText,
@@ -61,6 +65,7 @@ import {
   sortMemberSessions,
   subprojectChipWords,
   tabOf,
+  topicsAvailabilityOf,
   unreadSources,
   viewQuery,
   viewStreams,
@@ -1459,5 +1464,66 @@ describe("titleBasisText", () => {
     expect(
       titleBasisText({ title_source: "explicit", title_basis: null })
     ).toBeNull();
+  });
+});
+
+describe("subproject topics (topics plan D9)", () => {
+  const T = { id: "t1", slug: "alpha", title: "Alpha" };
+  const OK = { state: "ok" } as const;
+
+  it("reads topics_status: ok, unavailable with its reason, absent, and unrecognised", () => {
+    expect(topicsAvailabilityOf("ok")).toEqual({ state: "ok" });
+    expect(topicsAvailabilityOf("unavailable:tables_missing")).toEqual({
+      state: "unknown",
+      reason: "coord could not read topics (tables_missing)",
+    });
+    expect(topicsAvailabilityOf(undefined)).toEqual({
+      state: "unknown",
+      reason: "this coord does not serve topic data",
+    });
+    expect(topicsAvailabilityOf("maybe").state).toBe("unknown");
+  });
+
+  it("combines reads: ok only when every read said ok, unknown when none did", () => {
+    expect(combineTopicsAvailability([OK, OK])).toEqual(OK);
+    expect(
+      combineTopicsAvailability([OK, topicsAvailabilityOf(undefined)]).state
+    ).toBe("unknown");
+    expect(combineTopicsAvailability([]).state).toBe("unknown");
+  });
+
+  it("calls null 'no topic' only under ok, and unknown otherwise", () => {
+    expect(rowTopicOf({ topic: T }, OK)).toEqual({ kind: "topic", topic: T });
+    expect(rowTopicOf({ topic: null }, OK)).toEqual({ kind: "none" });
+    expect(rowTopicOf({}, OK).kind).toBe("unknown");
+    const unknown = rowTopicOf(
+      { topic: null },
+      topicsAvailabilityOf("unavailable:x")
+    );
+    expect(unknown.kind).toBe("unknown");
+    expect(rowTopicWords(unknown).text).toBe("topic –");
+    expect(rowTopicWords({ kind: "none" }).text).toBe("no topic");
+    expect(rowTopicWords({ kind: "topic", topic: T }).text).toBe("topic Alpha");
+  });
+
+  it("groups by topic id, named topics by title, No topic last, keeping row order", () => {
+    const row = (id: string, topic: SubprojectSummary["topic"]) =>
+      ({ id, topic }) as SubprojectSummary;
+    const groups = groupByTopic(
+      [
+        row("1", { id: "z", slug: "zeta", title: "Zeta" }),
+        row("2", null),
+        row("3", T),
+        row("4", { id: "z", slug: "zeta", title: "Zeta" }),
+        row("5", { id: "n", slug: "none", title: "A topic slugged none" }),
+      ],
+      OK
+    );
+    expect(groups.map((g) => [g.key, g.items.map((s) => s.id)])).toEqual([
+      ["topic:n", ["5"]],
+      ["topic:t1", ["3"]],
+      ["topic:z", ["1", "4"]],
+      ["none", ["2"]],
+    ]);
   });
 });
