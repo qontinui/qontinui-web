@@ -332,3 +332,74 @@ describe("FleetCapacitySection — presentation mode", () => {
     expect(screen.queryByText("nawa")).toBeNull();
   });
 });
+
+describe("FleetCapacitySection — review round 2", () => {
+  it("keeps an operator's unsaved edits across a poll that re-reads the same dial", () => {
+    const r = read(capacityBody([capacityDevice()]));
+    const { rerender } = render(<FleetCapacitySection capacity={r} />);
+    const box = screen.getByTestId("fleet-capacity-dial-off-merge_train");
+    fireEvent.click(box);
+    expect(box).toHaveAttribute("data-state", "checked");
+    // A poll parses a NEW object with the SAME content.
+    rerender(<FleetCapacitySection capacity={{ ...r, dial: dialView() }} />);
+    expect(
+      screen.getByTestId("fleet-capacity-dial-off-merge_train")
+    ).toHaveAttribute("data-state", "checked");
+    expect(screen.getByTestId("fleet-capacity-dial-save")).toBeEnabled();
+  });
+
+  it("resets the form when the dial itself changed", () => {
+    const r = read(capacityBody([capacityDevice()]));
+    const { rerender } = render(<FleetCapacitySection capacity={r} />);
+    fireEvent.click(screen.getByTestId("fleet-capacity-dial-off-merge_train"));
+    const changed = dialView();
+    changed.dial = { ...changed.dial!, off_consumers: ["local_builds"] };
+    rerender(<FleetCapacitySection capacity={{ ...r, dial: changed }} />);
+    expect(
+      screen.getByTestId("fleet-capacity-dial-off-merge_train")
+    ).toHaveAttribute("data-state", "unchecked");
+    expect(
+      screen.getByTestId("fleet-capacity-dial-off-local_builds")
+    ).toHaveAttribute("data-state", "checked");
+  });
+
+  it("says a save clears stored names this coord does not know", () => {
+    const v = dialView();
+    v.dial = { ...v.dial!, ignored_off_consumers: ["future_consumer"] };
+    render(
+      <FleetCapacitySection
+        capacity={read(capacityBody([capacityDevice()]), { dial: v })}
+      />
+    );
+    expect(
+      screen.getByTestId("fleet-capacity-dial-ignored-note")
+    ).toHaveTextContent("future_consumer");
+  });
+
+  it("renders a missing plan age as UNKNOWN", () => {
+    const body = capacityBody([capacityDevice()]);
+    body.plan = { id: 7, computed_at: null, age_secs: null };
+    render(<FleetCapacitySection capacity={read(body)} />);
+    expect(screen.getByTestId("fleet-capacity-plan-age")).toHaveTextContent(
+      "UNKNOWN"
+    );
+  });
+
+  it("withholds coord's no-plan note and the query name in presentation mode", () => {
+    renderInPresentationMode(
+      <FleetCapacitySection
+        capacity={read({
+          state: "no_plan_yet",
+          note: "worker on host-alpha",
+          devices: null,
+        })}
+      />
+    );
+    expect(screen.getByTestId("fleet-capacity-no-plan")).not.toHaveTextContent(
+      "host-alpha"
+    );
+    expect(
+      screen.getByTestId("fleet-capacity-misplaced-share")
+    ).not.toHaveTextContent("capacity_misplaced_share_7d");
+  });
+});

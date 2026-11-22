@@ -26,7 +26,7 @@
  * an edit.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Gauge, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -299,12 +299,19 @@ function DialEditor({
   const [saving, setSaving] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
 
-  // A fresh read (another operator's write, or our own read-back) resets the
-  // form to what coord now resolves.
-  useEffect(() => {
+  // A CHANGED dial (another operator's write, or our own read-back) resets the
+  // form to what coord now resolves. Keyed on the dial's content, not its
+  // identity: every 60 s poll parses a new object, and an identity key would
+  // wipe an operator's unsaved edits on each one.
+  // (React's "adjust state when a prop changes" pattern: compared during
+  // render, so the form never paints one frame of the stale values.)
+  const dialKey = `${dial.mode}|${dial.off_consumers.join(",")}`;
+  const [seenDialKey, setSeenDialKey] = useState(dialKey);
+  if (seenDialKey !== dialKey) {
+    setSeenDialKey(dialKey);
     setMode(dial.mode);
     setOff(dial.off_consumers);
-  }, [dial]);
+  }
 
   const dirty =
     mode !== dial.mode ||
@@ -376,6 +383,16 @@ function DialEditor({
       </RadioGroup>
       <fieldset className="text-[11px]">
         <legend className="font-medium">Consumers switched off</legend>
+        {dial.ignored_off_consumers.length > 0 && (
+          <p
+            className="mt-1 text-amber-700 dark:text-amber-400"
+            data-testid="fleet-capacity-dial-ignored-note"
+          >
+            Saving clears the stored names this coord does not know (
+            {dial.ignored_off_consumers.join(", ")}): coord refuses a name
+            outside its vocabulary on write.
+          </p>
+        )}
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
           {dial.consumers.map((c) => (
             <label key={c} className="flex items-center gap-1">
@@ -582,7 +599,9 @@ export function FleetCapacitySection({
           Misplaced-wait share (7 days):{" "}
           <UnknownValue reason={MISPLACED_SHARE_UNKNOWN_REASON} />{" "}
           <span className="text-muted-foreground">
-            {MISPLACED_SHARE_UNKNOWN_REASON}.
+            {presenting
+              ? "the measurement is not published yet."
+              : `${MISPLACED_SHARE_UNKNOWN_REASON}.`}
           </span>
         </p>
 
@@ -595,8 +614,14 @@ export function FleetCapacitySection({
             {capacity.modelVersion !== null
               ? ` v${capacity.modelVersion}`
               : ""}{" "}
-            plan computed {formatAge(capacity.planAgeSecs)}; free capacity
-            recomputed from each machine&apos;s newest sample on every read.
+            plan computed{" "}
+            {capacity.planAgeSecs === null ? (
+              <UnknownValue reason="coord's capacity read carried no plan age" />
+            ) : (
+              formatAge(capacity.planAgeSecs)
+            )}
+            ; free capacity recomputed from each machine&apos;s newest sample on
+            every read.
           </p>
         )}
 
@@ -609,7 +634,8 @@ export function FleetCapacitySection({
             className="text-sm text-muted-foreground"
             data-testid="fleet-capacity-no-plan"
           >
-            No capacity plan yet: {capacity.note}
+            No capacity plan yet
+            {presenting ? "." : `: ${capacity.note}`}
           </p>
         ) : capacity.state === "unreadable" ? (
           <p className="text-sm" data-testid="fleet-capacity-unreadable">
