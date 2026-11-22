@@ -1,7 +1,7 @@
 """coord: account_tenant_consents and the account|off autobind vocabulary
 
 Revision ID: acctconsent_01
-Revises: outbound_budget_windows_01
+Revises: coord_maint_agent_req_01
 Create Date: 2026-11-07
 
 Phase 1 of plan
@@ -74,7 +74,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "acctconsent_01"
-down_revision: str | Sequence[str] | None = "outbound_budget_windows_01"
+down_revision: str | Sequence[str] | None = "coord_maint_agent_req_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -64,7 +64,7 @@ from tests._alembic_harness import (
 # `_PARENT_REVISION_ID` MUST equal the revision's own `down_revision`; the
 # first test enforces it. Re-point both together if main moves before landing.
 _REVISION_ID = "acctconsent_01"
-_PARENT_REVISION_ID = "outbound_budget_windows_01"
+_PARENT_REVISION_ID = "coord_maint_agent_req_01"
 _REVISION_FILENAME = "acctconsent_01_account_tenant_consents.py"
 
 _SCHEMA = "coord"
