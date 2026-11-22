@@ -6,7 +6,7 @@ set -e
 echo "🚀 Starting Development Environment"
 echo "===================================="
 
-# Start dev services (PostgreSQL, Redis, MinIO)
+# Start dev services (Redis, the S3 object store)
 echo ""
 echo "Starting development services..."
 docker compose -f docker-compose.yml up -d
@@ -25,8 +25,7 @@ echo ""
 echo "Services running:"
 echo "  - PostgreSQL: localhost:5432"
 echo "  - Redis: localhost:6379"
-echo "  - MinIO API: localhost:9000"
-echo "  - MinIO Console: http://localhost:9001 (minioadmin/minioadmin)"
+echo "  - Object store (S3 API, versitygw): localhost:9000 (qontinui_dev_s3 / qontinui_dev_s3_secret unless S3_ACCESS_KEY / S3_SECRET_KEY are set)"
 echo ""
 echo "Next steps:"
 echo "  1. cd backend && python run_server.py"

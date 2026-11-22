@@ -1,11 +1,20 @@
 # NOTE (2026-05-01): Postgres service removed. Canonical PG runs from
 # qontinui-stack at port 5433; this repo's containers no longer ship
 # their own. Run `docker compose -f D:/qontinui-root/qontinui-stack/docker-compose.yml up -d`
-# to start canonical PG/Redis/MinIO. See topology plan §3 for context.
+# to start canonical PG/Redis/object store. See topology plan §3 for context.
 #
-# Redis and MinIO are kept here because the FastAPI backend currently uses
-# them on the legacy ports (6379, 9000) for sessions and blob storage.
-# Migration to canonical Redis/MinIO is a follow-up if needed.
+# Redis and the object store are kept here because the FastAPI backend
+# currently uses them on the legacy ports (6379, 9000) for sessions and blob
+# storage. Migration to the canonical Redis/object store is a follow-up if
+# needed.
+#
+# The object store is versitygw, the S3 store qontinui-stack adopted in place
+# of the archived MinIO (plan 2026-11-22-fetches-stop-depending-on-upstreams,
+# Phase 2). It is built from the sibling checkout's
+# qontinui-stack/object-store/Dockerfile — the same pinned release and base
+# both stacks run — so qontinui-stack must be checked out beside this repo, as
+# the canonical-PG note above already requires. Its conformance (the D7 S3
+# subset) is proven by qontinui-stack's `s3 store conformance` CI job.
 
 services:
   # Redis Cache & Queue
@@ -22,42 +31,63 @@ services:
       timeout: 5s
       retries: 5
 
-  # MinIO Object Storage
-  minio:
-    image: minio/minio:latest
-    container_name: qontinui-minio
+  # Object store (S3-compatible): versitygw. S3 API on 9000; there is no
+  # console port (MinIO's 9001 is gone). The backend reaches it through
+  # STORAGE_ENDPOINT_URL=http://localhost:9000 with the S3_ACCESS_KEY /
+  # S3_SECRET_KEY pair below (see backend/.env.example).
+  object-store:
+    build:
+      context: ../qontinui-stack/object-store
+      dockerfile: Dockerfile
+    image: qontinui-canonical-object-store:latest
+    container_name: qontinui-object-store
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY:-qontinui_dev_s3}
+      ROOT_SECRET_KEY: ${S3_SECRET_KEY:-qontinui_dev_s3_secret}
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "9000:9000"  # S3 API
     volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
+      - object_store_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      # versitygw's unauthenticated liveness route; 127.0.0.1 because busybox
+      # wget tries ::1 first for localhost.
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # MinIO Client - Create bucket on startup
-  minio-client:
-    image: minio/mc:latest
-    container_name: qontinui-minio-client
+  # Bucket sidecar - creates `qontinui` (anonymous download) on startup
+  object-store-init:
+    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42 # released: 2026-11-06 pinned: 2026-11-22
+    container_name: qontinui-object-store-init
     depends_on:
-      minio:
+      object-store:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb myminio/qontinui --ignore-existing;
-      /usr/bin/mc anonymous set download myminio/qontinui;
-      exit 0;
-      "
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-qontinui_dev_s3}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-qontinui_dev_s3_secret}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://object-store:9000
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        aws s3api head-bucket --bucket qontinui >/dev/null 2>&1 || aws s3api create-bucket --bucket qontinui >/dev/null
+        aws s3api put-bucket-policy --bucket qontinui --policy '{"Version":"2012-10-17","Statement":[{"Sid":"AnonymousDownload","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::qontinui/*"]}]}'
+        echo "object-store bucket qontinui ready"
+    restart: "no"
 
 volumes:
   redis_data:
     driver: local
+  object_store_data:
+    driver: local
+  # The retired MinIO's data: declared but mounted by nothing, so it is kept
+  # (only `down -v` would remove it). Copy it into the object store with
+  # qontinui-stack/scripts/s3-migrate-from-minio.sh (point --dest-endpoint at
+  # http://127.0.0.1:9000 and --buckets at "qontinui").
   minio_data:
     driver: local

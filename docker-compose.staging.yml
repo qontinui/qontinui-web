@@ -41,41 +41,53 @@ services:
     networks:
       - staging-network
 
-  # MinIO Object Storage (staging)
-  minio-staging:
-    image: minio/minio:latest
-    container_name: qontinui-minio-staging
+  # Object store (staging): versitygw, built from the sibling
+  # qontinui-stack/object-store/Dockerfile (see docker-compose.yml's header).
+  # S3 API on 9004; no console port (MinIO's 9005 is gone).
+  object-store-staging:
+    build:
+      context: ../qontinui-stack/object-store
+      dockerfile: Dockerfile
+    image: qontinui-canonical-object-store:latest
+    container_name: qontinui-object-store-staging
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin_staging
+      ROOT_ACCESS_KEY: ${S3_STAGING_ACCESS_KEY:-qontinui_staging_s3}
+      ROOT_SECRET_KEY: ${S3_STAGING_SECRET_KEY:-qontinui_staging_s3_secret}
     ports:
-      - "9004:9000"  # API
-      - "9005:9001"  # Console
+      - "9004:9000"  # S3 API
     volumes:
-      - minio_staging_data:/data
-    command: server /data --console-address ":9001"
+      - object_store_staging_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - staging-network
 
-  # MinIO Client - Create bucket on startup
-  minio-client-staging:
-    image: minio/mc:latest
-    container_name: qontinui-minio-client-staging
+  # Bucket sidecar - creates `qontinui-staging` (anonymous download) on startup
+  object-store-init-staging:
+    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42 # released: 2026-11-06 pinned: 2026-11-22
+    container_name: qontinui-object-store-init-staging
     depends_on:
-      - minio-staging
-    entrypoint: >
-      /bin/sh -c "
-      sleep 5;
-      /usr/bin/mc alias set staging http://minio-staging:9000 minioadmin minioadmin_staging;
-      /usr/bin/mc mb staging/qontinui-staging --ignore-existing;
-      /usr/bin/mc anonymous set download staging/qontinui-staging;
-      exit 0;
-      "
+      object-store-staging:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_STAGING_ACCESS_KEY:-qontinui_staging_s3}
+      AWS_SECRET_ACCESS_KEY: ${S3_STAGING_SECRET_KEY:-qontinui_staging_s3_secret}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://object-store-staging:9000
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        aws s3api head-bucket --bucket qontinui-staging >/dev/null 2>&1 || aws s3api create-bucket --bucket qontinui-staging >/dev/null
+        aws s3api put-bucket-policy --bucket qontinui-staging --policy '{"Version":"2012-10-17","Statement":[{"Sid":"AnonymousDownload","Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::qontinui-staging/*"]}]}'
+        echo "object-store bucket qontinui-staging ready"
+    restart: "no"
     networks:
       - staging-network
 
@@ -111,12 +123,14 @@ services:
       - DEBUG=False
       - ENVIRONMENT=staging
       - FRONTEND_URL=http://localhost:3002
-      - STORAGE_BACKEND=minio
+      # S3Backend is endpoint-driven boto3: any non-`local` backend with an
+      # endpoint URL talks to that S3 store.
+      - STORAGE_BACKEND=s3
       - STORAGE_BUCKET_NAME=qontinui-staging
       - STORAGE_REGION=us-east-1
-      - STORAGE_ACCESS_KEY=minioadmin
-      - STORAGE_SECRET_KEY=minioadmin_staging
-      - STORAGE_ENDPOINT_URL=http://minio-staging:9000
+      - STORAGE_ACCESS_KEY=${S3_STAGING_ACCESS_KEY:-qontinui_staging_s3}
+      - STORAGE_SECRET_KEY=${S3_STAGING_SECRET_KEY:-qontinui_staging_s3_secret}
+      - STORAGE_ENDPOINT_URL=http://object-store-staging:9000
       - STORAGE_USE_SSL=false
     volumes:
       - ./backend/uploads:/app/uploads
@@ -157,5 +171,8 @@ volumes:
     driver: local
   redis_staging_data:
     driver: local
+  object_store_staging_data:
+    driver: local
+  # The retired MinIO's staging data, declared and kept (see docker-compose.yml).
   minio_staging_data:
     driver: local
