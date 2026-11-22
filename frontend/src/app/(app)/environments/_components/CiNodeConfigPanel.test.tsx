@@ -849,7 +849,29 @@ describe("CiNodeConfigPanel — model access", () => {
     render(<CiNodeConfigPanel machine={MACHINE} />);
     const panel = await screen.findByTestId("ci-node-panel");
     expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
-    expect(panel.textContent).toMatch(/Saved again since then; not sent yet\./);
+    expect(panel.textContent).toMatch(
+      /Saved again since then, and not sent from qontinui\.io since\./
+    );
+  });
+
+  it("after coord could not be reached, Apply retries the unchanged settings", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: null,
+          dispatch_error: null,
+          dispatch_detail:
+            "Coord is temporarily unavailable (likely a rolling deploy); retry shortly.",
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
   });
 
   it("a machine with no runner cannot re-send unchanged settings", async () => {
@@ -883,7 +905,7 @@ describe("CiNodeConfigPanel — model access", () => {
     render(<CiNodeConfigPanel machine={MACHINE} />);
     const panel = await screen.findByTestId("ci-node-panel");
     expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
-    expect(panel.textContent).not.toMatch(/not sent yet/);
+    expect(panel.textContent).not.toMatch(/Saved again since then/);
   });
 
   it("configsEqual treats a config predating the field as unset, not as a change", () => {

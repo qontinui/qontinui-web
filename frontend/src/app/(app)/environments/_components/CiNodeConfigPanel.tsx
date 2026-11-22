@@ -286,10 +286,11 @@ export function savedButUnsent(state: CiNodeConfigState): boolean {
 /**
  * Whether Apply may re-send the saved settings unchanged. Yes when the panel's
  * own copy tells the owner to apply again: a deferred delivery, the two
- * model-access outcomes, or — read (`dispatched === null`, after a reload) —
- * settings saved but not sent since. Never for a machine with no runner, and
- * never right after a refusal (a live `dispatched === false` answer): an
- * unchanged re-send would be refused again.
+ * model-access outcomes, a transport failure (coord never answered, so
+ * `dispatch_status` is null and the copy says to try again shortly), or — read
+ * (`dispatched === null`, after a reload) — settings saved but not sent since.
+ * Never for a machine with no runner, and never right after a refusal coord
+ * answered (an unchanged re-send would be refused again).
  */
 export function canResendUnchanged(state: CiNodeConfigState): boolean {
   if (state.reachability === "unlinked") return false;
@@ -300,6 +301,7 @@ export function canResendUnchanged(state: CiNodeConfigState): boolean {
   ) {
     return true;
   }
+  if (state.dispatched === false && state.dispatch_status === null) return true;
   return state.dispatched === null && savedButUnsent(state);
 }
 
@@ -840,7 +842,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         {state.configured ? (
           <p>
             {state.dispatched_at
-              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.${savedButUnsent(state) ? " Saved again since then; not sent yet." : ""}`
+              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.${savedButUnsent(state) ? " Saved again since then, and not sent from qontinui.io since." : ""}`
               : "Saved here, but never successfully sent to the machine."}
           </p>
         ) : (
