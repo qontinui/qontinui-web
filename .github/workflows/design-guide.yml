@@ -23,8 +23,9 @@
 # Chromium install (0.6-1.2 min measured on Frontend CI runs, 2026-11-18 to
 # 2026-11-22). This repo is public, so hosted minutes cost nothing.
 #
-# The job name IS the check-run context a later phase asks to make required.
-# Do not rename it, and do not add a `strategy:` matrix (which suffixes it).
+# The job name IS the check-run context the plan's Phase 9 asks the operator
+# to make required (an operator decision; it is not required today). Do not
+# rename it, and do not add a `strategy:` matrix (which suffixes it).
 
 name: Design guide
 
@@ -83,14 +84,17 @@ jobs:
     # frontend/design/language.dtcg.json; until this job the guide was
     # hand-written and evaluated by nothing.
     #
-    # Its own job, on a HOSTED runner only, deliberately: it needs Chromium and
-    # its system libraries, which only the docker-rootless/webdb pool is known
-    # to provision (style-gate.yml), not the lint job's `ram-4g` self-hosted
-    # pool; and its installs (a git dependency whose `prepare` builds the kit,
-    # a clone + build of @qontinui/design-tokens at the source's ref, Chromium)
-    # would eat the lint job's measured cap. Public repo: hosted minutes cost
-    # nothing. Expected p50 ~3 min; cap 15 until measured.
-    timeout-minutes: 15
+    # On a HOSTED runner only, deliberately: it needs Chromium and its system
+    # libraries, which only the docker-rootless/webdb pool is known to
+    # provision (style-gate.yml), not the `ram-4g` self-hosted light lane.
+    # Public repo: hosted minutes cost nothing.
+    #
+    # Job cap: measured 0.6-1.2 min per run (the job's runs inside Frontend CI,
+    # 2026-11-18 to 2026-11-22, which is the same steps on the same hosted
+    # image); cap = max(5, 2x max), the rule every other job cap here follows.
+    # The step caps below sum past it on purpose: each bounds one hang, the
+    # job cap bounds the run.
+    timeout-minutes: 5
     name: Generated style guide (compile --check + validate-guide)
     # coord-pools: [ubuntu-latest]
     runs-on: ubuntu-latest
