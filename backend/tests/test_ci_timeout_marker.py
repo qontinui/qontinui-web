@@ -978,6 +978,43 @@ def test_every_carrier_routes_identically_against_its_own_budget(tmp_path):
         assert TITLE_EXTERNAL_CANCEL in short, workflow
 
 
+@requires_bash
+def test_the_sweep_budget_arm_routes_against_its_own_budget(tmp_path):
+    """The dispatch-only design-guide sweep runs on the `&&` arm's budget.
+
+    The test above exercises only a called run's `||` arm. In a sweep run the
+    marker's JOB_TIMEOUT_MINUTES renders as the sweep arm, so a cancel at that
+    budget must read as a job timeout, and one past the CALLED budget but
+    short of the sweep's must not.
+    """
+    _, job, step = _find_step("e2e-playwright-stack.yml", MARKER_STEP_NAME)
+    match = _SWEEP_BUDGET.match(str(job["timeout-minutes"]))
+    assert match, f"no sweep arm in {job['timeout-minutes']!r}"
+    assert str(step["env"]["JOB_TIMEOUT_MINUTES"]) == str(job["timeout-minutes"])
+    sweep, called = int(match.group("sweep")), int(match.group("called"))
+    assert sweep == 180 and called == 60
+
+    at_budget = _run_marker(
+        tmp_path,
+        job_status="cancelled",
+        apt_outcomes=APT_CLEAN,
+        elapsed_minutes=sweep,
+        job_timeout_minutes=str(sweep),
+        workflow="e2e-playwright-stack.yml",
+    )
+    past_called_only = _run_marker(
+        tmp_path,
+        job_status="cancelled",
+        apt_outcomes=APT_CLEAN,
+        elapsed_minutes=called + 5,
+        job_timeout_minutes=str(sweep),
+        workflow="e2e-playwright-stack.yml",
+    )
+    assert TITLE_JOB_TIMEOUT in at_budget
+    assert TITLE_JOB_TIMEOUT not in past_called_only
+    assert TITLE_EXTERNAL_CANCEL in past_called_only
+
+
 # --- the budget tripwire ----------------------------------------------------
 
 

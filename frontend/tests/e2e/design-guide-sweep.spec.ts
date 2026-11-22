@@ -22,10 +22,14 @@
  *     `unknown(...)` to 2), it exited outside 0-3 or by signal, it ran past the
  *     per-route bound, or exit 0/1/3 came without a readable `--json` report.
  *   - Each test writes its own record to disk and then REWRITES
- *     `design-guide-sweep.json` from every record of this run (`complete:
- *     false`), so a run cancelled or timed out mid-sweep still leaves a report
- *     covering every route that finished. The LAST test of this file writes it
- *     once more with `complete: true`, after every route has had its turn.
+ *     `design-guide-sweep.json` from every record of this run, so a run
+ *     cancelled or timed out mid-sweep still leaves a report covering every
+ *     route that finished. The LAST test of this file writes it once more.
+ *     Two separate fields say how far it got: `reached_end` (the final test
+ *     ran) and `complete` (every swept route has a record of this run, i.e.
+ *     `recorded_count === swept_count`). A run can reach the end incomplete
+ *     (a `--grep`, a worker crash before a record), and a run cut short
+ *     after its last route is complete without reaching the end.
  *   - On a per-route timeout the kit's WHOLE process tree is killed: the CLI,
  *     the wrapper's inject-cli and the Chromium it launched (see killTree).
  *
@@ -235,7 +239,36 @@ function killTree(pid: number): void {
   }
 }
 
+/**
+ * The kit trees this worker has running. `detached` puts each in a process
+ * group (a session, on Linux) of its own, so a Ctrl+C or a job cancellation
+ * that signals Playwright's group never reaches it. These handlers carry the
+ * signal on: SIGTERM/SIGINT reap every live tree and then re-raise the signal
+ * with the default action, so the worker still dies the way it was told to;
+ * `exit` reaps whatever is left on any other way out of the worker.
+ */
+const LIVE = new Set<number>();
+let reapersInstalled = false;
+
+function reapLive(): void {
+  for (const pid of LIVE) killTree(pid);
+  LIVE.clear();
+}
+
+function installReapers(): void {
+  if (reapersInstalled) return;
+  reapersInstalled = true;
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => {
+      reapLive();
+      process.kill(process.pid, sig);
+    });
+  }
+  process.once("exit", reapLive);
+}
+
 function run(cmd: string, args: string[], timeoutMs: number) {
+  installReapers();
   return new Promise<{
     code: number | null;
     signal: string | null;
@@ -260,6 +293,8 @@ function run(cmd: string, args: string[], timeoutMs: number) {
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
+    const pid = child.pid;
+    if (pid !== undefined) LIVE.add(pid);
     let output = "";
     let timedOut = false;
     const keep = (b: Buffer) => {
@@ -269,11 +304,14 @@ function run(cmd: string, args: string[], timeoutMs: number) {
     child.stderr.on("data", keep);
     const timer = setTimeout(() => {
       timedOut = true;
-      if (child.pid !== undefined) killTree(child.pid);
-      else child.kill("SIGKILL");
+      if (pid !== undefined) {
+        killTree(pid);
+        LIVE.delete(pid);
+      } else child.kill("SIGKILL");
     }, timeoutMs);
     child.on("error", (e) => {
       clearTimeout(timer);
+      if (pid !== undefined) LIVE.delete(pid);
       resolve({
         code: null,
         signal: null,
@@ -283,6 +321,9 @@ function run(cmd: string, args: string[], timeoutMs: number) {
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      // The CLI exited; its tree goes with it unless something outlived it,
+      // which the door's own 180 s bound covers.
+      if (pid !== undefined) LIVE.delete(pid);
       resolve({ code, signal, output, timedOut });
     });
   });
@@ -492,12 +533,12 @@ type ReportRoute =
   | { route: string; files: string[]; status: "not_run" | "stale_record_only" };
 
 /**
- * design-guide-sweep.json from every record of THIS run. `complete: false`
- * while routes are still running (or when the run was cut short); the final
- * test writes `complete: true`. A route with no record of this run is listed
- * with its status, never dropped and never counted as a measurement.
+ * design-guide-sweep.json from every record of THIS run. `reachedEnd` is true
+ * only from the final test; `complete` is computed: every swept route has a
+ * record of this run. A route with no record of this run is listed with its
+ * status, never dropped and never counted as a measurement.
  */
-function writeReport(complete: boolean): void {
+function writeReport(reachedEnd: boolean): void {
   const routes: ReportRoute[] = SWEPT.map((r) => {
     const rec = readJson(
       path.join(RECORD_DIR, `${slugOf(r.route)}.json`)
@@ -548,7 +589,8 @@ function writeReport(complete: boolean): void {
   }
   writeJsonFile(path.join(OUT_DIR, "design-guide-sweep.json"), {
     schema: 2,
-    complete,
+    reached_end: reachedEnd,
+    complete: recorded === SWEPT.length,
     generated_at: new Date().toISOString(),
     run_id: RUN_ID,
     sha: gitSha(),

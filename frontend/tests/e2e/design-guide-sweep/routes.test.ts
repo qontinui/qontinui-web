@@ -155,6 +155,18 @@ describe("slugOf", () => {
     expect(slugOf("/a%7Eb")).toBe("r~a%257Eb");
   });
 
+  it("escapes non-ASCII at a fixed width, so code-unit lengths cannot collide", () => {
+    // U+0011 then "9" versus U+0119: a variable-width code-unit escape writes
+    // both as `%119`.
+    const a = "/\u00119";
+    const b = "/ę";
+    expect(slugOf(a)).toBe("r~%119");
+    expect(slugOf(b)).toBe("r~%C4%99");
+    expect(slugOf(a)).not.toBe(slugOf(b));
+    expect(slugOf("/café")).toBe("r~caf%C3%A9");
+    expect(slugOf("/\u{1F600}")).toBe("r~%F0%9F%98%80");
+  });
+
   it("never gives two routes one slug", () => {
     const routes = [
       "/",
