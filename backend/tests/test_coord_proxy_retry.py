@@ -124,6 +124,41 @@ class TestPostToCoordRetry:
         assert exc_info.value.status_code == 503
         assert instance.post.call_count == 3
 
+    async def test_an_accepted_gateway_status_is_returned_without_retry(
+        self,
+    ) -> None:
+        """A caller's ``accept_gateway_status`` marks a 502 as coord's own
+        application answer: it comes back on the first attempt."""
+        stored = _mock_response(502, {"error": "x", "stored": True})
+        patcher, instance = _patch_client([stored])
+        with patcher, _patch_sleep():
+            resp = await post_to_coord(
+                "/devenv/ci-node-dispatch",
+                headers={},
+                json_body={},
+                log_event="test",
+                accept_gateway_status=lambda r: r.json().get("stored") is True,
+            )
+        assert resp is stored
+        assert instance.post.call_count == 1
+
+    async def test_a_gateway_status_the_predicate_rejects_is_still_retried(
+        self,
+    ) -> None:
+        patcher, instance = _patch_client(
+            [_mock_response(502), _mock_response(502), _mock_response(502)]
+        )
+        with patcher, _patch_sleep(), pytest.raises(HTTPException) as exc_info:
+            await post_to_coord(
+                "/devenv/ci-node-dispatch",
+                headers={},
+                json_body={},
+                log_event="test",
+                accept_gateway_status=lambda r: r.json().get("stored") is True,
+            )
+        assert exc_info.value.status_code == 503
+        assert instance.post.call_count == 3
+
     async def test_coord_4xx_passes_through_without_retry(self) -> None:
         rejected = _mock_response(403)
         patcher, instance = _patch_client([rejected])

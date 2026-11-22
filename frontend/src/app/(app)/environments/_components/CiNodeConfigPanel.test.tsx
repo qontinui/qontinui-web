@@ -769,6 +769,50 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(refusal.textContent).not.toMatch(/does not carry/);
   });
 
+  it("settings the coordinator stored for the next connect read as deferred, not refused", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: 502,
+          dispatch_error: "stored_for_next_connect",
+          dispatch_detail:
+            "Saved by the coordinator; the machine applies these settings the next time it connects to the coordinator. Apply again to try sending them now.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box.textContent).toMatch(
+      /Delivery deferred to the machine's next connect\./
+    );
+    // Headline and detail say different things: the detail is not repeated.
+    expect(box.textContent?.match(/Saved by the coordinator/g)).toHaveLength(1);
+    expect(box.textContent).not.toMatch(/did not send them/);
+    expect(box).toHaveAttribute("data-deferred", "true");
+    expect(box.className).not.toMatch(/text-destructive/);
+    expect(box).toHaveAttribute("data-fixable-here", "false");
+  });
+
+  it("a plain coordinator refusal keeps the destructive tone", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: 502,
+          dispatch_error: "directive_publish_failed",
+          dispatch_detail: "The directive could not be published.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box).toHaveAttribute("data-deferred", "false");
+    expect(box.className).toMatch(/text-destructive/);
+  });
+
   it("configsEqual treats a config predating the field as unset, not as a change", () => {
     const base = state().requested;
     const legacy = { ...base };

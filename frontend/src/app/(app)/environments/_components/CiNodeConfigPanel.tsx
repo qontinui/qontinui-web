@@ -156,6 +156,12 @@ export interface DispatchRefusal {
   fixableHere: boolean;
   /** The refusing system's own explanation, when it gave one. */
   detail: string | null;
+  /**
+   * True when nothing was refused and delivery is only DEFERRED: the
+   * coordinator stored the settings and the machine applies them on its next
+   * connect. Rendered without the destructive tone.
+   */
+  deferred?: boolean;
 }
 
 /**
@@ -190,6 +196,16 @@ export function dispatchRefusalCopy(
       headline: "Saved, but qontinui.io could not reach the coordinator.",
       fixableHere: false,
       detail,
+    };
+  }
+  if (state.dispatch_error === STORED_FOR_NEXT_CONNECT) {
+    // Coord stored the directive but could not publish it now. The machine
+    // fetches the stored copy when it next connects: deferred, not refused.
+    return {
+      headline: "Delivery deferred to the machine's next connect.",
+      fixableHere: false,
+      detail,
+      deferred: true,
     };
   }
   if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
@@ -245,6 +261,9 @@ export function dispatchRefusalCopy(
   };
 }
 
+/** The backend's `dispatch_error` when coord stored the settings but could not
+ *  send them now: the machine applies them on its next connect. */
+export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
 /** The backend's `dispatch_error` when coord did not echo `model_access` back. */
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
@@ -801,8 +820,13 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             need: whether this is theirs to fix. */}
         {refusal && (
           <div
-            className="space-y-1 text-destructive"
+            className={
+              refusal.deferred
+                ? "space-y-1 text-muted-foreground"
+                : "space-y-1 text-destructive"
+            }
             data-testid="ci-node-dispatch-refusal"
+            data-deferred={refusal.deferred ? "true" : "false"}
             data-dispatch-status={state.dispatch_status ?? ""}
             data-dispatch-error={state.dispatch_error ?? ""}
             data-fixable-here={refusal.fixableHere ? "true" : "false"}

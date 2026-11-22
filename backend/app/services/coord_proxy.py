@@ -29,6 +29,7 @@ condition is transient and client-retryable.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -64,6 +65,7 @@ async def post_to_coord(
     json_body: dict[str, Any],
     timeout: float = 10.0,
     log_event: str,
+    accept_gateway_status: Callable[[httpx.Response], bool] | None = None,
     **log_fields: Any,
 ) -> httpx.Response:
     """POST ``path`` to coord, retrying only never-reached-coord failures.
@@ -77,6 +79,13 @@ async def post_to_coord(
     * 504 on a read/write timeout (single attempt — the request may have
       been processed),
     * 502 on any other transport error (single attempt).
+
+    ``accept_gateway_status`` lets a caller recognise a response in
+    ``_RETRYABLE_GATEWAY_STATUSES`` that coord's APPLICATION sent (it carries
+    a body only coord writes), so it is returned at once instead of being
+    retried as a gateway failure. A gateway's own 502 never matches the
+    caller's predicate, so it is still retried. ``None`` (the default) keeps
+    every gateway status retryable.
 
     ``log_event`` prefixes the structured-log events
     (``<log_event>_coord_*``); extra ``log_fields`` are attached to each.
@@ -131,7 +140,9 @@ async def post_to_coord(
                 detail="Coord unreachable.",
             ) from exc
 
-        if resp.status_code in _RETRYABLE_GATEWAY_STATUSES:
+        if resp.status_code in _RETRYABLE_GATEWAY_STATUSES and not (
+            accept_gateway_status is not None and accept_gateway_status(resp)
+        ):
             # Gateway answered for coord — the application never saw the
             # request (or refused it pre-processing via readiness 503).
             last_exc, last_status = None, resp.status_code
