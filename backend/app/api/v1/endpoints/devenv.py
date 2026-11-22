@@ -1135,9 +1135,8 @@ CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
 #: stored directive is not lost: it reaches a runner carrying Phase 3 on its next
 #: connect. An older runner never fetches it, which the detail says too.
 CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
-    "Saved by the coordinator, which could not send them just now. Apply "
-    "again to send them; a runner that fetches saved settings on connect also "
-    "receives them the next time it connects."
+    "A runner that fetches saved settings on connect receives them the next "
+    "time it connects; otherwise apply them again once it is connected."
 )
 
 

@@ -200,13 +200,11 @@ export function dispatchRefusalCopy(
   }
   if (state.dispatch_error === STORED_FOR_NEXT_CONNECT) {
     // Coord stored the directive but could not publish it now: deferred, not
-    // refused. A connected runner gets it only on a reconnect, so for an
-    // online machine say plainly that it was not sent.
+    // refused. Whether the machine picks it up by itself depends on its runner
+    // version, which the detail says; the headline claims only what happened.
     return {
       headline:
-        state.reachability === "online"
-          ? "Not sent yet: the coordinator saved these settings but could not send them to the connected runner. Apply again to send them now."
-          : "Delivery deferred to the machine's next connect.",
+        "Not sent yet: the coordinator saved these settings but could not send them.",
       fixableHere: false,
       detail,
       deferred: true,
@@ -277,12 +275,32 @@ export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
  * True when the saved settings have not been sent since they were last saved:
  * saved here (`requested_at`) after the last accepted send (`dispatched_at`),
  * or never sent. Read from persisted fields, so it survives a reload — a GET
- * carries no `dispatched` verdict. Such settings may be re-sent as they stand.
+ * carries no `dispatched` verdict.
  */
 export function savedButUnsent(state: CiNodeConfigState): boolean {
   if (!state.configured || !state.requested_at) return false;
   if (!state.dispatched_at) return true;
   return Date.parse(state.requested_at) > Date.parse(state.dispatched_at);
+}
+
+/**
+ * Whether Apply may re-send the saved settings unchanged. Yes when the panel's
+ * own copy tells the owner to apply again: a deferred delivery, the two
+ * model-access outcomes, or — read (`dispatched === null`, after a reload) —
+ * settings saved but not sent since. Never for a machine with no runner, and
+ * never right after a refusal (a live `dispatched === false` answer): an
+ * unchanged re-send would be refused again.
+ */
+export function canResendUnchanged(state: CiNodeConfigState): boolean {
+  if (state.reachability === "unlinked") return false;
+  if (dispatchRefusalCopy(state)?.deferred) return true;
+  if (
+    state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
+    state.dispatch_error === MODEL_ACCESS_UNCONFIRMED
+  ) {
+    return true;
+  }
+  return state.dispatched === null && savedButUnsent(state);
 }
 
 /** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
@@ -822,7 +840,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         {state.configured ? (
           <p>
             {state.dispatched_at
-              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.`
+              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.${savedButUnsent(state) ? " Saved again since then; not sent yet." : ""}`
               : "Saved here, but never successfully sent to the machine."}
           </p>
         ) : (
@@ -864,9 +882,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Button
           variant="brand-primary"
           size="sm"
-          // Settings saved but not sent (a deferred delivery among them) may
-          // be re-sent as they stand, after a reload too.
-          disabled={saving || (!dirty && !savedButUnsent(state))}
+          disabled={saving || (!dirty && !canResendUnchanged(state))}
           data-testid="ci-node-apply"
           onClick={handleApply}
         >

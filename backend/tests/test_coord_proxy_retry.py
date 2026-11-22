@@ -158,6 +158,24 @@ class TestPostToCoordRetry:
         assert resp is stored
         assert instance.post.call_count == 2
 
+    async def test_a_raising_predicate_escapes(self) -> None:
+        """The documented caller obligation: a predicate that raises is not
+        swallowed into a retry."""
+
+        def _boom(_resp: httpx.Response) -> bool:
+            raise RuntimeError("predicate failed")
+
+        patcher, instance = _patch_client([_mock_response(502)])
+        with patcher, _patch_sleep(), pytest.raises(RuntimeError):
+            await post_to_coord(
+                "/devenv/ci-node-dispatch",
+                headers={},
+                json_body={},
+                log_event="test",
+                accept_gateway_status=_boom,
+            )
+        assert instance.post.call_count == 1
+
     async def test_a_gateway_status_the_predicate_rejects_is_still_retried(
         self,
     ) -> None:

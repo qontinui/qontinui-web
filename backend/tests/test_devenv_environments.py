@@ -4030,9 +4030,8 @@ class _CiNodeCoordTransport:
 
 
 _STORED_DETAIL = (
-    "Saved by the coordinator, which could not send them just now. Apply "
-    "again to send them; a runner that fetches saved settings on connect also "
-    "receives them the next time it connects."
+    "A runner that fetches saved settings on connect receives them the next "
+    "time it connects; otherwise apply them again once it is connected."
 )
 _COORD_PUBLISH_FAILED_MESSAGE = "The directive could not be published (redis down)."
 
@@ -4109,6 +4108,34 @@ class TestCiNodeStoredButUnpublished:
         # Nothing reached the machine now, so nothing may read as "sent".
         assert body["dispatched_at"] is None
         assert body["requested"]["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_ci_node_stored_keeps_an_earlier_dispatched_at(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A machine sent settings before keeps that send's timestamp when a
+        later save is stored but not published."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        transport = _CiNodeCoordTransport(
+            httpx.Response(200, json={"dispatched": True})
+        )
+        monkeypatch.setattr("app.services.coord_proxy.httpx", transport.scoped_httpx())
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        with patch_coord_proxy_sleep():
+            async with _bearer_client(app) as client:
+                machine_id = await self._machine(client, device_id, "earlier-box")
+                url = f"{API_PREFIX}/machines/{machine_id}/ci-node"
+                first = await client.put(url, json={"enabled": True})
+                assert first.status_code == 200, first.text
+                sent_at = first.json()["dispatched_at"]
+                assert sent_at is not None
+                transport.answer = _publish_failed(502, {"stored": True})
+                second = await client.put(url, json={"enabled": False})
+        assert second.status_code == 200, second.text
+        body = second.json()
+        assert body["dispatch_error"] == "stored_for_next_connect"
+        assert body["dispatched_at"] == sent_at
 
     @pytest.mark.asyncio
     async def test_ci_node_set_config_handler_reports_stored_for_next_connect(
