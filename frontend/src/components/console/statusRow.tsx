@@ -124,11 +124,15 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   "checks-failing": AUTHOR_RED,
   // --- waiting on something else → amber ------------------------------------
   blocked: WAITING_AMBER,
-  // UNKNOWN_AMBER, not WAITING_AMBER: the row's text says whether coord's
-  // freshen will act is UNKNOWN, so the badge must not draw a self-clearing
+  // UNKNOWN_AMBER, not WAITING_AMBER: this kind is the row coord served no
+  // freshen reading for, so the badge must not draw a self-clearing
   // promise (plan
   // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`).
   "needs-rebase": UNKNOWN_AMBER,
+  // Coord SERVED that it is updating or will update the branch, so here the self-clearing
+  // amber is earned; and that it will not, so red.
+  "behind-freshening": WAITING_AMBER,
+  "behind-freshen-refused": AUTHOR_RED,
   // A true conflict, de-escalated because coord won't reach this PR for a
   // while: "resolve just-before-merge", not "act now".
   "conflict-deferred": WAITING_AMBER,
@@ -184,6 +188,7 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
   "requirements",
   "behind-held-author",
   "behind-held-stale",
+  "behind-freshen-refused",
 ]);
 
 /**

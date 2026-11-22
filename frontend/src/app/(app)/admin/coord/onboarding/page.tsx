@@ -58,6 +58,32 @@ export default function OnboardingPage() {
       */}
       <ConnectInstalledOrg flow="connect" defaultOrg={defaultOrg} />
       <MergeOrchestrationOnboarding />
+      {/*
+        Says what coord's PR-body notice says (MANAGED_PR_NOTICE in
+        qontinui-coord crates/coord/src/pr_create.rs): a PR lands when its
+        merge gate clears, which is NOT the same as its checks passing (an
+        escalate-path or operator hold keeps a green PR open). Keep the two in
+        step, and never promise a land on checks alone.
+      */}
+      <section data-testid="coord-onboarding-github-expectations">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          What you&apos;ll see on GitHub
+        </h2>
+        <ul className="mt-2 list-disc pl-5 space-y-1 text-sm">
+          <li>
+            Coord lands pull requests on its own once their merge gate clears.
+            The &quot;Qontinui merge gate&quot; check on each PR says what, if
+            anything, is needed.
+          </li>
+          <li>
+            GitHub reviews are optional and do not decide whether a PR lands.
+          </li>
+          <li>
+            Don&apos;t use the Merge button on GitHub; it bypasses coord&apos;s
+            merge train.
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

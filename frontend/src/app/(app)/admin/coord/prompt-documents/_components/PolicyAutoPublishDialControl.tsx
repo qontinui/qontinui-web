@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -17,6 +18,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
 import type { PublishAllState } from "../_hooks/usePublishAll";
+import { WaitingForProject } from "./WaitingForProject";
 import {
   describeObservedPass,
   describeObservedReconcile,
@@ -25,7 +27,6 @@ import {
 import {
   type AutoPublishWorkerObservation,
   POLICY_AUTO_PUBLISH_CONFIRMED_LEVELS,
-  POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
   POLICY_AUTO_PUBLISH_LEVEL_HELP,
   POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS,
   type PolicyAutoPublishLevel,
@@ -132,12 +133,14 @@ function ObservedLine({
  *
  * The same four things the two sibling dials state, for the same reasons:
  *
- * - **"No row" is a named default (`on`), never `off`.** For THIS domain the
- *   trap is the whole feature: reading the resolver's bare `off` literally
- *   would mean the worker decides nothing, holds nothing and publishes nothing,
- *   with no error anywhere — indistinguishable from the eight silent days this
- *   plan exists to end.
- * - **A level coord cannot parse resolves to `off`, and says so.**
+ * - **"No row" is a named default (`on`), never `off`.** With no row coord
+ *   serves its typed default `on` (qontinui-coord#4239), and the control
+ *   labels it as coord's built-in default. For THIS domain misreading it is
+ *   the whole feature: showing `off` would mean the worker decides nothing,
+ *   holds nothing and publishes nothing, with no error anywhere —
+ *   indistinguishable from the eight silent days this plan exists to end.
+ * - **A row coord cannot parse resolves to `off`, and says so**; a no-row
+ *   default this console cannot parse (vocabulary skew) is UNKNOWN.
  * - **Which scope band answered**, so a write that will stay overridden is not
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
@@ -152,14 +155,14 @@ function ObservedLine({
  * the page's ONE auto-publish status read (the list's badges come from the
  * same response). See `../_lib/observedWorker.ts` for the sentence per status.
  * It renders nothing when the page has not wired the observation, before the
- * first read settles, and under the existing silent latch
- * (`not_system_tenant` / `not_proxied`): outside the system tenant there is no
- * auto-publisher of this tenant's to observe.
+ * first read settles, under the existing silent latch
+ * (`not_system_tenant` / `not_proxied`) — outside the system tenant there is
+ * no auto-publisher of this tenant's to observe — and while the dial waits for
+ * the page's project, where its line says nothing has been read yet.
  */
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
   observed,
-  canWrite,
 }: {
   /**
    * Called after a write FROM THIS CONTROL lands, so the page can re-take the
@@ -173,21 +176,23 @@ export function PolicyAutoPublishDialControl({
    * observation lines (it is mounted outside the page that owns the read).
    */
   observed?: AutoPublishObserved;
-  /**
-   * Checked at the moment of every write; `false` sends nothing (the caller
-   * says why). The prompt-documents page passes its cross-tab guard here:
-   * its disabled fieldset reaches neither a confirmation (rendered outside
-   * it) nor a click that lands before another tab's switch is seen.
-   */
-  canWrite?: () => boolean;
 } = {}) {
+  // On the prompt-documents page the read and the write are sent in the
+  // page's project, and nothing is read before the page knows it (the dial
+  // says it is waiting). A write raced past another tab's switch is refused
+  // — by the hook itself, beside its send: the page's disabled fieldset
+  // reaches neither a confirmation (it portals out) nor a click that lands
+  // before the switch is seen. A refused write answers `false`, so the page's
+  // status read is not re-taken.
   const {
     policy,
     loading,
+    waitingForProject,
     saving,
     error,
     displayLevel,
     isDefaulted,
+    defaultUnreadable,
     unrecognizedLevel,
     readbackError,
     lastWrite,
@@ -202,13 +207,16 @@ export function PolicyAutoPublishDialControl({
     useState<PolicyAutoPublishLevel | null>(null);
 
   const applyLevel = async (next: PolicyAutoPublishLevel) => {
-    if (canWrite && !canWrite()) return;
     if (await setLevel(next)) onLevelChanged?.();
   };
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
-  const showObserved = observed && observed.settled && !observed.unavailable;
+  // No observed-worker lines under a line that says nothing has been read:
+  // while the dial waits for the page's project, it shows that alone.
+  const showObserved =
+    observed && observed.settled && !observed.unavailable && !waitingForProject;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;
@@ -255,7 +263,9 @@ export function PolicyAutoPublishDialControl({
         </div>
       </div>
 
-      {loading && !policy ? (
+      {waitingForProject ? (
+        <WaitingForProject testId="policy-auto-publish-waiting" />
+      ) : loading && !policy ? (
         <p className="text-sm text-muted-foreground">Reading the dial…</p>
       ) : null}
 
@@ -302,6 +312,10 @@ export function PolicyAutoPublishDialControl({
         A row exists whose level coord cannot parse. Resolve it the way the most
         restrictive reading demands and name the row, because nothing else on
         this page can.
+
+        A NO-ROW answer whose served default is unparseable is vocabulary skew:
+        coord enforces a level this console does not know, so it is UNKNOWN
+        here — named, never shown as `off`.
       */}
       {unrecognizedLevel !== null ? (
         <div
@@ -310,16 +324,29 @@ export function PolicyAutoPublishDialControl({
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-muted-foreground">
-            The <span className="font-mono">{policy?.resolved_scope}</span>-band
-            row stores the level{" "}
-            <code className="font-mono">{unrecognizedLevel}</code>, which coord
-            does not recognise. What this dial authorises is this tenant&apos;s
-            bodies reaching every other tenant with no human in the loop — an
-            authority setting it cannot read is not permission to do that — so
-            the level in force is <span className="font-mono">off</span>.{" "}
-            {policy?.resolved_scope === "tenant"
-              ? "Setting a level below rewrites that row and clears this."
-              : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+            {isDefaulted ? (
+              <>
+                No row is set, and coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here. Setting a level below writes a tenant row
+                this console can read.
+              </>
+            ) : (
+              <>
+                The <span className="font-mono">{policy?.resolved_scope}</span>
+                -band row stores the level{" "}
+                <code className="font-mono">{unrecognizedLevel}</code>, which
+                coord does not recognise. What this dial authorises is this
+                tenant&apos;s bodies reaching every other tenant with no human
+                in the loop — an authority setting it cannot read is not
+                permission to do that — so the level in force is{" "}
+                <span className="font-mono">off</span>.{" "}
+                {policy?.resolved_scope === "tenant"
+                  ? "Setting a level below rewrites that row and clears this."
+                  : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+              </>
+            )}
           </p>
         </div>
       ) : null}
@@ -331,19 +358,27 @@ export function PolicyAutoPublishDialControl({
         >
           <span className="text-muted-foreground">In force:</span>
           <Badge variant="secondary" className="font-mono">
-            {displayLevel}
+            {defaultUnreadable ? "unknown" : displayLevel}
           </Badge>
-          {isDefaulted ? (
+          {unrecognizedLevel !== null ? (
+            isDefaulted ? (
+              <span className="text-muted-foreground">
+                — coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                — the fail-closed reading of an unrecognised{" "}
+                <span className="font-mono">{policy.resolved_scope}</span>-band
+                row
+              </span>
+            )
+          ) : isDefaulted ? (
             <span className="text-muted-foreground">
-              — coord&apos;s built-in default (
-              {POLICY_AUTO_PUBLISH_DEFAULT_LEVEL}); no one has set this
-              tenant&apos;s dial
-            </span>
-          ) : unrecognizedLevel !== null ? (
-            <span className="text-muted-foreground">
-              — the fail-closed reading of an unrecognised{" "}
-              <span className="font-mono">{policy.resolved_scope}</span>-band
-              row
+              — coord&apos;s built-in default ({displayLevel}); no one has set
+              this tenant&apos;s dial
             </span>
           ) : (
             <span className="text-muted-foreground">
@@ -397,9 +432,12 @@ export function PolicyAutoPublishDialControl({
       ) : null}
 
       <RadioGroup
-        value={displayLevel ?? undefined}
+        // `""` rather than `undefined`: the group stays CONTROLLED with nothing
+        // selected while the level is unknown, so a cancelled confirmation
+        // cannot leave a radio checked that the fleet is not on.
+        value={displayLevel ?? ""}
         onValueChange={(v) => onSelect(v as PolicyAutoPublishLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS.map((level) => (
@@ -496,6 +534,7 @@ export function PolicyAutoPublishDialControl({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               data-testid="policy-auto-publish-confirm-accept"
               onClick={() => {
                 if (pendingLevel) void applyLevel(pendingLevel);

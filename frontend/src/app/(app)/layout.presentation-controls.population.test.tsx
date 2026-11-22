@@ -244,6 +244,30 @@ afterEach(() => {
 });
 
 describe("the app shell beside a lens page, presenting", () => {
+  it("mounts the lit co-pilot banner in flow at the top of the page column, above <main>", async () => {
+    // Presentation-spaces Phase 8 (finding c157a7b3): a banner laid over the
+    // page covered the tour bar and the coord header while the AI drove. It
+    // must share <main>'s column and come before it, so it pushes the page
+    // down. In the root row it would squeeze the column sideways instead.
+    visit("/admin/coord/devops", "present=1");
+    render(
+      <AppLayout>
+        <p>Console page</p>
+      </AppLayout>
+    );
+    const banner = await screen.findByTestId(
+      "co-pilot-active-banner",
+      {},
+      { timeout: LAZY_MS }
+    );
+    const main = screen.getByRole("main");
+    expect(banner.parentElement).not.toBeNull();
+    expect(banner.parentElement).toBe(main.parentElement);
+    expect(
+      banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it("shows no write control anywhere in the shell while presenting — only the presenter's own safety controls", async () => {
     visit("/admin/coord/devops", "present=1");
     render(

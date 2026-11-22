@@ -29,6 +29,14 @@
  *   `evaluate`). Home does the same: a placeholder is in no machine count and
  *   is named in a line of its own. The nav still counts one whose state is
  *   not `healthy`, so the reconcile line names those.
+ * - **`ci_unrefreshed` is its own verdict.** Coord derives it for a CI
+ *   registration its registrar has not refreshed recently while nothing
+ *   contradicts it (GitHub still lists it, or coord could not measure that):
+ *   `qontinui-coord` `fleet_partition.rs` `overlay_registration_presence`.
+ *   Coord's project state raises no degradation for it, so home does not
+ *   count it as degrading — but coord did observe it, so it is not "no
+ *   verdict" either, and it is never healthy. The nav counts it (not
+ *   healthy), and the reconcile line names it as a late registrar refresh.
  *
  * A machine coord already listed as a degradation row is not counted again
  * ({@link degradingCoverage}). The machines the nav counts that home does not
@@ -65,6 +73,12 @@ export type MachineVerdict =
   | "healthy"
   | "degrading"
   | "abandoned"
+  /**
+   * A CI registration coord's registrar has not refreshed recently, with no
+   * contrary measurement. Not a degradation (coord raises none for it), not
+   * unknown (coord observed it), and never healthy.
+   */
+  | "ci_unrefreshed"
   | "no_verdict"
   | "placeholder";
 
@@ -78,6 +92,7 @@ export function machineVerdict(d: MachineStateRef): MachineVerdict {
   const s = typeof d.state === "string" ? d.state : "";
   if (s === "healthy") return "healthy";
   if (s === "abandoned") return "abandoned";
+  if (s === "ci_unrefreshed") return "ci_unrefreshed";
   if (DEGRADING_MACHINE_STATES.has(s)) return "degrading";
   return "no_verdict";
 }
@@ -96,6 +111,11 @@ export interface MachineHealthCounts {
   abandoned: number;
   /** No verdict: coord's `unknown`, or no state at all. */
   noVerdict: number;
+  /**
+   * CI registrations coord's registrar has not refreshed recently
+   * (`ci_unrefreshed`): not degrading, not unknown, not healthy.
+   */
+  ciUnrefreshed: number;
   /** The degrading machines' device ids, to join against coord's rows. */
   degradingIds: string[];
   /** Degrading machines coord sent no device id for (cannot be joined). */
@@ -104,6 +124,7 @@ export interface MachineHealthCounts {
   notDegradations: {
     abandoned: number;
     noVerdict: number;
+    ciUnrefreshed: number;
     placeholders: number;
   };
 }
@@ -119,9 +140,15 @@ export function summarizeMachineHealth(
     degrading: 0,
     abandoned: 0,
     noVerdict: 0,
+    ciUnrefreshed: 0,
     degradingIds: [],
     degradingWithoutId: 0,
-    notDegradations: { abandoned: 0, noVerdict: 0, placeholders: 0 },
+    notDegradations: {
+      abandoned: 0,
+      noVerdict: 0,
+      ciUnrefreshed: 0,
+      placeholders: 0,
+    },
   };
   for (const d of devices) {
     const nav = isNotHealthyDevice(d);
@@ -140,6 +167,9 @@ export function summarizeMachineHealth(
     } else if (v === "no_verdict") {
       c.noVerdict += 1;
       if (nav) c.notDegradations.noVerdict += 1;
+    } else if (v === "ci_unrefreshed") {
+      c.ciUnrefreshed += 1;
+      if (nav) c.notDegradations.ciUnrefreshed += 1;
     } else {
       c.degrading += 1;
       if (typeof d.device_id === "string" && d.device_id !== "") {
@@ -191,13 +221,18 @@ export function degradingCoverage(
  * rather than counting them a second time, and its subject is "rows" when
  * any is a placeholder, which is not a machine. A reader summing every line
  * then reaches the badge, not more.
+ *
+ * CI registrations the registrar has not refreshed (`ci_unrefreshed`) are
+ * named HERE and nowhere above, so this line counts them outright rather than
+ * pointing back.
  */
 export function notDegradationsSentence(
   counts: MachineHealthCounts,
   { seeDevOps }: { seeDevOps: boolean }
 ): string | null {
-  const { abandoned, noVerdict, placeholders } = counts.notDegradations;
-  const n = abandoned + noVerdict + placeholders;
+  const { abandoned, noVerdict, ciUnrefreshed, placeholders } =
+    counts.notDegradations;
+  const n = abandoned + noVerdict + ciUnrefreshed + placeholders;
   if (n === 0) return null;
   const parts: string[] = [];
   if (abandoned > 0) {
@@ -218,6 +253,9 @@ export function notDegradationsSentence(
         : `${noVerdict} of the ${counts.noVerdict} with no verdict named above`
     );
   }
+  if (ciUnrefreshed > 0) {
+    parts.push(ciUnrefreshedPhrase(ciUnrefreshed));
+  }
   if (placeholders > 0) {
     parts.push(
       placeholders === counts.placeholders
@@ -231,6 +269,16 @@ export function notDegradationsSentence(
       ? `1 ${noun} not reporting healthy is not a degradation`
       : `${n} ${noun}s not reporting healthy are not degradations`;
   return `${subject}: ${parts.join(", ")}${seeDevOps ? " — see Dev Ops" : ""}.`;
+}
+
+/**
+ * `n` CI registrations coord's registrar has not refreshed, as a phrase for a
+ * list: "1 CI registration the registrar has not refreshed recently". Shared
+ * by every reconcile line so the nav's count is explained in the same words
+ * everywhere.
+ */
+export function ciUnrefreshedPhrase(n: number): string {
+  return `${n} CI ${n === 1 ? "registration" : "registrations"} the registrar has not refreshed recently`;
 }
 
 /**

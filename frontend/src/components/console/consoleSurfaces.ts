@@ -139,7 +139,12 @@ import {
 } from "@/app/(app)/admin/coord/decision-policies/decisionPolicyStatus";
 // Wave 4 surfaces — Family C, the tables.
 import {
+  BEHIND_FRESHEN_ATTENTION_BY_KIND,
   PR_ATTENTION_BY_MERGE_STATUS,
+} from "@/components/operations/prMergeStatus";
+import {
+  BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
+  BEHIND_FRESHEN_CLASS,
   PR_AUTHOR_GLYPH_STATUSES,
   PR_MERGE_STATUS_CLASS,
 } from "@/app/(app)/admin/coord/prs/prStatus";
@@ -338,6 +343,29 @@ import {
   ACTION_ITEM_AUTHOR_GLYPH_KINDS,
   ACTION_ITEM_BADGE_CLASS,
 } from "@/components/admin/coord/actionItemStatus";
+// Subprojects — plan
+// `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`
+// Phase 6. One module, three orthogonal tables: a subproject's headline, a
+// member session's liveness and a member gate's mover.
+import {
+  SUBPROJECT_ATTENTION_BY_HEADLINE,
+  SUBPROJECT_AUTHOR_GLYPH_HEADLINES,
+  SUBPROJECT_GATE_ATTENTION_BY_KIND,
+  SUBPROJECT_GATE_AUTHOR_GLYPH_KINDS,
+  SUBPROJECT_GATE_CLASS,
+  SUBPROJECT_HEADLINE_CLASS,
+  SUBPROJECT_SESSION_ATTENTION_BY_KIND,
+  SUBPROJECT_SESSION_AUTHOR_GLYPH_KINDS,
+  SUBPROJECT_SESSION_CLASS,
+} from "@/components/admin/coord/subprojects/subprojectStatus";
+// Topics — plan
+// `2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator`
+// Phase 8. A topic's headline rolled up from its confirmed member subprojects.
+import {
+  TOPIC_ATTENTION_BY_HEADLINE,
+  TOPIC_AUTHOR_GLYPH_HEADLINES,
+  TOPIC_HEADLINE_CLASS,
+} from "@/components/admin/coord/topics/topicStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -540,11 +568,23 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
   {
     surface: "open PRs (/admin/coord/prs)",
-    module: "app/(app)/admin/coord/prs/prStatus.ts",
+    module: "components/operations/prMergeStatus.ts",
     attentionByKind: PR_ATTENTION_BY_MERGE_STATUS,
     palette: {
       badgeClass: PR_MERGE_STATUS_CLASS,
       authorGlyphKinds: PR_AUTHOR_GLYPH_STATUSES as ReadonlySet<string>,
+    },
+  },
+  {
+    // The served freshen readings, which that page's palette adds to the
+    // tokens; `prPipeline` carries the same two kinds in its own table.
+    surface: "open PRs, served freshen readings (/admin/coord/prs)",
+    module: "components/operations/prMergeStatus.ts",
+    attentionByKind: BEHIND_FRESHEN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: BEHIND_FRESHEN_CLASS,
+      authorGlyphKinds:
+        BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -916,6 +956,56 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: ACTION_ITEM_BADGE_CLASS,
       authorGlyphKinds: ACTION_ITEM_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- subprojects ------------------------------------------------------------
+  {
+    // needs_you and stalled are red: a stalled subproject has nothing alive
+    // moving it and the plan does not auto-continue it (F2), so nothing but a
+    // person resolves it. waiting names its mover; unknown is the ignorance
+    // floor. working and done are calm.
+    surface:
+      "subprojects (/admin/coord/subprojects, /admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_ATTENTION_BY_HEADLINE,
+    palette: {
+      badgeClass: SUBPROJECT_HEADLINE_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_AUTHOR_GLYPH_HEADLINES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "subproject member sessions (/admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_SESSION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SUBPROJECT_SESSION_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "subproject member gates (/admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_GATE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SUBPROJECT_GATE_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_GATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- topics -----------------------------------------------------------------
+  {
+    // The subprojects' headline vocabulary, rolled up: needs_you and stalled
+    // are red because a confirmed member needs a person; waiting names its
+    // movers; unknown is the ignorance floor (never rolled up, or resting on
+    // unread members). working and done are calm.
+    surface: "topics (/admin/coord/topics, /admin/coord/topics/[id])",
+    module: "components/admin/coord/topics/topicStatus.ts",
+    attentionByKind: TOPIC_ATTENTION_BY_HEADLINE,
+    palette: {
+      badgeClass: TOPIC_HEADLINE_CLASS,
+      authorGlyphKinds: TOPIC_AUTHOR_GLYPH_HEADLINES as ReadonlySet<string>,
     },
   },
 ];

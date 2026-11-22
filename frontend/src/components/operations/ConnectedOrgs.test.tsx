@@ -10,13 +10,29 @@
  *     (a GitHub-fanning write must never be silently retried);
  *   - coord's `202 {enrolled:"spawned"}` (no repos array) starts a poll of the
  *     accounts endpoint, and once a re-poll returns repos they render;
- *   - the error branch maps coord's status onto human copy for 403 / 404.
+ *   - the error branch maps coord's status onto human copy for 403 / 404;
+ *   - "Stop governing" (plan
+ *     `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+ *     Phase 8): offered only to an administrator of the ACTIVE tenant and
+ *     never while presenting; a reason is required; one DELETE carries it;
+ *     a double-click sends one request; the read-back moves the row to the
+ *     un-enrolled list, and a read-back that gives up says UNKNOWN; a refusal
+ *     renders coord's code; the coverage principals render in words, with no
+ *     Re-enroll and the App-access hint in its place. The derivations those
+ *     flows render are enumerated in `ConnectedOrgsUnenroll.test.tsx`.
  *
  * Mirrors the mocked-`httpClient` pattern in `MergeOrchestrationOnboarding.test.tsx`.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 // The accounts READ and the enroll/restore WRITES both go through
 // `httpClient.fetch` (`lib/api/operations/prMergeOnboarding.ts`). The read is
@@ -37,19 +53,78 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-// The Re-enroll action is admin-gated through `CoordAdminOnly`, which reads
-// `useAuth().isCoordAdmin`. Hoisted so a test can flip it per case.
-const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
+// Re-enroll and Stop governing are gated on `isActiveTenantCoordAdmin`: the
+// ACTIVE tenant's own `roles`, the `coord_is_admin` union only when those are
+// absent, and a superuser always. So a test flips `tenantState` (the active
+// tenant's roles) to change who is admin there, and `authState.user` to model
+// "admin of SOME tenant" or staff. Hoisted so a test can flip them per case.
+const authState = vi.hoisted(() => ({
+  user: { is_superuser: false, coord_is_admin: true },
+}));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+  useAuth: () => ({
+    user: authState.user,
+    isCoordAdmin: authState.user.coord_is_admin,
+  }),
 }));
 
+const tenantState = vi.hoisted(() => ({
+  tenants: [] as { id: string; slug: string; name: string; roles?: string[] }[],
+  activeTenantId: null as string | null,
+}));
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({
+    tenants: tenantState.tenants,
+    activeTenantId: tenantState.activeTenantId,
+    isMultiTenant: tenantState.tenants.length > 1,
+    loading: false,
+    error: null,
+    setActiveTenantId: () => undefined,
+    refresh: async () => true,
+  }),
+}));
+
+// The consent dialog's confirm is a `DestructiveButton`, which refuses
+// untrusted clicks, and jsdom cannot produce a trusted one (`isTrusted` is
+// non-configurable on real events). The gate itself is pinned in
+// `components/ui/destructive-button.test.tsx`; here it is replaced so the flow
+// past the confirm is testable at all — the stub the runners page test uses.
+vi.mock("@/components/ui/destructive-button", () => ({
+  isSyntheticClick: () => false,
+  DestructiveButton: (props: Record<string, unknown>) => (
+    <button type="button" {...props} />
+  ),
+}));
+
+import { FixedPresentationMode } from "@/components/presentation";
 import {
   ConnectedOrgs,
   groupBoundAway,
   mergePostureLabel,
   pollTimeoutMessage,
 } from "./ConnectedOrgs";
+
+/** The tenant the operator has selected in the sidebar. */
+const ACTIVE_TENANT = {
+  id: "6e00ba36-342e-4afd-b674-b34b559f85ce",
+  slug: "whitespace-engine",
+  name: "Whitespace engine",
+};
+
+/** Where the browser stores the sidebar's selection (`HttpClient` reads it). */
+const ACTIVE_TENANT_KEY = "qontinui.active_tenant_id";
+
+/**
+ * The active tenant's roles; the user is admin of SOME tenant either way. The
+ * browser's stored selection agrees with the page's, as `TenantProvider`
+ * leaves it.
+ */
+function setActiveTenantRoles(roles: string[] | undefined): void {
+  tenantState.tenants = [{ ...ACTIVE_TENANT, roles }];
+  tenantState.activeTenantId = ACTIVE_TENANT.id;
+  authState.user = { is_superuser: false, coord_is_admin: true };
+  localStorage.setItem(ACTIVE_TENANT_KEY, ACTIVE_TENANT.id);
+}
 
 const EMPTY_ORG = {
   account_login: "acme",
@@ -76,7 +151,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   beforeEach(() => {
     accountsMock.mockReset();
     fetchMock.mockReset();
-    authState.isCoordAdmin = true;
+    setActiveTenantRoles(["admin"]);
   });
 
   it("labels the button by enrollment state (Enroll vs Sync)", async () => {
@@ -190,7 +265,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   beforeEach(() => {
     accountsMock.mockReset();
     fetchMock.mockReset();
-    authState.isCoordAdmin = true;
+    setActiveTenantRoles(["admin"]);
   });
 
   const POSTURE_ORG = {
@@ -338,7 +413,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     ).toHaveTextContent("1 un-enrolled");
   });
 
-  it("offers Re-enroll to a coord admin and hides it from everyone else", async () => {
+  it("offers Re-enroll to an administrator of the ACTIVE tenant, not to an admin of another", async () => {
     accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     const { unmount } = render(<ConnectedOrgs />);
     expect(
@@ -346,7 +421,9 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     ).toBeInTheDocument();
     unmount();
 
-    authState.isCoordAdmin = false;
+    // Admin of SOME tenant (`coord_is_admin` stays true) but a developer in
+    // the selected one: the restore route would refuse, so no control.
+    setActiveTenantRoles(["developer"]);
     render(<ConnectedOrgs />);
     await screen.findByTestId("connected-org-repo-unenrolled-portofino/infra");
     expect(screen.queryByTestId("reenroll-repo-portofino/infra")).toBeNull();
@@ -515,7 +592,7 @@ describe("<ConnectedOrgs> repos bound to another tenant", () => {
   beforeEach(() => {
     accountsMock.mockReset();
     fetchMock.mockReset();
-    authState.isCoordAdmin = true;
+    setActiveTenantRoles(["admin"]);
   });
 
   it("renders bound-away repos under their org as 'bound to <slug>' with no Re-enroll", async () => {
@@ -673,5 +750,624 @@ describe("<ConnectedOrgs> repos bound to another tenant", () => {
       "meryts/bauhaus-b2b-shop",
     ]);
     expect(unmatched).toEqual([stray]);
+  });
+});
+
+/**
+ * "Stop governing" — plan
+ * `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+ * Phase 8. Every flow enters through the rendered card: the enrolled row's
+ * control, the consent dialog, the DELETE on the wire (`fetchMock`), and the
+ * accounts read-back (`accountsMock`).
+ */
+describe("<ConnectedOrgs> Stop governing (un-enroll)", () => {
+  const OPERATOR = "operator:5f0c2a1e-0000-4000-8000-000000000001";
+
+  const GOVERNED_ORG = {
+    account_login: "portofino",
+    account_type: "Organization",
+    installation_id: 222,
+    repos: [
+      {
+        repo: "portofino/web",
+        state: "enrolled",
+        merge_enabled: null,
+        merge_enabled_resolved: true,
+        merge_posture: "default",
+        profile_source: "auto",
+      },
+    ],
+  };
+
+  /** What coord lists once the un-enrollment has landed. */
+  const UNENROLLED_ORG = {
+    ...GOVERNED_ORG,
+    repos: [
+      {
+        repo: "portofino/web",
+        state: "unenrolled",
+        merge_enabled: null,
+        merge_enabled_resolved: null,
+        merge_posture: null,
+        profile_source: null,
+        unenrolled_at: "2026-11-08T17:00:00Z",
+        unenrolled_by: OPERATOR,
+        unenroll_reason: "archived",
+      },
+    ],
+  };
+
+  const COVERAGE_ORG = {
+    account_login: "jspinak",
+    account_type: "User",
+    installation_id: 333,
+    repos: [
+      {
+        repo: "jspinak/bdo",
+        state: "unenrolled",
+        merge_enabled: null,
+        profile_source: null,
+        unenrolled_at: "2026-11-05T10:52:28Z",
+        unenrolled_by: "webhook:installation_repositories",
+        unenroll_reason: "installation_repositories: removed",
+      },
+      {
+        repo: "jspinak/brobot",
+        state: "unenrolled",
+        merge_enabled: null,
+        profile_source: null,
+        unenrolled_at: "2026-11-08T16:00:00Z",
+        unenrolled_by: "reconcile:installation_coverage",
+        unenroll_reason:
+          "the GitHub App installation no longer covers this repository",
+      },
+      {
+        repo: "jspinak/notes",
+        state: "unenrolled",
+        merge_enabled: null,
+        profile_source: null,
+        unenrolled_at: "2026-11-01T09:00:00Z",
+        unenrolled_by: OPERATOR,
+        unenroll_reason: "moved to a monorepo",
+      },
+    ],
+  };
+
+  /**
+   * The web backend's own 504 for a write whose outcome is unknown, composed
+   * by `http_exception_handler` (the shape `RepoTenantBindings.test.tsx`
+   * pins): the legacy top level plus the refusal envelope.
+   */
+  function webRefusal(
+    status: number,
+    discriminator: string,
+    code: string,
+    detail: string
+  ): Response {
+    return jsonResponse(
+      {
+        error: status === 504 ? "GATEWAY_TIMEOUT" : "BAD_GATEWAY",
+        message: detail,
+        timestamp: 0,
+        path: "/api/v1/operations/pr-merge/onboarding/repos/portofino/web",
+        refusal: {
+          code,
+          discriminator,
+          next_action: {
+            kind: "retry_later",
+            target:
+              status === 504 ? "whether the change was applied" : undefined,
+          },
+          glossary_terms: ["coord"],
+          detail,
+          source: "web_backend",
+          observed_at: "2026-11-08T17:00:00Z",
+        },
+      },
+      status
+    );
+  }
+
+  const noContent = () => new Response(null, { status: 204 });
+
+  beforeEach(() => {
+    accountsMock.mockReset();
+    fetchMock.mockReset();
+    setActiveTenantRoles(["admin"]);
+  });
+
+  /** Open the dialog on `repo`'s row and type `reason` into it. */
+  async function openAndType(repo: string, reason: string) {
+    fireEvent.click(await screen.findByTestId(`stop-governing-${repo}`));
+    const dialog = await screen.findByTestId("stop-governing-dialog");
+    fireEvent.change(within(dialog).getByTestId("stop-governing-reason"), {
+      target: { value: reason },
+    });
+    return dialog;
+  }
+
+  const deleteCalls = () =>
+    fetchMock.mock.calls.filter(
+      (c) => (c[1] as { method?: string } | undefined)?.method === "DELETE"
+    );
+
+  it("offers Stop governing only to an administrator of the ACTIVE tenant", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    const first = render(<ConnectedOrgs />);
+    const control = await screen.findByTestId("stop-governing-portofino/web");
+    expect(control).toHaveTextContent("Stop governing…");
+    // Every enrolled row carries one, so its name says which repo it acts on.
+    expect(control).toHaveAccessibleName("Stop governing portofino/web");
+    first.unmount();
+
+    // Admin of SOME tenant, but a developer in the selected one: the route's
+    // `require_coord_tenant_admin_target` would refuse, so no control.
+    setActiveTenantRoles(["developer"]);
+    const second = render(<ConnectedOrgs />);
+    await screen.findByTestId("connected-org-repo-portofino/web");
+    expect(screen.queryByTestId("stop-governing-portofino/web")).toBeNull();
+    second.unmount();
+
+    // Staff pass the backend gate, so they get the control.
+    setActiveTenantRoles(["developer"]);
+    authState.user = { is_superuser: true, coord_is_admin: false };
+    render(<ConnectedOrgs />);
+    expect(
+      await screen.findByTestId("stop-governing-portofino/web")
+    ).toBeInTheDocument();
+  });
+
+  it("mounts no Stop governing and no Re-enroll while presenting, but keeps the App-access hint", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG, COVERAGE_ORG] });
+    render(
+      <FixedPresentationMode presenting>
+        <ConnectedOrgs />
+      </FixedPresentationMode>
+    );
+    await screen.findByTestId("connected-org-repo-portofino/web");
+    expect(screen.queryByTestId("stop-governing-portofino/web")).toBeNull();
+    expect(screen.queryByTestId("reenroll-repo-jspinak/notes")).toBeNull();
+    expect(
+      screen.getByTestId("unenrolled-app-access-hint-jspinak/bdo")
+    ).toBeInTheDocument();
+  });
+
+  it("requires a reason: the confirm stays disabled for an empty or blank one, and nothing is sent", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "");
+    const confirm = within(dialog).getByTestId("stop-governing-dialog-confirm");
+    expect(confirm).toBeDisabled();
+
+    const reason = within(dialog).getByTestId("stop-governing-reason");
+    fireEvent.change(reason, { target: { value: "   \n " } });
+    expect(confirm).toBeDisabled();
+    fireEvent.blur(reason);
+    expect(
+      within(dialog).getByTestId("stop-governing-reason-error")
+    ).toHaveTextContent("A reason is required.");
+    fireEvent.click(confirm);
+    expect(deleteCalls()).toHaveLength(0);
+
+    // The cap is the proxy's, so a reason the browser lets through is never
+    // refused for its length.
+    expect(reason).toHaveAttribute("maxLength", "500");
+  });
+
+  it("names the repo and the selected project, and says what does not come back", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    expect(dialog).toHaveTextContent("Stop governing portofino/web?");
+    expect(
+      within(dialog).getByTestId("stop-governing-dialog-project")
+    ).toHaveTextContent("Whitespace engine");
+    expect(dialog).toHaveTextContent(
+      "Re-adding it to the GitHub App does not bring it back."
+    );
+    expect(dialog).toHaveTextContent(
+      "per-repository merge settings are deleted"
+    );
+  });
+
+  it("sends ONE DELETE with the trimmed reason, then reads back until the row moves to the un-enrolled list", async () => {
+    accountsMock
+      .mockResolvedValueOnce({ accounts: [GOVERNED_ORG] }) // mount
+      .mockResolvedValue({ accounts: [UNENROLLED_ORG] }); // read-back
+    fetchMock.mockImplementation(async () => noContent());
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType(
+      "portofino/web",
+      "  archived — the service moved  "
+    );
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+
+    const outcome = await screen.findByTestId("unenroll-outcome-portofino");
+    await waitFor(() =>
+      expect(outcome).toHaveAttribute("data-outcome", "done")
+    );
+    expect(outcome).toHaveTextContent(
+      "Coord no longer governs portofino/web: it is listed below as un-enrolled. Re-enroll it there to undo."
+    );
+
+    expect(deleteCalls()).toHaveLength(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/pr-merge/onboarding/repos/portofino/web?reason=archived%20%E2%80%94%20the%20service%20moved",
+      {
+        method: "DELETE",
+        idempotent: false,
+        maxRetries: 0,
+        // The project the dialog named, pinned — not read again at send time.
+        headers: { "X-Qontinui-Active-Tenant": ACTIVE_TENANT.id },
+      },
+    ]);
+    // The row moved: no doctor link, a tombstone row whose undo is beside it.
+    expect(screen.queryByTestId("connected-org-repo-portofino/web")).toBeNull();
+    expect(
+      screen.getByTestId("connected-org-repo-unenrolled-portofino/web")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("reenroll-repo-portofino/web")).toBeEnabled();
+    expect(screen.queryByTestId("stop-governing-dialog")).toBeNull();
+  });
+
+  it("a double-click on the confirm sends one DELETE, and the row's control is disabled while it is in flight", async () => {
+    let release!: (r: Response) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((r) => {
+          release = r;
+        })
+    );
+    accountsMock
+      .mockResolvedValueOnce({ accounts: [GOVERNED_ORG] })
+      .mockResolvedValue({ accounts: [UNENROLLED_ORG] });
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    const confirm = within(dialog).getByTestId("stop-governing-dialog-confirm");
+    // Both presses inside ONE act: the first press has not re-rendered
+    // anything yet when the second lands.
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(deleteCalls()).toHaveLength(1);
+
+    const control = screen.getByTestId("stop-governing-portofino/web");
+    expect(control).toBeDisabled();
+    expect(control).toHaveAttribute("aria-busy", "true");
+    expect(control).toHaveTextContent("Stopping…");
+    expect(control).toHaveAccessibleName(
+      "Stopping governance of portofino/web"
+    );
+    expect(screen.getByTestId("unenroll-outcome-portofino")).toHaveAttribute(
+      "data-outcome",
+      "sending"
+    );
+    fireEvent.click(control);
+    expect(screen.queryByTestId("stop-governing-dialog")).toBeNull();
+
+    await act(async () => {
+      release(noContent());
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("unenroll-outcome-portofino")).toHaveAttribute(
+        "data-outcome",
+        "done"
+      )
+    );
+    expect(deleteCalls()).toHaveLength(1);
+  });
+
+  it("refuses at confirm when another tab moved the browser's selected project, and sends nothing", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    // Another tab switched projects: the stored selection, which every other
+    // request on this page carries, is no longer the project this page shows.
+    localStorage.setItem(ACTIVE_TENANT_KEY, "another-project-id");
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+
+    const moved = within(dialog).getByTestId(
+      "stop-governing-dialog-project-moved"
+    );
+    expect(moved).toHaveAttribute("role", "alert");
+    expect(moved).toHaveTextContent("Nothing was sent.");
+    expect(deleteCalls()).toHaveLength(0);
+    expect(screen.queryByTestId("unenroll-outcome-portofino")).toBeNull();
+
+    // Back in agreement (the other tab switched back): the same dialog sends,
+    // pinned to the project it names.
+    fetchMock.mockImplementation(async () => noContent());
+    localStorage.setItem(ACTIVE_TENANT_KEY, ACTIVE_TENANT.id);
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+    await waitFor(() => expect(deleteCalls()).toHaveLength(1));
+    expect(
+      (deleteCalls()[0]![1] as { headers?: Record<string, string> }).headers
+    ).toEqual({ "X-Qontinui-Active-Tenant": ACTIVE_TENANT.id });
+  });
+
+  it.each<[string, string | null]>([
+    ["no selection", null],
+    ["a blank selection", "   "],
+  ])(
+    "refuses while no project is selected (%s): says why, keeps the confirm disabled, and sends nothing until one is",
+    async (_case, selection) => {
+      // The project list has not loaded, as `TenantProvider` holds it then: the
+      // page's selection is the stored one, absent or blank. With no active
+      // tenant to read roles from, the control's gate falls back to
+      // `coord_is_admin`, so the control still renders and the dialog opens.
+      tenantState.tenants = [];
+      tenantState.activeTenantId = selection;
+      if (selection === null) localStorage.removeItem(ACTIVE_TENANT_KEY);
+      else localStorage.setItem(ACTIVE_TENANT_KEY, selection);
+      accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+      const view = render(<ConnectedOrgs />);
+      const dialog = await openAndType("portofino/web", "archived");
+
+      const noProject = within(dialog).getByTestId(
+        "stop-governing-dialog-no-project"
+      );
+      expect(noProject).toHaveAttribute("role", "alert");
+      expect(noProject).toHaveTextContent("nothing can be sent");
+      expect(
+        within(dialog).getByTestId("stop-governing-dialog-project")
+      ).toHaveTextContent("none selected");
+      const confirm = within(dialog).getByTestId(
+        "stop-governing-dialog-confirm"
+      );
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      expect(deleteCalls()).toHaveLength(0);
+      expect(screen.queryByTestId("unenroll-outcome-portofino")).toBeNull();
+
+      // The list loads: the same dialog names the project and sends, pinned to it.
+      setActiveTenantRoles(["admin"]);
+      view.rerender(<ConnectedOrgs />);
+      expect(
+        within(dialog).queryByTestId("stop-governing-dialog-no-project")
+      ).toBeNull();
+      expect(
+        within(dialog).getByTestId("stop-governing-dialog-project")
+      ).toHaveTextContent("Whitespace engine");
+      fetchMock.mockImplementation(async () => noContent());
+      fireEvent.click(
+        within(dialog).getByTestId("stop-governing-dialog-confirm")
+      );
+      await waitFor(() => expect(deleteCalls()).toHaveLength(1));
+      expect(
+        (deleteCalls()[0]![1] as { headers?: Record<string, string> }).headers
+      ).toEqual({ "X-Qontinui-Active-Tenant": ACTIVE_TENANT.id });
+    }
+  );
+
+  it("says UNKNOWN — never done — when the read-back gives up with the repo still listed as enrolled", async () => {
+    vi.useFakeTimers();
+    try {
+      // Coord answers 204, yet every read still lists the repo as enrolled.
+      accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+      fetchMock.mockImplementation(async () => noContent());
+      render(<ConnectedOrgs />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByTestId("stop-governing-portofino/web"));
+      fireEvent.change(screen.getByTestId("stop-governing-reason"), {
+        target: { value: "archived" },
+      });
+      fireEvent.click(screen.getByTestId("stop-governing-dialog-confirm"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const outcome = screen.getByTestId("unenroll-outcome-portofino");
+      expect(outcome).toHaveAttribute("data-outcome", "reading-back");
+
+      // Run the read-back to its cap (20 × 3 s).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20 * 3000 + 10);
+      });
+      expect(outcome).toHaveAttribute("data-outcome", "unknown");
+      expect(outcome).toHaveTextContent(
+        "Whether coord stopped governing portofino/web is UNKNOWN: after 60 s of re-reading, coord still lists it as enrolled."
+      );
+      expect(outcome).not.toHaveTextContent("no longer governs");
+      // The control is usable again, and only one DELETE was ever sent.
+      expect(screen.getByTestId("stop-governing-portofino/web")).toBeEnabled();
+      expect(deleteCalls()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a read-back whose re-reads fail ends in UNKNOWN, and the card keeps its list instead of an error line", async () => {
+    vi.useFakeTimers();
+    try {
+      accountsMock
+        .mockResolvedValueOnce({ accounts: [GOVERNED_ORG] }) // mount
+        .mockRejectedValue(new TypeError("Failed to fetch")); // read-back
+      fetchMock.mockImplementation(async () => noContent());
+      render(<ConnectedOrgs />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByTestId("stop-governing-portofino/web"));
+      fireEvent.change(screen.getByTestId("stop-governing-reason"), {
+        target: { value: "archived" },
+      });
+      fireEvent.click(screen.getByTestId("stop-governing-dialog-confirm"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20 * 3000 + 10);
+      });
+      expect(screen.queryByTestId("connected-orgs-error")).toBeNull();
+      const outcome = screen.getByTestId("unenroll-outcome-portofino");
+      expect(outcome).toHaveAttribute("data-outcome", "unknown");
+      expect(outcome).toHaveTextContent(
+        "coord's repositories could not be re-read"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders coord's refusal code with BackendErrorMessage, and starts no read-back", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    fetchMock.mockImplementation(async () =>
+      jsonResponse({ error: "strategy_admin_required" }, 403)
+    );
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+
+    const outcome = await screen.findByTestId("unenroll-outcome-portofino");
+    await waitFor(() =>
+      expect(outcome).toHaveAttribute("data-outcome", "refused")
+    );
+    expect(outcome).toHaveAttribute("role", "alert");
+    expect(outcome).toHaveTextContent(
+      "Coord did not stop governing portofino/web: 403 — strategy_admin_required"
+    );
+    expect(
+      outcome.querySelector('[data-refusal="unstructured"]')
+    ).toHaveTextContent("strategy_admin_required");
+    expect(
+      within(outcome).getByTestId("unenroll-failure-detail")
+    ).toHaveAttribute("data-refusal-code", "strategy_admin_required");
+    // The repo is still governed, and the control is usable again.
+    expect(screen.getByTestId("stop-governing-portofino/web")).toBeEnabled();
+    expect(deleteCalls()).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      true,
+      "Coord found no enrollment of portofino/web in this project to remove. Coord recorded an un-enrollment of portofino/web for this project anyway",
+    ],
+    [
+      false,
+      "Coord found no enrollment of portofino/web in this project to remove. Coord recorded nothing.",
+    ],
+  ])(
+    "a 404 says whether coord recorded an un-enrollment anyway (tombstoned: %s)",
+    async (tombstoned, sentence) => {
+      accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+      fetchMock.mockImplementation(async () =>
+        jsonResponse(
+          {
+            error: "repo not found: portofino/web",
+            tombstoned,
+            note: "coord's own explanation",
+          },
+          404
+        )
+      );
+      render(<ConnectedOrgs />);
+      const dialog = await openAndType("portofino/web", "archived");
+      fireEvent.click(
+        within(dialog).getByTestId("stop-governing-dialog-confirm")
+      );
+      const outcome = await screen.findByTestId("unenroll-outcome-portofino");
+      await waitFor(() =>
+        expect(outcome).toHaveAttribute("data-outcome", "refused")
+      );
+      expect(outcome).toHaveTextContent("404 — repo not found: portofino/web");
+      expect(outcome).toHaveTextContent(sentence);
+    }
+  );
+
+  it("reads back a write that may have landed (the web's write timeout) before saying anything", async () => {
+    accountsMock
+      .mockResolvedValueOnce({ accounts: [GOVERNED_ORG] })
+      .mockResolvedValue({ accounts: [UNENROLLED_ORG] });
+    fetchMock.mockImplementation(async () =>
+      webRefusal(
+        504,
+        "coord_write_timeout",
+        "upstream_timeout",
+        "timeout waiting for coord"
+      )
+    );
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+    const outcome = await screen.findByTestId("unenroll-outcome-portofino");
+    await waitFor(() =>
+      expect(outcome).toHaveAttribute("data-outcome", "done")
+    );
+    expect(
+      screen.getByTestId("reenroll-repo-portofino/web")
+    ).toBeInTheDocument();
+  });
+
+  it("a definite transport refusal (coord unreachable) is refused, not read back", async () => {
+    accountsMock.mockResolvedValue({ accounts: [GOVERNED_ORG] });
+    fetchMock.mockImplementation(async () =>
+      webRefusal(
+        502,
+        "coord_unreachable",
+        "upstream_unavailable",
+        "coord is not reachable"
+      )
+    );
+    render(<ConnectedOrgs />);
+    const dialog = await openAndType("portofino/web", "archived");
+    fireEvent.click(
+      within(dialog).getByTestId("stop-governing-dialog-confirm")
+    );
+    const outcome = await screen.findByTestId("unenroll-outcome-portofino");
+    await waitFor(() =>
+      expect(outcome).toHaveAttribute("data-outcome", "refused")
+    );
+    expect(outcome.querySelector('[data-refusal="structured"]')).not.toBeNull();
+  });
+
+  it("coverage principals render in words, with no Re-enroll and the App-access hint in its place", async () => {
+    accountsMock.mockResolvedValue({ accounts: [COVERAGE_ORG] });
+    render(<ConnectedOrgs />);
+
+    for (const repo of ["jspinak/bdo", "jspinak/brobot"]) {
+      const row = await screen.findByTestId(
+        `connected-org-repo-unenrolled-${repo}`
+      );
+      expect(row).toHaveAttribute("data-unenroll-cause", "coverage");
+      const detail = screen.getByTestId(`unenrolled-detail-${repo}`);
+      expect(detail).toHaveTextContent(
+        /^removed .*: GitHub App access was removed$/
+      );
+      // coord's raw principal is reachable, but not on the line itself.
+      expect(detail.textContent).not.toMatch(/webhook:|reconcile:/);
+      expect(detail.getAttribute("title")).toMatch(
+        /^(webhook:installation_repositories|reconcile:installation_coverage) — /
+      );
+      expect(screen.queryByTestId(`reenroll-repo-${repo}`)).toBeNull();
+      expect(
+        screen.getByTestId(`unenrolled-app-access-hint-${repo}`)
+      ).toHaveTextContent(
+        `Add ${repo} to the coord GitHub App's repository access to bring it back`
+      );
+    }
+
+    // A decision names its actor class, and keeps its Re-enroll.
+    const notes = screen.getByTestId(
+      "connected-org-repo-unenrolled-jspinak/notes"
+    );
+    expect(notes).toHaveAttribute("data-unenroll-cause", "decision");
+    expect(
+      screen.getByTestId("unenrolled-detail-jspinak/notes")
+    ).toHaveTextContent(/^removed .* by an operator: moved to a monorepo$/);
+    expect(
+      screen.getByTestId("reenroll-repo-jspinak/notes")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("unenrolled-app-access-hint-jspinak/notes")
+    ).toBeNull();
   });
 });

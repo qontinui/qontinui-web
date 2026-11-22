@@ -2180,10 +2180,12 @@ function stripRosterCutSentence(cut: RosterCut): string | null {
  * already named them.
  */
 function stripNotDegradationsSentence(mc: MachineHealthCounts): string | null {
-  const { abandoned, noVerdict, placeholders } = mc.notDegradations;
+  const { abandoned, noVerdict, ciUnrefreshed, placeholders } =
+    mc.notDegradations;
   if (
     abandoned > 0 &&
     noVerdict === 0 &&
+    ciUnrefreshed === 0 &&
     placeholders === 0 &&
     !noLiveMachine(mc)
   ) {

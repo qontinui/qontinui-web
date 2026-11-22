@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { readActiveTenantId } from "@/services/http-client";
 import {
@@ -42,8 +42,39 @@ function message(err: unknown, fallback: string): string {
  * `degraded` = coord answered but its document store is not provisioned yet (the
  * empty list means "cannot see", not "nothing is there"). Neither is flattened
  * into a confident "no documents" empty state.
+ *
+ * **Pinned.** `pin` is the project the page's rows belong to. Every read and
+ * write below is sent in it on EVERY attempt (`pinActiveTenant`). The HTTP
+ * client otherwise reads the stored project per attempt, so a request retried
+ * (429), or replayed after a token refresh, after another tab switched project
+ * would land in, or answer from, that project. The mount read is pinned too,
+ * to the pin the hook is handed on its first render: the page's provider
+ * names the project the page shows from that render on, the project stored at
+ * mount while the page's own is not yet known (`usePageProject`). Nothing
+ * else re-reads the rows when the page's project turns out to be that same
+ * project, so an unpinned mount read retried or replayed after another tab's
+ * switch would leave that tab's rows on the page as its own. With no pin on
+ * the first render (nothing stored, or none selected) it goes unpinned, and
+ * the page re-reads pinned once its project resolves, if this read went out
+ * in a different one (`PromptDocumentList`). Each returned function keeps one
+ * identity until the pinned project changes — the dialogs hold the readers in
+ * their effect dependencies.
+ *
+ * The re-read each write takes, and `reload()` by default, go in the pin as
+ * it stands when they are SENT, not the one the write was made in. Another
+ * tab's switch leaves the page's pin as it was, so they stay in the page's
+ * project. THIS tab's own switch moves it, and the page follows: a re-read in
+ * the write's old project would put that project's rows on the page now
+ * showing another. The write itself stays pinned to its own project.
  */
-export function usePromptDocuments() {
+export function usePromptDocuments({ pin }: { pin?: TenantPin } = {}) {
+  // Keyed on the project, not on the caller's object: a new `{ tenant }` for
+  // the same project changes nothing below.
+  const pinTenant = pin?.tenant;
+  const projectPin = useMemo<TenantPin | undefined>(
+    () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
+    [pinTenant]
+  );
   const [documents, setDocuments] = useState<PromptDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -118,9 +149,28 @@ export function usePromptDocuments() {
     []
   );
 
+  // The pin as it stands now: for the mount read, and for the re-reads sent
+  // after an answer arrives (see the hook's docs). One identity, read when
+  // each is sent.
+  const currentPin = useRef(projectPin);
+  currentPin.current = projectPin;
+
+  // The mount read, in the pin the hook has on its first render (see the
+  // hook's docs). The page re-reads pinned once its project resolves, if this
+  // read went out in a different one (`newestReadTenant`).
   useEffect(() => {
-    loadDocuments();
+    loadDocuments(currentPin.current);
   }, [loadDocuments]);
+
+  /**
+   * Re-read the list — in the pin as it stands when the read is sent, unless
+   * the caller names another (`loadDocuments`). Passing `undefined` takes the
+   * default too. One identity for the hook's lifetime.
+   */
+  const reload = useCallback(
+    (readPin?: TenantPin) => loadDocuments(readPin ?? currentPin.current),
+    [loadDocuments]
+  );
 
   /** Fetch one document WITH its body (the list omits bodies). */
   const fetchDocument = useCallback(
@@ -129,13 +179,13 @@ export function usePromptDocuments() {
       name: string
     ): Promise<PromptDocument | null> => {
       try {
-        return await fetchPromptDocument(kind, name);
+        return await fetchPromptDocument(kind, name, projectPin);
       } catch (err) {
         toast.error(message(err, "Failed to load document"));
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /** Version-history metadata, newest first. */
@@ -145,13 +195,13 @@ export function usePromptDocuments() {
       name: string
     ): Promise<ListVersionsResponse | null> => {
       try {
-        return await listPromptDocumentVersions(kind, name);
+        return await listPromptDocumentVersions(kind, name, projectPin);
       } catch (err) {
         toast.error(message(err, "Failed to load version history"));
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /** One immutable version snapshot, body included — the diff's left side. */
@@ -162,13 +212,18 @@ export function usePromptDocuments() {
       version: number
     ): Promise<PromptDocumentVersion | null> => {
       try {
-        return await fetchPromptDocumentVersion(kind, name, version);
+        return await fetchPromptDocumentVersion(
+          kind,
+          name,
+          version,
+          projectPin
+        );
       } catch (err) {
         toast.error(message(err, "Failed to load version"));
         return null;
       }
     },
-    []
+    [projectPin]
   );
 
   /**
@@ -176,62 +231,73 @@ export function usePromptDocuments() {
    * snapshot; a duplicate `(kind, name)` is coord's 409. Returns the created
    * document (with body) on success so the caller can open it, else `null`.
    */
-  const createDocument = async (
-    kind: PromptDocumentKind,
-    data: PromptDocumentCreate
-  ): Promise<PromptDocument | null> => {
-    try {
-      setSaving(true);
-      const created = await createPromptDocument(kind, data);
-      toast.success(`Created "${created.description ?? created.name}"`);
-      await loadDocuments();
-      return created;
-    } catch (err) {
-      toast.error(message(err, "Failed to create document"));
-      return null;
-    } finally {
-      setSaving(false);
-    }
-  };
+  const createDocument = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      data: PromptDocumentCreate
+    ): Promise<PromptDocument | null> => {
+      try {
+        setSaving(true);
+        const created = await createPromptDocument(kind, data, projectPin);
+        toast.success(`Created "${created.description ?? created.name}"`);
+        await loadDocuments(currentPin.current);
+        return created;
+      } catch (err) {
+        toast.error(message(err, "Failed to create document"));
+        return null;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDocuments, projectPin]
+  );
 
   /** Save an edit. Coord snapshots a NEW version; nothing is overwritten. */
-  const updateDocument = async (
-    kind: PromptDocumentKind,
-    name: string,
-    data: PromptDocumentUpdate
-  ): Promise<boolean> => {
-    try {
-      setSaving(true);
-      const updated = await updatePromptDocument(kind, name, data);
-      toast.success(`Saved as version ${updated.current_version}`);
-      await loadDocuments();
-      return true;
-    } catch (err) {
-      toast.error(message(err, "Failed to save document"));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
+  const updateDocument = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      data: PromptDocumentUpdate
+    ): Promise<boolean> => {
+      try {
+        setSaving(true);
+        const updated = await updatePromptDocument(
+          kind,
+          name,
+          data,
+          projectPin
+        );
+        toast.success(`Saved as version ${updated.current_version}`);
+        await loadDocuments(currentPin.current);
+        return true;
+      } catch (err) {
+        toast.error(message(err, "Failed to save document"));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDocuments, projectPin]
+  );
 
   /** Re-seed from the code default. Itself an edit ⇒ a new version ⇒ undoable. */
-  const restoreDefault = async (
-    kind: PromptDocumentKind,
-    name: string
-  ): Promise<boolean> => {
-    try {
-      setSaving(true);
-      await restorePromptDocumentDefault(kind, name);
-      toast.success("Restored to default");
-      await loadDocuments();
-      return true;
-    } catch (err) {
-      toast.error(message(err, "Failed to restore default"));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
+  const restoreDefault = useCallback(
+    async (kind: PromptDocumentKind, name: string): Promise<boolean> => {
+      try {
+        setSaving(true);
+        await restorePromptDocumentDefault(kind, name, projectPin);
+        toast.success("Restored to default");
+        await loadDocuments(currentPin.current);
+        return true;
+      } catch (err) {
+        toast.error(message(err, "Failed to restore default"));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDocuments, projectPin]
+  );
 
   /**
    * Roll the document back to an earlier version (plan
@@ -246,25 +312,34 @@ export function usePromptDocuments() {
    * `change_note` is recorded on the new snapshot; the editor is stamped by
    * coord from its authenticated operator context, never asserted here.
    */
-  const restoreVersion = async (
-    kind: PromptDocumentKind,
-    name: string,
-    version: number,
-    changeNote?: string
-  ): Promise<boolean> => {
-    try {
-      setSaving(true);
-      await restorePromptDocumentVersion(kind, name, version, changeNote);
-      toast.success(`Restored version ${version} as a new version`);
-      await loadDocuments();
-      return true;
-    } catch (err) {
-      toast.error(message(err, "Failed to restore that version"));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
+  const restoreVersion = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      version: number,
+      changeNote?: string
+    ): Promise<boolean> => {
+      try {
+        setSaving(true);
+        await restorePromptDocumentVersion(
+          kind,
+          name,
+          version,
+          changeNote,
+          projectPin
+        );
+        toast.success(`Restored version ${version} as a new version`);
+        await loadDocuments(currentPin.current);
+        return true;
+      } catch (err) {
+        toast.error(message(err, "Failed to restore that version"));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDocuments, projectPin]
+  );
 
   return {
     documents,
@@ -274,7 +349,7 @@ export function usePromptDocuments() {
     saving,
     error,
     degraded,
-    reload: loadDocuments,
+    reload,
     fetchDocument,
     fetchVersions,
     fetchVersion,

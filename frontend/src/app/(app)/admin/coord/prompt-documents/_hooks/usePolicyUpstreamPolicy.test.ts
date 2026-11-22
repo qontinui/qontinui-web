@@ -3,23 +3,27 @@
  *
  * Read, write, read-back and the refresh-vs-write race guard are the shared
  * dial's, and `_shared/useTenantFleetPolicyDial.test.ts` pins them once. What
- * is pinned HERE is only what this domain adds on top, because three different
- * facts all come back looking like, or resolving to, `off`:
+ * is pinned HERE is only what this domain adds on top. Since
+ * qontinui-coord#4239, coord serves the typed default as `effective_level`
+ * when no row matches (before it, that answer read `"off"`):
  *
  * | Row | `effective_level` | `resolved_scope` | In force |
  * |---|---|---|---|
- * | none | `"off"` | `"none"` | `auto` — coord's typed default |
+ * | none | `"auto"` — coord's typed default | `"none"` | `auto`, flagged defaulted |
  * | present, level off | `"off"` | the band | `off` — an operator's choice |
  * | present, unparseable level | the raw string | the band | `off` — fail-closed |
+ * | none, unparseable level | the raw string | `"none"` | UNKNOWN — vocabulary skew |
  *
- * Collapsing the first into `off` ships the feature dark on screen: every
- * untouched tenant would be shown as ignoring publications that coord is in
- * fact applying. Collapsing the third into the default reports a row coord
- * cannot read as authority to write bodies into this tenant.
+ * Showing the first as `off` ships the feature dark on screen: every untouched
+ * tenant would be shown as ignoring publications that coord is in fact
+ * applying. Collapsing the third into a default reports a row coord cannot
+ * read as authority to write bodies into this tenant; showing the fourth as
+ * `off` claims a level coord is not enforcing.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { PINNED_PAGE, withPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -49,10 +53,15 @@ vi.mock("sonner", () => ({
 
 import { usePolicyUpstreamPolicy } from "./usePolicyUpstreamPolicy";
 
+// The hook on its own, under the page's guard once its project is known: it
+// requires one, and reads only under the page's pin (`__fixtures__`).
+const SectionGuard = withPageGuard(PINNED_PAGE);
+
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_upstream",
-  effective_level: "off",
+  // coord's typed default, served with no row (qontinui-coord#4239).
+  effective_level: "auto",
   master_enabled: false,
   resolved_scope: "none",
   can_edit: true,
@@ -63,6 +72,7 @@ const NO_ROW = {
 /** An operator deliberately turned the dial off. */
 const OFF_TENANT = {
   ...NO_ROW,
+  effective_level: "off",
   master_enabled: true,
   resolved_scope: "tenant",
 };
@@ -71,7 +81,9 @@ const NOTIFY_TENANT = { ...OFF_TENANT, effective_level: "notify" };
 
 async function render(view: object) {
   getMock.mockResolvedValue(view);
-  const hook = renderHook(() => usePolicyUpstreamPolicy());
+  const hook = renderHook(() => usePolicyUpstreamPolicy(), {
+    wrapper: SectionGuard,
+  });
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return hook.result;
 }
@@ -80,12 +92,11 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
-  it("resolves a missing row to auto and flags it as defaulted", async () => {
+describe("usePolicyUpstreamPolicy — 'no row' is coord's served default", () => {
+  it("shows the served auto for a missing row and flags it as defaulted", async () => {
     const result = await render(NO_ROW);
 
-    // The raw wire value. Rendering THIS is the bug the hook exists to avoid.
-    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.policy?.effective_level).toBe("auto");
     expect(result.current.displayLevel).toBe("auto");
     expect(result.current.isDefaulted).toBe(true);
     expect(result.current.unrecognizedLevel).toBeNull();
@@ -97,20 +108,38 @@ describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
   it("honours an explicit off — the same string, the opposite meaning", async () => {
     const result = await render(OFF_TENANT);
 
-    // Keying the default on `effective_level === "off"` instead of on the
-    // scope band would turn this back into `auto` and make the dial
-    // unturnoffable.
+    // A row exists, so `off` is an operator's decision and must survive intact.
     expect(result.current.displayLevel).toBe("off");
     expect(result.current.isDefaulted).toBe(false);
   });
 
-  it("decides 'no row' before parsing the level", async () => {
-    // Only the scope band says no row matched. If the level were parsed first,
-    // an untouched tenant would be reported as a broken row resolved off.
-    const result = await render({ ...NO_ROW, effective_level: "unknown" });
+  it("shows a no-row answer whose served level is unparseable as UNKNOWN", async () => {
+    // Vocabulary skew: coord serving, with no row, a default this console does
+    // not know. Coord enforces that default, so `off` would be false; the
+    // console used to substitute its own copy of `auto` here, which masked
+    // this.
+    const result = await render({ ...NO_ROW, effective_level: "manual" });
 
-    expect(result.current.displayLevel).toBe("auto");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.defaultUnreadable).toBe(true);
+    expect(result.current.displayLevel).toBeNull();
+    expect(result.current.unrecognizedLevel).toBe("manual");
+  });
+
+  it("reads the served default rather than a console copy of it", async () => {
+    // Not the old console constant `auto`: a revert to it fails this.
+    const result = await render({ ...NO_ROW, effective_level: "notify" });
+
+    expect(result.current.displayLevel).toBe("notify");
+    expect(result.current.isDefaulted).toBe(true);
     expect(result.current.unrecognizedLevel).toBeNull();
+  });
+
+  it("honours a master-disabled row as off", async () => {
+    const result = await render({ ...OFF_TENANT, master_enabled: false });
+
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(false);
   });
 
   it("does not treat a winning system-band off as the default", async () => {
@@ -127,7 +156,9 @@ describe("usePolicyUpstreamPolicy — 'no row' is auto, not off", () => {
     getMock.mockImplementation(
       async () => new Response("coord is not reachable", { status: 502 })
     );
-    const { result } = renderHook(() => usePolicyUpstreamPolicy());
+    const { result } = renderHook(() => usePolicyUpstreamPolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Neither the default nor fail-closed off: nothing has been read.

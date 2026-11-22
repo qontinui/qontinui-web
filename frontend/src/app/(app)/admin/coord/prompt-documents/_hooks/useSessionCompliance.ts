@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   fetchSessionComplianceConfig,
@@ -10,6 +10,12 @@ import {
   saveSessionComplianceConfig,
 } from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  useFirstPinnedRead,
+  useSendTimePin,
+} from "../../_shared/useSendTimePin";
+import { usePageSendGuard } from "./usePageWriteGuardContext";
+import { pinForWrite } from "./usePageWriteGuard";
 import type {
   ComplianceVerdict,
   OutstandingItem,
@@ -94,6 +100,9 @@ const EMPTY: Loaded<never> = {
   error: null,
 };
 
+/** Before the page knows its project: nothing is read, so nothing is loading. */
+const IDLE: Loaded<never> = { ...EMPTY, loading: false };
+
 /**
  * Reads and mutates the tenant's session-compliance enforcement surface via the
  * coord-proxy (`/api/v1/operations/coord/session-compliance/*`).
@@ -107,16 +116,35 @@ const EMPTY: Loaded<never> = {
  * `unavailable` (coord doesn't serve this yet), `degraded` (coord answered, its
  * store isn't provisioned), `error` (coord unreachable/refusing). None of them
  * is "nothing to show".
+ *
+ * On the prompt-documents page every read and the save are sent in the page's
+ * project, asked as each goes out and kept on every attempt, so a save
+ * re-issued after another tab's switch cannot change that tab's enforcement,
+ * and no read can show that project's verdicts as this one's. Nothing is read
+ * before the page knows its project: the first read of all four goes out
+ * then (`useFirstPinnedRead`), a Refresh, filter or page change with no
+ * project sends nothing, and `waitingForProject` says the hook is waiting.
+ * And the save is refused — nothing sent, the page says why — while that
+ * switch is in effect, or while the page has no project to pin it to.
+ * Both come from the page's provider (`usePageSendGuard`), and the refusal
+ * sits beside the send, which reads the pin it is sent in (`pinForWrite`), so
+ * no caller can leave it out. It is never mounted outside that provider, and
+ * throws if it is: there is no unguarded mode.
  */
 export function useSessionCompliance() {
+  const { writeAllowed, resolvePin } = usePageSendGuard();
+  // One identity whatever the provider hands over, so the first read runs once.
+  const sendPin = useSendTimePin(resolvePin);
+  // Loading from the first render only when a read goes out at mount.
+  const [initial] = useState(() => (sendPin() === undefined ? IDLE : EMPTY));
   const [config, setConfig] =
-    useState<Loaded<SessionComplianceConfig>>(EMPTY);
+    useState<Loaded<SessionComplianceConfig>>(initial);
   const [versions, setVersions] =
-    useState<Loaded<SessionComplianceConfigVersion[]>>(EMPTY);
+    useState<Loaded<SessionComplianceConfigVersion[]>>(initial);
   const [sessions, setSessions] =
-    useState<Loaded<SessionComplianceRow[]>>(EMPTY);
+    useState<Loaded<SessionComplianceRow[]>>(initial);
   const [outstanding, setOutstanding] =
-    useState<Loaded<OutstandingItem[]>>(EMPTY);
+    useState<Loaded<OutstandingItem[]>>(initial);
 
   const [saving, setSaving] = useState(false);
   const [verdictFilter, setVerdictFilter] = useState<ComplianceVerdict | "all">(
@@ -124,13 +152,29 @@ export function useSessionCompliance() {
   );
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // Bumped when a save LANDS. A settings or history read that began before it
+  // may answer after the save's own result; applying it would show them as
+  // they were before the save. Its answer is dropped, as the shared dial does
+  // (`useTenantFleetPolicyDial`). A save does not change the verdicts or the
+  // ledger, so their reads keep their answers.
+  const writeGeneration = useRef(0);
+  // Each verdict read is numbered as it is sent, and only the newest one's
+  // answer is shown: a slower read for an earlier filter or page that answers
+  // after a newer one would otherwise show its rows and its cursor under the
+  // newer filter.
+  const sessionsRequest = useRef(0);
 
   /* ---- config ---------------------------------------------------------- */
 
   const loadConfig = useCallback(async () => {
+    const pin = sendPin();
+    // No project to read in yet: nothing is sent, and what is shown stays.
+    if (pin === undefined) return;
+    const generation = writeGeneration.current;
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await fetchSessionComplianceConfig();
+      const data = await fetchSessionComplianceConfig(pin);
+      if (generation !== writeGeneration.current) return;
       setConfig({
         data,
         loading: false,
@@ -139,6 +183,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
+      if (generation !== writeGeneration.current) return;
       setConfig({
         data: null,
         loading: false,
@@ -149,12 +194,16 @@ export function useSessionCompliance() {
           : message(err, "Failed to load enforcement settings"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
   const loadVersions = useCallback(async () => {
+    const pin = sendPin();
+    if (pin === undefined) return;
+    const generation = writeGeneration.current;
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceConfigVersions();
+      const data = await listSessionComplianceConfigVersions(pin);
+      if (generation !== writeGeneration.current) return;
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -163,6 +212,7 @@ export function useSessionCompliance() {
         error: null,
       });
     } catch (err) {
+      if (generation !== writeGeneration.current) return;
       setVersions({
         data: null,
         loading: false,
@@ -173,7 +223,7 @@ export function useSessionCompliance() {
           : message(err, "Failed to load setting history"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
   /**
    * Save the enforcement settings. Coord versions the row, so a change is
@@ -182,9 +232,12 @@ export function useSessionCompliance() {
    */
   const saveConfig = useCallback(
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
+      const pin = pinForWrite(writeAllowed, sendPin);
+      if (pin === undefined) return false;
       setSaving(true);
       try {
-        const updated = await saveSessionComplianceConfig(patch);
+        const updated = await saveSessionComplianceConfig(patch, pin);
+        writeGeneration.current += 1;
         setConfig({
           data: updated,
           loading: false,
@@ -204,19 +257,27 @@ export function useSessionCompliance() {
         setSaving(false);
       }
     },
-    [loadVersions]
+    [loadVersions, sendPin, writeAllowed]
   );
 
   /* ---- sessions -------------------------------------------------------- */
 
   const loadSessions = useCallback(async () => {
+    const pin = sendPin();
+    if (pin === undefined) return;
+    const request = ++sessionsRequest.current;
     setSessions((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceSessions({
-        limit: SESSIONS_PAGE,
-        verdict: verdictFilter !== "all" ? verdictFilter : undefined,
-        cursor,
-      });
+      const data = await listSessionComplianceSessions(
+        {
+          limit: SESSIONS_PAGE,
+          verdict: verdictFilter !== "all" ? verdictFilter : undefined,
+          cursor,
+        },
+        pin
+      );
+      // A newer verdict read was sent since: its answer is the one shown.
+      if (request !== sessionsRequest.current) return;
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -226,6 +287,7 @@ export function useSessionCompliance() {
       });
       setNextCursor(data.next_cursor ?? null);
     } catch (err) {
+      if (request !== sessionsRequest.current) return;
       setSessions({
         data: null,
         loading: false,
@@ -237,14 +299,16 @@ export function useSessionCompliance() {
       });
       setNextCursor(null);
     }
-  }, [verdictFilter, cursor]);
+  }, [verdictFilter, cursor, sendPin]);
 
   /* ---- outstanding ledger ---------------------------------------------- */
 
   const loadOutstanding = useCallback(async () => {
+    const pin = sendPin();
+    if (pin === undefined) return;
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await listSessionComplianceOutstanding();
+      const data = await listSessionComplianceOutstanding(pin);
       setOutstanding({
         data: data.items ?? [],
         loading: false,
@@ -263,26 +327,23 @@ export function useSessionCompliance() {
           : message(err, "Failed to load the outstanding-work ledger"),
       });
     }
-  }, []);
+  }, [sendPin]);
 
+  // The verdicts are re-read when their filter or page changes. Their first
+  // read is the hook's first read (below), so a commit that changes neither
+  // reads nothing here, StrictMode's second mount included.
+  const sessionsReadWith = useRef(loadSessions);
   useEffect(() => {
-    loadConfig();
-    loadVersions();
-    loadOutstanding();
-  }, [loadConfig, loadVersions, loadOutstanding]);
-
-  useEffect(() => {
-    loadSessions();
+    if (sessionsReadWith.current === loadSessions) return;
+    sessionsReadWith.current = loadSessions;
+    void loadSessions();
   }, [loadSessions]);
 
   /** Reset paging whenever the verdict filter changes. */
-  const changeVerdictFilter = useCallback(
-    (next: ComplianceVerdict | "all") => {
-      setVerdictFilter(next);
-      setCursor(null);
-    },
-    []
-  );
+  const changeVerdictFilter = useCallback((next: ComplianceVerdict | "all") => {
+    setVerdictFilter(next);
+    setCursor(null);
+  }, []);
 
   const reloadAll = useCallback(() => {
     loadConfig();
@@ -290,6 +351,8 @@ export function useSessionCompliance() {
     loadSessions();
     loadOutstanding();
   }, [loadConfig, loadVersions, loadSessions, loadOutstanding]);
+
+  const waitingForProject = useFirstPinnedRead(sendPin, reloadAll);
 
   /**
    * True when EVERY compliance route 404s — i.e. the whole feature isn't on
@@ -324,5 +387,7 @@ export function useSessionCompliance() {
     saveConfig,
     reloadAll,
     featureUnavailable,
+    /** No project to read in yet: nothing has been read, or is shown as read. */
+    waitingForProject,
   };
 }

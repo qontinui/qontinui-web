@@ -104,7 +104,8 @@ jobs:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
     # p50 0.23 / p90 0.28 / max 0.37 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     outputs:
       relevant: ${{ steps.detect.outputs.relevant }}
     steps:
@@ -153,7 +154,8 @@ jobs:
   reverse:
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
     # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes -- not a
     # value this repo chose. This workflow is named in the plan's own Why
@@ -177,6 +179,14 @@ jobs:
     # migration count. 3.2x headroom today will erode; re-measure rather than
     # assuming this bound still holds in six months.
     timeout-minutes: 25
+    # The ONE place this job names the postgres major, as in `tested`. It
+    # MUST equal the service image tag below -- `services.*.image` cannot read
+    # the `env` context, so the tag is spelled literally there. Only the
+    # self-hosted provisioning check reads it: this job runs unversioned psql
+    # DDL, so its `Install postgresql-client` uses the image's own psql, or
+    # installs the distro default when there is none.
+    env:
+      PG_MAJOR: '16'
 
     services:
       postgres:
@@ -236,14 +246,16 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
           tools: git
-          pg-major: 16
+          pg-major: '${{ env.PG_MAJOR }}'
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -258,6 +270,7 @@ jobs:
       # refuses `path:` outside the workspace, so clone them to the parent dir
       # (mirrors backend-ci.yml).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
@@ -265,6 +278,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -319,10 +333,12 @@ jobs:
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Create named schemas + extension
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        # Deliberately UNBOUNDED. This is psql/DDL against this job's own
+        # postgres service, not the external mirror, so a failure here IS a
+        # verdict on the change. Its `id:` exists only for the declarer's
+        # VERDICT row; it must never appear in APT_STEP_OUTCOMES
+        # (backend/tests/test_declare_setup_death.py asserts that).
+        id: schemas
         env:
           PGPASSWORD: test_password
         run: |
@@ -337,6 +353,7 @@ jobs:
       # up → down -1 → up. The downgrade must cleanly reverse the newest migration
       # (the one this PR adds) and the re-upgrade must re-apply it.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade)
+        id: reversibility
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -792,6 +809,37 @@ jobs:
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: reverse
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Create named schemas + extension|${{ steps.schemas.outcome }}|${{ steps.schemas.conclusion }}
+            Reversibility test (upgrade → downgrade -1 → upgrade)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
+
   # ----------------------------------------------------------------------
   # `Migration Reversal Tested` -- a POSITIVE "this PR's migration was
   # exercised" signal, from an ISOLATED checkout (plan
@@ -954,7 +1002,8 @@ jobs:
     name: Migration Reversal Tested
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # Read the repo only: the checkout and the base/head object reads. Narrower
     # than the workflow default (which adds `actions: read` for the
     # explainer's run lookup -- the explainer here falls back to that lookup
@@ -1021,6 +1070,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -1034,6 +1084,7 @@ jobs:
       # whatever `python3` the runner image ships. Nothing reads the tree
       # here, and the install further down reuses this same interpreter.
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -1056,6 +1107,7 @@ jobs:
       # step is skipped by its `if: env.MRT_DOC_ONLY != '1'`, and
       # "Non-executable edits only" concludes the job.
       - name: Qualify the PR's migration and switch to the base tree
+        id: qualify
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1161,6 +1213,7 @@ jobs:
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -1173,6 +1226,7 @@ jobs:
 
       # Same sibling path-deps as `reverse` (mirrors backend-ci.yml).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         if: env.MRT_DOC_ONLY != '1'
         run: |
           cd "$GITHUB_WORKSPACE/.."
@@ -1203,6 +1257,7 @@ jobs:
       # refused, so the overlay never replaces a base file.
       # Written under $RUNNER_TEMP, never $GITHUB_ENV.
       - name: Base revision set (pure base tree, before the overlay)
+        id: base_revisions
         if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
@@ -1249,6 +1304,7 @@ jobs:
 
       # The isolation: take exactly one file from the PR head onto the base.
       - name: Overlay the PR's migration onto the base tree
+        id: overlay
         if: env.MRT_DOC_ONLY != '1'
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1284,24 +1340,80 @@ jobs:
       - name: Install postgresql-client
         if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         id: apt_psql
-        # Same guarded, apt-only, bounded step as `reverse` -- see the long
-        # note there for why only apt lives here and why it is bounded.
-        # This job ALSO needs the pg_dump of the job's PG_MAJOR (which must
-        # match the service image tag): the reversibility step compares schema
-        # dumps and refuses a pg_dump whose major is not the server's. The
-        # runner image normally ships it, so apt is skipped.
+        # Bounded and apt-only, like `reverse`'s step of the same name -- see
+        # the long note there for why only apt lives here and why it is
+        # bounded. This job ALSO needs the pg_dump of the job's PG_MAJOR
+        # (which must match the service image tag): the reversibility step
+        # compares schema dumps and refuses a pg_dump whose major is not the
+        # server's.
         #
-        # One failure here is NOT the mirror: `apt-get update` succeeded but
-        # the index has no install candidate for postgresql-client-$PG_MAJOR
-        # (a major the runner's apt sources do not carry). That step then
-        # EXITS 0 with an `::error::` naming the package, so the timeout
-        # explainer -- which reads any `failure` of this step as an apt-mirror
-        # stall -- does not misname it; the reversibility step then fails on
-        # the missing pg_dump. It also sets the output `unavailable=1`, which
-        # "Name an unavailable postgresql client" reads to name that cause
-        # (the explainer body cannot: it must stay byte-identical across its
-        # eight carriers, and on this path it reports a real red). Best-effort:
-        # an install that fails for any other reason still fails this step.
+        # The guard skips apt only when psql AND that pg_dump are already
+        # present. The ubuntu-24.04 image ships PostgreSQL 16, so there the
+        # guard hits. `ubuntu-latest` is moving to Ubuntu 26.04 (resolute), a
+        # rollout begun 2026-10-19, so until it completes a run can land on
+        # either image. Resolute ships PostgreSQL 18 and its own archive has no
+        # postgresql-client-16, so a run there takes the apt path and installs
+        # the client from PGDG (apt.postgresql.org, which serves every
+        # supported major for each codename it serves). On resolute the
+        # 10-minute bound is therefore a per-run exposure, not a fallback's.
+        #
+        # Only apt reaches the network. The suite is `<VERSION_CODENAME>-pgdg`,
+        # read from /etc/os-release. The step first looks for a live entry
+        # for it, judged per entry -- per line in the one-line format, per
+        # stanza in deb822 (split by empty lines only, as apt splits them) --
+        # never per file: an uncommented entry with a URI whose HOST is
+        # apt.postgresql.org (deb822: `URIs:`; one-line: the word after
+        # `deb`/`deb-src` and any `[options]`, so a `signed-by=` path or a
+        # mirror path naming the host does not count, nor does a line opening
+        # with any other word), whose suite field lists that suite and which,
+        # in deb822, is not disabled by any value apt reads as false. The
+        # parse rules are listed, as measured against apt, beside the awk
+        # below. Such an entry, deb or
+        # deb-src, is used as configured, because a second entry for the same
+        # URI and suite with another Signed-By breaks every `apt-get update`
+        # (a deb-src-only one then reports no candidate, not a mirror stall).
+        # Anything else -- a commented-out line, another codename's suite, a
+        # disabled stanza (even beside a live one for another host), or a
+        # host and suite split across two entries -- gets this
+        # step's own pgdg.sources, signed by
+        # /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc. That key
+        # ships in postgresql-client-common on resolute (290ubuntu1) but not
+        # on noble (257build1), so only the writing branch acquires it: when
+        # it is absent, the step installs that package from the runner's own
+        # sources and checks again. There is no curl, no gpg and no second
+        # host. This stays inline: the tree is the BASE by now, so a helper
+        # file would be the base's copy, not the PR's.
+        #
+        # Three outcomes are deterministic, NOT the mirror, and EXIT 0 with an
+        # `::error::` naming the cause and the output `unavailable=1`:
+        # /etc/os-release names no VERSION_CODENAME; the step must write its
+        # own source and the key is still missing after installing
+        # postgresql-client-common; or `apt-get update` succeeded with PGDG
+        # configured and there is still no install candidate for
+        # postgresql-client-$PG_MAJOR. Exiting 0 keeps them away
+        # from the timeout explainer, which reads any `failure` here as an
+        # apt-mirror stall, and from this job's setup-death declarer (its
+        # last step), which would title them not a verdict and so spend a
+        # re-run on a red no re-run clears. "Name an unavailable postgresql
+        # client" reads `unavailable` to name the red (the explainer body
+        # cannot: it must stay byte-identical across its eight carriers, and
+        # on this path it reports a real red), and the reversibility step
+        # then fails on the missing pg_dump: a VERDICT row of the declarer,
+        # so nothing is titled. One deterministic outcome still FAILS this
+        # step: a codename PGDG does not serve makes `apt-get update` exit
+        # 100 on a missing Release file. That reads as apt, a re-run cannot
+        # fix it, and the log's "does not have a Release file" line names
+        # it. This step is a SETUP row of the declarer, so on a PR whose diff
+        # misses the declarer's harness that red IS titled `Migration
+        # Reversal Tested SETUP FAILED (not a verdict on this PR)` -- by the
+        # BASE tip's copy of the declarer, since this step runs after the
+        # switch to the base tree (declare-setup-death.sh, WHICH COPY RUNS),
+        # so not while the base carries none. coord bounds that to ONE re-run
+        # per head: a second declared red on the same head reads
+        # `not_a_verdict_rerun_spent`, never another re-run (qontinui-coord
+        # repair_cause.rs `flake_arm_declared`), and the title's message asks
+        # for one re-run and calls a repeat a broken setup. Best-effort: an
+        # install that fails for any other reason also fails this step.
         timeout-minutes: 10
         run: |
           set -euo pipefail
@@ -1310,10 +1422,101 @@ jobs:
             echo "psql and the major-$PG_MAJOR pg_dump are present; no apt needed."
             exit 0
           fi
+          codename=$(. /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}") || codename=
+          if [ -z "$codename" ]; then
+            echo "::error title=Migration Reversal Tested - client package unavailable::/etc/os-release names no VERSION_CODENAME, so the PGDG suite cannot be named. This is NOT an apt-mirror stall. Change PG_MAJOR together with the service image tag, or run on an image that names its codename."
+            echo "unavailable=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          configured=
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -r "$f" ] || continue
+            case "$f" in *.sources) deb822=1 ;; *) deb822=0 ;; esac
+            # One entry per line (one-line format) or per stanza (deb822).
+            # These follow apt's own parsers, measured against apt 3.0.3:
+            #   * one-line: `deb|deb-src [options] URI suite components`; any
+            #     other first word is not an entry, and `#` starts a comment
+            #     only outside `[options]` (a `signed-by=` path may hold one).
+            #   * a line's trailing CR is dropped first, as apt drops it, so a
+            #     CRLF file's empty line still ends a stanza;
+            #   * deb822: stanzas are split by EMPTY lines only -- a line of
+            #     blank space continues the field above it, so apt merges the
+            #     stanzas around it, a later field replacing an earlier one.
+            #     Only a line opening with `#` is a comment; a `#` inside a
+            #     field value is part of the value (apt reads every word of
+            #     `Suites: a # b` as a suite).
+            # An entry is live when a URI's host is apt.postgresql.org, its
+            # suite field lists the suite, and (deb822) its `Enabled:` is not
+            # one of apt's false values. deb-src counts too: apt keeps one
+            # Signed-By per URI and suite across deb and deb-src.
+            if awk -v suite="${codename}-pgdg" -v deb822="$deb822" '
+              function flush() { if (uri && hit && !off) found = 1; uri = hit = off = 0; field = "" }
+              function pgdg(u) { return u ~ /^[[:alnum:]+.-]+:\/\/([^\/@]*@)?apt\.postgresql\.org(:[0-9]*)?(\/|$)/ }
+              { sub(/\r$/, "") }
+              deb822 && /^$/ { flush(); next }
+              deb822 && /^#/ { next }
+              deb822 {
+                value = $0
+                if ($0 ~ /^[^[:space:]]/) {
+                  if (!index($0, ":")) next
+                  field = tolower(substr($0, 1, index($0, ":") - 1))
+                  value = substr($0, index($0, ":") + 1)
+                  if (field == "uris") uri = 0
+                  if (field == "suites") hit = 0
+                  if (field == "enabled") off = 0
+                }
+                n = split(value, w, /[[:space:]]+/)
+                for (i = 1; i <= n; i++) {
+                  if (field == "uris" && pgdg(w[i])) uri = 1
+                  if (field == "suites" && w[i] == suite) hit = 1
+                }
+                if (field == "enabled") {
+                  v = tolower(value); gsub(/[[:space:]]/, "", v)
+                  if (v ~ /^(no|false|off|without|disable|0)$/) off = 1
+                }
+              }
+              !deb822 {
+                line = ""; inb = 0
+                for (k = 1; k <= length($0); k++) {
+                  c = substr($0, k, 1)
+                  if (c == "[") inb = 1; else if (c == "]") inb = 0; else if (c == "#" && !inb) break
+                  line = line c
+                }
+                n = split(line, w, /[[:space:]]+/); i = (w[1] == "") ? 2 : 1
+                if (w[i] == "deb" || w[i] == "deb-src") {
+                  i++
+                  if (substr(w[i], 1, 1) == "[") { while (i <= n && w[i] !~ /\]$/) i++; i++ }
+                  if (pgdg(w[i])) uri = 1
+                  if (w[i + 1] == suite) hit = 1
+                }
+              }
+              !deb822 { flush() }
+              END { flush(); exit !found }
+            ' "$f"; then
+              configured=$f
+              break
+            fi
+          done
+          if [ -n "$configured" ]; then
+            echo "$configured already names apt.postgresql.org and '${codename}-pgdg'; using it as configured."
+          else
+            key=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+            if [ ! -r "$key" ]; then
+              sudo apt-get update
+              sudo apt-get install -y postgresql-client-common
+              if [ ! -r "$key" ]; then
+                echo "::error title=Migration Reversal Tested - client package unavailable::postgresql-client-common from the runner's apt sources ships no PGDG signing key at $key, so a PGDG source for '${codename}-pgdg' cannot be verified. This is NOT an apt-mirror stall. Change PG_MAJOR together with the service image tag."
+                echo "unavailable=1" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            printf '%s\n' 'Types: deb' 'URIs: https://apt.postgresql.org/pub/repos/apt' "Suites: ${codename}-pgdg" 'Components: main' "Signed-By: $key" \
+              | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          fi
           sudo apt-get update
           candidate=$(apt-cache policy "$pkg" | sed -n 's/^ *Candidate: *//p')
           if [ -z "$candidate" ] || [ "$candidate" = "(none)" ]; then
-            echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update'. This is NOT an apt-mirror stall: the runner's apt sources do not carry the client for PG_MAJOR=$PG_MAJOR. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+            echo "::error title=Migration Reversal Tested - client package unavailable::apt has no install candidate for $pkg after a successful 'apt-get update' with a PGDG source for '${codename}-pgdg' configured. This is NOT an apt-mirror stall: neither the runner's apt sources nor PGDG carry the client for PG_MAJOR=$PG_MAJOR on '$codename'. Change PG_MAJOR together with the service image tag."
             echo "unavailable=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1342,6 +1545,7 @@ jobs:
       # the isolated tree -- the same object `alembic heads` prints from --
       # never from the migration file's text.
       - name: Head identity (one head, it is the overlaid file, not a merge)
+        id: head_identity
         if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
@@ -1800,12 +2004,16 @@ jobs:
       # migration ran" must key on `MRT_VERDICT ok head=<rev> down=<rev>` or
       # MRT_TESTED, never on this check's conclusion alone.
       #
-      # The two steps below it need no D9 guard. "Name an unavailable
+      # The three steps below it need no D9 guard. "Name an unavailable
       # postgresql client" fires only on an output of `Install
-      # postgresql-client`, which a doc-only run skips; and the explainer is
+      # postgresql-client`, which a doc-only run skips; the explainer is
       # a failure/cancel post-mortem whose `if:` must stay byte-identical
-      # across its eight carriers (backend/tests/test_ci_timeout_marker.py).
+      # across its eight carriers (backend/tests/test_ci_timeout_marker.py);
+      # and the setup-death declarer is a failure post-mortem too: on a
+      # doc-only run every SETUP row after the qualifier is skipped, so it can
+      # declare only a setup death from before the qualifier ran.
       - name: Non-executable edits only (no migration to exercise)
+        id: doc_only
         if: env.MRT_DOC_ONLY == '1'
         run: |
           set -euo pipefail
@@ -1826,18 +2034,21 @@ jobs:
           echo "$verdict"
 
       # The one red the explainer below cannot name: `Install postgresql-client`
-      # found no install candidate for the PG_MAJOR client, exited 0 (so the
-      # explainer, which blames any `failure` of that step on the apt mirror,
-      # does not misname it), and then either "Create named schemas" had no
-      # psql or the reversibility step had no pg_dump -- whichever the image
-      # lacked first. The explainer sees no failed apt step and reports "a
-      # real one"; this step says which real one. It is separate because the
-      # explainer body must stay byte-identical across its eight carriers
-      # (backend/tests/test_ci_timeout_marker.py).
+      # reported the PG_MAJOR client unavailable -- /etc/os-release named no
+      # codename, the PGDG signing key was still missing after installing
+      # postgresql-client-common, or there was no install candidate even with
+      # PGDG configured -- and exited 0 (so the explainer, which blames any
+      # `failure` of that step on the apt mirror, does not misname it). Then
+      # either "Create named schemas" had no psql or the reversibility step
+      # had no pg_dump -- whichever the image lacked first. The explainer sees
+      # no failed apt step and reports "a real one"; this step says which real
+      # one, and that step's own `::error::` says which of the three causes.
+      # It is separate because the explainer body must stay byte-identical
+      # across its eight carriers (backend/tests/test_ci_timeout_marker.py).
       - name: Name an unavailable postgresql client
         if: failure() && steps.apt_psql.outputs.unavailable == '1' && (steps.reversibility.outcome == 'failure' || steps.schemas.outcome == 'failure')
         run: |
-          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR - NOT your diff::'Install postgresql-client' found no install candidate for postgresql-client-$PG_MAJOR, and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner's apt sources, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Add the PGDG apt source or change PG_MAJOR together with the service image tag."
+          echo "::error title=Migration Reversal Tested - no postgresql client for PG_MAJOR - NOT your diff::'Install postgresql-client' reported postgresql-client-$PG_MAJOR unavailable (its own ::error above names the cause: no OS codename, no PGDG signing key, or no install candidate even with PGDG consulted), and a step that needs that client (psql in 'Create named schemas + extension', or pg_dump in the reversibility step) failed. The red is the runner image's client provisioning, not the migration and not an apt-mirror stall; where the explainer below says this job's failure is a real one, it is this one. Change PG_MAJOR together with the service image tag."
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -2179,6 +2390,42 @@ jobs:
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Migration Reversal Tested
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Qualify the PR's migration and switch to the base tree|${{ steps.qualify.outcome }}|${{ steps.qualify.conclusion }}
+            Base revision set (pure base tree, before the overlay)|${{ steps.base_revisions.outcome }}|${{ steps.base_revisions.conclusion }}
+            Overlay the PR's migration onto the base tree|${{ steps.overlay.outcome }}|${{ steps.overlay.conclusion }}
+            Create named schemas + extension|${{ steps.schemas.outcome }}|${{ steps.schemas.conclusion }}
+            Head identity (one head, it is the overlaid file, not a merge)|${{ steps.head_identity.outcome }}|${{ steps.head_identity.conclusion }}
+            Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
+            Non-executable edits only (no migration to exercise)|${{ steps.doc_only.outcome }}|${{ steps.doc_only.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
+
   # Always-run aggregate — THIS is the required status check. Passes when migrations
   # were untouched (reverse skipped) or when the reversal test succeeded; fails only
   # on a genuine reversal failure. Never a phantom: it runs on every PR.
@@ -2189,7 +2436,17 @@ jobs:
     name: Migration Reversal Gate
     needs: [detect, reverse]
     if: always()
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
+    # Job-level, replacing the workflow default for this job only. `checks:
+    # read` is the setup-death declarer's read of `reverse`'s check-run
+    # annotations (the same read coord makes); `actions: read` its jobs
+    # listing. Plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict,
+    # Phase 4.
+    permissions:
+      contents: read  # the failure-only sparse checkout of scripts/ci
+      actions: read  # this run attempt's job listing
+      checks: read  # reverse's check-run annotations
     steps:
       - name: Aggregate
         env:
@@ -2214,3 +2471,52 @@ jobs:
             exit 1
           fi
           echo "Migration Reversal Gate OK."
+
+      # The aggregate's setup-death declarer (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 4). When
+      # `reverse` failed and titled its own setup death, and `detect` is not
+      # red, this titles the gate's red the same way, so coord does not keep
+      # the PR `intrinsic` on this undeclared aggregate. `tested` is not a need
+      # of this gate, so it is not a member. Both steps run on failure only,
+      # and the checkout cannot fail the job. Logic:
+      # scripts/ci/aggregate_setup_death.py; pinned by
+      # backend/tests/test_aggregate_setup_death.py.
+      - name: Check out the declarer
+        id: declarer_checkout
+        if: failure()
+        continue-on-error: true
+        # A one-minute bound on the sparse checkout: one it cuts off does not
+        # succeed, and the declarer below then does not run.
+        timeout-minutes: 1
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      # Only from a checkout that SUCCEEDED. A failed or timed-out one reads
+      # `outcome: failure` under continue-on-error, and can leave a stale tree
+      # behind (a self-hosted workspace keeps an earlier run's scripts/ci)
+      # whose copy of the script would otherwise run here.
+      - name: Declare a setup death
+        if: failure() && steps.declarer_checkout.outcome == 'success'
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Migration Reversal Gate
+          MEMBER_NEED: reverse
+          MEMBER_NAME_RE: '^reverse$'
+          MEMBER_NOUN: job
+          EXPECTED_MEMBERS: '1'
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          # `reverse`'s own harness plus ALL of scripts/ci: the script runs
+          # with scripts/ci first on sys.path, so a module a PR adds there
+          # runs inside it. A PR touching any of it gets no title (rule 5,
+          # the harness-diff guard).
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^\.github/scripts/harness-diff-guard\.sh$|^scripts/ci/'
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
+            echo "aggregate_setup_death.py is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          python3 scripts/ci/aggregate_setup_death.py || echo "aggregate_setup_death.py exited $?; nothing was declared."

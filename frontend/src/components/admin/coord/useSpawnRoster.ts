@@ -176,14 +176,14 @@ export function useSpawnRoster(open: boolean, device: string) {
           });
           setManualDevice(true);
         } else if (pickableDevices(roster).shown.length === 0) {
-          // Rows came back, but every one is a CI runner registration or
-          // abandoned, so the picker would open on nothing.
+          // Rows came back, but every one is a CI runner registration, so
+          // the picker would open on nothing.
           setDevicesError({
             kind: "empty",
             message: appendRosterExclusions(
               "No runner machine to offer: every device coord reported is a " +
-                "CI runner registration or abandoned. Enter the device id " +
-                "directly if you know it.",
+                "CI runner registration. Enter the device id directly if you " +
+                "know it.",
               body
             ),
           });

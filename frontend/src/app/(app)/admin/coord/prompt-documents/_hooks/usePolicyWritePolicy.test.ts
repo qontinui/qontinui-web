@@ -4,22 +4,26 @@
  * A dial that reports what was WRITTEN rather than what RESOLVES is worse than
  * no dial: it tells the operator the fleet is in a state it is not in, and
  * nothing else on the page contradicts it. This domain adds a second way to get
- * that wrong, because coord answers `effective_level: "off"` for three
- * different facts and they do NOT all resolve the same way:
+ * that wrong, because three different facts must stay distinguishable. Since
+ * qontinui-coord#4239, coord serves the typed default as `effective_level`
+ * when no row matches (before it, that answer read `"off"`):
  *
  * | Row | `effective_level` | `resolved_scope` | In force |
  * |---|---|---|---|
- * | none | `"off"` | `"none"` | `tightening_only` — the code default |
+ * | none | `"tightening_only"` — coord's typed default | `"none"` | `tightening_only`, flagged defaulted |
  * | present, master off | `"off"` | the band | `off` — an operator's choice |
  * | present, unparseable level | the raw string | the band | `off` — fail-closed |
+ * | none, unparseable level | the raw string | `"none"` | UNKNOWN — vocabulary skew |
  *
- * Collapsing the first into `off` disables, on screen, a capability every
- * untouched tenant is using. Collapsing the third into the default reports a
- * broken row as working. Both are pinned below.
+ * Labelling the first as an operator's choice misreports an untouched tenant.
+ * Collapsing the third into a default reports an unreadable row as working;
+ * showing the fourth as `off` claims a level coord is not enforcing. All are
+ * pinned below.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { PINNED_PAGE, withPageGuard } from "../__fixtures__/pageWriteGuard";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
@@ -58,10 +62,15 @@ vi.mock("sonner", () => ({
 
 import { usePolicyWritePolicy } from "./usePolicyWritePolicy";
 
+// The hook on its own, under the page's guard once its project is known: it
+// requires one, and reads only under the page's pin (`__fixtures__`).
+const SectionGuard = withPageGuard(PINNED_PAGE);
+
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_write",
-  effective_level: "off",
+  // coord's typed default, served with no row (qontinui-coord#4239).
+  effective_level: "tightening_only",
   master_enabled: false,
   resolved_scope: "none",
   can_edit: true,
@@ -85,21 +94,33 @@ const PROPOSE_ONLY_TENANT = {
   effective_level: "propose_only",
 };
 
+/** A read the test holds in flight, and settles itself before it ends. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("usePolicyWritePolicy — 'no row' is the code default, not off", () => {
-  it("resolves a missing row to tightening_only and flags it as defaulted", async () => {
+describe("usePolicyWritePolicy — 'no row' is coord's served default", () => {
+  it("shows the served default for a missing row and flags it as defaulted", async () => {
     getMock.mockResolvedValue(NO_ROW);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    // The raw wire value. Rendering THIS is the bug the hook exists to avoid.
-    expect(result.current.policy?.effective_level).toBe("off");
-    // What coord actually enforces when no row matched.
+    // What coord serves, and enforces, when no row matched.
+    expect(result.current.policy?.effective_level).toBe("tightening_only");
     expect(result.current.displayLevel).toBe("tightening_only");
+    expect(result.current.unrecognizedLevel).toBeNull();
+    expect(result.current.defaultUnreadable).toBe(false);
     expect(result.current.isDefaulted).toBe(true);
     expect(getMock).toHaveBeenCalledWith(
       expect.stringContaining("domain=policy_write")
@@ -109,13 +130,40 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
   it("honours an explicit off — the same string, the opposite meaning", async () => {
     getMock.mockResolvedValue(OFF_TENANT);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // A row exists, so `off` is an operator's decision and must survive intact.
-    // Keying the default on `effective_level === "off"` instead of on the scope
-    // band would convert this back to `tightening_only` and make the dial
-    // unturnoffable.
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(false);
+  });
+
+  it("reads the served default rather than a console copy of it", async () => {
+    // A no-row answer serving a level that is NOT the old console constant:
+    // only reading `effective_level` passes this; a revert to a hardcoded
+    // `tightening_only` fails it.
+    getMock.mockResolvedValue({ ...NO_ROW, effective_level: "full" });
+
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.displayLevel).toBe("full");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.unrecognizedLevel).toBeNull();
+  });
+
+  it("honours a master-disabled row as off", async () => {
+    getMock.mockResolvedValue({ ...OFF_TENANT, master_enabled: false });
+
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
     expect(result.current.displayLevel).toBe("off");
     expect(result.current.isDefaulted).toBe(false);
   });
@@ -130,14 +178,16 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
       effective_level: "tightening-only",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Coord's `parse_fail_closed` refuses everything for this row. Showing the
     // stored string as "in force" would report a fleet that is fully blocked as
     // one running the ordinary default.
     expect(result.current.displayLevel).toBe("off");
-    // Deliberately NOT the no-row default: nobody-ruled and ruled-unreadably
+    // Deliberately NOT the typed default: nobody-ruled and ruled-unreadably
     // are different facts and resolve in opposite directions.
     expect(result.current.displayLevel).not.toBe("tightening_only");
     expect(result.current.isDefaulted).toBe(false);
@@ -148,23 +198,31 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
   it("does not flag a recognised level as unrecognised", async () => {
     getMock.mockResolvedValue(PROPOSE_ONLY_TENANT);
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.displayLevel).toBe("propose_only");
     expect(result.current.unrecognizedLevel).toBeNull();
   });
 
-  it("does not flag the no-row case as unrecognised", async () => {
-    // `NO_ROW` carries `effective_level: "off"`, which IS in the vocabulary —
-    // but the branch order matters: `isDefaulted` must win, or an untouched
-    // tenant would be reported as a broken row.
-    getMock.mockResolvedValue(NO_ROW);
+  it("shows a no-row answer whose served level is unparseable as UNKNOWN", async () => {
+    // Vocabulary skew: coord serving, with no row, a default this console does
+    // not know. Coord enforces that default, so `off` would be false; the
+    // console used to substitute its own copy of `tightening_only` here,
+    // which masked this.
+    getMock.mockResolvedValue({ ...NO_ROW, effective_level: "tighten" });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.unrecognizedLevel).toBeNull();
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.defaultUnreadable).toBe(true);
+    expect(result.current.displayLevel).toBeNull();
+    expect(result.current.unrecognizedLevel).toBe("tighten");
   });
 });
 
@@ -183,7 +241,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -222,7 +282,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -254,7 +316,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: null,
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -271,7 +335,12 @@ describe("usePolicyWritePolicy — writes", () => {
   });
 
   it("treats a failed read-back as UNKNOWN, not as the written value", async () => {
-    getMock.mockResolvedValue(OFF_TENANT);
+    // The write's failed read-back sends a re-read; it is held, so this is
+    // the state while what devices resolve is still unknown.
+    const reread = deferred<unknown>();
+    getMock
+      .mockResolvedValueOnce(OFF_TENANT)
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",
@@ -284,7 +353,9 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: "read-back failed: coord returned 502",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
@@ -299,10 +370,22 @@ describe("usePolicyWritePolicy — writes", () => {
     // written beside a value that was never confirmed.
     expect(result.current.lastWrite?.written_level).toBe("tightening_only");
     expect(toastSuccess).not.toHaveBeenCalled();
+
+    // Coord answers the re-read: what devices resolve is known again.
+    await act(async () =>
+      reread.resolve({ ...OFF_TENANT, effective_level: "tightening_only" })
+    );
+    expect(result.current.displayLevel).toBe("tightening_only");
+    expect(result.current.readbackError).toBeNull();
   });
 
   it("retires the read-back warning once a read confirms the value", async () => {
-    getMock.mockResolvedValue(OFF_TENANT);
+    // The re-read the failed read-back sends is held; the confirming read is
+    // the Refresh below.
+    const reread = deferred<unknown>();
+    getMock
+      .mockResolvedValueOnce(OFF_TENANT)
+      .mockReturnValueOnce(reread.promise);
     putMock.mockResolvedValue({
       ok: true,
       domain: "policy_write",
@@ -315,14 +398,16 @@ describe("usePolicyWritePolicy — writes", () => {
       readback_error: "read-back failed: coord returned 502",
     });
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
       await result.current.setLevel("propose_only");
     });
     expect(result.current.readbackError).toBeTruthy();
 
-    getMock.mockResolvedValue(PROPOSE_ONLY_TENANT);
+    getMock.mockResolvedValueOnce(PROPOSE_ONLY_TENANT);
     await act(async () => {
       await result.current.reload();
     });
@@ -331,11 +416,18 @@ describe("usePolicyWritePolicy — writes", () => {
     // we just confirmed would be the opposite of honest.
     expect(result.current.readbackError).toBeNull();
     expect(result.current.displayLevel).toBe("propose_only");
+
+    // The held re-read answers last, with the same level: nothing changes.
+    await act(async () => reread.resolve(PROPOSE_ONLY_TENANT));
+    expect(result.current.readbackError).toBeNull();
+    expect(result.current.displayLevel).toBe("propose_only");
   });
 
   it("keeps the last known value on a failed read rather than showing off", async () => {
     getMock.mockResolvedValueOnce(PROPOSE_ONLY_TENANT);
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     getMock.mockResolvedValueOnce(
@@ -356,7 +448,9 @@ describe("usePolicyWritePolicy — writes", () => {
       async () => new Response("admin_required", { status: 403 })
     );
 
-    const { result } = renderHook(() => usePolicyWritePolicy());
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     let outcome: boolean | undefined;

@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   ENTRY_WRITABLE,
+  arrangeEntries,
   RECURRING_WRITABLE,
   CATEGORY_WRITABLE,
+  categoryAndDescendants,
   categoryKey,
+  categoryRowProblem,
+  categoryTable,
+  categoryTree,
   entryRowProblem,
+  entryTable,
   parseCategoriesCsv,
   parseEntriesCsv,
   parseRecurringCsv,
@@ -13,14 +19,20 @@ import {
   recurringRowProblem,
   type CategoryRow,
 } from "./costs";
+import type { CostEntry } from "./costs-api";
 
 const categories = [
   { id: "c-hw", name: "Hardware" },
   { id: "c-legal", name: "Legal & registration" },
 ];
 
-function category(id: string, name: string, description = ""): CategoryRow {
-  return { id, version: 1, name, description };
+function category(
+  id: string,
+  name: string,
+  description = "",
+  parent_id: string | null = null
+): CategoryRow {
+  return { id, version: 1, name, parent_id, description };
 }
 
 describe("parseEntriesCsv", () => {
@@ -180,5 +192,154 @@ describe("rules mirrored from the server", () => {
   it("a pasted recurring cost changes only the columns it fills", () => {
     const { rows } = parseRecurringCsv("Domain,,,,,,,2025-01-01", []);
     expect(rows[0]!.supplied).toEqual(["start_date"]);
+  });
+});
+
+describe("category tree", () => {
+  // Server order (sort order, then name): Computers' children come after it
+  // in the list, not directly under it.
+  const flat = [
+    { id: "hw", name: "Hardware", parent_id: null },
+    { id: "pc", name: "Computers", parent_id: null },
+    { id: "ship", name: "spaceship", parent_id: "pc" },
+    { id: "nawa", name: "nawa", parent_id: "pc" },
+    { id: "gpu", name: "GPUs", parent_id: "ship" },
+    { id: "lost", name: "Orphan", parent_id: "missing" },
+  ];
+
+  it("orders each category directly before its own subcategories", () => {
+    const nodes = categoryTree(flat);
+    expect(nodes.map((n) => [n.category.name, n.depth])).toEqual([
+      ["Hardware", 0],
+      ["Computers", 0],
+      ["spaceship", 1],
+      ["GPUs", 2],
+      ["nawa", 1],
+      ["Orphan", 0],
+    ]);
+    expect(nodes.find((n) => n.category.id === "gpu")!.path).toBe(
+      "Computers › spaceship › GPUs"
+    );
+  });
+
+  it("never loses a category caught in a cycle", () => {
+    const nodes = categoryTree([
+      { id: "a", name: "A", parent_id: "b" },
+      { id: "b", name: "B", parent_id: "a" },
+    ]);
+    expect(nodes.map((n) => n.category.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("finds a category and everything below it", () => {
+    expect([...categoryAndDescendants(flat, "pc")].sort()).toEqual([
+      "gpu",
+      "nawa",
+      "pc",
+      "ship",
+    ]);
+    expect([...categoryAndDescendants(flat, "hw")]).toEqual(["hw"]);
+  });
+
+  it("offers the parent by full path and indents the name by depth", () => {
+    const table = categoryTable(flat);
+    const parent = table.fields.find((f) => f.field === "parent_id")!;
+    expect(parent.kind).toBe("select");
+    if (parent.kind === "select") {
+      expect(parent.emptyLabel).toBe("Top level");
+      expect(parent.options.map((o) => o.label)).toContain(
+        "Computers › spaceship › GPUs"
+      );
+    }
+    const name = table.fields.find((f) => f.field === "name")!;
+    expect(name.indent?.(category("gpu", "GPUs"))).toBe(2);
+    expect(name.indent?.(category("", ""))).toBe(0);
+  });
+
+  it("names a category by its path in the cost pickers", () => {
+    const decl = entryTable(flat);
+    const field = decl.fields.find((f) => f.field === "category_id")!;
+    if (field.kind !== "select") throw new Error("expected a select");
+    expect(field.options.find((o) => o.value === "ship")!.label).toBe(
+      "Computers › spaceship"
+    );
+  });
+
+  it("refuses a move under itself or its own descendant before sending", () => {
+    const problem = categoryRowProblem(flat);
+    expect(problem(category("pc", "Computers", "", "pc"))).toMatch(/itself/);
+    expect(problem(category("pc", "Computers", "", "gpu"))).toMatch(
+      /subcategories/
+    );
+    expect(problem(category("gpu", "GPUs", "", "pc"))).toBeNull();
+    expect(problem(category("pc", "Computers", "", null))).toBeNull();
+    // A new row cannot be a cycle.
+    expect(problem(category("", "New", "", "pc"))).toBeNull();
+  });
+
+  it("writes only the parent when a category is moved", () => {
+    const before = [category("1", "nawa", "", null)];
+    const after = [category("1", "nawa", "", "pc")];
+    const plan = planWrites(before, after, "edit", CATEGORY_WRITABLE);
+    expect(plan.updates).toEqual([
+      { row: before[0], patch: { parent_id: "pc" } },
+    ]);
+  });
+});
+
+describe("arrangeEntries", () => {
+  const entry = (
+    id: string,
+    incurred_on: string,
+    created_at = "2026-01-01T00:00:00Z"
+  ) => ({ id, incurred_on, created_at }) as CostEntry;
+  const ids = (list: CostEntry[]) => list.map((e) => e.id);
+
+  it("puts the latest entry first and the earliest last", () => {
+    const list = [
+      entry("a", "2026-02-01"),
+      entry("b", "2026-05-01"),
+      entry("c", "2026-03-15"),
+    ];
+    expect(ids(arrangeEntries(list))).toEqual(["b", "c", "a"]);
+    // The input is left as it was.
+    expect(ids(list)).toEqual(["a", "b", "c"]);
+  });
+
+  it("breaks a tie on the day by when it was recorded, newest first", () => {
+    const list = [
+      entry("old", "2026-05-01", "2026-05-01T08:00:00Z"),
+      entry("new", "2026-05-01", "2026-05-01T09:00:00Z"),
+      entry("later-day", "2026-05-02", "2026-05-01T07:00:00Z"),
+    ];
+    expect(ids(arrangeEntries(list))).toEqual(["later-day", "new", "old"]);
+  });
+
+  it("keeps just-added entries above the rest, even with an older date", () => {
+    const list = [
+      entry("a", "2026-05-01"),
+      entry("b", "2026-04-01"),
+      entry("added", "2020-01-01"),
+    ];
+    expect(ids(arrangeEntries(list, [["added"]]))).toEqual(["added", "a", "b"]);
+  });
+
+  it("puts the most recent batch first, and orders within a batch", () => {
+    const list = [
+      entry("x", "2026-05-01"),
+      entry("p1", "2020-01-01"),
+      entry("p2", "2021-01-01"),
+      entry("q", "2019-01-01"),
+    ];
+    expect(ids(arrangeEntries(list, [["q"], ["p1", "p2"]]))).toEqual([
+      "q",
+      "p2",
+      "p1",
+      "x",
+    ]);
+  });
+
+  it("ignores a pinned id that is no longer listed", () => {
+    const list = [entry("a", "2026-05-01")];
+    expect(ids(arrangeEntries(list, [["gone"]]))).toEqual(["a"]);
   });
 });

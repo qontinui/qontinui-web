@@ -4,10 +4,10 @@
  * Two responsibilities, both intentionally small:
  *
  *   1. `isAuditablePath` — decide whether a given (path, method) is a
- *      write-command worthy of an audit row. Reads (GET) and SDK
- *      transport endpoints (`/heartbeat`, `/commands`, `/commands/stream`,
- *      `/render-log/*`) are NEVER audited; the goal is to record commands
- *      issued on the user's behalf, not a request log.
+ *      write-command worthy of an audit row. Reads (GET), the SDK's
+ *      transport routes (`_transport.ts`: `/heartbeat`, `/commands`,
+ *      `/commands/stream`) and `/render-log/*` are NEVER audited; the goal
+ *      is to record commands issued on the user's behalf, not a request log.
  *
  *   2. `summarizeBody` — extract a SAFE summary from a parsed request body.
  *      Allowed: `{action: "click", elementId: "btn-42"}`. Allowed:
@@ -29,6 +29,8 @@
 
 import { createLogger } from "@/lib/logger";
 import { resolveServerBackendUrl } from "@/lib/errors/endpoint-unresolved";
+
+import { isSdkTransportRoute } from "./_transport";
 
 const log = createLogger("UIBridgeAudit");
 
@@ -60,18 +62,6 @@ const AUDITABLE_PREFIXES: readonly string[] = ["/control/", "/ai/"];
  */
 const NON_AUDITABLE_PREFIXES: readonly string[] = ["/control/render-log/"];
 
-/**
- * Transport endpoints the SDK uses for its own bookkeeping (heartbeats,
- * command-stream multiplexing, response delivery). These can be
- * extremely high-volume in normal operation and never represent a user
- * command; auditing them would flood the table and obscure the signal.
- */
-const TRANSPORT_NON_AUDIT_EXACT: ReadonlySet<string> = new Set([
-  "/heartbeat",
-  "/commands",
-  "/commands/stream",
-]);
-
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
 /**
@@ -79,7 +69,10 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
  *
  * Decision tree:
  *   1. GET / PATCH (and any non-POST/PUT/DELETE)         → no audit (reads / unused).
- *   2. Exact transport endpoint (`/heartbeat` etc.)      → no audit.
+ *   2. SDK transport route (`_transport.ts` — heartbeats, command-stream
+ *      delivery, command results)                        → no audit. High-
+ *      volume in normal operation and never a user command; auditing it
+ *      would flood the table and obscure the signal.
  *   3. Path under a `NON_AUDITABLE_PREFIXES` namespace    → no audit.
  *   4. Path under an `AUDITABLE_PREFIXES` namespace      → AUDIT.
  *   5. Anything else                                     → no audit (unknown
@@ -90,7 +83,7 @@ export function isAuditablePath(path: string, method: HttpMethod): boolean {
   if (method !== "POST" && method !== "PUT" && method !== "DELETE") {
     return false;
   }
-  if (TRANSPORT_NON_AUDIT_EXACT.has(path)) {
+  if (isSdkTransportRoute(path, method)) {
     return false;
   }
   for (const ns of NON_AUDITABLE_PREFIXES) {

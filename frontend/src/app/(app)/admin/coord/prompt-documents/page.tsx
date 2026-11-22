@@ -57,45 +57,84 @@
  *   narrowed to `space-y-4`, because the two `border-t` sections below are
  *   separate governance controls and their separation is what stops them
  *   reading as one.
- * - **R3** — nothing to correct at page scope. The one amber surface here
- *   (`PromptDocumentList`) is a warning callout, not a kind-keyed status hue,
- *   so there is no palette to enrol in `console/attention.test.ts`.
+ * - **R3** — the page's attention surfaces are `PageWriteGuard`'s two
+ *   notices, both RED and both outside its fieldset, each with a Reload:
+ *   the cross-tab notice, which only the operator's Reload (or a switch back
+ *   in the other tab) clears, and the project-list notice, shown when the
+ *   layout's provider said its membership read failed and the page has no
+ *   project to pin to, which only the operator's Reload clears. Both are R3's
+ *   "the operator's move, now" (plan
+ *   `2026-11-09-prompt-documents-cross-tab-write-guard` D5). Each is one
+ *   callout with one state, not a kind→attention table, so there is nothing
+ *   to enrol in `CONSOLE_PALETTES` (`components/console/consoleSurfaces.ts`,
+ *   which `console/attention.test.ts` imports and audits). That registry
+ *   holds the modules that export an attention table, typed as one or named
+ *   `*ATTENTION*`, and `consoleSurfaces.test.ts` scans the console for them;
+ *   this route exports none. The notices take the route's existing must-act
+ *   red from `PromptDocumentClaims.tsx`, which is unregistered for the same
+ *   reason. Their classes are not `AUTHOR_RED` or a drift of it, which that
+ *   scan also checks.
+ *
+ * ## One cross-tab write guard for the whole page
+ *
+ * `PageWriteGuardProvider` takes the page's project and the guard against
+ * another tab's project switch ONCE, for the list's rows and the five settings
+ * sections alike (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+ * D1): its notices, one fieldset around everything, and every section hook
+ * refuses and pins beside its own send by reading the provider (D9). Nothing
+ * is handed up from the list, and no section takes a guard as a prop.
  */
 
-import { useCallback, useRef, useState } from "react";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
+import {
+  PageWriteGuardProvider,
+  useRequiredPageWriteGuard,
+} from "./_components/PageWriteGuard";
 import {
   observedFromPublishAll,
   PolicyAutoPublishDialControl,
 } from "./_components/PolicyAutoPublishDialControl";
 import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
-import {
-  PromptDocumentList,
-  type WriteGuardRef,
-} from "./_components/PromptDocumentList";
+import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { usePublishAll } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
+  return (
+    <div className="p-3 sm:p-6" data-testid="prompt-documents-page">
+      <PageWriteGuardProvider>
+        <PromptDocumentsPageBody />
+      </PageWriteGuardProvider>
+    </div>
+  );
+}
+
+/**
+ * Everything on the page, under its one write guard. A component, not part of
+ * `PromptDocumentsPage`, because a hook cannot read a provider its own
+ * component renders: the status read below asks the provider which project to
+ * send in.
+ */
+function PromptDocumentsPageBody() {
+  // The page's send guard: `writeAllowed`, asked right before the dry run, the
+  // armed run and a publish-mode PATCH are sent, and `resolvePin`, the
+  // project the page's rows are pinned to, asked as each status read and
+  // publish-all request is SENT. So one in flight when another tab switches
+  // project — re-issued after a 429, replayed after a token refresh — cannot
+  // land in, or answer from, that tab's project. Both keep one identity for
+  // the page's lifetime, so the mount read below does not re-fire on them
+  // (D9, D10).
+  const guard = useRequiredPageWriteGuard();
   // ONE auto-publish status read for the whole page (plan
   // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the
   // list's badges and the dial's observed worker are two readings of the same
   // response, so they must not come from two fetches that can disagree. A
   // write to the D5 switch re-takes it, because the badges key on the switch.
-  const publishAllState = usePublishAll();
-  // Whether another tab's project switch is in effect, as the list detected
-  // it. The settings below write through the same per-request project as the
-  // list's rows, so they are disabled with them; the list carries the notice.
-  const [crossTabChange, setCrossTabChange] = useState(false);
-  // The fieldset covers what is on the page; a settings confirmation renders
-  // outside it, so every settings write also asks the list's call-time guard —
-  // the stored project against the page's — at the moment it is sent.
-  const writeGuardRef = useRef<(() => boolean) | null>(null) as WriteGuardRef;
-  const canWrite = useCallback(() => writeGuardRef.current?.() ?? true, []);
+  const publishAllState = usePublishAll(guard);
   return (
-    <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
+    <div className="space-y-8">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
           title and the nav crumb naming this route. The prose stays because it
           is not a restatement of the title — it names WHICH content this is and
@@ -121,18 +160,9 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList
-        publishAllState={publishAllState}
-        onCrossTabChange={setCrossTabChange}
-        writeGuardRef={writeGuardRef}
-      />
+      <PromptDocumentList publishAllState={publishAllState} />
 
-      <fieldset
-        disabled={crossTabChange}
-        className="m-0 min-w-0 space-y-8 border-0 p-0"
-        data-testid="prompt-documents-page-controls"
-      >
-        {/*
+      {/*
         The tenant-wide autonomy dial sits with the per-document write-access
         control it composes with. Two controls governing one question — "what
         may an agent do to this policy?" — belong on one page; the per-document
@@ -140,7 +170,7 @@ export default function PromptDocumentsPage() {
         more restrictive of the two. Coord's own refusal message sends operators
         to this page for the first, so the second must be here too.
       */}
-        {/*
+      {/*
         The per-KIND authorship tier sits between the per-document control in
         the list above and the tenant-wide dial below, because that is where it
         sits in coord's resolution order: floor, then per-document, then
@@ -148,15 +178,15 @@ export default function PromptDocumentsPage() {
         the three that can be set for a document that does not exist yet, which
         is the case the per-document control structurally cannot reach.
       */}
-        <div className="border-t border-border pt-8">
-          <KindAuthorshipTierControl canWrite={canWrite} />
-        </div>
+      <div className="border-t border-border pt-8">
+        <KindAuthorshipTierControl />
+      </div>
 
-        <div className="border-t border-border pt-8">
-          <PolicyWriteDialControl canWrite={canWrite} />
-        </div>
+      <div className="border-t border-border pt-8">
+        <PolicyWriteDialControl />
+      </div>
 
-        {/*
+      {/*
         The upstream dial sits immediately after the policy-write dial because
         the two are one question asked from opposite ends: what may an agent
         INSIDE this tenant do to these documents, and what may the fleet
@@ -164,11 +194,11 @@ export default function PromptDocumentsPage() {
         operator deciding how much autonomy to allow needs to see both answers
         without leaving the page.
       */}
-        <div className="border-t border-border pt-8">
-          <PolicyUpstreamDialControl canWrite={canWrite} />
-        </div>
+      <div className="border-t border-border pt-8">
+        <PolicyUpstreamDialControl />
+      </div>
 
-        {/*
+      {/*
         The automatic-publishing dial sits immediately after the upstream dial
         because it is that dial's outbound twin — what the fleet may do to this
         tenant's documents, then whether this tenant's documents may leave it on
@@ -176,24 +206,22 @@ export default function PromptDocumentsPage() {
         An operator deciding how much autonomy to allow needs all three answers
         on one page, and this is the only one whose failure mode is outward.
       */}
-        <div className="border-t border-border pt-8">
-          <PolicyAutoPublishDialControl
-            onLevelChanged={() => void publishAllState.reload()}
-            observed={observedFromPublishAll(publishAllState)}
-            canWrite={canWrite}
-          />
-        </div>
+      <div className="border-t border-border pt-8">
+        <PolicyAutoPublishDialControl
+          onLevelChanged={() => void publishAllState.reload()}
+          observed={observedFromPublishAll(publishAllState)}
+        />
+      </div>
 
-        {/*
+      {/*
         Session compliance lives on this page rather than behind its own nav
         entry: the thing it enforces is one of the documents above, and the
         clause it names is edited a few inches away. Splitting the switch from
         the text it enforces is exactly how the two drift apart.
       */}
-        <div className="border-t border-border pt-8">
-          <SessionComplianceSection canWrite={canWrite} />
-        </div>
-      </fieldset>
+      <div className="border-t border-border pt-8">
+        <SessionComplianceSection />
+      </div>
     </div>
   );
 }

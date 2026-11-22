@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { ProjectPin } from "@/services/http-client";
 import {
   createPromptDocumentClause,
   deletePromptDocumentClause,
@@ -18,6 +19,7 @@ import type {
   PromptDocumentAttrs,
   PromptDocumentKind,
 } from "../types";
+import { useRequiredPageWriteGuard } from "./usePageWriteGuardContext";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -28,6 +30,15 @@ function unwrap(data: ListClausesResponse): Clause[] {
   return list.slice().sort((a, b) => a.position - b.position);
 }
 
+/** What `useClauses` is told beyond the document it manages. */
+export interface UseClausesOptions {
+  /**
+   * Called after a category default-tier edit, so the caller (which owns the
+   * document list) can re-read it.
+   */
+  onAttrsSaved?: () => void;
+}
+
 /**
  * Loads and mutates the structured clauses of a single policy document via the
  * coord clause-route proxy
@@ -35,22 +46,37 @@ function unwrap(data: ListClausesResponse): Clause[] {
  * on tenant membership; writes are tenant-admin-gated (coord re-checks).
  *
  * Only meaningful for `kind === "policy"` documents; the caller passes `enabled`
- * false for other kinds so the hook doesn't fetch. `onAttrsSaved` lets the caller
- * (which owns the document list) refresh after a category default-tier edit.
+ * false for other kinds so the hook doesn't fetch.
+ *
+ * **Which project, and when nothing is written.** The hook is always under
+ * the prompt-documents page's provider (`PageWriteGuardProvider`; the clause
+ * manager is always there, inside the list), and throws outside it: there is
+ * no unguarded mode. It takes the page's call-time write guard and the page's
+ * pin from it. A clause write raced past the page's notice, or sent while the
+ * page has no project to pin it to, is refused here, beside its send, and the
+ * clause read and every write go in the page's project on every attempt, a
+ * write in flight when another tab switches project included.
+ * The pin is the page's, never the caller's. It is a VALUE, as for the list's
+ * other hooks (plan `2026-11-09-prompt-documents-cross-tab-write-guard`
+ * D10): the clause read re-fires only when the page's project changes.
  */
 export function useClauses(
   kind: PromptDocumentKind,
   name: string,
   enabled: boolean,
-  onAttrsSaved?: () => void,
-  /**
-   * Checked before every write; `false` sends nothing (the caller says why).
-   * The prompt-documents page passes its cross-tab guard here, so a clause
-   * write cannot land in a project another tab switched to.
-   */
-  canWrite?: () => boolean
+  options: UseClausesOptions = {}
 ) {
-  const blocked = () => canWrite !== undefined && !canWrite();
+  const { onAttrsSaved } = options;
+  const page = useRequiredPageWriteGuard();
+  // Keyed on the project, not on the page's object: the clause read below
+  // re-fires only when the pinned project actually changes.
+  const pinTenant = page.pin?.tenant;
+  const projectPin = useMemo<ProjectPin | undefined>(
+    () => (pinTenant === undefined ? undefined : { tenant: pinTenant }),
+    [pinTenant]
+  );
+  /** Whether a write must not be sent: the page's guard says so. */
+  const blocked = () => !page.writeAllowed();
   const [clauses, setClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -60,7 +86,7 @@ export function useClauses(
     if (!enabled || !name) return;
     try {
       setLoading(true);
-      const data = await listPromptDocumentClauses(kind, name);
+      const data = await listPromptDocumentClauses(kind, name, projectPin);
       setClauses(unwrap(data));
       setError(null);
     } catch (err) {
@@ -68,7 +94,7 @@ export function useClauses(
     } finally {
       setLoading(false);
     }
-  }, [enabled, kind, name]);
+  }, [enabled, kind, name, projectPin]);
 
   useEffect(() => {
     void load();
@@ -78,7 +104,7 @@ export function useClauses(
     if (blocked()) return false;
     try {
       setSaving(true);
-      await createPromptDocumentClause(kind, name, body);
+      await createPromptDocumentClause(kind, name, body, projectPin);
       toast.success("Clause created");
       await load();
       return true;
@@ -97,7 +123,7 @@ export function useClauses(
     if (blocked()) return false;
     try {
       setSaving(true);
-      await updatePromptDocumentClause(kind, name, clauseId, body);
+      await updatePromptDocumentClause(kind, name, clauseId, body, projectPin);
       toast.success("Clause updated");
       await load();
       return true;
@@ -113,7 +139,7 @@ export function useClauses(
     if (blocked()) return false;
     try {
       setSaving(true);
-      await deletePromptDocumentClause(kind, name, clauseId);
+      await deletePromptDocumentClause(kind, name, clauseId, projectPin);
       toast.success("Clause deleted");
       await load();
       return true;
@@ -130,7 +156,7 @@ export function useClauses(
     if (blocked()) return false;
     try {
       setSaving(true);
-      await reorderPromptDocumentClauses(kind, name, clauseIds);
+      await reorderPromptDocumentClauses(kind, name, clauseIds, projectPin);
       await load();
       return true;
     } catch (err) {
@@ -164,7 +190,7 @@ export function useClauses(
           break;
         }
         try {
-          await createPromptDocumentClause(kind, name, c);
+          await createPromptDocumentClause(kind, name, c, projectPin);
           created += 1;
         } catch (err) {
           failures.push(`${c.clause_id}: ${message(err, "rejected")}`);
@@ -180,9 +206,10 @@ export function useClauses(
           `${failures.length} clause(s) not imported: ${failures.join("; ")}`
         );
       }
-      // A refused run skips the re-read: it is unpinned, so it would be
-      // served by the project the other tab stored, not this page's.
-      if (!refused) await load();
+      // The re-read shows what the run created. A refused run takes it only
+      // when the page has a pin: unpinned, it would be served by the project
+      // the other tab stored, not this page's.
+      if (!refused || projectPin !== undefined) await load();
     } finally {
       setSaving(false);
     }
@@ -203,7 +230,7 @@ export function useClauses(
       // Safe to re-issue (`idempotent: true` in the client):
       // `update_prompt_document` replaces attrs in place with the merged
       // object; an attrs-only edit creates no version row.
-      await updatePromptDocumentAttrs(kind, name, attrs);
+      await updatePromptDocumentAttrs(kind, name, attrs, projectPin);
       toast.success("Category settings saved");
       onAttrsSaved?.();
       return true;

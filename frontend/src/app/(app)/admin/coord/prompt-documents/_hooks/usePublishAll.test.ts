@@ -14,6 +14,18 @@
  * 4. **A status read for another project drops the held one's answer** —
  *    candidates, count, D5 switch, worker — before it is sent; a read for the
  *    same project keeps it.
+ * 5. **With `resolvePin`, every request is sent in the resolved project** —
+ *    the dry run, the armed run, the publish-mode PATCH and every status read
+ *    a caller does not pin itself, the re-take after a publish-mode change
+ *    included — asked as each is sent, while another project is stored. The
+ *    mount read runs once, and no returned function changes identity with the
+ *    resolver.
+ * 6. **The dry run, the armed run and the publish-mode PATCH are refused
+ *    beside their own sends** while the page's `writeAllowed` says no, and
+ *    while there is no pin to send them in: nothing is sent.
+ *
+ * The page's guard is a required argument. Each mount here passes one: `page`
+ * allows every write and resolves the pin the test gives it.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -21,18 +33,32 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const fetchStatus = vi.hoisted(() => vi.fn());
 const publishAllMock = vi.hoisted(() => vi.fn());
+const previewMock = vi.hoisted(() => vi.fn());
+const updateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api/operations/coordPromptDocuments", () => ({
   fetchAutoPublishStatus: (...args: unknown[]) => fetchStatus(...args),
-  previewPublishAll: vi.fn(),
+  previewPublishAll: (...args: unknown[]) => previewMock(...args),
   publishAllPromptDocuments: (...args: unknown[]) => publishAllMock(...args),
-  updatePromptDocument: vi.fn(),
+  updatePromptDocument: (...args: unknown[]) => updateMock(...args),
 }));
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import { usePublishAll } from "./usePublishAll";
+import type { ResolvePin } from "../../_shared/useSendTimePin";
+
+/**
+ * The page's send guard for a mount here: every write allowed, sent in the
+ * project `resolvePin` names (none, by default: status reads then go in the
+ * stored project).
+ */
+const page = (resolvePin: ResolvePin = () => undefined) => ({
+  writeAllowed: () => true,
+  resolvePin,
+});
 
 const KEY = "qontinui.active_tenant_id";
 const STATUS = "/api/v1/operations/coord/prompt-documents/auto-publish/status";
@@ -48,6 +74,8 @@ const ok = { candidates: [], count: 1, publishing_enabled: true };
 beforeEach(() => {
   fetchStatus.mockReset();
   publishAllMock.mockReset();
+  previewMock.mockReset();
+  updateMock.mockReset();
   localStorage.clear();
 });
 afterEach(() => localStorage.clear());
@@ -62,7 +90,7 @@ describe("what a refusal is stamped with", () => {
           answer = () => reject(notSystem());
         })
     );
-    const { result } = renderHook(() => usePublishAll());
+    const { result } = renderHook(() => usePublishAll(page()));
     await waitFor(() => expect(answer).toBeDefined());
     // Another tab switches while the read is in flight.
     localStorage.setItem(KEY, "t-b");
@@ -73,6 +101,8 @@ describe("what a refusal is stamped with", () => {
   });
 
   it("stamps an armed publish-all with the project it was SENT in", async () => {
+    // A write is sent only under a pin: the project the page shows, here the
+    // one stored when the run is sent.
     localStorage.setItem(KEY, "t-a");
     fetchStatus.mockResolvedValue(ok);
     let answer: (() => void) | undefined;
@@ -82,7 +112,9 @@ describe("what a refusal is stamped with", () => {
           answer = () => reject(notSystem("POST", "/publish-all"));
         })
     );
-    const { result } = renderHook(() => usePublishAll());
+    const { result } = renderHook(() =>
+      usePublishAll(page(() => ({ tenant: "t-a" })))
+    );
     await waitFor(() => expect(result.current.statusSettled).toBe(true));
     let run: Promise<unknown> | undefined;
     act(() => {
@@ -103,7 +135,7 @@ describe("reload(pin)", () => {
   it("sends the read in the pinned project, not the stored one", async () => {
     localStorage.setItem(KEY, "t-other");
     fetchStatus.mockResolvedValue(ok);
-    const { result } = renderHook(() => usePublishAll());
+    const { result } = renderHook(() => usePublishAll(page()));
     await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
     expect(fetchStatus).toHaveBeenLastCalledWith({ tenant: "t-other" });
     await act(async () => {
@@ -118,7 +150,7 @@ describe("which 200 clears a refusal", () => {
   async function latchedIn(stored: string | null) {
     if (stored !== null) localStorage.setItem(KEY, stored);
     fetchStatus.mockRejectedValueOnce(notSystem());
-    const hook = renderHook(() => usePublishAll());
+    const hook = renderHook(() => usePublishAll(page()));
     await waitFor(() => expect(hook.result.current.unavailable).not.toBeNull());
     expect(hook.result.current.unavailable?.tenant).toBe(stored);
     return hook;
@@ -174,7 +206,7 @@ describe("a status read for another project", () => {
   async function answeredIn(stored: string) {
     localStorage.setItem(KEY, stored);
     fetchStatus.mockResolvedValueOnce(served);
-    const hook = renderHook(() => usePublishAll());
+    const hook = renderHook(() => usePublishAll(page()));
     await waitFor(() => expect(hook.result.current.changedCount).toBe(3));
     let answer: (() => void) | undefined;
     fetchStatus.mockImplementationOnce(
@@ -214,5 +246,210 @@ describe("a status read for another project", () => {
     expect(result.current.changedCount).toBe(3);
     expect(result.current.status).toHaveLength(1);
     expect(result.current.statusSettled).toBe(true);
+  });
+});
+
+describe("with a resolver: the page's project", () => {
+  const inPage = () => ({ tenant: "t-page" });
+
+  it("sends the dry run, the armed run and the publish-mode PATCH in the resolved project, not the stored one", async () => {
+    localStorage.setItem(KEY, "t-other");
+    fetchStatus.mockResolvedValue(ok);
+    previewMock.mockResolvedValue({ dry_run: true, candidates: [] });
+    publishAllMock.mockResolvedValue({ dry_run: false, results: [] });
+    updateMock.mockResolvedValue({});
+    const { result } = renderHook(() => usePublishAll(page(inPage)));
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+
+    await act(async () => {
+      await result.current.loadCandidates();
+      await result.current.publishAll([], "");
+      await result.current.setPublishMode("policy", "p", "manual");
+    });
+
+    expect(previewMock.mock.calls).toEqual([[{ tenant: "t-page" }]]);
+    expect(publishAllMock.mock.calls[0]?.[2]).toEqual({ tenant: "t-page" });
+    expect(updateMock.mock.calls[0]?.[3]).toEqual({ tenant: "t-page" });
+  });
+
+  it("stamps a refused dry run with the resolved project", async () => {
+    localStorage.setItem(KEY, "t-other");
+    fetchStatus.mockResolvedValue(ok);
+    previewMock.mockRejectedValue(notSystem("POST", "/publish-all"));
+    const { result } = renderHook(() => usePublishAll(page(inPage)));
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+
+    await act(async () => {
+      await result.current.loadCandidates();
+    });
+
+    expect(result.current.unavailable?.tenant).toBe("t-page");
+  });
+
+  it("the status re-take after a publish-mode change is pinned", async () => {
+    // The PATCH goes out while the page's project is stored; another tab
+    // switches project inside its answer, so the re-take is sent with the
+    // OTHER project stored.
+    localStorage.setItem(KEY, "t-page");
+    fetchStatus.mockResolvedValue(ok);
+    updateMock.mockImplementation(async () => {
+      localStorage.setItem(KEY, "t-other");
+      return {};
+    });
+    const { result } = renderHook(() => usePublishAll(page(inPage)));
+    await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
+
+    let saved: boolean | undefined;
+    await act(async () => {
+      saved = await result.current.setPublishMode("policy", "p", "never");
+    });
+
+    expect(saved).toBe(true);
+    expect(localStorage.getItem(KEY)).toBe("t-other");
+    expect(updateMock.mock.calls[0]?.[3]).toEqual({ tenant: "t-page" });
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(fetchStatus).toHaveBeenLastCalledWith({ tenant: "t-page" });
+  });
+
+  it("reload() defaults to the resolved project, asked as it is sent; reload(pin) still sends its own", async () => {
+    localStorage.setItem(KEY, "t-other");
+    fetchStatus.mockResolvedValue(ok);
+    let shown = "t-page";
+    const { result } = renderHook(() =>
+      usePublishAll(page(() => ({ tenant: shown })))
+    );
+    await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
+    shown = "t-next";
+
+    await act(async () => {
+      await result.current.reload();
+      await result.current.reload({ tenant: "t-named" });
+    });
+
+    expect(fetchStatus.mock.calls).toEqual([
+      [{ tenant: "t-page" }],
+      [{ tenant: "t-next" }],
+      [{ tenant: "t-named" }],
+    ]);
+  });
+
+  it("clears a null-stamped refusal on a default re-take once the resolver names the page's project", async () => {
+    // Mounted before the page's project is known: the mount read goes out
+    // with nothing stored, and is refused — stamped `null`.
+    let shown: { tenant: string } | undefined = undefined;
+    fetchStatus.mockRejectedValueOnce(notSystem());
+    const { result } = renderHook(() => usePublishAll(page(() => shown)));
+    await waitFor(() => expect(result.current.unavailable).not.toBeNull());
+    expect(result.current.unavailable?.tenant).toBeNull();
+    shown = { tenant: "t-page" };
+    fetchStatus.mockResolvedValueOnce(ok);
+
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    expect(fetchStatus).toHaveBeenLastCalledWith({ tenant: "t-page" });
+    expect(result.current.unavailable).toBeNull();
+  });
+
+  it("runs the mount read once, keeps every function's identity across resolver identities, and asks the newest resolver", async () => {
+    localStorage.setItem(KEY, "t-page");
+    fetchStatus.mockResolvedValue(ok);
+    const { result, rerender } = renderHook(
+      ({ resolve }: { resolve: () => { tenant: string } }) =>
+        usePublishAll(page(resolve)),
+      { initialProps: { resolve: () => ({ tenant: "t-page" }) } }
+    );
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+    const { reload, loadCandidates, publishAll, setPublishMode } =
+      result.current;
+
+    rerender({ resolve: () => ({ tenant: "t-page" }) });
+    rerender({ resolve: () => ({ tenant: "t-moved" }) });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(result.current.reload).toBe(reload);
+    expect(result.current.loadCandidates).toBe(loadCandidates);
+    expect(result.current.publishAll).toBe(publishAll);
+    expect(result.current.setPublishMode).toBe(setPublishMode);
+
+    // The resolver the caller passes NOW is the one asked, through the same
+    // `reload`.
+    await act(async () => {
+      await reload();
+    });
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(fetchStatus).toHaveBeenLastCalledWith({ tenant: "t-moved" });
+  });
+});
+
+describe("a write refused beside its own send", () => {
+  beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
+    fetchStatus.mockResolvedValue(ok);
+    previewMock.mockResolvedValue({ dry_run: true, candidates: [] });
+    publishAllMock.mockResolvedValue({ dry_run: false, results: [] });
+    updateMock.mockResolvedValue({});
+  });
+
+  /** The dry run, the armed run and a publish-mode PATCH, and what each answered. */
+  async function writeEach(result: {
+    current: ReturnType<typeof usePublishAll>;
+  }): Promise<unknown[]> {
+    let outcomes: unknown[] = [];
+    await act(async () => {
+      outcomes = [
+        await result.current.loadCandidates(),
+        await result.current.publishAll([], ""),
+        await result.current.setPublishMode("policy", "p", "manual"),
+      ];
+    });
+    return outcomes;
+  }
+
+  it("sends no dry run, armed run or publish-mode PATCH while the page's guard says no", async () => {
+    localStorage.setItem(KEY, "t-page");
+    const asked = vi.fn(() => false);
+    const { result } = renderHook(() =>
+      usePublishAll({
+        writeAllowed: asked,
+        resolvePin: () => ({ tenant: "t-page" }),
+      })
+    );
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+
+    const outcomes = await writeEach(result);
+
+    expect(outcomes).toEqual([undefined, null, false]);
+    expect(asked).toHaveBeenCalledTimes(3);
+    expect(previewMock).not.toHaveBeenCalled();
+    expect(publishAllMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    // The status read is a read, and goes out regardless.
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends none of them without a pin, though the guard allows, and says why", async () => {
+    localStorage.setItem(KEY, "t-stored");
+    const { result } = renderHook(() => usePublishAll(page()));
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+
+    const outcomes = await writeEach(result);
+
+    expect(outcomes).toEqual([undefined, null, false]);
+    expect(previewMock).not.toHaveBeenCalled();
+    expect(publishAllMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    // Each refusal, as the operator reads it.
+    const refusal =
+      "Nothing was sent: this page has no project to send a change in. Select a project, or reload the page.";
+    expect(vi.mocked(toast.error).mock.calls).toEqual([
+      [refusal],
+      [refusal],
+      [refusal],
+    ]);
   });
 });

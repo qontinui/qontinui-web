@@ -8,6 +8,16 @@ import {
   type FleetPolicyView,
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
+import {
+  rereadAfterFailedReadBack,
+  resolvedOtherwise,
+  type Resolvers,
+} from "./fleetPolicyReadBack";
+import {
+  useFirstPinnedRead,
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "./useSendTimePin";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -26,8 +36,10 @@ function capitalise(s: string): string {
  * `permission_auto_accept`, `account_selection_mode` and `image_generation`
  * on tenant policy;
  * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` +
- * `label` and layers its own level vocabulary on top (a no-row default, a
- * fail-closed parse), so the honesty properties below are
+ * `label` and layers its own level vocabulary on top (a fail-closed parse,
+ * and a console-side no-row default only for domains that still keep one —
+ * `policy_write` and `policy_upstream` read coord's served default instead,
+ * qontinui-coord#4239), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
  * to be hand-copied, and the refresh-vs-write race fix reached only two.
  *
@@ -44,8 +56,13 @@ function capitalise(s: string): string {
  *    `readback_error`, this does NOT optimistically set the new level — it
  *    keeps the last known-good value and surfaces `readbackError`. Painting
  *    the written level on an unconfirmed write is exactly how a toggle starts
- *    lying about the fleet. A failed READ likewise keeps the last known-good
- *    value: blanking it would render as "off", a claim we cannot make.
+ *    lying about the fleet. A caller that pins its requests reads again at
+ *    once, pinned, so the value shown becomes coord's, and says what a
+ *    read-back would: "now X" when coord resolves the level written, the
+ *    read-back's warning when it does not (`rereadAfterFailedReadBack`). One
+ *    that pins nothing waits for a refresh. A failed READ likewise keeps the
+ *    last known-good value: blanking it would render as "off", a claim we
+ *    cannot make.
  *
  * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Every
  *    dial bound here is decided with no repo in hand: the capture clause is
@@ -66,6 +83,18 @@ function capitalise(s: string): string {
  *    generating for) — bind this hook for their TENANT band only, and write
  *    their repo band through the sibling `useRepoFleetPolicyWrite`.
  *
+ * **A page that shows one project's data can pin every request to it.** With
+ * `resolvePin`, the read and the write are each sent in the project it names
+ * when the request goes out, on every attempt — so a write re-issued after a
+ * 429, or replayed after a token refresh, once another tab has switched
+ * project still lands in the project the page shows. Such a page reads
+ * nothing until the resolver names a project: the first read goes out then
+ * (`useFirstPinnedRead`), and a later read with no project named sends
+ * nothing; `waitingForProject` says the dial is waiting. Its write reads the
+ * pin once, beside the send, and is refused there when none is named, so it
+ * never goes out unpinned. Omitted, every request is sent exactly as before:
+ * in the project stored when it is made, the read on mount.
+ *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
  * < System=2). So a `repo` band winning means a narrower row is overriding the
@@ -76,16 +105,32 @@ function capitalise(s: string): string {
  * @param domain  the fleet-policy domain coord stores the row under.
  * @param label   lower-case human name for toasts and the change note
  *                ("plan capture").
- * @param subject who resolves the level, for the disagreement toast —
- *                "devices" for a briefing clause, "agents" for an agent door.
+ * @param resolvers who resolves the level, WITH its verb, for the read-back's
+ *                sentences — "devices resolve" for a briefing clause, "agents
+ *                resolve" for an agent door, "coord resolves" for a level
+ *                coord applies itself. Each caller states its own verb, so a
+ *                singular subject reads "coord resolves", never "coord
+ *                resolve".
+ * @param options `resolvePin`, asked at send time (see above).
  */
 export function useTenantFleetPolicyDial<L extends string>(
   domain: string,
   label: string,
-  subject: string = "devices"
+  resolvers: Resolvers = "devices resolve",
+  { resolvePin }: SendTimePinOptions = {}
 ) {
+  // One identity whatever the caller passes, so the first read runs once: the
+  // pin is read as each request goes out.
+  const sendPin = useSendTimePin(resolvePin);
+  // A caller that passes a resolver reads only under the project it names.
+  const pinsReads = resolvePin !== undefined;
+  const pinsReadsRef = useRef(pinsReads);
+  pinsReadsRef.current = pinsReads;
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loading only once a read goes out: not while waiting for a project.
+  const [loading, setLoading] = useState(
+    () => !pinsReads || sendPin() !== undefined
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
@@ -99,38 +144,54 @@ export function useTenantFleetPolicyDial<L extends string>(
   const writeGeneration = useRef(0);
 
   /**
-   * Read the resolved value. Resolves `true` only when THIS read landed and is
-   * now what is shown — `false` when it failed, or when a write landed while it
-   * was in flight and it was discarded — so a caller can tell a confirmed read
-   * from a refresh that confirmed nothing.
+   * Read the resolved value: the view when THIS read landed and is now what
+   * is shown, else `null` — it failed, sent nothing, or a write landed while
+   * it was in flight and it was discarded.
    */
-  const load = useCallback(async (): Promise<boolean> => {
+  const read = useCallback(async (): Promise<FleetPolicyView | null> => {
+    const pin = sendPin();
+    // No project named yet: nothing is sent, and what is shown stays.
+    if (pinsReadsRef.current && pin === undefined) return null;
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(domain);
-      if (generation !== writeGeneration.current) return false;
+      const view = await fetchFleetPolicy(domain, undefined, pin);
+      if (generation !== writeGeneration.current) return null;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
       // banner it drives says "the value above may be stale" — leaving it up
       // beside a value we just confirmed would be the opposite of honest.
       setLastWrite(null);
-      return true;
+      return view;
     } catch (err) {
-      if (generation !== writeGeneration.current) return false;
+      if (generation !== writeGeneration.current) return null;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [domain, label]);
+  }, [domain, label, sendPin]);
 
+  /**
+   * Read the resolved value. Resolves `true` only when THIS read landed and is
+   * now what is shown — `false` when it failed, or when a write landed while it
+   * was in flight and it was discarded — so a caller can tell a confirmed read
+   * from a refresh that confirmed nothing.
+   */
+  const load = useCallback(
+    async (): Promise<boolean> => (await read()) !== null,
+    [read]
+  );
+
+  // A caller that pins nothing reads on mount, as it always has; one that
+  // pins its requests reads first when its project is known.
   useEffect(() => {
-    load();
+    if (!pinsReadsRef.current) load();
   }, [load]);
+  const waiting = useFirstPinnedRead(sendPin, () => void load());
 
   /**
    * A write to this domain LANDED outside this hook — a repo-band write whose
@@ -152,43 +213,68 @@ export function useTenantFleetPolicyDial<L extends string>(
    */
   const setLevel = useCallback(
     async (level: L, changeNote?: string): Promise<boolean> => {
+      // The project the write is sent in, read once beside the send. A
+      // caller that pins its requests sends no write without one, whatever
+      // it checked before calling: nothing would hold the write to its page.
+      const pin = sendPin();
+      if (pinsReadsRef.current && pin === undefined) {
+        toast.error(
+          `Nothing was sent: there is no project to send the ${label} ` +
+            "change in. Select a project, or reload the page."
+        );
+        return false;
+      }
       try {
         setSaving(true);
-        const result = await putFleetPolicy({
-          domain,
-          scope_band: "tenant",
-          scope_key: null,
-          level,
-          master_enabled: true,
-          change_note:
-            changeNote ?? `Set ${label} to "${level}" from the console`,
-        });
+        const result = await putFleetPolicy(
+          {
+            domain,
+            scope_band: "tenant",
+            scope_key: null,
+            level,
+            master_enabled: true,
+            change_note:
+              changeNote ?? `Set ${label} to "${level}" from the console`,
+          },
+          pin
+        );
         writeGeneration.current += 1;
         setLastWrite(result);
+        const confirmed = `${capitalise(label)}: now "${level}" for this tenant.`;
 
         if (result.effective) {
           setPolicy(result.effective);
           setError(null);
           if (result.effective.effective_level === level) {
-            toast.success(
-              `${capitalise(label)}: now "${level}" for this tenant.`
-            );
+            toast.success(confirmed);
           } else {
             // A write that landed and a value that resolves are different
             // facts. Say which one the fleet is actually on.
             toast.warning(
-              `Wrote "${level}", but ${subject} resolve ` +
-                `"${result.effective.effective_level}" ` +
-                `(from the ${result.effective.resolved_scope} scope).`
+              resolvedOtherwise(level, resolvers, result.effective)
             );
           }
         } else {
           // Written, but unconfirmed. Leave `policy` alone — do NOT paint the
           // written level as though it were resolved.
           toast.warning(
-            `The write went through, but the read-back failed — what ${subject} ` +
-              "resolve is unknown until this refreshes."
+            `The write went through, but the read-back failed — what ${resolvers} ` +
+              "is unknown until this refreshes."
           );
+          // A caller that pins its requests reads it again, pinned, so what
+          // is shown is coord's level and not the one from before the write,
+          // and says what the read-back would have. A failed re-read keeps
+          // both the value and the warning.
+          if (pinsReadsRef.current) {
+            void rereadAfterFailedReadBack({
+              read,
+              level,
+              confirmed,
+              resolvers,
+              onError: (err) =>
+                setError(message(err, `Failed to read the ${label} dial`)),
+            });
+          }
         }
         return true;
       } catch (err) {
@@ -198,12 +284,18 @@ export function useTenantFleetPolicyDial<L extends string>(
         setSaving(false);
       }
     },
-    [domain, label, subject]
+    [domain, label, resolvers, sendPin, read]
   );
 
   return {
     policy,
     loading,
+    /**
+     * A caller that pins its requests, before its resolver names a project:
+     * nothing has been read, and nothing is shown as read. Always `false`
+     * for a caller that passes no resolver.
+     */
+    waitingForProject: pinsReads && waiting,
     saving,
     error,
     /** Set only when the last write's read-back failed. UNKNOWN, not "off". */

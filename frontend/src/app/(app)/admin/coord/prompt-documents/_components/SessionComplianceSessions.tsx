@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,7 @@ export function SessionComplianceSessions({
   atFirstPage,
   onCursorChange,
 }: SessionsProps) {
+  const pageLocked = usePageLocked();
   const [selected, setSelected] = useState<SessionComplianceRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -102,6 +104,7 @@ export function SessionComplianceSessions({
           onValueChange={(v) =>
             onVerdictFilterChange(v as ComplianceVerdict | "all")
           }
+          disabled={pageLocked}
         >
           <SelectTrigger
             className="w-[13rem]"
@@ -145,9 +148,7 @@ export function SessionComplianceSessions({
               <TableRow>
                 <TableHead>Session</TableHead>
                 <TableHead>Verdict</TableHead>
-                <TableHead className="text-right">
-                  Unconfirmed claims
-                </TableHead>
+                <TableHead className="text-right">Unconfirmed claims</TableHead>
                 <TableHead>Checked</TableHead>
                 <TableHead className="w-24 text-right">Report</TableHead>
               </TableRow>
