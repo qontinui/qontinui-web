@@ -37,3 +37,26 @@ def test_aws_keeps_the_sdk_default():
     # Unset on the Config object means botocore applies its own default.
     assert config.request_checksum_calculation is None
     assert config.response_checksum_validation is None
+
+
+def test_an_older_botocore_skips_the_options_instead_of_raising():
+    # botocore < 1.36 (pyproject allows boto3 ^1.35) has neither the options
+    # nor the CRC32 default they override; passing them would be a TypeError.
+    with mock.patch(
+        "app.services.storage.s3_backend._supports_checksum_config", return_value=False
+    ):
+        config = _config_passed(
+            access_key="a", secret_key="s", endpoint_url="http://127.0.0.1:9000"
+        )
+    assert config.request_checksum_calculation is None
+    assert config.response_checksum_validation is None
+
+
+def test_the_support_probe_reads_this_botocore():
+    from botocore.config import Config
+
+    from app.services.storage.s3_backend import _supports_checksum_config
+
+    assert _supports_checksum_config() is (
+        "request_checksum_calculation" in Config.OPTION_DEFAULTS
+    )

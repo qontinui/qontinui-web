@@ -18,10 +18,25 @@
 # on the pin date, so qontinui-stack builds v1.11.0 from its release tarball
 # instead; this file avoids that build dependency by taking the newest image
 # outside the cooldown. The binary IN this image was run against the D7
-# conformance subset on nilan on 2026-11-22 (7/7 PASS, plus the bucket-policy
-# and listing checks of qontinui-stack/scripts/s3-store-check.sh). Move it to
-# v1.11.0 once that digest is 14 days old (2026-11-24) and re-run the check.
+# conformance subset on nilan on 2026-11-22: 7/7 PASS, recorded in
+# qontinui-dev-notes investigation-results/2026-11-19-in-house-substrate-strategy/
+# phase1/s3-versitygw-1.10.0-web-image.json (image and binary digests, the
+# instrument's commit). qontinui-stack's CI job `s3 store conformance` (arm 3)
+# re-runs the subset against this same digest on every PR there; keep the two
+# digests equal. Move to v1.11.0 once that digest is 14 days old (2026-11-24).
 # `released:` is Docker Hub's tag_last_pushed for this digest, read 2026-11-22.
+#
+# CUTOVER from the MinIO this file used to run. The old `minio` /
+# `minio-client` containers are orphans of this project now and still hold
+# port 9000, so remove them first (-v drops only anonymous volumes; the named
+# minio_data volume is kept), then start with orphans pruned:
+#
+#   docker rm -fv qontinui-minio qontinui-minio-client
+#   docker compose up -d --remove-orphans
+#
+# scripts/start-dev.sh does both. Then point backend/.env at the new
+# credentials (backend/.env.example) and copy any data you need with
+# qontinui-stack/scripts/s3-migrate-from-minio.sh.
 
 services:
   # Redis Cache & Queue

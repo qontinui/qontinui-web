@@ -15,7 +15,13 @@ fi
 # Start staging services (all-in-one)
 echo ""
 echo "Starting staging services..."
-docker compose -f docker-compose.staging.yml up -d --build
+# Retired MinIO containers (see docker-compose.staging.yml) hold port 9004.
+for retired in qontinui-minio-staging qontinui-minio-client-staging; do
+    if [ "$(docker ps -aq --filter "name=^${retired}$")" ]; then
+        docker rm -fv "$retired" >/dev/null && echo "Removed retired container $retired"
+    fi
+done
+docker compose -f docker-compose.staging.yml up -d --build --remove-orphans
 
 # Wait for services to be healthy
 echo ""

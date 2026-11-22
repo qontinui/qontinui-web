@@ -131,6 +131,10 @@ next to the compose file, defaulting to `qontinui_dev_s3` /
 
 **Bucket:** `qontinui` (created on startup, anonymous download)
 
+**Moving off MinIO:** remove the retired containers first, then start with
+orphans pruned (`scripts/start-dev.sh` does this):
+`docker rm -fv qontinui-minio qontinui-minio-client && docker compose up -d --remove-orphans`.
+
 Browse it with any S3 client, e.g.
 `aws --endpoint-url http://127.0.0.1:9000 s3 ls s3://qontinui/`.
 
