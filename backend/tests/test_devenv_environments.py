@@ -4030,10 +4030,9 @@ class _CiNodeCoordTransport:
 
 
 _STORED_DETAIL = (
-    "Saved by the coordinator, which could not send them just now. A runner "
-    "that fetches saved settings on connect receives them the next time it "
-    "connects; an older runner does not, so apply them again once it is "
-    "connected."
+    "Saved by the coordinator, which could not send them just now. Apply "
+    "again to send them; a runner that fetches saved settings on connect also "
+    "receives them the next time it connects."
 )
 _COORD_PUBLISH_FAILED_MESSAGE = "The directive could not be published (redis down)."
 
@@ -4161,6 +4160,7 @@ class TestCiNodeStoredButUnpublished:
             _publish_failed(502, {"stored": "true"}),
             httpx.Response(502, content=b"<html>bad gateway</html>"),
             httpx.Response(502, json=[{"stored": True}]),
+            httpx.Response(502, json={"error": "other", "stored": True}),
             _publish_failed(503, {"stored": True}),
             _publish_failed(504, {"stored": True}),
         ],
@@ -4170,6 +4170,7 @@ class TestCiNodeStoredButUnpublished:
             "stored_not_a_bool",
             "unparseable_body",
             "non_object_body",
+            "stored_beside_another_error_code",
             "stored_beside_a_503",
             "stored_beside_a_504",
         ],

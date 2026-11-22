@@ -199,10 +199,14 @@ export function dispatchRefusalCopy(
     };
   }
   if (state.dispatch_error === STORED_FOR_NEXT_CONNECT) {
-    // Coord stored the directive but could not publish it now. The machine
-    // fetches the stored copy when it next connects: deferred, not refused.
+    // Coord stored the directive but could not publish it now: deferred, not
+    // refused. A connected runner gets it only on a reconnect, so for an
+    // online machine say plainly that it was not sent.
     return {
-      headline: "Delivery deferred to the machine's next connect.",
+      headline:
+        state.reachability === "online"
+          ? "Not sent yet: the coordinator saved these settings but could not send them to the connected runner. Apply again to send them now."
+          : "Delivery deferred to the machine's next connect.",
       fixableHere: false,
       detail,
       deferred: true,
@@ -268,6 +272,18 @@ export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
 export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
+
+/**
+ * True when the saved settings have not been sent since they were last saved:
+ * saved here (`requested_at`) after the last accepted send (`dispatched_at`),
+ * or never sent. Read from persisted fields, so it survives a reload — a GET
+ * carries no `dispatched` verdict. Such settings may be re-sent as they stand.
+ */
+export function savedButUnsent(state: CiNodeConfigState): boolean {
+  if (!state.configured || !state.requested_at) return false;
+  if (!state.dispatched_at) return true;
+  return Date.parse(state.requested_at) > Date.parse(state.dispatched_at);
+}
 
 /** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
 export const MAX_CONCURRENT_BUILDS_MIN = 1;
@@ -848,10 +864,9 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Button
           variant="brand-primary"
           size="sm"
-          // A deferred delivery may be re-sent as it stands: the coordinator
-          // stored the settings but could not send them, and an older runner
-          // never fetches stored settings on connect.
-          disabled={saving || (!dirty && !refusal?.deferred)}
+          // Settings saved but not sent (a deferred delivery among them) may
+          // be re-sent as they stand, after a reload too.
+          disabled={saving || (!dirty && !savedButUnsent(state))}
           data-testid="ci-node-apply"
           onClick={handleApply}
         >

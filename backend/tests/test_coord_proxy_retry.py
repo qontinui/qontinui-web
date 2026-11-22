@@ -142,6 +142,22 @@ class TestPostToCoordRetry:
         assert resp is stored
         assert instance.post.call_count == 1
 
+    async def test_an_accepted_answer_on_a_retry_ends_the_loop(self) -> None:
+        """A gateway 502 first, then coord's own accepted 502: two attempts,
+        and the accepted answer is what comes back."""
+        stored = _mock_response(502, {"error": "x", "stored": True})
+        patcher, instance = _patch_client([_mock_response(502), stored])
+        with patcher, _patch_sleep():
+            resp = await post_to_coord(
+                "/devenv/ci-node-dispatch",
+                headers={},
+                json_body={},
+                log_event="test",
+                accept_gateway_status=lambda r: r.json().get("stored") is True,
+            )
+        assert resp is stored
+        assert instance.post.call_count == 2
+
     async def test_a_gateway_status_the_predicate_rejects_is_still_retried(
         self,
     ) -> None:
