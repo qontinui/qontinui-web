@@ -91,7 +91,7 @@ jobs:
     #
     # Job cap: measured 0.6-1.2 min per run (the job's runs inside Frontend CI,
     # 2026-11-18 to 2026-11-22, which is the same steps on the same hosted
-    # image); cap = max(5, 2x max), the max(5, 2x max) rule most job caps in this repo state.
+    # image); cap = max(5, 2x max), the rule most job caps in this repo state.
     # The step caps below sum past it on purpose: each bounds one hang, the
     # job cap bounds the run.
     timeout-minutes: 5
