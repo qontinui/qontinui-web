@@ -3,13 +3,13 @@
 #
 # Plan 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check
 # Phase 1. The `design-guide` job below was a job of frontend-ci.yml, which
-# carries a workflow-level `paths:` filter on `pull_request` and builds only
-# `main` and `develop` on `push`. A context produced there never reports on a
-# backend-only PR or on coord's merge-candidate refs, so it could never be made
-# a required check: under the `web-protect-main` ruleset's `strict: true`, a
-# required context that nothing produces leaves every such PR on "Expected --
-# waiting for status". The job moved here byte-for-byte; only the triggers are
-# new.
+# filters `pull_request` to the bases `main` and `develop` and to its `paths:`
+# list (frontend/**, docs/** and a few pinned files), and builds only `main` and
+# `develop` on `push`. A context produced there never reports on a PR that
+# touches none of those paths, on a stacked PR, or on coord's merge-candidate
+# refs, so it could not be made a required check: a required context that
+# nothing produces leaves every such PR on "Expected -- waiting for status".
+# The job moved here byte-for-byte; only the triggers are new.
 #
 # NO `paths:` FILTER, and NO scope step. Every event runs the full job, so a
 # green here is always a FULL run. A step-level "nothing design-related
@@ -18,8 +18,9 @@
 # a-selected-green-is-its-own-verdict), and coord's direct-merge door reads a
 # selected or skipped required job as not-success
 # (git-operations direct-merge-reads-the-verdict-type). The price is the full
-# job on every PR, about 1-3 hosted minutes with the Chromium install; this
-# repo is public, so hosted minutes cost nothing.
+# job on every PR and every push below: about one hosted minute with the
+# Chromium install (0.6-1.2 min measured on Frontend CI runs, 2026-11-18 to
+# 2026-11-22). This repo is public, so hosted minutes cost nothing.
 #
 # The job name IS the check-run context a later phase asks to make required.
 # Do not rename it, and do not add a `strategy:` matrix (which suffixes it).
@@ -27,8 +28,10 @@
 name: Design guide
 
 on:
-  # No `branches:` or `paths:` filter: the context must report on every PR,
-  # including a stacked one and a backend-only one.
+  # The triggers are web-guards.yml's, a required check with no filter that
+  # also builds `main` and the merge-candidate refs. No `branches:` or `paths:`
+  # filter: the context must report on every PR, including a stacked one and
+  # a backend-only one.
   pull_request:
   push:
     branches:
