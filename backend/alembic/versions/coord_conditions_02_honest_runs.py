@@ -1,7 +1,7 @@
 """coord.condition_runs honest-run columns — what a run covered, and why it reads unknown
 
 Revision ID: coord_conditions_02_honest_runs
-Revises: repair_rerun_01_partial_idx
+Revises: ci_measure_01_dispatch_measurement
 Create Date: 2026-11-07
 
 Phase 3 of plan
@@ -98,7 +98,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_conditions_02_honest_runs"
-down_revision: str | Sequence[str] | None = "repair_rerun_01_partial_idx"
+down_revision: str | Sequence[str] | None = "ci_measure_01_dispatch_measurement"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
