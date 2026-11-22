@@ -1920,13 +1920,16 @@ are recorded rather than shipped silently:
   one. A topic never rolled up (`headline: null`) is listed under All only and
   counted by the strip's `unknown` badge. A `503 schema_migration_pending` is
   said as "topics not available yet (migration pending)", never as no topics.
-- **The subprojects list's Topic column is a dash, and "Group by topic" is a
-  disabled control that says why.** coord's subprojects list carries no topic
-  field yet, and building the map client-side would cost one topic-detail read
-  per topic on every poll. So each row's time slot leads with `topic –` and the
-  toggle is disabled, both titled "topic data not yet served" (the title sits
-  on a wrapper, since a disabled button shows none). Both become live in the PR
-  that teaches the list to serve the topic.
+- **The subprojects list's Topic column reads the list's own `topic`, beside
+  its `topics_status`.** Each row's time slot leads with `topic <title>`, or
+  `no topic` when coord sent `topic: null` under `topics_status: "ok"`. A
+  `null` under `"unavailable:<reason>"`, or a list with no `topics_status` (an
+  older coord), is `topic –` titled with the reason — never "no topic". The
+  rows' topics are `ok` only when every read behind them said so. "Group by
+  topic" groups the loaded rows by topic, named topics by title and "No
+  topic" last, from those same fields — no per-topic read. While the topics
+  are unknown it is a disabled control whose title names the reason (the
+  title sits on a wrapper, since a disabled button shows none).
 - **A 200 with `tables_ready: false` is unknown everywhere on the page.**
   An amber notice says the list is not authoritative, the strip reads "Topic
   tables not ready", every tab count is `–` and an empty view says whether
