@@ -1132,10 +1132,13 @@ CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
 #: ``2026-11-22-ci-node-directive-replays-on-connect`` Phase 2 makes coord keep
 #: the latest accepted directive per device, written before it publishes, and
 #: Phase 3 makes the runner fetch it whenever its CI socket (re)connects. So a
-#: stored directive is not lost: it reaches the machine on its next connect.
+#: stored directive is not lost: it reaches a runner carrying Phase 3 on its next
+#: connect. An older runner never fetches it, which the detail says too.
 CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
-    "Saved by the coordinator; the machine applies these settings the next "
-    "time it connects to the coordinator."
+    "Saved by the coordinator, which could not send them just now. A runner "
+    "that fetches saved settings on connect receives them the next time it "
+    "connects; an older runner does not, so apply them again once it is "
+    "connected."
 )
 
 

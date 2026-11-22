@@ -848,7 +848,10 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Button
           variant="brand-primary"
           size="sm"
-          disabled={saving || !dirty}
+          // A deferred delivery may be re-sent as it stands: the coordinator
+          // stored the settings but could not send them, and an older runner
+          // never fetches stored settings on connect.
+          disabled={saving || (!dirty && !refusal?.deferred)}
           data-testid="ci-node-apply"
           onClick={handleApply}
         >

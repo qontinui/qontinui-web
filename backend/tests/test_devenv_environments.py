@@ -4030,8 +4030,10 @@ class _CiNodeCoordTransport:
 
 
 _STORED_DETAIL = (
-    "Saved by the coordinator; the machine applies these settings the next "
-    "time it connects to the coordinator."
+    "Saved by the coordinator, which could not send them just now. A runner "
+    "that fetches saved settings on connect receives them the next time it "
+    "connects; an older runner does not, so apply them again once it is "
+    "connected."
 )
 _COORD_PUBLISH_FAILED_MESSAGE = "The directive could not be published (redis down)."
 
