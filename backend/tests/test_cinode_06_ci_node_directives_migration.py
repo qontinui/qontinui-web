@@ -16,9 +16,10 @@ Without a database (always runs):
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
-3. The table appears with the column shapes and comments read back from the
-   catalog, the CHECK refuses an unknown arm, and a second row for the same
-   device is refused (one row per device).
+3. The table appears with the column types, nullability and comments, the
+   ``updated_at`` ``now()`` default, the table comment and the named CHECK all
+   read back from the catalog; the CHECK refuses an unknown arm, and a second
+   row for the same device is refused (one row per device).
 4. Downgrade removes the table; up, down, up round-trips.
 """
 
@@ -45,6 +46,7 @@ from tests._alembic_harness import (
     ephemeral_database,
     load_revision_module,
     run_alembic,
+    scalar,
     table_exists,
 )
 
@@ -227,6 +229,20 @@ def test_upgrade_creates_the_table_and_downgrade_removes_it() -> None:
             assert info[0] == _CATALOG_TYPES[name], name
             assert info[1] == ("YES" if nullable else "NO"), name
             assert column_comment(engine, _TABLE, name, schema=_SCHEMA), name
+        updated_at = column_info(engine, _TABLE, "updated_at", schema=_SCHEMA)
+        assert updated_at is not None
+        assert "now()" in (updated_at[2] or "")
+        assert "LATEST" in str(
+            scalar(engine, f"SELECT obj_description('{_SCHEMA}.{_TABLE}'::regclass)")
+        )
+        assert scalar(
+            engine,
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conname = 'ci_node_directives_credential_arm_check' "
+            f"AND conrelid = '{_SCHEMA}.{_TABLE}'::regclass",
+        ) == (
+            "CHECK ((credential_arm = ANY (ARRAY['operator'::text, 'device'::text])))"
+        )
 
         device = uuid.uuid4()
         _insert(engine, device, "operator")
