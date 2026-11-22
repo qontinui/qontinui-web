@@ -17,10 +17,10 @@ over ``GET /devenv/agent-ci-node-directive`` with its device JWT every time its
 
 Coord's store module (qontinui-coord
 ``crates/coord/src/devenv_ci_node_directive_store.rs``, the plan's Phase 2,
-landing separately) treats this table as best-effort: until it exists the read
-answers ``Unavailable`` and a dispatch answers 503 ``schema_migration_pending``.
-So this revision lands and applies first (served policy
-``production-and-cost`` ``alembic-sole-authorship``).
+not yet written) is planned to treat this table as best-effort: until it
+exists, the read is to answer ``Unavailable`` and a dispatch 503
+``schema_migration_pending``. Either way this revision lands and applies first
+(served policy ``production-and-cost`` ``alembic-sole-authorship``).
 
 The table
 ==========================================================================
@@ -28,7 +28,7 @@ The table
 One row per device: ``device_id`` is the primary key, not ``(tenant_id,
 device_id)``. One machine has one ``settings.json``, so its desired CI-node
 state is single; a device bound to several tenants takes the newest owner
-statement, which is already the live behaviour of the push-only directive.
+statement (plan decision, Phase 1 keying note).
 
 * ``tenant_id`` — the tenant whose owner (or agent) issued the directive.
 * ``directive_id`` — coord-minted UUIDv7, once per accepted directive; the
@@ -40,7 +40,9 @@ statement, which is already the live behaviour of the push-only directive.
   carries, so the runner parses both with one type.
 * ``credential_arm`` — which door accepted it (``operator`` / ``device``).
 * ``machine_id`` — the runner-local machine id, when the door supplied one.
-* ``updated_at`` — when coord last wrote the row.
+* ``updated_at`` — when coord last wrote the row. The ``now()`` default fires
+  on INSERT only, so coord's upsert must set ``updated_at = now()`` in its
+  ``ON CONFLICT ... DO UPDATE`` arm itself.
 
 No index beyond the primary key: the only read is by ``device_id``.
 
@@ -143,7 +145,10 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
-            comment="When coord last upserted this row.",
+            comment=(
+                "When coord last upserted this row. The default covers the "
+                "insert only; the writer sets it to now() on every update."
+            ),
         ),
         sa.CheckConstraint(
             "credential_arm IN ('operator', 'device')",
