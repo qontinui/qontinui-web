@@ -42,7 +42,7 @@ _SPLIT_REVISION_ID = "design_refs_split_intake_01"
 # ``design_refs_jobs_01`` is the design_refs head: it chains off the alembic head
 # main carried when it was re-pointed, not off ``design_refs_01``.
 _JOBS_REVISION_ID = "design_refs_jobs_01"
-_JOBS_PARENT_REVISION_ID = "coord_policy_outcome_counts_02"
+_JOBS_PARENT_REVISION_ID = "ci_measure_01_dispatch_measurement"
 _PARENT_REVISION_ID = "coord_subprojects_01"
 
 pytestmark = pytest.mark.skipif(

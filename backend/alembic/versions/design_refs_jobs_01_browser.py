@@ -1,7 +1,7 @@
 """design_refs capture_job.browser and claimed_by_actor
 
 Revision ID: design_refs_jobs_01
-Revises: coord_policy_outcome_counts_02
+Revises: ci_measure_01_dispatch_measurement
 Create Date: 2026-11-16
 
 Phase 1b-i of plan
@@ -45,7 +45,7 @@ from __future__ import annotations
 from alembic import op
 
 revision: str = "design_refs_jobs_01"
-down_revision: str = "coord_policy_outcome_counts_02"
+down_revision: str = "ci_measure_01_dispatch_measurement"
 branch_labels = None
 depends_on = None
 
