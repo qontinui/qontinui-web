@@ -68,7 +68,7 @@ yarn-error.log*
 package-lock.json
 !/frontend/package-lock.json
 # frontend/design/kit/package-lock.json pins the design-kit CLI (and the exact
-# ui-bridge peers it drives) that frontend-ci.yml installs with `npm ci`.
+# ui-bridge peers it drives) that design-guide.yml installs with `npm ci`.
 !/frontend/design/kit/package-lock.json
 next.config.js
 frontend/scripts/*
