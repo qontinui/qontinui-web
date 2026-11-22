@@ -11,13 +11,14 @@ echo ""
 echo "Starting development services..."
 # The object store replaced MinIO; the retired containers are orphans that
 # still hold port 9000. Remove them by name (-v: anonymous volumes only, the
-# named minio_data volume is kept), then prune any other orphans.
+# named minio_data volume is kept). No --remove-orphans: dev and staging
+# compose files share this directory's project, so it would remove staging's.
 for retired in qontinui-minio qontinui-minio-client; do
     if [ "$(docker ps -aq --filter "name=^${retired}$")" ]; then
         docker rm -fv "$retired" >/dev/null && echo "Removed retired container $retired"
     fi
 done
-docker compose -f docker-compose.yml up -d --remove-orphans
+docker compose -f docker-compose.yml up -d
 
 # Wait for services to be healthy
 echo ""

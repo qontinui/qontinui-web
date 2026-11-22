@@ -45,8 +45,10 @@ services:
   # docker-compose.yml (its header says why v1.10.0, and where its conformance
   # record is). S3 API on 9004; no console port (MinIO's 9005 is gone).
   # Cutover: `docker rm -fv qontinui-minio-staging qontinui-minio-client-staging`
-  # then `docker compose -f docker-compose.staging.yml up -d --remove-orphans`
-  # (scripts/start-staging.sh does both).
+  # (by name), then `docker compose -f docker-compose.staging.yml up -d`
+  # (scripts/start-staging.sh does both). Never `--remove-orphans` here: the
+  # dev and staging files share one compose project, so it would remove the
+  # dev stack's containers.
   object-store-staging:
     image: versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316 # released: 2026-10-22 pinned: 2026-11-22
     container_name: qontinui-object-store-staging

@@ -27,14 +27,16 @@
 # `released:` is Docker Hub's tag_last_pushed for this digest, read 2026-11-22.
 #
 # CUTOVER from the MinIO this file used to run. The old `minio` /
-# `minio-client` containers are orphans of this project now and still hold
-# port 9000, so remove them first (-v drops only anonymous volumes; the named
-# minio_data volume is kept), then start with orphans pruned:
+# `minio-client` containers are no longer declared but still exist and hold
+# port 9000, so remove them BY NAME first (-v drops only anonymous volumes; the
+# named minio_data volume is kept), then start as usual:
 #
 #   docker rm -fv qontinui-minio qontinui-minio-client
-#   docker compose up -d --remove-orphans
+#   docker compose up -d
 #
-# scripts/start-dev.sh does both. Then point backend/.env at the new
+# Not `--remove-orphans`: this file and docker-compose.staging.yml share this
+# directory's default compose project, so pruning "orphans" from one would
+# remove the other's containers. scripts/start-dev.sh does the removal. Then point backend/.env at the new
 # credentials (backend/.env.example) and copy any data you need with
 # qontinui-stack/scripts/s3-migrate-from-minio.sh.
 

@@ -131,9 +131,11 @@ next to the compose file, defaulting to `qontinui_dev_s3` /
 
 **Bucket:** `qontinui` (created on startup, anonymous download)
 
-**Moving off MinIO:** remove the retired containers first, then start with
-orphans pruned (`scripts/start-dev.sh` does this):
-`docker rm -fv qontinui-minio qontinui-minio-client && docker compose up -d --remove-orphans`.
+**Moving off MinIO:** remove the retired containers by name, then start as
+usual (`scripts/start-dev.sh` does this):
+`docker rm -fv qontinui-minio qontinui-minio-client && docker compose up -d`.
+Do not use `--remove-orphans`: the dev and staging compose files share one
+compose project, so it would remove the other stack's containers.
 
 Browse it with any S3 client, e.g.
 `aws --endpoint-url http://127.0.0.1:9000 s3 ls s3://qontinui/`.
