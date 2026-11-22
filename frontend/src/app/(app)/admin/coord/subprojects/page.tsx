@@ -24,10 +24,13 @@
  *   The row expands in place and carries "Open subproject ↗" (the detail page
  *   is a workspace: actions, history).
  * - **R3** — colours only through `subprojectStatus.ts`'s registered palette.
- * - **Topic** (topics plan D9) — each row names its topic as `–` and the
- *   "Group by topic" toggle is disabled, both titled "topic data not yet
- *   served": the list response carries no topic field yet, and fetching every
- *   topic's detail to build the map on each poll is not cheap.
+ * - **Topic** (topics plan D9) — each row names its topic from the list's own
+ *   `topic` field, read beside the response's `topics_status`: a topic's
+ *   title, "no topic" (`null` under `ok`), or `–` when unknown (`null` under
+ *   `unavailable:<reason>`, or a coord that sends no `topics_status`) — never
+ *   "no topic" on a guess. "Group by topic" groups this page's rows by topic,
+ *   with "No topic" last; while topics are unknown it is disabled and its
+ *   title names why. No per-topic read is made.
  *
  * A read that never answered is UNKNOWN with its reason — a pending migration
  * (`schema_migration_pending`) and an undeployed door are said as what they
@@ -59,21 +62,31 @@ import {
   deriveSubprojectsHealth,
   describeEmptyView,
   foldedReason,
+  groupByTopic,
   ofCountWords,
   projectStateWords,
   readFailureWords,
+  rowTopicOf,
+  rowTopicWords,
   sessionsText,
   sessionsTitle,
   tabOf,
   type CountReading,
+  type RowTopic,
   type SubprojectTab,
+  type TopicsAvailability,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
 import type { SubprojectSummary } from "@/lib/api/operations/coordSubprojects";
 import { useSubprojectsList } from "./_hooks/useSubprojectsList";
 
-/** Why the Topic column is a dash and grouping is off: coord's subprojects
- *  list carries no topic field yet. */
-const TOPIC_NOT_SERVED = "topic data not yet served";
+/** The group-by-topic toggle's title: what it does, or why it is off. */
+function groupToggleTitle(topics: TopicsAvailability, on: boolean): string {
+  if (topics.state !== "ok")
+    return `Group by topic is off: topic data unknown — ${topics.reason}`;
+  return on
+    ? "Showing this page's subprojects grouped by topic."
+    : "Group this page's subprojects by topic.";
+}
 
 /** The tabs whose rows leave one-offs, scheduled and merged ones to All. */
 function foldsIntoAll(tab: SubprojectTab): boolean {
@@ -90,6 +103,9 @@ export default function CoordSubprojectsPage() {
   const pathname = usePathname();
   const tab = tabOf(searchParams?.get("tab"));
   const [query, setQuery] = useState("");
+  const [groupOn, setGroupOn] = useState(false);
+  // One open row across every topic group (R5), and kept across a toggle.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const list = useSubprojectsList(tab);
 
   const setTab = useCallback(
@@ -184,6 +200,17 @@ export default function CoordSubprojectsPage() {
 
   const unattached = list.unattached;
 
+  // Grouping needs every row's topic known: under unknown it stays off,
+  // whatever the toggle was, rather than filing every row as "no topic".
+  const topics = rows.topics;
+  const canGroup = topics.state === "ok";
+  const grouped = groupOn && canGroup;
+  const groups = useMemo(
+    () => (grouped ? groupByTopic(shown, topics) : []),
+    [grouped, shown, topics]
+  );
+  const toggleTitle = groupToggleTitle(topics, grouped);
+
   return (
     <div
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
@@ -231,27 +258,28 @@ export default function CoordSubprojectsPage() {
               : ""}
       </p>
 
-      {/* Group by topic (topics plan D9). Disabled until coord's subprojects
-          list serves each row's topic: building the grouping client-side
-          would take one topic-detail read per topic on every poll, so the
-          toggle says why it is off instead of grouping on a guess. */}
+      {/* Group by topic (topics plan D9): groups the loaded rows by the
+          topic coord's list serves on each row — no per-topic read. While
+          the rows' topics are unknown it is disabled and says why, rather
+          than grouping on a guess. */}
       <span
         className="inline-flex"
-        title={TOPIC_NOT_SERVED}
+        title={toggleTitle}
         data-testid="coord-subprojects-group-by-topic-wrap"
       >
         <Button
-          variant="outline"
+          variant={grouped ? "secondary" : "outline"}
           size="sm"
-          disabled
-          aria-pressed={false}
+          disabled={!canGroup}
+          aria-pressed={grouped}
           aria-describedby="coord-subprojects-group-by-topic-why"
+          onClick={() => setGroupOn((on) => !on)}
           data-testid="coord-subprojects-group-by-topic"
         >
           Group by topic
         </Button>
         <span id="coord-subprojects-group-by-topic-why" className="sr-only">
-          {TOPIC_NOT_SERVED}
+          {toggleTitle}
         </span>
       </span>
 
@@ -284,20 +312,66 @@ export default function CoordSubprojectsPage() {
         </p>
       )}
 
-      <RecordList<SubprojectSummary>
-        items={shown}
-        itemKey={(s) => s.id}
-        loaded={rows.loaded || rows.failure !== null}
-        empty={
-          <p
-            className="m-0 text-sm text-muted-foreground"
-            data-testid="coord-subprojects-empty"
-          >
-            {emptyText}
-          </p>
-        }
-        renderRow={(s, ctx) => <SubprojectRow s={s} {...ctx} />}
-      />
+      {grouped && shown.length > 0 ? (
+        <div className="space-y-4" data-testid="coord-subprojects-topic-groups">
+          {groups.map((g) => (
+            <section
+              key={g.key}
+              className="space-y-1"
+              data-testid="coord-subprojects-topic-group"
+              data-topic-group={g.key}
+            >
+              <h3 className="m-0 text-xs font-medium text-muted-foreground">
+                <span data-testid="coord-subprojects-topic-group-label">
+                  {g.label}
+                </span>{" "}
+                <span className="font-mono">({g.items.length})</span>
+                {g.topic && (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/admin/coord/topics/${encodeURIComponent(g.topic.id)}`}
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Open topic ↗
+                    </Link>
+                  </>
+                )}
+              </h3>
+              <RecordList<SubprojectSummary>
+                items={g.items}
+                itemKey={(s) => s.id}
+                expandedKey={expandedKey}
+                onExpandedKeyChange={setExpandedKey}
+                loaded
+                empty={null}
+                renderRow={(s, ctx) => (
+                  <SubprojectRow s={s} topic={rowTopicOf(s, topics)} {...ctx} />
+                )}
+              />
+            </section>
+          ))}
+        </div>
+      ) : (
+        <RecordList<SubprojectSummary>
+          items={shown}
+          itemKey={(s) => s.id}
+          expandedKey={expandedKey}
+          onExpandedKeyChange={setExpandedKey}
+          loaded={rows.loaded || rows.failure !== null}
+          empty={
+            <p
+              className="m-0 text-sm text-muted-foreground"
+              data-testid="coord-subprojects-empty"
+            >
+              {emptyText}
+            </p>
+          }
+          renderRow={(s, ctx) => (
+            <SubprojectRow s={s} topic={rowTopicOf(s, topics)} {...ctx} />
+          )}
+        />
+      )}
 
       {folded > 0 && shown.length > 0 && (
         <p
@@ -368,11 +442,13 @@ export default function CoordSubprojectsPage() {
 
 function SubprojectRow({
   s,
+  topic,
   expanded,
   onToggle,
   rowKey,
 }: {
   s: SubprojectSummary;
+  topic: RowTopic;
   expanded: boolean;
   onToggle: () => void;
   rowKey: string;
@@ -380,6 +456,7 @@ function SubprojectRow({
   const status = deriveSubprojectStatus(s);
   const folded = foldedReason(s);
   const title = s.title || s.slug;
+  const topicWords = rowTopicWords(topic);
   return (
     <RecordRow
       rowKey={rowKey}
@@ -400,13 +477,14 @@ function SubprojectRow({
       attention={status.attention}
       time={
         <span className="flex items-center gap-1.5">
-          {/* The Topic column: unknown, not "none", until coord serves it. */}
+          {/* The Topic column: a topic, "no topic", or `–` when unknown. */}
           <span
             className="font-mono text-xs text-muted-foreground"
-            title={TOPIC_NOT_SERVED}
+            title={topicWords.title}
+            data-topic-kind={topic.kind}
             data-testid="coord-subproject-row-topic"
           >
-            topic –
+            {topicWords.text}
           </span>
           <RowTime
             at={s.last_activity_at}
@@ -455,13 +533,24 @@ function SubprojectRow({
           </>
         }
         actions={
-          <Link
-            href={`/admin/coord/subprojects/${encodeURIComponent(s.id)}`}
-            className="text-xs underline underline-offset-2 hover:text-foreground"
-            data-testid="coord-subproject-open"
-          >
-            Open subproject ↗
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href={`/admin/coord/subprojects/${encodeURIComponent(s.id)}`}
+              className="text-xs underline underline-offset-2 hover:text-foreground"
+              data-testid="coord-subproject-open"
+            >
+              Open subproject ↗
+            </Link>
+            {topic.kind === "topic" && (
+              <Link
+                href={`/admin/coord/topics/${encodeURIComponent(topic.topic.id)}`}
+                className="text-xs underline underline-offset-2 hover:text-foreground"
+                data-testid="coord-subproject-open-topic"
+              >
+                Open topic ↗
+              </Link>
+            )}
+          </div>
         }
         history={
           <p className="m-0 text-xs text-muted-foreground">

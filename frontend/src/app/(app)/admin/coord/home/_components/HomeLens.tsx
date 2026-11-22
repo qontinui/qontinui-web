@@ -12,7 +12,7 @@
  * same button, now registered with its effect declared.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { RefreshButton } from "@/components/console";
 import {
@@ -186,12 +186,6 @@ export function HomeRefreshButton({
 }: {
   onRefresh: () => Promise<void>;
 }) {
-  // The SDK keeps the handler it registered with (it re-registers only when a
-  // declaration changes), so the handler reads the latest refresh by ref.
-  const latest = useRef(onRefresh);
-  useEffect(() => {
-    latest.current = onRefresh;
-  }, [onRefresh]);
   const customActions = useMemo(
     () => ({
       [HOME_REFRESH_ACTION]: {
@@ -201,11 +195,11 @@ export function HomeRefreshButton({
           "Re-read coord's project state now instead of waiting for the next minute. It changes nothing but what this page shows.",
         effect: "read" as const,
         handler: async () => {
-          await latest.current();
+          await onRefresh();
         },
       },
     }),
-    []
+    [onRefresh]
   );
   const { ref } = useUIElement({
     id: HOME_REFRESH_ID,
