@@ -88,6 +88,36 @@ def _revision_source() -> str:
     return _revision_path().read_text(encoding="utf-8")
 
 
+def _raw_literals(name: str, path: Path | None = None) -> list[str]:
+    """Every string constant inside ``name()`` except its own docstring, verbatim."""
+    source = (path or _revision_path()).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    doc = ast.get_docstring(fn, clean=False)
+    return [
+        node.value
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value != doc
+    ]
+
+
+def _comment_text(name: str, target: str, path: Path | None = None) -> str:
+    """The un-normalized text between the first and last quote of the
+    ``<target> IS '...'`` literal in ``name()`` — whitespace inside it kept."""
+    literal = next(
+        s
+        for s in _raw_literals(name, path)
+        if re.sub(r"\s+", " ", s).strip().startswith(f"{target} IS ")
+    )
+    return literal[literal.index("'") + 1 : literal.rindex("'")]
+
+
 def _sql_literals(name: str, path: Path | None = None) -> list[str]:
     """Every string constant inside ``name()`` except its own docstring."""
     source = (path or _revision_path()).read_text(encoding="utf-8")
@@ -172,21 +202,21 @@ def test_upgrade_comments_name_all_three_lanes() -> None:
 
 
 def test_downgrade_restores_run_outcomes_01_text_and_drops_the_column() -> None:
-    original = _sql_literals(
-        "upgrade", _versions() / "run_outcomes_01_coord_run_outcomes.py"
-    )
+    run_outcomes_01 = _versions() / "run_outcomes_01_coord_run_outcomes.py"
     down = _sql_literals("downgrade")
+    # Byte for byte: the comment text is compared un-normalized.
     for target in (
         "COMMENT ON TABLE coord.run_outcomes",
         "COMMENT ON COLUMN coord.run_outcomes.check_name",
     ):
-        assert _comment_on(down, target) == _comment_on(original, target)
+        restored = _comment_text("downgrade", target)
+        assert restored == _comment_text("upgrade", target, run_outcomes_01)
+        assert restored
     # The upgrade keeps the original table text and extends it.
-    up_table = _comment_on(
-        _sql_literals("upgrade"), "COMMENT ON TABLE coord.run_outcomes"
+    table = "COMMENT ON TABLE coord.run_outcomes"
+    assert _comment_text("upgrade", table).startswith(
+        _comment_text("upgrade", table, run_outcomes_01)
     )
-    original_table = _comment_on(original, "COMMENT ON TABLE coord.run_outcomes")
-    assert up_table.startswith(original_table.removesuffix("'"))
     assert down[-3:] == [
         "SET LOCAL lock_timeout = '3s'",
         "ALTER TABLE coord.ci_dispatches DROP COLUMN IF EXISTS measurement",
@@ -283,6 +313,10 @@ def test_upgrade_is_idempotent_and_round_trips() -> None:
         engine,
         db_url,
     ):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        parent_table_comment = _run_outcomes_table_comment(engine)
+        parent_check_name_comment = column_comment(engine, "run_outcomes", "check_name")
+        assert parent_table_comment and parent_check_name_comment
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         # Re-executing the revision over its own column is a no-op.
         run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
@@ -291,10 +325,12 @@ def test_upgrade_is_idempotent_and_round_trips() -> None:
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) is None
         assert not _constraint_exists(engine)
-        assert "qontinui-measurement" not in (
-            column_comment(engine, "run_outcomes", "check_name") or ""
+        # The downgrade restores exactly what the parent revision left.
+        assert (
+            column_comment(engine, "run_outcomes", "check_name")
+            == parent_check_name_comment
         )
-        assert "qontinui-measurement" not in _run_outcomes_table_comment(engine)
+        assert _run_outcomes_table_comment(engine) == parent_table_comment
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert column_info(engine, _TABLE, _COLUMN) == ("jsonb", "YES", None)
         assert _constraint_exists(engine)
