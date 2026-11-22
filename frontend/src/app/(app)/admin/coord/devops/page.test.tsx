@@ -170,10 +170,6 @@ import knownFleetHealth from "../../../../../../test-fixtures/devops-readout/kno
 import knownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/known-fault-to-visibility.json";
 import unknownFleetHealth from "../../../../../../test-fixtures/devops-readout/unknown-fleet-health.json";
 import unknownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/unknown-fault-to-visibility.json";
-import {
-  capacityBody,
-  capacityDevice,
-} from "@/components/operations/fleetCapacity.fixture";
 
 /**
  * Coord wire shape — mirrors `DeviceHealthSnapshot` (fleet_health.rs).
@@ -3374,6 +3370,35 @@ describe("/admin/coord/devops — the presentation lens (plan 2026-10-23-console
 // this page, and an unmeasured machine reads UNKNOWN, never 0.
 // ---------------------------------------------------------------------------
 
+/**
+ * One device row as coord's `GET /coord/fleet/capacity/operator` serves it
+ * (model v3, `fleet_placement::capacity_read`), spelled out here so this
+ * suite enters only through the page.
+ */
+function capacityRow(over: Record<string, unknown>): Record<string, unknown> {
+  const known = (value: number) => ({ state: "known", value });
+  return {
+    device_id: "d0d0d0d0-0000-4000-8000-000000000001",
+    machine_key: "nilan",
+    label: "nilan",
+    sample_age_s: 42,
+    free_cpu_cores: known(6.5),
+    free_mem_bytes: known(12 * 1024 ** 3),
+    binding: { S: "cpu", C3: "memory", C1: "cpu", C2: "cpu", B: null },
+    slots: {
+      S: known(3),
+      C3: known(2),
+      C1: known(1),
+      C2: known(1),
+      B: known(0),
+    },
+    session_gate: null,
+    unknown_reason: [],
+    parity: [],
+    ...over,
+  };
+}
+
 describe("/admin/coord/devops — Capacity", () => {
   beforeEach(() => {
     httpGet.mockReset();
@@ -3386,25 +3411,30 @@ describe("/admin/coord/devops — Capacity", () => {
       devices: [coordDevice("d-1", "msi", "healthy")],
       runners: [runner("msi")],
       samples: [],
-      capacity: capacityBody([
-        capacityDevice({ label: "nilan" }),
-        capacityDevice({
-          device_id: "d0d0d0d0-0000-4000-8000-000000000002",
-          machine_key: "nawa",
-          label: "nawa",
-          sample_age_s: null,
-          free_cpu_cores: { state: "unknown", reason: "no runner sample" },
-          free_mem_bytes: { state: "unknown", reason: "no runner sample" },
-          binding: { S: null, C3: null, C1: null, C2: null, B: null },
-          slots: Object.fromEntries(
-            ["S", "C3", "C1", "C2", "B"].map((c) => [
-              c,
-              { state: "unknown", reason: "no runner sample" },
-            ])
-          ),
-          unknown_reason: ["no runner sample"],
-        }),
-      ]),
+      capacity: {
+        state: "known",
+        model_version: 3,
+        plan: { id: 7, computed_at: "2026-11-22T10:00:00Z", age_secs: 120 },
+        devices: [
+          capacityRow({}),
+          capacityRow({
+            device_id: "d0d0d0d0-0000-4000-8000-000000000002",
+            machine_key: "nawa",
+            label: "nawa",
+            sample_age_s: null,
+            free_cpu_cores: { state: "unknown", reason: "no runner sample" },
+            free_mem_bytes: { state: "unknown", reason: "no runner sample" },
+            binding: { S: null, C3: null, C1: null, C2: null, B: null },
+            slots: Object.fromEntries(
+              ["S", "C3", "C1", "C2", "B"].map((c) => [
+                c,
+                { state: "unknown", reason: "no runner sample" },
+              ])
+            ),
+            unknown_reason: ["no runner sample"],
+          }),
+        ],
+      },
     });
 
     render(<CoordDevOpsPage />);
