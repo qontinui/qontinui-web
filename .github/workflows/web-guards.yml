@@ -6,16 +6,26 @@
 # three minutes of real work. One job with one checkout and N steps collapses
 # that to one acquisition. Thirteen jobs in one FILE would save nothing.
 #
-# PHASE 1 IS ADDITIVE. Every member workflow below still exists and still
-# reports its own context; this file runs the same commands a second time. A
-# later phase switches the `web-protect-main` ruleset to this job's context and
-# only then deletes the old files (a required context nothing produces wedges
-# every PR, so the order is: add, prove it reports, switch, soak, delete).
+# WHAT IS REQUIRED (read live 2026-11-22: `gh api
+# repos/qontinui/qontinui-web/rules/branches/main` and `.../rulesets/17299464`).
+# One ruleset governs `main`, `web-protect-main` (17299464, strict), and it
+# requires five contexts: `web-guards` (this job), `Backend E2E Tests (3.12)`,
+# `Test Summary`, `Spec CI` and `Gitleaks Secret Detection`. The ruleset switch
+# this plan ordered (add, prove it reports, switch, soak, delete) is done up
+# to "switch": no member's own context is required any more, but every member
+# workflow below still exists and still reports, so this file runs the same
+# commands a second time until a later phase deletes them. Re-read the ruleset
+# rather than trusting this paragraph: it is a dated snapshot.
+#
+# `Generated style guide (compile --check + validate-guide)` (design-guide.yml)
+# is NOT required. Making it required is Phase 9 of plan
+# 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check,
+# an operator decision.
 #
 # Members (workflow file -> job id; each step below is named after its member):
-#   alembic-graph-pr.yml          alembic-heads-pr            (required today)
-#   coord-column-drop-guard.yml   coord-column-drop-guard     (required today)
-#   forbid-public-schema.yml      forbid-public-schema        (required today)
+#   alembic-graph-pr.yml          alembic-heads-pr
+#   coord-column-drop-guard.yml   coord-column-drop-guard
+#   forbid-public-schema.yml      forbid-public-schema
 #   forbid-fixed-sleeps-in-e2e.yml  forbid-fixed-sleeps-in-e2e
 #   global-state-assertions.yml   global-state-assertions
 #   gitignore-tracked-files.yml   gitignore-tracked-files
@@ -109,7 +119,7 @@ concurrency:
 
 jobs:
   web-guards:
-    # The job name IS the check-run context a later phase makes required.
+    # The job name IS the required check-run context (see the header).
     # Do not rename it, and do not add a `strategy:` matrix (which suffixes it).
     name: web-guards
     # The members' caps are 5-10 min against p90s of ~0.15-0.22 min each; the
@@ -388,7 +398,7 @@ jobs:
           # --retry/--timeout: this is the ONE network step in the job, and with
           # the member's paths filter dropped it now runs on every in-scope
           # event. A package-index hiccup must not read as a guard failure
-          # once `web-guards` is a required context.
+          # now that `web-guards` is a required context.
           # A job venv: on the self-hosted light lane the setup-python
           # interpreter lives in a tool cache every runner shares.
           python -m venv --clear "$RUNNER_TEMP/hook-tests-venv"
