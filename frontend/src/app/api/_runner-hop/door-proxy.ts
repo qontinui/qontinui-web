@@ -24,7 +24,11 @@
  *                       probe. A refusal is 429 `RUNNER_DOOR_RATE_LIMITED`
  *                       naming the lane, and every response after the check
  *                       carries that lane's budget (`X-RateLimit-Lane`,
- *                       `-Limit`, `-Remaining`, `-Reset-After`). Then one
+ *                       `-Limit`, `-Remaining`, `-Reset-After`) — except a
+ *                       429 the RUNNER answered, which says
+ *                       `X-RateLimit-Refused-By: runner` instead. A door
+ *                       refusal also logs `lane_refused` (lane, method,
+ *                       sampled as the relay's; never the user id). Then one
  *                       local `runner-door-proxy: forwarded` line per call
  *                       (never a body: it may carry API keys).
  */
@@ -34,6 +38,7 @@ import { matchRunnerDoorRoute } from "@/lib/runner/door-routes";
 import {
   checkRateLimit,
   laneForRunnerDoor,
+  logLaneRefused,
   rateLimitedResponse,
   withRateLimitHeaders,
 } from "../ui-bridge/[...path]/_rate-limit";
@@ -132,7 +137,10 @@ export async function handleRunnerDoorRequest(
   // Redis is absent, as the relay's is). From here on every response carries
   // the lane's budget.
   const rl = await checkRateLimit(auth.userId, laneForRunnerDoor(method));
-  if (!rl.allowed) return rateLimitedResponse(rl);
+  if (!rl.allowed) {
+    logLaneRefused(rl, "user", method);
+    return rateLimitedResponse(rl);
+  }
   const withBudget = (response: Response) => withRateLimitHeaders(response, rl);
 
   // 5b. The runner on that port must be one of this operator's paired
@@ -183,11 +191,18 @@ export async function handleRunnerDoorRequest(
     port,
   });
 
-  // 7. Pass the runner's answer through.
+  // 7. Pass the runner's answer through. A 429 the RUNNER answered is not
+  // the door's refusal: it carries no door lane or budget (which would
+  // attribute it to the door and report headroom beside a refusal), only
+  // `X-RateLimit-Refused-By: runner` and the runner's own `retry-after`.
   const headers = new Headers({ "Cache-Control": "no-store" });
   for (const name of PASSED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);
     if (value !== null) headers.set(name, value);
+  }
+  if (upstream.status === 429) {
+    headers.set("X-RateLimit-Refused-By", "runner");
+    return new Response(upstream.body, { status: 429, headers });
   }
   return withBudget(
     new Response(upstream.body, { status: upstream.status, headers })
