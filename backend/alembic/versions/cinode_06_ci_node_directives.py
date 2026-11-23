@@ -1,7 +1,7 @@
 """runner-as-CI-node — coord.ci_node_directives (latest accepted directive per device)
 
 Revision ID: cinode_06_ci_node_directives
-Revises: ci_measure_01_dispatch_measurement
+Revises: coord_conditions_02_honest_runs
 Create Date: 2026-11-22
 
 Phase 1 of plan ``2026-11-22-ci-node-directive-replays-on-connect`` (decision
@@ -56,7 +56,7 @@ no data is touched, so it is safe for a running coord on the prior schema
 created.
 
 ``down_revision`` chains off main's single head at authoring time
-(``ci_measure_01_dispatch_measurement``; ``alembic heads`` printed one head).
+(``coord_conditions_02_honest_runs``; ``alembic heads`` printed one head).
 Coord re-points it at land time if main moves again.
 """
 
@@ -70,7 +70,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cinode_06_ci_node_directives"
-down_revision: str | Sequence[str] | None = "ci_measure_01_dispatch_measurement"
+down_revision: str | Sequence[str] | None = "coord_conditions_02_honest_runs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
