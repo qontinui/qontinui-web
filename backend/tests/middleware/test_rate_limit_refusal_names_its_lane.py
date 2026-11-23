@@ -50,7 +50,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -1083,3 +1083,106 @@ def test_an_upstream_answer_that_is_not_a_429_has_its_headers_left_unread() -> N
     )
     assert exc.status_code == 403
     assert exc.headers is None
+
+
+def test_a_websocket_route_names_its_template() -> None:
+    """A helper reached from a websocket handler names the websocket route,
+    not ``unknown``."""
+    from app.middleware.upstream_refusal import (
+        RouteScopeMiddleware,
+        upstream_refusal_headers,
+    )
+
+    app = FastAPI()
+    app.add_middleware(RouteScopeMiddleware)
+
+    @app.websocket("/ws/{item_id}")
+    async def ws(websocket: WebSocket, item_id: str) -> None:
+        await websocket.accept()
+        headers = upstream_refusal_headers(
+            "coord", SimpleNamespace(status_code=429, headers={})
+        )
+        await websocket.send_text(headers["X-RateLimit-Lane"])
+        await websocket.close()
+
+    with TestClient(app).websocket_connect(f"/ws/{uuid4()}") as socket:
+        assert socket.receive_text() == "coord:/ws/{item_id}"
+
+
+@pytest.mark.parametrize(
+    ("sent", "forwarded"),
+    [
+        ("12", "12"),
+        ("Wed, 21 Oct 2026 07:28:00 GMT", "Wed, 21 Oct 2026 07:28:00 GMT"),
+        ("soon", None),
+        ("-5", None),
+        ("１２", None),  # full-width digits: not delta-seconds
+        ("☃", None),  # not latin-1 at all
+        ("", None),
+    ],
+)
+def test_an_upstream_retry_after_is_forwarded_only_when_it_is_valid(
+    sent: str, forwarded: str | None
+) -> None:
+    """Retry-After is delta-seconds or an HTTP-date (RFC 9110 §10.2.3);
+    anything else is omitted while the lane and key kind stay."""
+    from app.middleware.upstream_refusal import upstream_refusal_headers
+
+    headers = upstream_refusal_headers(
+        "coord", SimpleNamespace(status_code=429, headers={"retry-after": sent})
+    )
+    assert headers["X-RateLimit-Lane"] == "coord:unknown"
+    assert headers["X-RateLimit-Key-Kind"] == "upstream"
+    assert headers.get("Retry-After") == forwarded
+
+
+def test_a_coord_429_with_a_non_latin1_retry_after_is_still_a_429(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forwarded verbatim, a UTF-8 Retry-After cannot be encoded by Starlette
+    and the refusal would leave as a 500."""
+    import httpx
+
+    from app.api.v1.endpoints import operations
+
+    real = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={"error": "coord_says"},
+            headers=[(b"retry-after", "☃".encode())],
+        )
+
+    def client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    app_client = TestClient(
+        _proxy_app(lambda: operations._proxy_coord_get("/coord/fixture")),
+        raise_server_exceptions=False,
+    )
+    resp = app_client.get(f"/probe/{uuid4()}")
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Lane"] == "coord:/probe/{item_id}"
+    assert "Retry-After" not in resp.headers
+
+
+def test_a_runner_429_is_a_retry_later_refusal() -> None:
+    """The constraints proxy's envelope for a runner 429 says rate_limited /
+    retry_later — matching its lane and Retry-After — not fix_request."""
+    import httpx
+
+    from app.api.v1.endpoints.constraints import _runner_answered_error
+    from app.core.refusal import NextActionKind, RefusalCode
+
+    exc = _runner_answered_error(
+        httpx.Response(429, text="slow down", headers={"retry-after": "4"})
+    )
+    assert exc.status_code == 429
+    assert exc.refusal.code is RefusalCode.rate_limited
+    assert exc.refusal.next_action.kind is NextActionKind.retry_later
+    assert exc.headers is not None
+    assert exc.headers["X-RateLimit-Key-Kind"] == "upstream"
+    assert exc.headers["Retry-After"] == "4"

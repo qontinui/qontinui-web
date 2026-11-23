@@ -11,11 +11,12 @@ Every builder that takes its status from an upstream answer goes through
 :func:`upstream_http_exception` / :func:`upstream_json_response` (or passes
 ``headers=upstream_refusal_headers(...)``). On a 429 they attach
 ``refusal_headers("<upstream>:<route template>", "upstream",
-retry_after=<the upstream's Retry-After>)``; on any other status, nothing.
+retry_after=<the upstream's Retry-After, when valid>)``; on any other status,
+nothing. "Valid" is :func:`valid_retry_after`: delta-seconds or an HTTP-date.
 ``test_every_upstream_status_pass_through_goes_through_the_helper`` enforces it.
 
 The route template is the route THIS backend was serving when the upstream
-refused. The proxy helpers are called deep inside a route and never hold the
+refused (an HTTP route or a websocket route). The proxy helpers are called deep inside a route and never hold the
 request, so :class:`RouteScopeMiddleware` keeps the request's ASGI scope in a
 context variable: the router writes the matched ``route`` into that same scope
 dict before the endpoint runs, so :func:`current_route_template` reads the
@@ -25,8 +26,10 @@ template from anywhere in the request. Outside a routed request it is
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, MutableMapping
 from contextvars import ContextVar
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 from fastapi import HTTPException
@@ -41,15 +44,15 @@ _request_scope: ContextVar[MutableMapping[str, Any] | None] = ContextVar(
 
 
 class RouteScopeMiddleware:
-    """Holds the current HTTP request's ASGI scope for
+    """Holds the current HTTP request's or websocket's ASGI scope for
     :func:`current_route_template`. Pure ASGI: it neither reads nor changes the
-    request or the response."""
+    request or the response. A lifespan scope passes straight through."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
         token = _request_scope.set(scope)
@@ -79,6 +82,30 @@ class UpstreamAnswer(Protocol):
     def headers(self) -> Mapping[str, str]: ...
 
 
+_DELTA_SECONDS = re.compile(r"[0-9]+")
+
+
+def valid_retry_after(value: object) -> str | None:
+    """``value`` when it is a Retry-After a client can act on — delta-seconds
+    (ASCII digits) or an HTTP-date (RFC 9110 §10.2.3) — else ``None``.
+
+    An upstream's header is forwarded only through here: an arbitrary value
+    is at best useless to a client, and one that is not latin-1 cannot be
+    encoded by Starlette, which would turn the 429 into a 500.
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if _DELTA_SECONDS.fullmatch(value):
+        return value
+    try:
+        value.encode("latin-1")
+        parsedate_to_datetime(value)
+    except (UnicodeEncodeError, TypeError, ValueError, IndexError):
+        return None
+    return value
+
+
 def upstream_refusal_headers(upstream: str, answer: UpstreamAnswer) -> dict[str, str]:
     """The refusal headers for an upstream's answer: on a 429, the lane
     ``<upstream>:<route template>``, key kind ``upstream`` and the upstream's
@@ -86,15 +113,10 @@ def upstream_refusal_headers(upstream: str, answer: UpstreamAnswer) -> dict[str,
     answer's headers are read only on a 429."""
     if answer.status_code != 429:
         return {}
-    retry_after = answer.headers.get("retry-after")
     return refusal_headers(
         f"{upstream}:{current_route_template()}",
         "upstream",
-        retry_after=(
-            retry_after.strip()
-            if isinstance(retry_after, str) and retry_after.strip()
-            else None
-        ),
+        retry_after=valid_retry_after(answer.headers.get("retry-after")),
     )
 
 
