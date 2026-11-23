@@ -815,12 +815,15 @@ export function SessionsConsole({
 
   return (
     // `@container` (inline-size containment) is what stops the console from
-    // widening to its longest row. It sits inside the page's Radix ScrollArea,
-    // whose `display: table` wrapper grows to the widest MIN-CONTENT child —
-    // and a row's min-content holds its whole unwrapped purpose label. A
-    // container's intrinsic width ignores its content, so the console takes
-    // its column's width and every `truncate` / `flex-wrap` inside engages.
-    // It is also the root the row's `@min-[…]` column thresholds query.
+    // widening to its longest row: a row's min-content holds its whole
+    // unwrapped purpose label, and a host such as Radix's ScrollArea (whose
+    // `display: table` wrapper grows to the widest MIN-CONTENT child) would
+    // otherwise widen to it. A container's intrinsic width ignores its
+    // content, so the console takes its column's width and every `truncate` /
+    // `flex-wrap` inside engages. It is the console's OWN guard: /sessions
+    // also passes `fitWidth` on its page ScrollArea, but the console does not
+    // depend on its host doing so. It is also the root the row's `@min-[…]`
+    // column thresholds query.
     <div className="@container space-y-3" data-ui-bridge-id="sessions.console">
       <HealthStrip
         level={health.level}
