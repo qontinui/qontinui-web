@@ -51,7 +51,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "saved_session_lists_01"
-_PARENT_REVISION_ID = "coord_agent_status_session_02"
+_PARENT_REVISION_ID = "coord_conditions_02_honest_runs"
 _REVISION_FILENAME = "saved_session_lists_01_table.py"
 
 _SCHEMA = "project"
