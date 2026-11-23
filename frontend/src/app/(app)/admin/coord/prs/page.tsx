@@ -360,56 +360,56 @@ export default function CoordPrsPage() {
               is the page's only statement of how old the list is, so it
               wraps rather than hides. */}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-          {updatedAt !== null && (
-            <span
-              className="text-xs text-muted-foreground tabular-nums"
-              data-testid="prs-updated-ago"
-            >
-              {relativeAgoLabel(updatedAt, now)}
-            </span>
-          )}
-          {recalibratingCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-info"
-              data-testid="prs-recalibrating"
-              title={`${recalibratingCount} PR${recalibratingCount === 1 ? "" : "s"} recalibrating — forcing a GitHub re-read until the merge state settles`}
-            >
-              <RefreshCw className="h-3 w-3 animate-spin" />
-              {recalibratingCount} recalibrating
-            </span>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setAutoRefresh((v) => !v)}
-            data-testid="prs-autorefresh-toggle"
-            aria-pressed={autoRefresh}
-            title={
-              autoRefresh
-                ? "Auto-refresh on (~45s) — click to pause"
-                : "Auto-refresh paused — click to resume"
-            }
-          >
-            {autoRefresh ? (
-              <Pause className="h-3.5 w-3.5 mr-1" />
-            ) : (
-              <Play className="h-3.5 w-3.5 mr-1" />
+            {updatedAt !== null && (
+              <span
+                className="text-xs text-muted-foreground tabular-nums"
+                data-testid="prs-updated-ago"
+              >
+                {relativeAgoLabel(updatedAt, now)}
+              </span>
             )}
-            {autoRefresh ? "Auto" : "Paused"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => load(true)}
-            disabled={loading || refreshing}
-            data-testid="prs-refresh"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-        </div>
+            {recalibratingCount > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-info"
+                data-testid="prs-recalibrating"
+                title={`${recalibratingCount} PR${recalibratingCount === 1 ? "" : "s"} recalibrating — forcing a GitHub re-read until the merge state settles`}
+              >
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                {recalibratingCount} recalibrating
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setAutoRefresh((v) => !v)}
+              data-testid="prs-autorefresh-toggle"
+              aria-pressed={autoRefresh}
+              title={
+                autoRefresh
+                  ? "Auto-refresh on (~45s) — click to pause"
+                  : "Auto-refresh paused — click to resume"
+              }
+            >
+              {autoRefresh ? (
+                <Pause className="h-3.5 w-3.5 mr-1" />
+              ) : (
+                <Play className="h-3.5 w-3.5 mr-1" />
+              )}
+              {autoRefresh ? "Auto" : "Paused"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => load(true)}
+              disabled={loading || refreshing}
+              data-testid="prs-refresh"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Both tabs share one data source (the active-tab fetch). Render the

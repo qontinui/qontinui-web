@@ -641,7 +641,7 @@ describe("RecordRow (R2, R4)", () => {
    * is an operated UI Bridge check; a browser-backed component test reading
    * `getBoundingClientRect` would encode it.
    */
-  it("sizes the reason by the row's own width and keeps the label's 12rem floor", () => {
+  it("sizes the reason by the row's own width and gives the label a 12rem basis the reason yields to", () => {
     // Mounted the way the consoles mount it: through `RecordList`'s
     // `renderRow`, so the contract is observed on the population's path.
     render(

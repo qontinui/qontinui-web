@@ -1124,9 +1124,10 @@ function SessionConsoleRow({
       label={
         // The optional columns answer to the ROW's width (RecordRow's
         // `@container/record-row`, which these unnamed queries bind to and
-        // which is the console's width here), not the viewport's: beside the 256 px sidebar a 1280 px viewport leaves a
-        // 976 px (61rem) console, where `md:`–`xl:` switched all six on and
-        // the row outgrew its column. Budget, worst case from a 53rem row up: the
+        // which is the console's width here), not the viewport's: beside the
+        // 256 px sidebar a 1280 px viewport leaves a 976 px (61rem) console,
+        // where `md:`–`xl:` switched all six on and the row outgrew its
+        // column. Budget, worst case from a 53rem row up: the
         // row's fixed parts ≈ 719 px (chrome 26, gaps 60, identity ~76, two
         // status badges ~170, reason ≤ 40ch ~305, time ~70, chevron 14) plus
         // the purpose's 12rem floor, then each column adds its width and a

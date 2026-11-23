@@ -116,7 +116,12 @@ export interface ShareListItem {
   count: number | null;
   /** Full-text tooltip for the label (the wire token belongs here, not on screen). */
   title?: string;
-  /** Short secondary text, shown from `sm` up (e.g. a per-line split). */
+  /**
+   * Short secondary text (e.g. a per-line split), shown once the LINE's
+   * content box is 39rem wide; below that it is not displayed and the line
+   * carries its text (`detailTitle`, else the detail itself when a string) as
+   * the `<li>`'s `title`.
+   */
   detail?: ReactNode;
   /**
    * Tooltip for the detail, which truncates at 28ch — so what the ellipsis
@@ -213,6 +218,8 @@ export function ShareList({
               // `shrink-[999]`, not `shrink-0`: the detail is the item that
               // gives up width first, so the label (the line's identifying
               // text) keeps its 12rem basis.
+              // It keeps its own `title` too (the same text as the `<li>`'s), so
+              // a hover on the visible detail names it directly.
               <span
                 className="hidden @min-[39rem]/share-row:inline shrink-[999] truncate max-w-[28ch] text-xs text-muted-foreground"
                 title={detailTitle}
