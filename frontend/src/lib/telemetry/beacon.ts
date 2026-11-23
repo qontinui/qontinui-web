@@ -51,6 +51,10 @@ import {
   toSentryEnvelope,
 } from "./sentry-envelope";
 import { getSessionHash } from "./session-hash";
+import {
+  createSignatureThrottle,
+  type SignatureThrottle,
+} from "./signature-throttle";
 import type { ClientTelemetryEvent, ClientTelemetryFrame } from "./types";
 
 // --- configuration knobs (conservative defaults) ----------------------------
@@ -74,10 +78,13 @@ const SIGNATURE_THROTTLE_MS = 60_000;
 /** Bound on remembered signatures, so the throttle map cannot grow unbounded. */
 const SIGNATURE_THROTTLE_MAX = 200;
 /**
- * Backoff applied to a 429 whose rate-limit headers are absent or unreadable
- * (the same 60 s default the Sentry JS SDK uses).
+ * Backoff applied to a 429 whose rate-limit headers are absent or unreadable —
+ * including the case where CORS hides them from this page, which has not been
+ * measured against the live ingest either way.
  */
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
+/** Upper bound on any ingest-requested backoff, however long it asks for. */
+const MAX_RATE_LIMIT_BACKOFF_MS = 60 * 60_000;
 
 // --- module state ------------------------------------------------------------
 
@@ -100,8 +107,8 @@ interface BeaconState {
   tripped: boolean;
   /** Epoch ms before which nothing is sent: the ingest's own 429 window. */
   rateLimitedUntil: number;
-  /** Last send time per incident signature (burst throttle; insertion-ordered). */
-  lastSentBySignature: Map<string, number>;
+  /** Per-incident-signature burst throttle. */
+  throttle: SignatureThrottle;
   /** True between ``pagehide`` and ``pageshow``: only sendBeacon can still deliver. */
   pageHiding: boolean;
   // teardown handles
@@ -251,39 +258,23 @@ function withinRateLimit(): boolean {
   return state.sentTimestamps.length < RATE_LIMIT_MAX;
 }
 
-/** Identity of an incident for the burst throttle: what makes two "the same". */
+/**
+ * Identity of an incident for the burst throttle: what makes two "the same".
+ * The top scrubbed frame and the route keep distinct errors of one class
+ * apart; an HTTP-status failure has no frames, so a burst of one status on one
+ * path from one route still collapses.
+ */
 function signatureOf(event: ClientTelemetryEvent): string {
+  const top = event.stack_top[0];
   return [
     event.kind,
     event.http_status ?? "",
     event.request_host ?? "",
     event.request_path_tmpl ?? "",
     event.error_message_norm ?? "",
+    event.route_template,
+    top ? `${top.symbol ?? ""}@${top.file ?? ""}:${top.line ?? ""}` : "",
   ].join("|");
-}
-
-/** True when an identical incident was sent within the throttle window. */
-function isThrottled(signature: string, now: number): boolean {
-  if (!state) return true;
-  const last = state.lastSentBySignature.get(signature);
-  return last !== undefined && now - last < SIGNATURE_THROTTLE_MS;
-}
-
-function rememberSignature(signature: string, now: number): void {
-  if (!state) return;
-  const seen = state.lastSentBySignature;
-  seen.delete(signature); // re-insert so insertion order tracks recency
-  seen.set(signature, now);
-  if (seen.size <= SIGNATURE_THROTTLE_MAX) return;
-  for (const [sig, t] of seen) {
-    if (now - t >= SIGNATURE_THROTTLE_MS) seen.delete(sig);
-  }
-  // Still over the bound: evict the oldest.
-  while (seen.size > SIGNATURE_THROTTLE_MAX) {
-    const oldest = seen.keys().next().value;
-    if (oldest === undefined) break;
-    seen.delete(oldest);
-  }
 }
 
 function transmit(event: ClientTelemetryEvent): void {
@@ -291,13 +282,11 @@ function transmit(event: ClientTelemetryEvent): void {
   if (state.tripped) return; // circuit breaker open
   const now = Date.now();
   if (now < state.rateLimitedUntil) return; // ingest told us to back off
-  const signature = signatureOf(event);
-  if (isThrottled(signature, now)) return; // burst of an identical incident
   if (!withinRateLimit()) return;
   if (Math.random() > state.sampleRate) return; // sampling
+  if (!state.throttle.admit(signatureOf(event), now)) return; // identical burst
 
   state.sentTimestamps.push(now);
-  rememberSignature(signature, now);
   // DSN-mode: serialize a Sentry envelope sent as text/plain (CORS-safelisted →
   // no preflight; auth rides in the envelope header's dsn field). Generic mode:
   // the raw scrubbed-event JSON to the configured ingest URL (the §3.3 contract).
@@ -311,29 +300,45 @@ function transmit(event: ClientTelemetryEvent): void {
   // While the page is hiding a fetch may never complete, so hand the envelope
   // to sendBeacon. Its ``true`` means only "queued": the ingest's answer is
   // unobservable, so it is neither success nor failure for the breaker.
-  if (
-    state.pageHiding &&
-    typeof navigator !== "undefined" &&
-    typeof navigator.sendBeacon === "function"
-  ) {
-    try {
-      if (navigator.sendBeacon(url, new Blob([body], { type: contentType }))) {
-        return;
-      }
-    } catch {
-      /* fall through to the observed fetch */
-    }
-  }
+  if (state.pageHiding && queueViaSendBeacon(url, body, contentType)) return;
 
   // The live-page transport: a keepalive fetch whose answer we read, so
   // Sentry's 429 reaches the rate limiter and a non-2xx reaches the breaker.
+  // A rejection means the request never produced an answer (the keepalive
+  // body quota, the network, or a CORS-blocked read): that says nothing about
+  // the ingest, so it is neither success nor failure, and the envelope gets
+  // one more chance through sendBeacon. The trailing catch keeps a throw in
+  // our own handlers from becoming an unhandled rejection that this beacon
+  // would then capture about itself.
   try {
-    void fetchKeepalive(url, body, contentType).then(
-      onIngestResponse,
-      onTransmitFailure
-    );
+    fetchKeepalive(url, body, contentType)
+      .then(onIngestResponse, () => {
+        queueViaSendBeacon(url, body, contentType);
+      })
+      .catch(() => {
+        /* never let the beacon's own bookkeeping surface as an incident */
+      });
   } catch {
-    onTransmitFailure();
+    queueViaSendBeacon(url, body, contentType);
+  }
+}
+
+/** Hand an envelope to sendBeacon; true when the browser queued it. Unobserved. */
+function queueViaSendBeacon(
+  url: string,
+  body: string,
+  contentType: string
+): boolean {
+  if (
+    typeof navigator === "undefined" ||
+    typeof navigator.sendBeacon !== "function"
+  ) {
+    return false;
+  }
+  try {
+    return navigator.sendBeacon(url, new Blob([body], { type: contentType }));
+  } catch {
+    return false;
   }
 }
 
@@ -350,9 +355,9 @@ function fetchKeepalive(
     body,
     keepalive: true,
     // text/plain (DSN mode) is a CORS-safelisted content type, so this POST
-    // is a "simple" request — no preflight against the ingest. Sentry's ingest
-    // answers it with CORS headers (the Sentry JS SDK's own fetch transport
-    // relies on this) and exposes its rate-limit headers.
+    // is a "simple" request — no preflight against the ingest. Whether the
+    // ingest's CORS answer exposes its rate-limit headers to this page is
+    // unmeasured; when it does not, a 429 falls back to the 60 s default.
     headers: { "Content-Type": contentType },
     // No credentials — the ingest origin is decoupled from the app (§3.3) and
     // we never want to attach app cookies to telemetry.
@@ -361,16 +366,22 @@ function fetchKeepalive(
   });
 }
 
-/** Classify the ingest's answer: only a 2xx is success. */
+/**
+ * Classify the ingest's answer. A rate-limit signal opens the backoff window
+ * whatever the status. A 2xx is success; a 429 is neither (the ingest is up
+ * and told us to wait, which the window already honours); any other status
+ * is a failure for the breaker.
+ */
 function onIngestResponse(res: Response): void {
   if (!state) return;
   const backoffMs = rateLimitBackoffMs(res);
   if (backoffMs !== null) {
     state.rateLimitedUntil = Math.max(
       state.rateLimitedUntil,
-      Date.now() + backoffMs
+      Date.now() + Math.min(backoffMs, MAX_RATE_LIMIT_BACKOFF_MS)
     );
   }
+  if (res.status === 429) return;
   if (res.status >= 200 && res.status < 300) onTransmitSuccess();
   else onTransmitFailure();
 }
@@ -378,14 +389,16 @@ function onIngestResponse(res: Response): void {
 /**
  * How long the ingest asked us to stop, in ms, or ``null`` for no limit.
  *
- * Follows the Sentry JS SDK's ``updateRateLimits`` precedence:
  * ``X-Sentry-Rate-Limits`` (format
  * ``<retry_after>:<categories>:<scope>[:<reason>[:<namespaces>]]``, groups
  * comma-separated, categories semicolon-separated, empty categories = all)
- * wins; else on a 429 ``Retry-After`` (delta-seconds or an HTTP-date); else on
- * a 429 the conservative 60 s default — which is also what a 429 gets when CORS
- * hides both headers. The beacon sends only error events, so only groups that
- * cover the ``error`` category (or every category) apply.
+ * wins when present; else on a 429 ``Retry-After`` (delta-seconds or an
+ * HTTP-date); else on a 429 a conservative 60 s default, which also covers a
+ * 429 whose headers CORS hides from this page. The beacon sends only error
+ * events, so only groups that cover the ``error`` category (or every
+ * category) apply. The precedence follows Sentry's documented header format;
+ * it has not been measured against the live ingest. The caller caps the
+ * result at an hour.
  */
 function rateLimitBackoffMs(res: Response): number | null {
   const limits = res.headers.get("X-Sentry-Rate-Limits");
@@ -696,19 +709,30 @@ function installFetchWrapper(): void {
 }
 
 /**
- * Was this request aborted rather than failed? True for an ``AbortError``
- * (a DOMException in browsers) and for any rejection of a request whose own
- * signal is aborted, whatever error the platform threw for it. Also true once
- * the page is hiding: a request torn down with the document is not a defect.
+ * Was this request aborted by its caller rather than failed? A timeout is a
+ * failure even though it aborts through the same signal: the app's own client
+ * timeouts abort with a ``TimeoutError`` reason (``http-client.ts``,
+ * ``backend-api.ts``, ``AbortSignal.timeout``), and those stay incidents.
+ * Otherwise an ``AbortError`` rejection, or a signal aborted with an
+ * ``AbortError`` reason (the default for ``controller.abort()`` and for a
+ * navigation), is the caller's decision. A rejection once the page is hiding
+ * is the document being torn down, not a defect.
  */
 function isAborted(
   err: unknown,
   input: RequestInfo | URL,
   init: RequestInit | undefined
 ): boolean {
-  if ((err as { name?: unknown } | null)?.name === "AbortError") return true;
-  if (init?.signal?.aborted) return true;
-  if (input instanceof Request && input.signal.aborted) return true;
+  const nameOf = (x: unknown) => (x as { name?: unknown } | null)?.name;
+  const signal =
+    init?.signal ?? (input instanceof Request ? input.signal : undefined);
+  const reason = signal?.aborted ? signal.reason : undefined;
+  if (nameOf(err) === "TimeoutError" || nameOf(reason) === "TimeoutError") {
+    return false;
+  }
+  if (nameOf(err) === "AbortError" || nameOf(reason) === "AbortError") {
+    return true;
+  }
   return state?.pageHiding === true;
 }
 
@@ -777,7 +801,10 @@ export function installBeacon(): boolean {
     consecutiveFailures: 0,
     tripped: false,
     rateLimitedUntil: 0,
-    lastSentBySignature: new Map(),
+    throttle: createSignatureThrottle({
+      windowMs: SIGNATURE_THROTTLE_MS,
+      max: SIGNATURE_THROTTLE_MAX,
+    }),
     pageHiding: false,
     prevOnError: window.onerror ?? null,
     prevOnRejection: null,

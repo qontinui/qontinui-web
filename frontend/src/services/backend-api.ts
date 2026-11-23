@@ -735,8 +735,13 @@ export class BackendAPI {
         }
 
         const controller = new AbortController();
+        // A typed `TimeoutError` reason, so the telemetry beacon reports this
+        // timeout instead of dropping it as a caller/navigation abort.
         const timeoutId = setTimeout(
-          () => controller.abort(),
+          () =>
+            controller.abort(
+              new DOMException("Request timed out", "TimeoutError")
+            ),
           this.config.timeout || 30000
         );
 
