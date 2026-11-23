@@ -25,7 +25,17 @@ What this adds
     status, so no writer can store a wrong value. On INSERT (or a re-parenting
     UPDATE) it reads the parent ``FOR SHARE``, so a child inserted while
     another transaction is changing the parent's status waits for that change
-    and sees its result instead of a stale ``true``.
+    and sees its result instead of a stale ``true``. That WIDENS contention
+    for a child inserted under an EXISTING parent: the FK alone took ``FOR KEY
+    SHARE``, which no non-key UPDATE waits for; ``FOR SHARE`` makes any parent
+    UPDATE (status, ``updated_at``, …) wait for the open child-inserting
+    transaction, and two transactions that each insert a child under the same
+    parent and then update that parent can deadlock (one is aborted). coord's
+    writers insert the parent and its children in one transaction, where the
+    lock is on their own uncommitted row and costs nothing. The race the lock
+    closes is exercised by a two-connection test (a cancel in flight, a child
+    insert waiting for it); the deadlock shape above is covered by reasoning,
+    not a test.
   - ``trg_merge_proposals_propagate_live`` — ``AFTER UPDATE OF status`` on the
     parent, ``FOR EACH ROW WHEN (live(OLD.status) IS DISTINCT FROM
     live(NEW.status))``: rewrites the children's ``proposal_live``. A
@@ -47,6 +57,13 @@ Phase 1 (``pr_merge/live_head_guard.rs``) maps exactly that error to each
 writer's existing "already live" outcome, and runs revives under a savepoint.
 coord never needs the index at query time: it reacts to the error, so a
 database without this revision still works.
+
+The index is NOT deferrable (Postgres cannot defer a partial unique index), so
+it is checked row by row, as each row is written. A transaction — or a single
+statement — that hands liveness from one proposal to another at the same head
+must make the OLD row terminal BEFORE it revives the new one; in the other
+order, or in one multi-row UPDATE whose row trigger for the revive fires
+first, the revive raises ``23505``.
 
 The cleanup (D4), and its expected production effect
 ==========================================================================
@@ -76,12 +93,20 @@ enqueue race (minted 2026-11-05/06, before coord's ``ef162e15c`` guard):
 deploy time means the duplicate population moved since that measurement.
 
 **The cleanup REFUSES** — ``RAISE EXCEPTION``, the whole upgrade rolls back,
-and the web deploy fails visibly — when a row it would cancel is a batch
-member (``batch_id IS NOT NULL``) or spans more than one repo (more than one
-``merge_proposal_repos`` row). Cancelling such a row has side effects on a
-batch or on other repos' heads that need their own decision. The message
-names every such row. The check runs BEFORE anything is cancelled. A batch
-member or multi-repo row that is the KEEPER is fine.
+and the web deploy fails visibly — when a row it would cancel:
+
+* is a batch member (``batch_id IS NOT NULL``) or spans more than one repo
+  (more than one ``merge_proposal_repos`` row): cancelling it has side effects
+  on a batch or on other repos' heads; or
+* is past ``queued`` / ``blocked-by-overlap`` — ``dry-rebasing``,
+  ``speculative-ci``, ``awaiting-ci`` or ``landing`` (the last when the keeper
+  is also ``landing``): coord may be mid-rebase, mid-CI or mid-land on it, and
+  cancelling it behind coord's back is not this migration's call.
+
+Each needs its own decision. The message names every such row with its
+reasons. The check runs BEFORE anything is cancelled. A batch member,
+multi-repo or advanced row that is the KEEPER is fine. Phase 0 expects only
+``queued`` losers, so in the expected case the refusal costs nothing.
 
 Step order is load-bearing
 ==========================================================================
@@ -89,11 +114,10 @@ Step order is load-bearing
 One transaction (``env.py`` runs a whole upgrade batch in one), in this order
 — ``UPGRADE_STEPS`` below, pinned by the test:
 
-1. ``LOCK TABLE coord.merge_proposals, coord.merge_proposal_repos IN SHARE
-   ROW EXCLUSIVE MODE`` — one statement, so the two locks are taken together
-   and cannot deadlock against a writer. It blocks coord's writers (not its
-   readers) until the batch commits, so no new duplicate can appear between
-   the cleanup and the index build.
+1. ``LOCK TABLE coord.merge_proposals IN SHARE ROW EXCLUSIVE MODE``, then
+   ``LOCK TABLE coord.merge_proposal_repos IN ACCESS EXCLUSIVE MODE`` —
+   parent first. Held until the batch commits, so no new duplicate can appear
+   between the cleanup and the index build (see "Locking").
 2. The liveness function.
 3. The cleanup.
 4. ``ADD COLUMN proposal_live`` and its backfill from the parent's status.
@@ -109,17 +133,73 @@ it fail.
 Locking
 ==========================================================================
 
-Every lock acquisition is bounded by ``SET LOCAL lock_timeout = '10s'``,
-followed by the REQUIRED ``RESET lock_timeout`` (house convention; env.py
-also resets after every revision). There are two such acquisitions: the
-``LOCK TABLE`` (step 1), and the ``ADD COLUMN`` (step 4), which upgrades the
-lock on ``merge_proposal_repos`` to ``ACCESS EXCLUSIVE`` and therefore waits
-for in-flight READERS too — unbounded, that queued request would stall every
-reader behind it. The ``ADD COLUMN`` itself is catalog-only (a constant
-default, no rewrite). Everything else needs no lock beyond the ones held: the
-triggers need ``SHARE ROW EXCLUSIVE`` and the index ``SHARE``. The index is
-built in the transaction, not ``CONCURRENTLY``, because the lock is what closes
-the duplicate window; the tables are bounded by the live queue plus history.
+Every table lock this revision needs is taken in step 1, before any DDL,
+under the house ``SET LOCAL lock_timeout = '3s'`` followed by the REQUIRED
+``RESET lock_timeout`` (env.py also resets after every revision):
+
+* ``coord.merge_proposals`` in ``SHARE ROW EXCLUSIVE``: blocks coord's writers,
+  not its readers. The cleanup's UPDATE, the backfill's read and the parent
+  trigger's ``CREATE TRIGGER`` need nothing stronger.
+* ``coord.merge_proposal_repos`` in ``ACCESS EXCLUSIVE``: the ``ADD COLUMN``
+  (step 4) needs it anyway and would hold it to commit, so taking it up front
+  costs readers nothing extra and removes a mid-transaction lock UPGRADE
+  (``SHARE ROW EXCLUSIVE`` -> ``ACCESS EXCLUSIVE``) that could deadlock with a
+  reader of ``merge_proposal_repos`` that then writes ``merge_proposals``. So
+  steps 2-6 take no new table lock and need no timeout of their own (the
+  test asserts ``ADD COLUMN`` adds none). Readers of ``merge_proposal_repos``
+  wait for the whole migration; the tables are bounded by the live queue plus
+  history, so that is short.
+
+``lock_timeout`` applies to each lock acquisition separately, so step 1 can
+wait up to 3 s per table (about 6 s in all, holding ``merge_proposals`` while
+it waits for ``merge_proposal_repos``). The locks are taken ONE AT A TIME,
+parent first. That matches coord's writers, which insert the parent before
+its children, and coord's one same-transaction parent+child write
+(``heal_missing_rebased_tip``), which updates the parent row before the child
+row. A transaction that holds a lock on ``merge_proposal_repos`` and then
+writes ``merge_proposals`` would collide with step 1; such a collision is
+resolved by Postgres's deadlock detector, or by the timeout, aborting one
+side, and an aborted migration is simply re-run. The ``ADD COLUMN`` itself is
+catalog-only (a constant default, no rewrite). The index is built in the
+transaction, not ``CONCURRENTLY``, because the lock is what closes the
+duplicate window.
+
+Row-lock order the parent trigger introduces
+==========================================================================
+
+A live/terminal flip of ``merge_proposals.status`` now also writes that
+proposal's child rows, from the AFTER trigger: parent row first, then child
+rows. A transaction that UPDATEs a ``merge_proposal_repos`` row and LATER
+flips its parent's status in the same transaction takes them in the opposite
+order and could deadlock against a concurrent flip. Read on qontinui-coord
+``origin/main`` ``dddc66b19`` (every ``UPDATE coord.merge_proposal_repos`` in
+``crates/``): no production path does that. The child writers in
+``merge_scheduler.rs`` — ``persist_repo_conflict``,
+``persist_rebase_results``, ``persist_overlap_paths``,
+``record_pushed_candidate_tip``, ``persist_batch_member_result``,
+``record_batch_reemitted_tip`` — each run one autocommit statement on a pooled
+connection, holding no lock across a parent write. The one statement that
+writes both, ``heal_missing_rebased_tip``'s ``WITH counted AS (UPDATE
+coord.merge_proposals …), cleared AS (UPDATE coord.merge_proposal_repos …)``,
+locks the parent row first, which is the trigger's own order (the test runs
+that shape through a live-to-terminal flip). Every other site is a test
+fixture. A new coord path that writes a child and then flips the parent in one
+transaction must take the parent row first (``SELECT … FOR UPDATE``).
+
+Merge-train classifier disposition
+==========================================================================
+
+coord's migration classifier (``pr_merge/migration_classifier.rs``, read at
+qontinui-coord ``dddc66b19``) fails closed on ``upgrade()``, so the merge
+train HOLDS this revision for review by design. Each of these would hold it
+on its own: the dollar-quoted function and ``DO`` bodies (the lexer rejects
+any dollar quote rather than guess at it), the ``LOCK TABLE`` (no handler),
+every ``RESET`` (only ``SET LOCAL lock_timeout`` / ``statement_timeout`` are
+admitted), the cleanup and backfill DML, ``CREATE FUNCTION`` /
+``CREATE TRIGGER``, and the non-concurrent ``CREATE UNIQUE INDEX`` on a live
+table. All are kept on purpose: the lock closes the duplicate window, the DML
+is the D4 cleanup the index needs, and the triggers are the invariant. The
+classifier skips ``downgrade()``, so its drops play no part in the hold.
 
 Downgrade — and restoring a cancelled row by hand
 ==========================================================================
@@ -164,14 +244,13 @@ depends_on: str | Sequence[str] | None = None
 # `alembic-schema-arg-gate` pre-commit hook statically checks that each
 # statement names its schema.
 
-LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '10s'"
+LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '3s'"
 RESET_LOCK_TIMEOUT_SQL = "RESET lock_timeout"
 
-# Step 1. One statement, both tables: the locks are taken together.
-LOCK_SQL = (
-    "LOCK TABLE coord.merge_proposals, coord.merge_proposal_repos "
-    "IN SHARE ROW EXCLUSIVE MODE"
-)
+# Step 1. Parent first, then the child in the mode ADD COLUMN needs, so no
+# later step takes a new table lock. Taken one at a time (see "Locking").
+LOCK_PARENT_SQL = "LOCK TABLE coord.merge_proposals IN SHARE ROW EXCLUSIVE MODE"
+LOCK_CHILD_SQL = "LOCK TABLE coord.merge_proposal_repos IN ACCESS EXCLUSIVE MODE"
 
 # Step 2. The only SQL spelling of coord's TERMINAL_PROPOSAL_STATUSES. A plain
 # SQL function with no SET clause, so the planner can inline it. NULL is not
@@ -242,7 +321,9 @@ BEGIN
                           CASE WHEN p.batch_id IS NOT NULL
                                THEN 'batch member of ' || p.batch_id END,
                           CASE WHEN c.n_repos > 1
-                               THEN 'spans ' || c.n_repos || ' repos' END)),
+                               THEN 'spans ' || c.n_repos || ' repos' END,
+                          CASE WHEN p.status NOT IN ('queued', 'blocked-by-overlap')
+                               THEN 'status ' || p.status END)),
                '; ' ORDER BY p.proposal_id)
       INTO refused
       FROM coord.merge_proposals p
@@ -252,10 +333,12 @@ BEGIN
            WHERE x.proposal_id = p.proposal_id
       ) c
      WHERE p.proposal_id = ANY (loser_ids)
-       AND (p.batch_id IS NOT NULL OR c.n_repos > 1);
+       AND (p.batch_id IS NOT NULL
+            OR c.n_repos > 1
+            OR p.status NOT IN ('queued', 'blocked-by-overlap'));
 
     IF refused IS NOT NULL THEN
-        RAISE EXCEPTION 'livehead_01 refuses: cancelling these duplicate live merge proposals would touch a batch or another repo: %', refused
+        RAISE EXCEPTION 'livehead_01 refuses: cancelling these duplicate live merge proposals would touch a batch, another repo, or a row coord is already working on: %', refused
             USING HINT = 'Resolve these rows explicitly (plan 2026-11-23-coord-one-live-merge-proposal-per-head-is-a-database-invariant, D4), then re-run the migration. Nothing was cancelled.';
     END IF;
 
@@ -354,10 +437,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_merge_proposal_repos_live_head
     WHERE proposal_live
 """
 
-# The load-bearing order (see the module docstring). The lock-timeout
-# bracketing around LOCK_SQL and ADD_COLUMN_SQL is applied in upgrade().
+# The load-bearing order (see the module docstring). Only step 1 takes a new
+# table lock, so only step 1 runs under the lock timeout (see upgrade()).
 UPGRADE_STEPS: tuple[str, ...] = (
-    LOCK_SQL,
+    LOCK_PARENT_SQL,
+    LOCK_CHILD_SQL,
     IS_LIVE_FUNCTION_SQL,
     CLEANUP_SQL,
     ADD_COLUMN_SQL,
@@ -366,21 +450,20 @@ UPGRADE_STEPS: tuple[str, ...] = (
     INDEX_SQL,
 )
 
-# Statements that take a NEW lock, so they run under the lock timeout.
-_LOCK_BOUNDED = frozenset({LOCK_SQL, ADD_COLUMN_SQL})
+_LOCK_STEPS = (LOCK_PARENT_SQL, LOCK_CHILD_SQL)
 
 
 def upgrade() -> None:
     """Lock, function, cleanup, column + backfill, triggers, index. Idempotent."""
-    for statement in UPGRADE_STEPS:
-        if statement in _LOCK_BOUNDED:
-            op.execute(LOCK_TIMEOUT_SQL)
-            op.execute(statement)
-            # SET LOCAL is transaction-scoped and env.py runs the whole batch
-            # in one transaction: reset so the bound does not leak onward.
-            op.execute(RESET_LOCK_TIMEOUT_SQL)
-        else:
-            op.execute(statement)
+    op.execute(LOCK_TIMEOUT_SQL)
+    for statement in _LOCK_STEPS:
+        op.execute(statement)
+    # SET LOCAL is transaction-scoped and env.py runs the whole batch in one
+    # transaction: reset so the bound does not leak onward. Every later step
+    # runs under locks step 1 already holds.
+    op.execute(RESET_LOCK_TIMEOUT_SQL)
+    for statement in UPGRADE_STEPS[len(_LOCK_STEPS) :]:
+        op.execute(statement)
 
 
 def downgrade() -> None:
