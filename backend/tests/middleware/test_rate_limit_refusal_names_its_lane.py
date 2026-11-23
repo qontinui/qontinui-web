@@ -1127,6 +1127,13 @@ def test_a_websocket_route_names_its_template() -> None:
         ("Wed, 21 Oct 26 07:28:00 GMT", None),  # two-digit year
         ("Wed, 21 Oct 2026 07:28:00 +0200", None),  # not GMT
         ("Wed, 32 Oct 2026 07:28:00 GMT", None),  # no such day
+        ("Wed, 21 Oct 0000 07:28:00 GMT", None),  # no year 0
+        ("Mon, 21 Oct 2026 07:28:00 GMT", None),  # 21 Oct 2026 is a Wednesday
+        ("Thu, 29 Feb 2024 00:00:00 GMT", "Thu, 29 Feb 2024 00:00:00 GMT"),
+        ("Wed, 29 Feb 2023 00:00:00 GMT", None),  # 2023 is not a leap year
+        ("Wed, 31 Dec 2025 23:59:60 GMT", "Wed, 31 Dec 2025 23:59:60 GMT"),
+        ("Wed, 31 Dec 2025 23:59:61 GMT", None),
+        ("Wed, 21 Oct 2026 24:00:00 GMT", None),
         ("Wed, 21 Oct 2026 07:28:00 GMT\x00", None),
     ],
 )
