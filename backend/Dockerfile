@@ -116,4 +116,13 @@ ENV QONTINUI_BUILD_SHA=$BUILD_SHA
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: rewrite request.client.host from X-Forwarded-For, but only
+# for a connecting peer uvicorn trusts. The trusted set is NOT hardcoded here:
+# uvicorn reads it from FORWARDED_ALLOW_IPS (comma-separated IPs/CIDRs), which
+# the ECS task definition sets to the CIDR of the VPC the ALB lives in, read
+# from the deployed subnets. Unset, uvicorn trusts 127.0.0.1 only, so behind
+# the ALB client.host stays the ALB node's address. Never set it to "*": any
+# caller reaching the task directly could then choose its own client.host.
+# The rate-limit keys do not depend on this; they read the rightmost
+# X-Forwarded-For themselves (app/middleware/rate_limit.py `_peer_key`).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

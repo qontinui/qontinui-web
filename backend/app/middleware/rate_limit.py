@@ -7,7 +7,6 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
@@ -28,70 +27,16 @@ else:
     storage_uri = "memory://"
 
 
-def get_user_identifier(request: Request) -> str:
-    """
-    Get user ID for authenticated requests, IP for anonymous.
+def _peer_key(request: Request) -> str:
+    """``peer:<address>`` for the address the nearest proxy saw.
 
-    This enables per-user rate limiting for authenticated users while
-    falling back to IP-based limiting for anonymous requests.
-
-    Returns:
-        str: "user:{user_id}" for authenticated users, "ip:{ip_address}" for anonymous
-    """
-    user = getattr(request.state, "user", None)
-    if user:
-        return f"user:{user.id}"
-    return f"ip:{request.client.host}"  # type: ignore[union-attr]
-
-
-def get_authorization_identifier(request: Request) -> str:
-    """Per-CALLER rate-limit bucket for bearer-authenticated admin routes.
-
-    Same problem ``_get_refresh_token_subject`` (below) solves for the
-    refresh endpoint: behind Vercel/ALB every request arrives from a handful
-    of source IPs, so an IP-keyed limit collapses every operator into one
-    bucket and one person's cleanup run throttles everybody else's. It is
-    also the reason ``get_user_identifier`` is not enough here — it reads
-    ``request.state.user``, which the limiter's key function is called too
-    early to see (slowapi evaluates the limit inside the endpoint wrapper,
-    with only the raw request in hand).
-
-    Superuser-gated routes always carry ``Authorization: Bearer <token>``,
-    so the token identifies the caller. It is HASHED, never decoded: this
-    must not become a second, unverified token parser, and the digest keeps
-    a bearer out of log lines and Redis keys. Tokens rotate roughly hourly,
-    which is far longer than any per-minute window keyed off them.
-
-    Falls back to the client IP when there is no bearer — an unauthenticated
-    caller never reaches these routes, so that arm only covers oddities like
-    a probe.
-
-    **Do not rename the ``request`` parameter.** slowapi decides whether to
-    call a key function with the request or with no arguments by looking for
-    a parameter literally named ``"request"``
-    (``Limiter.__evaluate_limits`` -> ``inspect.signature(lim.key_func)``).
-    Renaming it would silently switch slowapi to calling this with zero args
-    and raise inside the limiter rather than here.
-    """
-    header = request.headers.get("authorization") or ""
-    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
-    if token:
-        return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client else None
-    return f"ip:{host or 'unknown'}"
-
-
-def get_peer_ip_identifier(request: Request) -> str:
-    """Per-PEER bucket for unauthenticated public reads.
-
-    The rightmost ``X-Forwarded-For`` entry (the address the ALB saw, which a
-    client cannot forge), else the socket peer — see
-    ``app.middleware.logging_middleware.peer_ip_from``. Keying on the LEFTMOST
-    entry would let a caller pick a fresh bucket per request.
-
-    **Do not rename the ``request`` parameter** (see
-    :func:`get_authorization_identifier`).
+    The RIGHTMOST ``X-Forwarded-For`` entry (the one the ALB appended, which a
+    client cannot forge), else the socket peer when the request arrived with
+    no forwarded header — see
+    :func:`app.middleware.logging_middleware.peer_ip_from`. Keying on the
+    LEFTMOST entry would let a caller pick a fresh bucket per request, and
+    keying on ``request.client.host`` behind the ALB would put every caller
+    reaching one ALB node into one bucket.
     """
     from app.middleware.logging_middleware import peer_ip_from
 
@@ -101,15 +46,86 @@ def get_peer_ip_identifier(request: Request) -> str:
     return f"peer:{peer or 'unknown'}"
 
 
-# Create limiter instance
+def _bearer_key(request: Request) -> str | None:
+    """``bearer:<digest>`` for a request carrying ``Authorization: Bearer``,
+    else ``None``.
+
+    The token is HASHED, never decoded: this must not become a second,
+    unverified token parser, and the digest keeps a bearer out of log lines
+    and Redis keys. Tokens rotate roughly hourly, which is far longer than any
+    per-minute window keyed off them. Because the key is the token, not the
+    user id, two logins of the same user (an operator's browser and an agent's
+    own login) get separate buckets.
+    """
+    header = request.headers.get("authorization") or ""
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    if token:
+        return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
+    return None
+
+
+def get_user_identifier(request: Request) -> str:
+    """Per-CALLER bucket for ``user_limiter``: the bearer when there is one,
+    else the peer.
+
+    Returns ``bearer:<digest>`` for a request carrying a bearer token, and
+    ``peer:<rightmost X-Forwarded-For>`` (see :func:`_peer_key`) for one that
+    does not. It deliberately does NOT read ``request.state.user``: nothing in
+    the app sets it, and slowapi calls a key function inside the endpoint
+    wrapper with only the raw request in hand. Reading it was why this used to
+    return ``ip:{client.host}`` for every request — one bucket per ALB node,
+    shared by every user, agent browser and runner.
+
+    **Do not rename the ``request`` parameter** (see
+    :func:`get_authorization_identifier`).
+    """
+    return _bearer_key(request) or _peer_key(request)
+
+
+def get_authorization_identifier(request: Request) -> str:
+    """Per-CALLER rate-limit bucket for bearer-authenticated admin routes.
+
+    Same problem ``_get_refresh_token_subject`` (below) solves for the
+    refresh endpoint: behind Vercel/ALB every request arrives from a handful
+    of source IPs, so an IP-keyed limit collapses every operator into one
+    bucket and one person's cleanup run throttles everybody else's.
+
+    Superuser-gated routes always carry ``Authorization: Bearer <token>``,
+    so the token identifies the caller (see :func:`_bearer_key`). With no
+    bearer it falls back to the peer (see :func:`_peer_key`) — an
+    unauthenticated caller never reaches these routes, so that arm only covers
+    oddities like a probe.
+
+    **Do not rename the ``request`` parameter.** slowapi decides whether to
+    call a key function with the request or with no arguments by looking for
+    a parameter literally named ``"request"``
+    (``Limiter.__evaluate_limits`` -> ``inspect.signature(lim.key_func)``).
+    Renaming it would silently switch slowapi to calling this with zero args
+    and raise inside the limiter rather than here.
+    """
+    return _bearer_key(request) or _peer_key(request)
+
+
+def get_peer_ip_identifier(request: Request) -> str:
+    """Per-PEER bucket for unauthenticated public reads (see :func:`_peer_key`).
+
+    **Do not rename the ``request`` parameter** (see
+    :func:`get_authorization_identifier`).
+    """
+    return _peer_key(request)
+
+
+# The app-wide limiter (``app.state.limiter``), keyed per peer.
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=["200 per day", "50 per hour"],
     storage_uri=storage_uri,
     headers_enabled=True,
 )
 
-# Create user-aware limiter with higher limits for authenticated users
+# Per-caller limiter: keyed on the bearer digest, else the peer (see
+# ``get_user_identifier``). It does not key on the user id, so two logins of
+# one user are two buckets.
 # Note: headers_enabled=False because slowapi has issues injecting headers
 # when endpoints return non-Response objects (e.g., Pydantic models/lists)
 user_limiter = Limiter(
@@ -152,14 +168,14 @@ _api_limits = (
 )
 
 auth_limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=_auth_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
 )
 
 api_limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=_api_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
@@ -176,9 +192,9 @@ def _get_refresh_token_subject(request: Request) -> str:
     ``sub`` claim synchronously and give each user their own bucket.
 
     Mobile clients send the token in the POST body instead.  The body isn't
-    available synchronously in slowapi's key function, so we fall back to IP.
-    The endpoint limit is set high enough (60/min) that shared-IP mobile
-    traffic still has headroom.
+    available synchronously in slowapi's key function, so we fall back to the
+    peer (see :func:`_peer_key`). The endpoint limit is set high enough
+    (60/min) that shared-peer mobile traffic still has headroom.
     """
     try:
         token = request.cookies.get("refresh_token")
@@ -195,7 +211,7 @@ def _get_refresh_token_subject(request: Request) -> str:
                 return f"refresh-user:{sub}"
     except Exception:
         pass
-    return f"ip:{get_remote_address(request)}"
+    return _peer_key(request)
 
 
 refresh_limiter = Limiter(

@@ -631,10 +631,10 @@ class TestTheRateLimitKeyDoesNotLeakTheBearer:
         assert a == b
         assert a != c
 
-    def test_it_falls_back_to_the_client_ip(self):
+    def test_it_falls_back_to_the_peer(self):
         from app.middleware.rate_limit import get_authorization_identifier
 
         request = MagicMock()
         request.headers = {}
         request.client.host = "203.0.113.7"
-        assert get_authorization_identifier(request) == "ip:203.0.113.7"
+        assert get_authorization_identifier(request) == "peer:203.0.113.7"
