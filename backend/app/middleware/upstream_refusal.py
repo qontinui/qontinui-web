@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, MutableMapping
 from contextvars import ContextVar
-from email.utils import parsedate_to_datetime
+from datetime import datetime
 from typing import Any, Protocol
 
 from fastapi import HTTPException
@@ -88,9 +88,24 @@ _DELTA_SECONDS = re.compile(r"[0-9]{1,10}")
 _MAX_DELTA_SECONDS = 2**32 - 1
 # IMF-fixdate, the HTTP-date form a sender MUST generate (RFC 9110 §5.6.7).
 _IMF_FIXDATE = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} "
-    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} "
-    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT"
+    r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun), ([0-9]{2}) "
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) ([0-9]{4}) "
+    r"([0-9]{2}):([0-9]{2}):([0-9]{2}) GMT"
+)
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 
 
@@ -98,7 +113,7 @@ def valid_retry_after(value: object) -> str | None:
     """``value`` when it is a Retry-After a client can act on — delta-seconds
     (ASCII digits, at most a u32, returned without leading zeros) or an
     IMF-fixdate HTTP-date (RFC 9110 §5.6.7, §10.2.3) that names a real
-    calendar time — else ``None``. The obsolete RFC 850 and asctime date
+    calendar time on the weekday it names — else ``None``. The obsolete RFC 850 and asctime date
     forms are not forwarded.
 
     An upstream's header is forwarded only through here: an arbitrary value
@@ -111,11 +126,19 @@ def valid_retry_after(value: object) -> str | None:
     if _DELTA_SECONDS.fullmatch(value):
         seconds = int(value)
         return str(seconds) if seconds <= _MAX_DELTA_SECONDS else None
-    if not _IMF_FIXDATE.fullmatch(value):
+    date = _IMF_FIXDATE.fullmatch(value)
+    if date is None:
+        return None
+    weekday, day, month, year, hour, minute, second = date.groups()
+    if int(second) > 60:  # 60 is a leap second, which IMF-fixdate allows
         return None
     try:
-        parsedate_to_datetime(value)
-    except (TypeError, ValueError, IndexError):
+        named = datetime(
+            int(year), _MONTHS.index(month) + 1, int(day), int(hour), int(minute)
+        )
+    except ValueError:
+        return None
+    if _WEEKDAYS[named.weekday()] != weekday:
         return None
     return value
 
