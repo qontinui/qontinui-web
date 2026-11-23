@@ -175,6 +175,38 @@ def _refusal_lane(request: Request, limit: Any) -> str:
     return template if isinstance(template, str) and template else "unknown"
 
 
+def _refusal_retry_after(limit: Any) -> str:
+    """Seconds until the refusing limit's window has surely rolled over: the
+    window's length (``3600`` for ``N per hour``). slowapi's exception carries
+    no reset time, and the window length is the bound a caller can wait out.
+    ``60`` only when the limit cannot say."""
+    try:
+        expiry = int(limit.limit.get_expiry())
+    except Exception:
+        return "60"
+    return str(expiry) if expiry > 0 else "60"
+
+
+def _log_refusal(**fields: str) -> None:
+    """Log one ``rate_limit_refused`` line carrying ONLY ``fields``.
+
+    The app's logging chain merges structlog's context into every line, and
+    ``RequestIDMiddleware`` binds the caller's ``client_host`` and the concrete
+    ``path`` (which can carry an id) there. This line names a lane and a bucket
+    kind, never a caller, so the context is set aside for this one call and
+    restored after it — the request's later lines keep their correlation.
+
+    The bucket kind is logged as ``bucket_kind``: the log sanitizer redacts
+    every field whose name contains ``key``.
+    """
+    saved = structlog.contextvars.get_contextvars()
+    structlog.contextvars.clear_contextvars()
+    try:
+        logger.warning("rate_limit_refused", **fields)
+    finally:
+        structlog.contextvars.bind_contextvars(**saved)
+
+
 async def rate_limit_exceeded_handler(
     request: Request, exc: RateLimitExceeded
 ) -> Response:
@@ -182,8 +214,9 @@ async def rate_limit_exceeded_handler(
 
     Every 429 carries ``X-RateLimit-Lane`` (which limit refused) and
     ``X-RateLimit-Key-Kind`` (what its bucket is keyed on), and logs one
-    ``rate_limit_refused`` line with the same fields — never the key, the
-    token, the address or the user id. Plan
+    ``rate_limit_refused`` line with those fields and nothing else
+    (``_log_refusal``) — never the key, the token, the address, the user id or
+    the concrete path. ``Retry-After`` is the limit's window. Plan
     ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``,
     Phase 2: a refusal that named nothing could not be attributed.
     """
@@ -192,11 +225,10 @@ async def rate_limit_exceeded_handler(
     key_kind = (
         _refusal_key_kind(request, limit.key_func) if limit is not None else "unknown"
     )
-    retry_after = str(exc.retry_after) if hasattr(exc, "retry_after") else "60"
-    logger.warning(
-        "rate_limit_refused",
+    retry_after = _refusal_retry_after(limit)
+    _log_refusal(
         lane=lane,
-        key_kind=key_kind,
+        bucket_kind=key_kind,
         limit=str(limit.limit) if limit is not None else "unknown",
         method=request.method,
         retry_after=retry_after,
