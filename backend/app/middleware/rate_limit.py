@@ -46,9 +46,36 @@ def _peer_key(request: Request) -> str:
     return f"peer:{peer or 'unknown'}"
 
 
+def _presented_token(request: Request) -> str | None:
+    """The token authentication will USE for this request, or ``None``.
+
+    Mirrors ``CookieOrBearerScheme.__call__`` (``app/auth/config.py``), the
+    scheme every fastapi-users dependency (``current_active_user``,
+    ``current_superuser`` and everything built on them) extracts its token
+    with: the ``access_token`` cookie FIRST, then an ``Authorization: Bearer``
+    header parsed exactly as ``OAuth2PasswordBearer`` parses it. Keying on the
+    header alone would let a cookie-authenticated caller send a fresh junk
+    bearer per request — auth ignores it, the limiter would not — and buy a
+    fresh bucket each time. The cookie name is read off the live transport so
+    the two cannot drift; ``test_rate_limit_key_functions`` pins the rest of
+    the agreement against the scheme itself.
+    """
+    from fastapi.security.utils import get_authorization_scheme_param
+
+    from app.auth.config import cookie_or_bearer_transport
+
+    cookie = request.cookies.get(cookie_or_bearer_transport.scheme.cookie_name)
+    if cookie:
+        return cookie
+    scheme, param = get_authorization_scheme_param(request.headers.get("authorization"))
+    if scheme.lower() == "bearer" and param:
+        return param
+    return None
+
+
 def _bearer_key(request: Request) -> str | None:
-    """``bearer:<digest>`` for a request carrying ``Authorization: Bearer``,
-    else ``None``.
+    """``bearer:<digest>`` of the token auth uses (see :func:`_presented_token`;
+    a cookie-carried token is the same Cognito bearer), else ``None``.
 
     The token is HASHED, never decoded: this must not become a second,
     unverified token parser, and the digest keeps a bearer out of log lines
@@ -57,8 +84,7 @@ def _bearer_key(request: Request) -> str | None:
     user id, two logins of the same user (an operator's browser and an agent's
     own login) get separate buckets.
     """
-    header = request.headers.get("authorization") or ""
-    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    token = _presented_token(request)
     if token:
         return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
     return None
@@ -68,9 +94,10 @@ def get_user_identifier(request: Request) -> str:
     """Per-CALLER bucket for ``user_limiter``: the bearer when there is one,
     else the peer.
 
-    Returns ``bearer:<digest>`` for a request carrying a bearer token, and
-    ``peer:<rightmost X-Forwarded-For>`` (see :func:`_peer_key`) for one that
-    does not. It deliberately does NOT read ``request.state.user``: nothing in
+    Returns ``bearer:<digest>`` of the token authentication uses (the
+    ``access_token`` cookie, else the ``Authorization`` bearer — see
+    :func:`_presented_token`), and ``peer:<rightmost X-Forwarded-For>`` (see
+    :func:`_peer_key`) for a request carrying neither. It deliberately does NOT read ``request.state.user``: nothing in
     the app sets it, and slowapi calls a key function inside the endpoint
     wrapper with only the raw request in hand. Reading it was why this used to
     return ``ip:{client.host}`` for every request — one bucket per ALB node,
@@ -90,9 +117,11 @@ def get_authorization_identifier(request: Request) -> str:
     of source IPs, so an IP-keyed limit collapses every operator into one
     bucket and one person's cleanup run throttles everybody else's.
 
-    Superuser-gated routes always carry ``Authorization: Bearer <token>``,
-    so the token identifies the caller (see :func:`_bearer_key`). With no
-    bearer it falls back to the peer (see :func:`_peer_key`) — an
+    Every route keyed here authenticates through fastapi-users
+    (``get_current_active_user_async`` directly or via ``require_admin``),
+    i.e. through the cookie-first scheme, so the token that scheme uses
+    identifies the caller (see :func:`_bearer_key`). With no token it falls
+    back to the peer (see :func:`_peer_key`) — an
     unauthenticated caller never reaches these routes, so that arm only covers
     oddities like a probe.
 
@@ -232,11 +261,13 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def _is_loopback_dev(request: Request) -> bool:
+    """True for a development request whose peer (the same derivation the
+    rate-limit keys use, :func:`_peer_key`) is a loopback address. A request
+    that came through a proxy is keyed on the proxy-appended address, so a
+    loopback socket peer alone does not exempt it."""
     if settings.ENVIRONMENT != "development":
         return False
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client else None
-    return host in _LOOPBACK_HOSTS
+    return _peer_key(request).removeprefix("peer:") in _LOOPBACK_HOSTS
 
 
 def auth_rate_limit(limit_string: str):

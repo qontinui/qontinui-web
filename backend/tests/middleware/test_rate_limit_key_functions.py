@@ -23,6 +23,7 @@ The contract pinned here:
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib
 from collections.abc import Callable
 from pathlib import Path
@@ -61,13 +62,23 @@ def _request(
     host: str = ALB_NODE,
     xff: str | None = None,
     bearer: str | None = None,
+    authorization: str | None = None,
+    access_token_cookie: str | None = None,
 ) -> Request:
-    """A real Starlette request, as slowapi hands it to a key function."""
+    """A real Starlette request, as slowapi hands it to a key function.
+
+    ``bearer`` sends ``Authorization: Bearer <bearer>``; ``authorization``
+    sends a raw header value instead, for the scheme-parsing edge cases.
+    """
     headers: list[tuple[bytes, bytes]] = []
     if xff is not None:
         headers.append((b"x-forwarded-for", xff.encode()))
     if bearer is not None:
         headers.append((b"authorization", f"Bearer {bearer}".encode()))
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    if access_token_cookie is not None:
+        headers.append((b"cookie", f"access_token={access_token_cookie}".encode()))
     return Request(
         {
             "type": "http",
@@ -271,14 +282,20 @@ def _enumerated_key_funcs() -> list[tuple[str, Callable[..., str]]]:
     return funcs
 
 
-_ENUMERATED = _enumerated_key_funcs()
+@pytest.fixture(scope="module")
+def enumerated_key_funcs() -> list[tuple[str, Callable[..., str]]]:
+    """Built lazily, so an import or resolution failure fails the named
+    tests that need it instead of breaking collection of the whole file."""
+    return _enumerated_key_funcs()
 
 
-def test_the_enumeration_covers_every_limiter() -> None:
+def test_the_enumeration_covers_every_limiter(
+    enumerated_key_funcs: list[tuple[str, Callable[..., str]]],
+) -> None:
     """Guards the enumeration itself: the five module Limiters, plus the
     per-route ``key_func=`` overrides in public.py and operations."""
     limiter_names = {
-        label for label, _ in _ENUMERATED if label.startswith("rate_limit.")
+        label for label, _ in enumerated_key_funcs if label.startswith("rate_limit.")
     }
     assert limiter_names == {
         "rate_limit.limiter._key_func",
@@ -288,7 +305,9 @@ def test_the_enumeration_covers_every_limiter() -> None:
         "rate_limit.refresh_limiter._key_func",
     }
     route_overrides = [
-        label for label, _ in _ENUMERATED if not label.startswith("rate_limit.")
+        label
+        for label, _ in enumerated_key_funcs
+        if not label.startswith("rate_limit.")
     ]
     assert any(
         label.startswith("app.api.v1.endpoints.public:") for label in route_overrides
@@ -299,15 +318,171 @@ def test_the_enumeration_covers_every_limiter() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "label,key_func", _ENUMERATED, ids=[label for label, _ in _ENUMERATED]
-)
 def test_no_key_function_collapses_onto_the_socket_peer(
-    label: str, key_func: Callable[..., str]
+    enumerated_key_funcs: list[tuple[str, Callable[..., str]]],
 ) -> None:
-    key = key_func(_request(host=ALB_NODE, xff=f"198.51.100.4, {CALLER_PEER}"))
-    assert ALB_NODE not in key, (
-        f"{label} keyed on request.client.host ({key!r}) although "
-        "X-Forwarded-For was present: every caller behind one ALB node "
-        "would share this bucket"
+    request = _request(host=ALB_NODE, xff=f"198.51.100.4, {CALLER_PEER}")
+    collapsed = {
+        label: key
+        for label, key_func in enumerated_key_funcs
+        if ALB_NODE in (key := key_func(request))
+    }
+    assert collapsed == {}, (
+        "these key functions keyed on request.client.host although "
+        "X-Forwarded-For was present, so every caller behind one ALB node "
+        f"would share their bucket: {collapsed}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The key follows the credential auth actually USES: the access_token cookie
+# first, then the Authorization bearer (CookieOrBearerScheme's order).
+# ---------------------------------------------------------------------------
+
+_CREDENTIAL_CASES: list[dict[str, str]] = [
+    {"access_token_cookie": "cookie-tok"},
+    {"authorization": "Bearer header-tok"},
+    {"access_token_cookie": "cookie-tok", "authorization": "Bearer junk-1"},
+    {"access_token_cookie": "cookie-tok", "authorization": "Bearer junk-2"},
+    {"access_token_cookie": "", "authorization": "Bearer header-tok"},
+    {"authorization": "bearer lower-scheme"},
+    {"authorization": "BEARER upper-scheme"},
+    {"authorization": "Basic dXNlcjpwdw=="},
+    {"authorization": "Bearer"},
+    {"authorization": "Bearer "},
+    {"authorization": "Bearer  two-spaces"},
+    {"authorization": "Bearer tok with spaces"},
+    {"authorization": ""},
+    {},
+]
+
+
+@pytest.mark.parametrize("case", _CREDENTIAL_CASES, ids=repr)
+@pytest.mark.parametrize(
+    "key_func", [get_user_identifier, get_authorization_identifier]
+)
+def test_the_key_is_the_token_the_auth_scheme_extracts(
+    case: dict[str, str], key_func: Callable[[Request], str]
+) -> None:
+    """Pins the key to the real ``CookieOrBearerScheme`` rather than to a
+    restatement of it: whatever token the scheme hands fastapi-users is what
+    the bucket is keyed on, and no token means the peer."""
+    import asyncio
+
+    from app.auth.config import cookie_or_bearer_transport
+
+    request = _request(xff=CALLER_PEER, **case)
+    token = asyncio.run(cookie_or_bearer_transport.scheme(request))
+    expected = (
+        "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
+        if token
+        else f"peer:{CALLER_PEER}"
+    )
+    assert key_func(request) == expected
+
+
+@pytest.mark.parametrize(
+    "key_func", [get_user_identifier, get_authorization_identifier]
+)
+def test_a_cookie_caller_cannot_buy_a_fresh_bucket_with_a_junk_bearer(
+    key_func: Callable[[Request], str],
+) -> None:
+    keys = {
+        key_func(_request(access_token_cookie="cookie-tok", bearer=f"junk-{i}"))
+        for i in range(5)
+    }
+    assert len(keys) == 1
+
+
+@pytest.fixture
+def users_me_real_auth_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """GET /users/me through the REAL fastapi-users dependency.
+
+    ``CookieOrBearerTransport`` -> ``CognitoJWTStrategy.read_token`` run
+    unmodified, so which credential is used (cookie or header) is the
+    production choice. Only the lowest layer is replaced: the Cognito
+    verify-and-resolve call (``token -> User``), which needs JWKS and a
+    database. It accepts exactly one token. The DB session dependency yields
+    an unconnected ``AsyncSession`` so ``read_token``'s
+    ``SQLAlchemyUserDatabase`` check holds without a database.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.api.v1.endpoints.users import router as users_router
+    from app.auth import cognito_user
+    from app.db.session import get_async_db
+
+    storage = MemoryStorage()
+    monkeypatch.setattr(user_limiter, "_storage", storage)
+    monkeypatch.setattr(user_limiter, "_limiter", FixedWindowRateLimiter(storage))
+
+    caller = SimpleNamespace(
+        id=uuid4(),
+        email="caller@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        username="caller",
+        subscription_tier="free",
+        created_at="2026-11-23T00:00:00Z",
+        updated_at="2026-11-23T00:00:00Z",
+    )
+
+    async def _resolve(token: str, _session: object) -> SimpleNamespace:
+        if token != "valid-cookie-token":
+            raise cognito_user.CognitoAuthError("not the test token")
+        return caller
+
+    monkeypatch.setattr(cognito_user, "verify_cognito_token_and_resolve_user", _resolve)
+
+    async def _unconnected_session():
+        yield AsyncSession()
+
+    app = FastAPI()
+    app.state.limiter = user_limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+    app.dependency_overrides[get_async_db] = _unconnected_session
+    app.include_router(users_router, prefix="/api/v1/users")
+    return TestClient(app)
+
+
+def test_a_cookie_authed_caller_rotating_junk_bearers_still_hits_its_budget(
+    users_me_real_auth_client: TestClient,
+) -> None:
+    client = users_me_real_auth_client
+    client.cookies.set("access_token", "valid-cookie-token")
+    codes = [
+        client.get(
+            "/api/v1/users/me", headers={"Authorization": f"Bearer junk-{i}"}
+        ).status_code
+        for i in range(_USERS_ME_LIMIT + 1)
+    ]
+    # Auth used the cookie every time (no 401 for the junk bearers) ...
+    assert codes[:_USERS_ME_LIMIT] == [200] * _USERS_ME_LIMIT
+    # ... so the bucket is the cookie's, and it runs out.
+    assert codes[_USERS_ME_LIMIT] == 429
+
+
+# ---------------------------------------------------------------------------
+# The dev loopback exemption reads the same peer as the key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "host,xff,exempt",
+    [
+        ("127.0.0.1", None, True),
+        ("::1", None, True),
+        ("127.0.0.1", "203.0.113.9", False),
+        ("127.0.0.1", "127.0.0.1, 203.0.113.9", False),
+        ("203.0.113.9", None, False),
+    ],
+)
+def test_the_dev_loopback_exemption_reads_the_peer_the_key_reads(
+    monkeypatch: pytest.MonkeyPatch, host: str, xff: str | None, exempt: bool
+) -> None:
+    monkeypatch.setattr(rate_limit.settings, "ENVIRONMENT", "development")
+    request = _request(host=host, xff=xff)
+    assert rate_limit._is_loopback_dev(request) is exempt
+    peer = rate_limit.get_peer_ip_identifier(request).removeprefix("peer:")
+    assert (peer in rate_limit._LOOPBACK_HOSTS) is exempt
