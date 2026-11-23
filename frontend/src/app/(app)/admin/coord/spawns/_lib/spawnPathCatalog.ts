@@ -86,7 +86,7 @@ export const SERVED_PATH_WORDS: Readonly<Record<string, ServedPathWords>> = {
   next_step_dispatch: {
     label: "Next step",
     summary:
-      "Continues a session that went quiet, from the next step worked out for it.",
+      "Retired: the coordination service no longer continues a session that went quiet, so nothing new starts on this path and only older sessions show it.",
     nextStepDomain: "next_step",
     enforcedBy: "coord",
   },
