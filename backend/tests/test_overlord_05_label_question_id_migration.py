@@ -50,6 +50,7 @@ from tests._alembic_harness import (
     index_exists,
     index_state,
     load_revision_module,
+    recorded_sql,
     run_alembic,
     scalar,
 )
@@ -137,17 +138,7 @@ def test_the_revision_names_what_coord_reads_from_its_constants() -> None:
 
 
 def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
-    module = _revision_module()
-    executed: list[str] = []
-
-    class _RecordingOp:
-        @staticmethod
-        def execute(sql: object) -> None:
-            executed.append(str(sql))
-
-    monkeypatch.setattr(module, "op", _RecordingOp)
-    getattr(module, step)()
-    return executed
+    return recorded_sql(_revision_module(), step, monkeypatch)
 
 
 def _collapsed(sql: str) -> str:
