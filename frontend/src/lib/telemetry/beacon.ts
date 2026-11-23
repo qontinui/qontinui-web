@@ -80,7 +80,8 @@ const SIGNATURE_THROTTLE_MAX = 200;
 /**
  * Backoff applied to a 429 whose rate-limit headers are absent or unreadable —
  * including the case where CORS hides them from this page, which has not been
- * measured against the live ingest either way.
+ * measured against the live ingest either way — and to a send whose outcome is
+ * unknown (a rejected keepalive fetch).
  */
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
 /** Upper bound on any ingest-requested backoff, however long it asks for. */
@@ -304,23 +305,33 @@ function transmit(event: ClientTelemetryEvent): void {
 
   // The live-page transport: a keepalive fetch whose answer we read, so
   // Sentry's 429 reaches the rate limiter and a non-2xx reaches the breaker.
-  // A rejection means the request never produced an answer (the keepalive
-  // body quota, the network, or a CORS-blocked read): that says nothing about
-  // the ingest, so it is neither success nor failure, and the envelope gets
-  // one more chance through sendBeacon. The trailing catch keeps a throw in
-  // our own handlers from becoming an unhandled rejection that this beacon
-  // would then capture about itself.
+  // A rejection is an UNKNOWN outcome: the network or the keepalive body quota
+  // may have stopped the request before it left, but a CORS-blocked read of an
+  // answer the ingest already accepted rejects with the same TypeError, and
+  // the two cannot be told apart. So it is never re-sent (that could duplicate
+  // an event), it opens the conservative backoff window, and it counts toward
+  // the breaker so a sustained outage stops the beacon. The trailing catch
+  // keeps a throw in our own handlers from becoming an unhandled rejection
+  // that this beacon would then capture about itself.
   try {
     fetchKeepalive(url, body, contentType)
-      .then(onIngestResponse, () => {
-        queueViaSendBeacon(url, body, contentType);
-      })
+      .then(onIngestResponse, onUnknownOutcome)
       .catch(() => {
         /* never let the beacon's own bookkeeping surface as an incident */
       });
   } catch {
-    queueViaSendBeacon(url, body, contentType);
+    onUnknownOutcome();
   }
+}
+
+/** A send whose outcome could not be observed: back off, and count it. */
+function onUnknownOutcome(): void {
+  if (!state) return;
+  state.rateLimitedUntil = Math.max(
+    state.rateLimitedUntil,
+    Date.now() + DEFAULT_RATE_LIMIT_BACKOFF_MS
+  );
+  onTransmitFailure();
 }
 
 /** Hand an envelope to sendBeacon; true when the browser queued it. Unobserved. */
@@ -711,8 +722,8 @@ function installFetchWrapper(): void {
 /**
  * Was this request aborted by its caller rather than failed? A timeout is a
  * failure even though it aborts through the same signal: the app's own client
- * timeouts abort with a ``TimeoutError`` reason (``http-client.ts``,
- * ``backend-api.ts``, ``AbortSignal.timeout``), and those stay incidents.
+ * timeouts abort with a ``TimeoutError`` reason (``lib/abort-reasons.ts``'s
+ * ``timeoutAbortReason``, or ``AbortSignal.timeout``), and those stay incidents.
  * Otherwise an ``AbortError`` rejection, or a signal aborted with an
  * ``AbortError`` reason (the default for ``controller.abort()`` and for a
  * navigation), is the caller's decision. A rejection once the page is hiding

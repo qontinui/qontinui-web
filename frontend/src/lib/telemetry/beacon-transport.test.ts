@@ -451,21 +451,46 @@ describe("beacon transport honesty", () => {
       expect(sends(h)).toBe(6);
     });
 
-    it("a keepalive fetch rejected before reaching ingest counts as neither, and retries once via sendBeacon", async () => {
+    it("a rejected keepalive fetch is NOT retried via sendBeacon and opens the default 60 s window", async () => {
+      // A rejection cannot be told apart from a CORS-blocked read of an answer
+      // the ingest already received, so re-sending could duplicate it.
       h.beaconReturns = true;
       h.ingestResponse = () => {
         throw new TypeError("Failed to fetch");
       };
       expect(installBeacon()).toBe(true);
 
-      for (const p of ["a", "b", "c", "d", "e", "f"]) {
-        await appFailure(`/api/v1/operations/${p}`);
-      }
+      await appFailure("/api/v1/operations/a");
+      expect(h.ingestFetches).toHaveLength(1);
+      expect(h.beaconCalls).toBe(0);
 
-      // Every envelope was attempted (the breaker did not trip on rejections)…
-      expect(h.ingestFetches).toHaveLength(6);
-      // …and each rejected one was retried exactly once through sendBeacon.
-      expect(h.beaconCalls).toBe(6);
+      // Unknown outcome → the conservative window: nothing for 60 s.
+      vi.setSystemTime(Date.now() + 59_000);
+      await appFailure("/api/v1/operations/b");
+      expect(sends(h)).toBe(1);
+
+      vi.setSystemTime(Date.now() + 2_000);
+      await appFailure("/api/v1/operations/c");
+      expect(h.ingestFetches).toHaveLength(2);
+      expect(h.beaconCalls).toBe(0);
+    });
+
+    it("sustained keepalive rejections trip the breaker", async () => {
+      h.ingestResponse = () => {
+        throw new TypeError("Failed to fetch");
+      };
+      expect(installBeacon()).toBe(true);
+
+      for (const p of ["a", "b", "c", "d", "e"]) {
+        await appFailure(`/api/v1/operations/${p}`);
+        vi.setSystemTime(Date.now() + 61_000); // past each rejection's window
+      }
+      expect(sends(h)).toBe(5);
+
+      // Five consecutive unknown rejections: the breaker is open.
+      h.ingestResponse = () => new Response(null, { status: 200 });
+      await appFailure("/api/v1/operations/f");
+      expect(sends(h)).toBe(5);
     });
 
     it("a throw inside the response handler never becomes an unhandled rejection", async () => {
