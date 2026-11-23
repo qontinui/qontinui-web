@@ -25,8 +25,11 @@
  *                       naming the lane, and every response after the check
  *                       carries that lane's budget (`X-RateLimit-Lane`,
  *                       `-Limit`, `-Remaining`, `-Reset-After`) — except a
- *                       429 the RUNNER answered, which says
- *                       `X-RateLimit-Refused-By: runner` instead. A door
+ *                       429 another party answered: the RUNNER's says
+ *                       `X-RateLimit-Refused-By: runner`, and the BACKEND's
+ *                       (behind the auth or ownership probe) says
+ *                       `X-RateLimit-Refused-By: backend` with the backend's
+ *                       own lane and key kind (`upstreamErrorResponse`). A door
  *                       refusal also logs `lane_refused` (lane, method,
  *                       sampled as the relay's; never the user id). Then one
  *                       local `runner-door-proxy: forwarded` line per call
@@ -141,7 +144,13 @@ export async function handleRunnerDoorRequest(
     logLaneRefused(rl, "user", method);
     return rateLimitedResponse(rl);
   }
-  const withBudget = (response: Response) => withRateLimitHeaders(response, rl);
+  // A response another party refused (`X-RateLimit-Refused-By`: the runner,
+  // or the backend behind the ownership probe) keeps that party's
+  // attribution and never gets the door's budget.
+  const withBudget = (response: Response) =>
+    response.headers.has("X-RateLimit-Refused-By")
+      ? response
+      : withRateLimitHeaders(response, rl);
 
   // 5b. The runner on that port must be one of this operator's paired
   // devices: Host and Origin bind only browsers (bridge-session.ts).
@@ -202,7 +211,6 @@ export async function handleRunnerDoorRequest(
   }
   if (upstream.status === 429) {
     headers.set("X-RateLimit-Refused-By", "runner");
-    return new Response(upstream.body, { status: 429, headers });
   }
   return withBudget(
     new Response(upstream.body, { status: upstream.status, headers })

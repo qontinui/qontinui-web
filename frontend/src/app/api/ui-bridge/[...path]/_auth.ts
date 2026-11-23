@@ -200,17 +200,36 @@ export type AuthResult =
    * the fetch never completed) and `retryAfter` is its `Retry-After` header
    * verbatim, when it sent one.
    */
-  | {
-      ok: false;
-      reason: "upstream_error";
-      status: number;
-      retryAfter: string | null;
-    }
+  | ({ ok: false; reason: "upstream_error" } & UpstreamRefusal)
   /**
    * No backend base is configured for this deployment, so no verdict could
    * be asked for. → 503 carrying the variable to set.
    */
   | { ok: false; reason: "misconfigured"; error: EndpointUnresolvedError };
+
+/**
+ * What an upstream that rendered no verdict said about itself: its status
+ * (429 or 5xx; 503 when the fetch never completed), its `Retry-After`
+ * verbatim, and — on a 429 from this app's backend — the backend's own
+ * `X-RateLimit-Lane` and `X-RateLimit-Key-Kind`, so the refusal stays
+ * attributed to the limiter that made it.
+ */
+export interface UpstreamRefusal {
+  status: number;
+  retryAfter: string | null;
+  rateLimitLane?: string | null;
+  rateLimitKeyKind?: string | null;
+}
+
+/** The `UpstreamRefusal` an upstream response carries. */
+export function upstreamRefusalFrom(resp: Response): UpstreamRefusal {
+  return {
+    status: resp.status,
+    retryAfter: resp.headers.get("retry-after"),
+    rateLimitLane: resp.headers.get("x-ratelimit-lane"),
+    rateLimitKeyKind: resp.headers.get("x-ratelimit-key-kind"),
+  };
+}
 
 /**
  * Outcome of ONE upstream verification probe (`/auth/users/me` or
@@ -226,7 +245,7 @@ export type AuthResult =
 type VerifyOutcome<P> =
   | { outcome: "match"; principal: P }
   | { outcome: "no-match" }
-  | { outcome: "upstream-error"; status: number; retryAfter: string | null };
+  | ({ outcome: "upstream-error" } & UpstreamRefusal);
 
 /** Sentinel for the two `no-match` returns below (saves re-allocating). */
 const NO_MATCH = { outcome: "no-match" } as const;
@@ -247,13 +266,9 @@ const NO_MATCH = { outcome: "no-match" } as const;
  */
 function upstreamErrorFrom(
   resp: Response,
-): { outcome: "upstream-error"; status: number; retryAfter: string | null } | null {
+): ({ outcome: "upstream-error" } & UpstreamRefusal) | null {
   if (resp.status === 429 || resp.status >= 500) {
-    return {
-      outcome: "upstream-error",
-      status: resp.status,
-      retryAfter: resp.headers.get("retry-after"),
-    };
+    return { outcome: "upstream-error", ...upstreamRefusalFrom(resp) };
   }
   return null;
 }
@@ -345,12 +360,8 @@ export async function authenticateBridgeRequest(
   // actionable `Retry-After`. Otherwise the first error observed wins.
   const upstream = pickUpstreamError(user, device);
   if (upstream) {
-    return {
-      ok: false,
-      reason: "upstream_error",
-      status: upstream.status,
-      retryAfter: upstream.retryAfter,
-    };
+    const { outcome: _outcome, ...refusal } = upstream;
+    return { ok: false, reason: "upstream_error", ...refusal };
   }
 
   // Never cached: a negative verdict must not outlive a token refresh.
@@ -365,7 +376,7 @@ export async function authenticateBridgeRequest(
  */
 function pickUpstreamError(
   ...outcomes: VerifyOutcome<unknown>[]
-): { status: number; retryAfter: string | null } | null {
+): Extract<VerifyOutcome<unknown>, { outcome: "upstream-error" }> | null {
   const errors = outcomes.filter(
     (o): o is Extract<VerifyOutcome<unknown>, { outcome: "upstream-error" }> =>
       o.outcome === "upstream-error",
@@ -464,11 +475,7 @@ async function verifyDeviceToken(
  * Unavailable is the honest status: we could not reach the authority, so we
  * cannot say whether the caller is authenticated.
  */
-function unreachable(): {
-  outcome: "upstream-error";
-  status: number;
-  retryAfter: string | null;
-} {
+function unreachable(): { outcome: "upstream-error" } & UpstreamRefusal {
   return { outcome: "upstream-error", status: 503, retryAfter: null };
 }
 
@@ -594,14 +601,16 @@ export function unauthenticatedResponse(): Response {
  * from the outage case for log greppability; both are explicitly NOT
  * `UNAUTHENTICATED`.
  *
+ * A 429 is the backend's refusal, not this app's: it is marked
+ * `X-RateLimit-Refused-By: backend` and carries the backend's own
+ * `X-RateLimit-Lane` and `X-RateLimit-Key-Kind` when it sent them, so it is
+ * attributed to the limiter that made it and never to a lane of this app's.
+ *
  * `status` is defensively clamped to a class this helper is willing to emit
  * (429, or 5xx) — a 502 stands in for anything unexpected — so the helper is
  * total and can never throw a `RangeError` out of the request path.
  */
-export function upstreamErrorResponse(result: {
-  status: number;
-  retryAfter: string | null;
-}): Response {
+export function upstreamErrorResponse(result: UpstreamRefusal): Response {
   const status =
     result.status === 429 || (result.status >= 500 && result.status <= 599)
       ? result.status
@@ -611,6 +620,15 @@ export function upstreamErrorResponse(result: {
   };
   if (result.retryAfter) {
     headers["Retry-After"] = result.retryAfter;
+  }
+  if (status === 429) {
+    headers["X-RateLimit-Refused-By"] = "backend";
+    if (result.rateLimitLane) {
+      headers["X-RateLimit-Lane"] = result.rateLimitLane;
+    }
+    if (result.rateLimitKeyKind) {
+      headers["X-RateLimit-Key-Kind"] = result.rateLimitKeyKind;
+    }
   }
   return new Response(
     JSON.stringify({
