@@ -6844,6 +6844,198 @@
         "title": "CanonicalConfigResponse",
         "type": "object"
       },
+      "CapacityModelDial": {
+        "description": "The D9 dial as coord resolves it (``CapacityModelDial::view``).\n\n``mode_source`` is ``\"default\"`` when the row stores NULL, which D9 reads\nas ``enforce``; ``\"stored\"`` otherwise. ``consumers`` is every consumer\nthis coord build knows \u2014 the vocabulary the off list may name.",
+        "properties": {
+          "consumers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Consumers",
+            "type": "array"
+          },
+          "ignored_off_consumers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignored Off Consumers",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "off",
+              "enforce"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "mode_source": {
+            "enum": [
+              "default",
+              "stored"
+            ],
+            "title": "Mode Source",
+            "type": "string"
+          },
+          "off_consumers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Off Consumers",
+            "type": "array"
+          },
+          "permitted_consumers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permitted Consumers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "mode_source",
+          "off_consumers",
+          "ignored_off_consumers",
+          "permitted_consumers",
+          "consumers"
+        ],
+        "title": "CapacityModelDial",
+        "type": "object"
+      },
+      "CapacityModelPut": {
+        "additionalProperties": false,
+        "description": "Closed body for the dial write. ``extra=\"forbid\"``: coord's PUT is\n``deny_unknown_fields``, so a stray key is refused here, legibly.",
+        "properties": {
+          "change_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Note"
+          },
+          "mode": {
+            "enum": [
+              "off",
+              "enforce"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "off_consumers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Off Consumers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "off_consumers"
+        ],
+        "title": "CapacityModelPut",
+        "type": "object"
+      },
+      "CapacityModelView": {
+        "description": "The dial, or why it is UNKNOWN.\n\n``dial is None`` is UNKNOWN, never ``enforce``: D9 forbids resolving an\nunread dial to NULL's default. ``unknown_reason`` names which read failed\nto produce it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "dial": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapacityModelDial"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          }
+        },
+        "required": [
+          "dial",
+          "can_edit"
+        ],
+        "title": "CapacityModelView",
+        "type": "object"
+      },
+      "CapacityModelWriteResult": {
+        "description": "What the write did, and the dial as a SEPARATE read now resolves it.\n\n``effective is None`` with ``readback_error`` set is UNKNOWN \u2014 the write\nmay well have landed, and the written values are not what devices read\nuntil a read says so.",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapacityModelView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "versioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versioned"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "CapacityModelWriteResult",
+        "type": "object"
+      },
       "CaptureActionCreate": {
         "description": "Schema for creating a user action.",
         "properties": {
@@ -110903,6 +111095,129 @@
           }
         ],
         "summary": "Put Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/capacity": {
+      "get": {
+        "description": "Coord's per-device capacity read, status and body verbatim.",
+        "operationId": "api_v1_operations_fleet_capacity_get",
+        "parameters": [
+          {
+            "description": "Only this device",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this device",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fleet Capacity",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/capacity-model": {
+      "get": {
+        "description": "The D9 dial as coord resolves it, plus whether the caller may edit it\n(the same effective-tenant rule :func:`get_fleet_policy` uses).",
+        "operationId": "api_v1_operations_fleet_capacity_model_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityModelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Capacity Model",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write the D9 dial, then READ BACK what coord resolves.\n\nTenant-admin gated here; coord re-checks with ``rbac::is_tenant_admin``.\nCoord's typed vocabulary refusal (``invalid_capacity_model_mode``,\n``unknown_capacity_model_consumer``, ``duplicate_capacity_model_consumer``)\nreaches the browser as a structured ``detail``.",
+        "operationId": "api_v1_operations_fleet_capacity_model_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapacityModelPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityModelWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Fleet Capacity Model",
         "tags": [
           "operations"
         ]

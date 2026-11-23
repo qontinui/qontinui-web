@@ -13774,6 +13774,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Capacity
+         * @description Coord's per-device capacity read, status and body verbatim.
+         */
+        get: operations["api_v1_operations_fleet_capacity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/capacity-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Capacity Model
+         * @description The D9 dial as coord resolves it, plus whether the caller may edit it
+         *     (the same effective-tenant rule :func:`get_fleet_policy` uses).
+         */
+        get: operations["api_v1_operations_fleet_capacity_model_get"];
+        /**
+         * Put Fleet Capacity Model
+         * @description Write the D9 dial, then READ BACK what coord resolves.
+         *
+         *     Tenant-admin gated here; coord re-checks with ``rbac::is_tenant_admin``.
+         *     Coord's typed vocabulary refusal (``invalid_capacity_model_mode``,
+         *     ``unknown_capacity_model_consumer``, ``duplicate_capacity_model_consumer``)
+         *     reaches the browser as a structured ``detail``.
+         */
+        put: operations["api_v1_operations_fleet_capacity_model_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/ci-runners": {
         parameters: {
             query?: never;
@@ -30796,6 +30846,84 @@ export interface components {
                     [key: string]: string;
                 };
             };
+        };
+        /**
+         * CapacityModelDial
+         * @description The D9 dial as coord resolves it (``CapacityModelDial::view``).
+         *
+         *     ``mode_source`` is ``"default"`` when the row stores NULL, which D9 reads
+         *     as ``enforce``; ``"stored"`` otherwise. ``consumers`` is every consumer
+         *     this coord build knows — the vocabulary the off list may name.
+         */
+        CapacityModelDial: {
+            /** Consumers */
+            consumers: string[];
+            /** Ignored Off Consumers */
+            ignored_off_consumers: string[];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "enforce";
+            /**
+             * Mode Source
+             * @enum {string}
+             */
+            mode_source: "default" | "stored";
+            /** Off Consumers */
+            off_consumers: string[];
+            /** Permitted Consumers */
+            permitted_consumers: string[];
+        };
+        /**
+         * CapacityModelPut
+         * @description Closed body for the dial write. ``extra="forbid"``: coord's PUT is
+         *     ``deny_unknown_fields``, so a stray key is refused here, legibly.
+         */
+        CapacityModelPut: {
+            /** Change Note */
+            change_note?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "enforce";
+            /** Off Consumers */
+            off_consumers: string[];
+        };
+        /**
+         * CapacityModelView
+         * @description The dial, or why it is UNKNOWN.
+         *
+         *     ``dial is None`` is UNKNOWN, never ``enforce``: D9 forbids resolving an
+         *     unread dial to NULL's default. ``unknown_reason`` names which read failed
+         *     to produce it.
+         */
+        CapacityModelView: {
+            /** Can Edit */
+            can_edit: boolean;
+            dial: components["schemas"]["CapacityModelDial"] | null;
+            /** Unknown Reason */
+            unknown_reason?: string | null;
+        };
+        /**
+         * CapacityModelWriteResult
+         * @description What the write did, and the dial as a SEPARATE read now resolves it.
+         *
+         *     ``effective is None`` with ``readback_error`` set is UNKNOWN — the write
+         *     may well have landed, and the written values are not what devices read
+         *     until a read says so.
+         */
+        CapacityModelWriteResult: {
+            effective?: components["schemas"]["CapacityModelView"] | null;
+            /** Ok */
+            ok: boolean;
+            /** Readback Error */
+            readback_error?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Versioned */
+            versioned?: boolean | null;
         };
         /**
          * CaptureActionCreate
@@ -82211,6 +82339,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FleetPolicyWriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_capacity_get: {
+        parameters: {
+            query?: {
+                /** @description Only this device */
+                device_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_capacity_model_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityModelView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_capacity_model_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapacityModelPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityModelWriteResult"];
                 };
             };
             /** @description Validation Error */

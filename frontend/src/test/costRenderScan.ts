@@ -168,6 +168,34 @@ export const NON_MONEY_COMPOUNDS: ReadonlyArray<{
   },
 ];
 
+/**
+ * A money-word name that is NOT money in ONE module, with why. Narrower than
+ * {@link NON_MONEY_COMPOUNDS}: a single word cannot be qualified by its
+ * neighbour, so the exemption names the module that reads it, and the same
+ * name anywhere else is still flagged.
+ */
+export const NON_MONEY_NAMES_IN_MODULE: ReadonlyArray<{
+  readonly file: string;
+  readonly name: string;
+  readonly reason: string;
+}> = [
+  {
+    file: "components/operations/fleetCapacity.ts",
+    name: "costs",
+    reason:
+      "coord's capacity read (`fleet_placement::capacity_read`) names a work " +
+      "class's per-unit CPU and memory use its `costs` — cores and bytes " +
+      "(`fleet_placement::costs::ClassCost`), never money",
+  },
+];
+
+/** Whether `name` is exempted in `file` by {@link NON_MONEY_NAMES_IN_MODULE}. */
+function isNonMoneyNameIn(file: string, name: string): boolean {
+  return NON_MONEY_NAMES_IN_MODULE.some(
+    (e) => e.file === file && e.name === name
+  );
+}
+
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
 /**
@@ -1144,7 +1172,8 @@ export function scanParsed(
     if (
       ts.isIdentifier(node) &&
       isMoneyName(node.text) &&
-      !isDeclarationName(node)
+      !isDeclarationName(node) &&
+      !isNonMoneyNameIn(file, node.text)
     ) {
       flag(node, "money-value", `a money value \`${node.text}\``);
     }

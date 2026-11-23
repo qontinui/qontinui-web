@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest";
 import {
   COST_HOME,
   NON_MONEY_COMPOUNDS,
+  NON_MONEY_NAMES_IN_MODULE,
   describeCostViolation,
   discoverScope,
   discoverScopeIn,
@@ -1410,5 +1411,19 @@ describe("money names", () => {
     }
     expect(isMoneyName("domainCost")).toBe(false);
     expect(isMoneyName("domainCostUsd")).toBe(true);
+  });
+
+  it("exempt a module-scoped non-money name in its module only", () => {
+    for (const { file, name, reason } of NON_MONEY_NAMES_IN_MODULE) {
+      expect(isMoneyName(name), name).toBe(true);
+      expect(reason.length).toBeGreaterThan(20);
+      const text = `export function read(raw: { ${name}: unknown }) { return raw.${name}; }\n`;
+      expect(scanSource(file, text), file).toEqual([]);
+      expect(
+        scanSource("components/operations/elsewhere.ts", text).map(
+          (v) => v.rule
+        )
+      ).toContain("money-value");
+    }
   });
 });

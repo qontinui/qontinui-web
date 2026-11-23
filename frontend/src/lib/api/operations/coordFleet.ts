@@ -895,3 +895,97 @@ export async function fetchComputer(
   });
   return readJson<unknown>(res, `GET ${url}`);
 }
+
+/**
+ * `GET /fleet/capacity` (`get_fleet_capacity`) — coord's per-device capacity
+ * read (plan `2026-11-05-one-free-resource-model-places-sessions-builds-and-ci`
+ * Phase 11), passed through verbatim from coord's operator door
+ * `/coord/fleet/capacity/operator`. Validated field by field by
+ * `parseFleetCapacity` (`components/operations/fleetCapacity.ts`), so this
+ * returns `unknown`.
+ */
+export async function fetchFleetCapacity(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/capacity`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * The capacity-model dial (plan D9) as coord resolves it — `CapacityModelDial`
+ * in the operations proxy. `mode_source: "default"` means the row stores NULL,
+ * which D9 reads as `enforce`.
+ */
+export interface CapacityModelDial {
+  mode: "off" | "enforce";
+  mode_source: "default" | "stored";
+  off_consumers: string[];
+  ignored_off_consumers: string[];
+  permitted_consumers: string[];
+  /** Every consumer this coord build knows: the off list's vocabulary. */
+  consumers: string[];
+}
+
+/** `CapacityModelView`: `dial === null` is UNKNOWN, never `enforce`. */
+export interface CapacityModelView {
+  dial: CapacityModelDial | null;
+  unknown_reason: string | null;
+  can_edit: boolean;
+}
+
+/** `PUT /fleet/capacity-model` body (`CapacityModelPut`, closed). */
+export interface CapacityModelWrite {
+  mode: "off" | "enforce";
+  off_consumers: string[];
+  change_note?: string | null;
+}
+
+/**
+ * `CapacityModelWriteResult`: `effective === null` with `readback_error` set
+ * is UNKNOWN — the write may have landed, and only a read says what resolves.
+ */
+export interface CapacityModelWriteResult {
+  ok: boolean;
+  version: number | null;
+  versioned: boolean | null;
+  effective: CapacityModelView | null;
+  readback_error: string | null;
+}
+
+/**
+ * `GET /fleet/capacity-model` (`get_fleet_capacity_model`). Returns `unknown`:
+ * `parseCapacityModelView` (`components/operations/fleetCapacity.ts`) checks
+ * the body before anything renders it as a dial.
+ */
+export async function fetchCapacityModel(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/capacity-model`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `PUT /fleet/capacity-model` (`put_fleet_capacity_model`). `idempotent:
+ * false`: a 5xx is not re-issued, because coord may have versioned the write.
+ */
+export async function putCapacityModel(
+  write: CapacityModelWrite
+): Promise<CapacityModelWriteResult> {
+  const url = `${OPERATIONS_BASE}/fleet/capacity-model`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify(write),
+    idempotent: false,
+  });
+  return readJson<CapacityModelWriteResult>(res, `PUT ${url}`);
+}
