@@ -355,10 +355,14 @@ export default function CoordPrsPage() {
               Recently merged (24h)
             </TabsTrigger>
           </TabsList>
-<div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {/* `flex-wrap`: the label, the recalibrating chip and the buttons
+              wrap inside a narrow column rather than overflow it. The label
+              is the page's only statement of how old the list is, so it
+              wraps rather than hides. */}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {updatedAt !== null && (
             <span
-              className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
+              className="text-xs text-muted-foreground tabular-nums"
               data-testid="prs-updated-ago"
             >
               {relativeAgoLabel(updatedAt, now)}

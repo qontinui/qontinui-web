@@ -630,8 +630,62 @@ describe("RecordRow (R2, R4)", () => {
     const reason = screen.getByTestId("row-reason");
     expect(reason).toHaveAttribute("title", "waiting on CI");
     expect(reason.className).toContain("truncate");
-    // Hidden below `sm` — the badge's own title answers "why?" there.
-    expect(reason.className).toContain("hidden sm:inline");
+  });
+
+  /**
+   * The reason answers to the ROW's width, not the viewport's (plan
+   * `2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport`
+   * Phase 2). This is the ENCODED half: jsdom has no layout engine, so it
+   * pins the class contract that produces the geometry, not the geometry.
+   * The geometry (label ≥ 192 px wherever a reason shows, at 1280 and 1024)
+   * is an operated UI Bridge check; a browser-backed component test reading
+   * `getBoundingClientRect` would encode it.
+   */
+  it("sizes the reason by the row's own width and keeps the label's 12rem floor", () => {
+    render(
+      <RecordRow
+        {...base}
+        expanded={false}
+        onToggle={() => {}}
+        data-testid="row"
+      />
+    );
+    const classes = (el: Element) => el.className.split(/\s+/);
+    // The root is the NAMED inline-size container the reason's queries bind to.
+    expect(classes(screen.getByTestId("row"))).toContain(
+      "@container/record-row"
+    );
+
+    const reason = screen.getByTestId("row-reason");
+    expect(classes(reason)).toContain("hidden");
+    expect(classes(reason)).toContain("@min-[45rem]/record-row:inline");
+    expect(classes(reason)).toContain("max-w-[22ch]");
+    expect(classes(reason)).toContain("@min-[53rem]/record-row:max-w-[40ch]");
+    // The reason gives up width first, so the label keeps its basis.
+    expect(classes(reason)).toContain("shrink-[999]");
+    // No viewport breakpoint may decide the reason's display or cap.
+    expect(reason.className).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/);
+
+    const label = screen.getByText("feat/thing");
+    expect(classes(label)).toContain("grow");
+    expect(classes(label)).toContain("basis-48");
+    expect(classes(label)).toContain("min-w-0");
+    expect(classes(label)).not.toContain("flex-1");
+  });
+
+  it("composes a consumer's className with the row's container", () => {
+    render(
+      <RecordRow
+        {...base}
+        expanded={false}
+        onToggle={() => {}}
+        className="opacity-60"
+        data-testid="row"
+      />
+    );
+    const root = screen.getByTestId("row").className.split(/\s+/);
+    expect(root).toContain("@container/record-row");
+    expect(root).toContain("opacity-60");
   });
 
   it("drops the inline reason while expanded — the panel carries it in full", () => {
