@@ -320,9 +320,9 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         assert _ANCHOR_INDEX_NAME not in lateral_plan, lateral_plan
         # The plain (sampled_at) index with a device_id filter is the near-tie
         # alternative; name it so a planner flap reads as that, not a mystery.
-        assert (
-            "idx_device_resource_samples_sampled_at" not in lateral_plan
-        ), lateral_plan
+        assert "idx_device_resource_samples_sampled_at" not in lateral_plan, (
+            lateral_plan
+        )
         assert not _has_sort(lateral_plan), lateral_plan
         assert any(
             "Index Cond" in line and "device_id" in line
