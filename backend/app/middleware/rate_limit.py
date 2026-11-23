@@ -1,5 +1,6 @@
 import functools
 import hashlib
+import inspect
 import logging
 import math
 import time
@@ -16,13 +17,27 @@ from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
-# slowapi logs every refusal itself, at WARNING, naming the bucket KEY (a
-# bearer digest or an address) and the concrete path:
-# "ratelimit 1 per 1 minute (peer:<addr>) exceeded at endpoint: /items/<id>".
-# `rate_limit_exceeded_handler` logs the refusal without either
-# (`rate_limit_refused`), so slowapi's own line is held to ERROR and above —
-# its configuration errors ("Skipping limit ...") still pass.
-logging.getLogger("slowapi").setLevel(logging.ERROR)
+#: slowapi's own refusal line (``Limiter.__evaluate_limits``). It names the
+#: bucket KEY (a bearer digest or an address) and the concrete path.
+_SLOWAPI_REFUSAL_MSG = "ratelimit %s (%s) exceeded at endpoint: %s"
+
+
+class _DropSlowapiRefusalLine(logging.Filter):
+    """Drops slowapi's per-refusal line and nothing else.
+
+    ``rate_limit_exceeded_handler`` logs every refusal without the key or the
+    path (``rate_limit_refused``), so slowapi's line only leaks them. Its
+    other records — storage unreachable / recovered, a skipped limit — pass.
+    Matched on the unformatted ``record.msg``, which carries no caller data.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.msg != _SLOWAPI_REFUSAL_MSG
+
+
+_slowapi_logger = logging.getLogger("slowapi")
+if not any(isinstance(f, _DropSlowapiRefusalLine) for f in _slowapi_logger.filters):
+    _slowapi_logger.addFilter(_DropSlowapiRefusalLine())
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -159,7 +174,12 @@ def _refusal_key_kind(request: Request, key_func: Any) -> str:
     if key_func is get_remote_address:
         return "ip"
     try:
-        key = str(key_func(request))
+        # slowapi's own dispatch: the request only to a function that declares
+        # a parameter named ``request``, else no arguments.
+        if "request" in inspect.signature(key_func).parameters:
+            key = str(key_func(request))
+        else:
+            key = str(key_func())
     except Exception:
         return "unknown"
     for prefix, kind in _KEY_KIND_BY_PREFIX:
@@ -169,9 +189,19 @@ def _refusal_key_kind(request: Request, key_func: Any) -> str:
 
 
 def _refusal_lane(request: Request, limit: Any) -> str:
-    """The limit's scope when it has one, else the ROUTE TEMPLATE
-    (``/api/v1/users/me``, ``/items/{item_id}``) — never the concrete path,
-    which can carry an id. ``unknown`` when neither is readable."""
+    """``<limiter>:<scope or route template>``.
+
+    ``<limiter>`` is the name of the module limiter that registered the limit
+    (``_module_limiters``), ``unknown`` when none did. Then the limit's scope
+    when it has one, else the ROUTE TEMPLATE (``/api/v1/users/me``,
+    ``/items/{item_id}``) — never the concrete path, which can carry an id —
+    and ``unknown`` when neither is readable.
+    """
+    holder = _limiter_holding(limit) if limit is not None else None
+    return f"{holder[0] if holder is not None else 'unknown'}:{_scope_or_template(request, limit)}"
+
+
+def _scope_or_template(request: Request, limit: Any) -> str:
     try:
         scope = limit.scope
     except Exception:
@@ -185,19 +215,55 @@ def _refusal_lane(request: Request, limit: Any) -> str:
     return template if isinstance(template, str) and template else "unknown"
 
 
-def _limiter_holding(limit: Any) -> Limiter | None:
-    """The module limiter that registered ``limit`` — slowapi's exception names
-    the limit, not the limiter whose storage counted it."""
-    for candidate in (
-        limiter,
-        user_limiter,
-        auth_limiter,
-        api_limiter,
-        refresh_limiter,
-    ):
+#: The lane name of each module limiter, by the variable that holds it. A
+#: ``Limiter`` assigned in this module without an entry here is reported by
+#: ``_module_limiters`` under its variable name, and
+#: ``test_every_limiter_in_the_module_is_enumerated_and_named`` fails on it.
+_LIMITER_NAMES: dict[str, str] = {
+    "limiter": "default",
+    "user_limiter": "user",
+    "auth_limiter": "auth",
+    "api_limiter": "api",
+    "refresh_limiter": "refresh",
+}
+
+
+def _module_limiters() -> list[tuple[str, str, Limiter]]:
+    """``(variable, lane name, limiter)`` for every ``Limiter`` this module
+    holds, read from the module's own namespace rather than a hand list."""
+    return [
+        (variable, _LIMITER_NAMES.get(variable, variable), value)
+        for variable, value in list(globals().items())
+        if isinstance(value, Limiter)
+    ]
+
+
+def _group_yields(group: Any, limit: Any) -> bool:
+    """Whether a ``LimitGroup`` (a dynamic, callable limit) built ``limit``:
+    slowapi makes a fresh ``Limit`` from the group per request, so identity
+    cannot match it; the fields the group copies into each ``Limit`` can."""
+    return (
+        group.key_function is limit.key_func
+        and getattr(group, "_LimitGroup__scope", None)
+        == getattr(limit, "_Limit__scope", None)
+        and group.per_method == limit.per_method
+        and group.methods == limit.methods
+        and group.cost == limit.cost
+    )
+
+
+def _limiter_holding(limit: Any) -> tuple[str, Limiter] | None:
+    """``(lane name, limiter)`` of the module limiter that registered
+    ``limit`` — slowapi's exception names the limit, not the limiter whose
+    storage counted it. Static limits match by identity, dynamic ones by
+    ``_group_yields``."""
+    for _variable, name, candidate in _module_limiters():
         for registered in candidate._route_limits.values():
             if any(entry is limit for entry in registered):
-                return candidate
+                return name, candidate
+        for groups in candidate._dynamic_route_limits.values():
+            if any(_group_yields(group, limit) for group in groups):
+                return name, candidate
     return None
 
 
@@ -221,7 +287,7 @@ def _refusal_retry_after(request: Request, limit: Any) -> str:
         holder = _limiter_holding(limit)
         item, identifiers = request.state.view_rate_limit
         if holder is not None:
-            stats = holder.limiter.get_window_stats(item, *identifiers)
+            stats = holder[1].limiter.get_window_stats(item, *identifiers)
             until_reset = math.ceil(stats.reset_time - time.time())
             if 0 < until_reset <= window:
                 return str(until_reset)
@@ -259,11 +325,13 @@ async def rate_limit_exceeded_handler(
 ) -> Response:
     """Answer a refusal with the lane it was refused on.
 
-    Every 429 carries ``X-RateLimit-Lane`` (which limit refused) and
-    ``X-RateLimit-Key-Kind`` (what its bucket is keyed on), and logs one
-    ``rate_limit_refused`` line with those fields and nothing else
-    (``_log_refusal``) — never the key, the token, the address, the user id or
-    the concrete path. ``Retry-After`` is the limit's window. Plan
+    Every 429 carries ``X-RateLimit-Lane`` (which limiter and which limit
+    refused, ``_refusal_lane``) and ``X-RateLimit-Key-Kind`` (what its bucket
+    is keyed on), and logs one ``rate_limit_refused`` line with those fields,
+    plus the request id, and nothing else (``_log_refusal``) — never the key,
+    the token, the address, the user id or the concrete path.
+    ``Retry-After`` is the seconds until the refused bucket's window resets,
+    else the window's length (``_refusal_retry_after``). Plan
     ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``,
     Phase 2: a refusal that named nothing could not be attributed.
     """

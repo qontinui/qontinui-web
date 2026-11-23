@@ -294,8 +294,9 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # for how long.
             "Retry-After",
             # Also emitted by `rate_limit_exceeded_handler` on every 429: WHICH
-            # limit refused (its scope, else the route template) and WHAT its
-            # bucket is keyed on (`user|bearer|peer|ip`). A browser that cannot
+            # limiter and limit refused (`<limiter>:<scope or route
+            # template>`) and WHAT its bucket is keyed on
+            # (`user|bearer|peer|ip`). A browser that cannot
             # read them sees a 429 it cannot attribute — the defect they exist
             # to close (plan 2026-11-23-an-exec-mode-pass-draws-an-unattributed-
             # load-time-429, Phase 2).
