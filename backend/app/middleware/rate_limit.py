@@ -53,8 +53,10 @@ def trusted_proxy_ranges_message(config: Settings) -> str:
 
 @functools.cache
 def log_trusted_proxy_ranges() -> None:
-    """Log :func:`trusted_proxy_ranges_message` once, at INFO. Called at
-    import, so a deployment can read which peers' X-Forwarded-For it trusts."""
+    """Log :func:`trusted_proxy_ranges_message` once, at INFO, so a deployment
+    can read which peers' X-Forwarded-For it trusts. ``app.main`` calls it
+    right after ``configure_logging``; called at import it would fire while
+    the root logger is still at WARNING and be dropped."""
     logger.info(trusted_proxy_ranges_message(settings))
 
 
@@ -245,9 +247,6 @@ def get_peer_ip_identifier(request: Request) -> str:
     :func:`get_user_identifier`).
     """
     return _peer_key(request)
-
-
-log_trusted_proxy_ranges()
 
 
 # The app-wide limiter (``app.state.limiter``), keyed per peer.

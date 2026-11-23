@@ -60,7 +60,11 @@ from app.middleware.private_uploads import (
     UPLOADS_DENIED_PREFIXES,
     PrefixDenyingStaticFiles,
 )
-from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.rate_limit import (
+    limiter,
+    log_trusted_proxy_ranges,
+    rate_limit_exceeded_handler,
+)
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.overview import files as overview_files
@@ -71,6 +75,8 @@ from app.overview.router import (
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
 logger = get_logger(__name__)
+# After configure_logging: logged at rate_limit import it would be dropped.
+log_trusted_proxy_ranges()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

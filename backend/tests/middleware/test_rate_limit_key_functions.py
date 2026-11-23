@@ -1199,3 +1199,39 @@ def test_the_startup_line_is_logged_once_at_info(
     lines = [r for r in caplog.records if "trusted proxy ranges" in r.getMessage()]
     assert len(lines) == 1
     assert lines[0].levelno == logging.INFO
+
+
+def test_the_running_app_emits_the_startup_line_once() -> None:
+    """Import ``app.main`` the way the server does, in a fresh process, and
+    read its output. The line must survive: called at ``rate_limit`` import it
+    fired before ``configure_logging`` set the level, so the root logger
+    (WARNING) dropped it and the cache prevented a second try."""
+    import os
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=APP_DIR.parent,
+        env={**os.environ, "ENVIRONMENT": "development"},
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output[-2000:]
+    assert output.count("rate limit: trusted proxy ranges") == 1, output[-2000:]
+
+
+def test_rate_limit_does_not_log_at_import() -> None:
+    """The startup line belongs after ``configure_logging`` (``app.main``),
+    never at module import."""
+    tree = ast.parse((APP_DIR / "middleware" / "rate_limit.py").read_text())
+    module_level_calls = [
+        node.value.func.id
+        for node in tree.body
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+    ]
+    assert "log_trusted_proxy_ranges" not in module_level_calls
