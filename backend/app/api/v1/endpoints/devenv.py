@@ -1123,6 +1123,48 @@ def _model_access_relay_problem(
     return CI_NODE_MODEL_ACCESS_NOT_RELAYED
 
 
+#: ``dispatch_error`` when coord STORED the directive but could not publish it.
+#: Web-owned, like the model-access codes above, so a client can tell this
+#: outcome from coord's ``directive_publish_failed`` refusal without reading
+#: prose.
+CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
+#: ``dispatch_detail`` for that outcome. Plan
+#: ``2026-11-22-ci-node-directive-replays-on-connect`` Phase 2 makes coord keep
+#: the latest accepted directive per device, written before it publishes, and
+#: Phase 3 makes the runner fetch it whenever its CI socket (re)connects. So a
+#: stored directive is not lost: it reaches a runner carrying Phase 3 on its next
+#: connect. An older runner never fetches it, which the detail says too.
+CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
+    "A runner that fetches saved settings on connect receives them the next "
+    "time it connects; otherwise apply them again once it is connected."
+)
+
+
+def _coord_stored_directive(resp: httpx.Response) -> bool:
+    """True only for coord's ``directive_publish_failed`` 502 carrying
+    ``stored: true``.
+
+    Under plan Phase 2, coord writes the directive to its per-device store
+    before it publishes, and a publish that fails after the store answers 502
+    with ``stored: true``. That is not a refusal: the device applies it on its
+    next connect. Anything else is False and keeps today's refusal reading
+    unchanged: any other status (a ``stored`` key beside a 4xx is not trusted
+    to override a refusal), an absent field (a coord predating the store),
+    ``false``, a non-boolean, an unparseable or non-object body.
+    """
+    if resp.status_code != 502:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    return (
+        isinstance(body, dict)
+        and body.get("error") == "directive_publish_failed"
+        and body.get("stored") is True
+    )
+
+
 def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
     """Turn coord's non-2xx answer into ``(machine code, human sentence)``.
 
@@ -1291,6 +1333,10 @@ async def set_ci_node_config(
             headers=headers,
             json_body=coord_body,
             log_event="devenv_ci_node_dispatch",
+            # Coord's stored-but-unpublished 502 is an application answer,
+            # not a gateway failure: without this, post_to_coord re-POSTs it
+            # twice more and then reports coord as unreachable.
+            accept_gateway_status=_coord_stored_directive,
             machine_id=str(machine.id),
             target_device_id=str(machine.coord_device_id),
         )
@@ -1306,6 +1352,27 @@ async def set_ci_node_config(
         )
 
     if resp.status_code >= 400:
+        if _coord_stored_directive(resp):
+            # The proxy no longer logs this as a gateway failure, so say here
+            # that coord could not publish: a publish outage stays visible.
+            logger.warning(
+                "devenv_ci_node_dispatch_stored_unpublished",
+                machine_id=str(machine.id),
+                target_device_id=str(machine.coord_device_id),
+                status=resp.status_code,
+            )
+            # STORED BUT NOT PUBLISHED: coord kept the directive and the runner
+            # fetches it on its next connect, so this is not a refusal. Still
+            # ``dispatched=False`` (nothing reached the machine now), and
+            # ``dispatched_at`` does not move — it would render as "sent".
+            return _ci_node_response(
+                machine,
+                reachability,
+                dispatched=False,
+                dispatch_status=resp.status_code,
+                dispatch_error=CI_NODE_STORED_FOR_NEXT_CONNECT,
+                dispatch_detail=CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL,
+            )
         # A REFUSAL: coord answered, with a reason. Forward its status and its
         # parsed body so the panel can say which class of refusal this was — a
         # value the user can fix here, or a device that is not theirs.
