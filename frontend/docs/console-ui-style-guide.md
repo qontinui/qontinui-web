@@ -257,7 +257,8 @@ list unscannable: a wrapped row changes height, so the eye cannot use vertical
 rhythm to skim.
 
 ✅ `src/components/operations/MergePipeline.tsx:812-878` — `PipelineRowDisplay`. All
-six slots, one line:
+six slots, one line (the label and reason samples below now quote `RecordRow.tsx`,
+where R2's width rule lives):
 
 ```tsx
 // MergePipeline.tsx:826-832
