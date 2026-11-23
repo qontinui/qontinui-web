@@ -473,9 +473,13 @@ def test_a_cookie_authed_caller_rotating_junk_bearers_still_hits_its_budget(
     [
         ("127.0.0.1", None, True),
         ("::1", None, True),
+        ("127.0.0.1", "127.0.0.1", True),
         ("127.0.0.1", "203.0.113.9", False),
         ("127.0.0.1", "127.0.0.1, 203.0.113.9", False),
         ("203.0.113.9", None, False),
+        # A non-loopback socket peer forwarding a loopback XFF entry is not
+        # the dev fleet: BOTH the socket peer and the derived peer must be.
+        ("203.0.113.9", "127.0.0.1", False),
     ],
 )
 def test_the_dev_loopback_exemption_reads_the_peer_the_key_reads(
@@ -484,5 +488,196 @@ def test_the_dev_loopback_exemption_reads_the_peer_the_key_reads(
     monkeypatch.setattr(rate_limit.settings, "ENVIRONMENT", "development")
     request = _request(host=host, xff=xff)
     assert rate_limit._is_loopback_dev(request) is exempt
-    peer = rate_limit.get_peer_ip_identifier(request).removeprefix("peer:")
-    assert (peer in rate_limit._LOOPBACK_HOSTS) is exempt
+    derived = rate_limit.get_peer_ip_identifier(request).removeprefix("peer:")
+    both_loopback = (
+        host in rate_limit._LOOPBACK_HOSTS and derived in rate_limit._LOOPBACK_HOSTS
+    )
+    assert both_loopback is exempt
+
+
+# ---------------------------------------------------------------------------
+# Device-token routes key on the device bearer, never on a cookie
+# ---------------------------------------------------------------------------
+
+
+def _device_key_func() -> Callable[[Request], str]:
+    """Looked up per test, so its absence fails the tests that need it."""
+    return rate_limit.get_device_bearer_identifier  # type: ignore[attr-defined,no-any-return]
+
+
+def test_the_device_key_ignores_the_access_token_cookie() -> None:
+    key_func = _device_key_func()
+    keys = {
+        key_func(_request(bearer="device-tok", access_token_cookie=f"junk-{i}"))
+        for i in range(5)
+    }
+    assert keys == {
+        "bearer:" + hashlib.sha256(b"device-tok").hexdigest()[:32],
+    }
+    assert key_func(_request(xff=CALLER_PEER, access_token_cookie="junk")) == (
+        f"peer:{CALLER_PEER}"
+    )
+
+
+_EVENTS_INGEST_LIMIT = 120  # ``@user_limiter.limit("120 per minute")``
+
+
+@pytest.fixture
+def events_ingest_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """POST /events/workflow through the REAL ``get_authenticated_device``.
+
+    ``HTTPBearer`` extraction runs unmodified; only the lowest layer, the
+    device-JWT verify-and-lookup ``_verify_device_jwt`` (token -> claims,
+    user), is replaced, accepting exactly one token. The DB dependency yields
+    an unconnected session: every request below fails validation inside the
+    endpoint body (400, unknown event_type) AFTER the limiter has counted it
+    and after auth has passed, so no row is ever written.
+    """
+    from fastapi import HTTPException
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.api import deps
+    from app.api.v1.endpoints.events import router as events_router
+    from app.db.session import get_async_db
+
+    storage = MemoryStorage()
+    monkeypatch.setattr(user_limiter, "_storage", storage)
+    monkeypatch.setattr(user_limiter, "_limiter", FixedWindowRateLimiter(storage))
+
+    owner = SimpleNamespace(id=uuid4(), is_active=True)
+
+    async def _verify(token: str) -> tuple[dict, SimpleNamespace]:
+        if token != "valid-device-token":
+            raise HTTPException(status_code=401, detail="not the test token")
+        return {"sub": "device-1"}, owner
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _verify)
+
+    async def _unconnected_session():
+        yield AsyncSession()
+
+    app = FastAPI()
+    app.state.limiter = user_limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+    app.dependency_overrides[get_async_db] = _unconnected_session
+    app.include_router(events_router, prefix="/api/v1/events")
+    return TestClient(app)
+
+
+def test_a_device_rotating_junk_cookies_still_hits_its_ingest_budget(
+    events_ingest_client: TestClient,
+) -> None:
+    body = {
+        "event_type": "not-a-real-event-type",
+        "device_id": "device-1",
+        "runner_name": "runner",
+        "summary": "s",
+        "timestamp": "2026-11-23T00:00:00Z",
+    }
+    codes = [
+        events_ingest_client.post(
+            "/api/v1/events/workflow",
+            json=body,
+            headers={
+                "Authorization": "Bearer valid-device-token",
+                "Cookie": f"access_token=junk-{i}",
+            },
+        ).status_code
+        for i in range(_EVENTS_INGEST_LIMIT + 1)
+    ]
+    # Auth passed every time (400 is the endpoint body's own refusal) ...
+    assert codes[:_EVENTS_INGEST_LIMIT] == [400] * _EVENTS_INGEST_LIMIT
+    # ... so the bucket is the device bearer's, and it runs out.
+    assert codes[_EVENTS_INGEST_LIMIT] == 429
+
+
+# ---------------------------------------------------------------------------
+# Enumerated: every limited route's key follows the credential its auth uses
+# ---------------------------------------------------------------------------
+
+
+def _auth_kinds(dependant: object) -> set[str]:
+    """Which credential extractors a route's dependency tree runs."""
+    from fastapi.security import HTTPBearer
+
+    from app.auth.config import CookieOrBearerScheme
+
+    kinds: set[str] = set()
+    stack = [dependant]
+    while stack:
+        node = stack.pop()
+        call = getattr(node, "call", None)
+        if isinstance(call, CookieOrBearerScheme):
+            kinds.add("cookie_or_bearer")
+        elif isinstance(call, HTTPBearer):
+            kinds.add("http_bearer")
+        stack.extend(getattr(node, "dependencies", []))
+    return kinds
+
+
+def test_every_limited_route_keys_on_the_credential_its_auth_accepts() -> None:
+    """Walks every mounted API route that carries a limit on any of the five
+    module Limiters and checks the limit's key against the route's auth:
+
+    * ``get_user_identifier`` / ``get_authorization_identifier`` (cookie
+      first, then bearer) only on routes authenticated by the fastapi-users
+      ``CookieOrBearerScheme`` and by nothing else;
+    * ``get_device_bearer_identifier`` (bearer only) only on routes
+      authenticated by an ``HTTPBearer`` (device token) and by nothing else;
+    * peer and refresh-subject keys trust no credential, so any route.
+    """
+    from fastapi.routing import APIRoute
+
+    from app.api.v1.api import api_router
+
+    credential_keys = {
+        get_user_identifier: {"cookie_or_bearer"},
+        get_authorization_identifier: {"cookie_or_bearer"},
+    }
+    # Absent on a tree without it: the walk still runs and names the routes.
+    device_key = getattr(rate_limit, "get_device_bearer_identifier", None)
+    if device_key is not None:
+        credential_keys[device_key] = {"http_bearer"}
+    credential_free_keys = {
+        rate_limit.get_peer_ip_identifier,
+        rate_limit._get_refresh_token_subject,
+    }
+    limiters = [
+        rate_limit.limiter,
+        rate_limit.user_limiter,
+        rate_limit.auth_limiter,
+        rate_limit.api_limiter,
+        rate_limit.refresh_limiter,
+    ]
+    registered = {
+        name: limits for lim in limiters for name, limits in lim._route_limits.items()
+    }
+
+    mounted: set[str] = set()
+    problems: list[str] = []
+    for route in api_router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        name = f"{route.endpoint.__module__}.{route.endpoint.__name__}"
+        if name not in registered:
+            continue
+        mounted.add(name)
+        kinds = _auth_kinds(route.dependant)
+        for limit in registered[name]:
+            key_func = limit.key_func
+            if key_func in credential_free_keys:
+                continue
+            wanted = credential_keys.get(key_func)
+            if wanted is None:
+                problems.append(f"{route.path}: unknown key {key_func!r}")
+            elif kinds != wanted:
+                problems.append(
+                    f"{sorted(route.methods)} {route.path}: key "
+                    f"{key_func.__name__} expects auth {sorted(wanted)}, "
+                    f"route authenticates with {sorted(kinds)}"
+                )
+
+    assert problems == []
+    # Coverage of the walk itself: every registered limit is on a mounted route.
+    assert set(registered) - mounted == set()
+    assert len(mounted) >= 20

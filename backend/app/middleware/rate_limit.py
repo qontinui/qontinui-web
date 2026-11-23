@@ -5,6 +5,7 @@ import time
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.security.utils import get_authorization_scheme_param
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 
@@ -60,13 +61,17 @@ def _presented_token(request: Request) -> str | None:
     the two cannot drift; ``test_rate_limit_key_functions`` pins the rest of
     the agreement against the scheme itself.
     """
-    from fastapi.security.utils import get_authorization_scheme_param
-
     from app.auth.config import cookie_or_bearer_transport
 
     cookie = request.cookies.get(cookie_or_bearer_transport.scheme.cookie_name)
     if cookie:
         return cookie
+    return _header_bearer_token(request)
+
+
+def _header_bearer_token(request: Request) -> str | None:
+    """The ``Authorization: Bearer`` token, parsed exactly as
+    ``OAuth2PasswordBearer`` and ``HTTPBearer`` parse it, or ``None``."""
     scheme, param = get_authorization_scheme_param(request.headers.get("authorization"))
     if scheme.lower() == "bearer" and param:
         return param
@@ -84,7 +89,11 @@ def _bearer_key(request: Request) -> str | None:
     user id, two logins of the same user (an operator's browser and an agent's
     own login) get separate buckets.
     """
-    token = _presented_token(request)
+    return _digest_key(_presented_token(request))
+
+
+def _digest_key(token: str | None) -> str | None:
+    """``bearer:<sha256[:32]>`` of ``token``, else ``None``."""
     if token:
         return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
     return None
@@ -133,6 +142,24 @@ def get_authorization_identifier(request: Request) -> str:
     and raise inside the limiter rather than here.
     """
     return _bearer_key(request) or _peer_key(request)
+
+
+def get_device_bearer_identifier(request: Request) -> str:
+    """Per-DEVICE bucket for routes authenticated by an ``HTTPBearer`` device
+    token (``app.api.deps.get_authenticated_device`` and its siblings).
+
+    ``bearer:<digest>`` of the ``Authorization`` bearer ONLY, else the peer.
+    Such a route never reads the ``access_token`` cookie, so keying on it (as
+    :func:`get_user_identifier` does, cookie first) would let a device send a
+    fresh junk cookie per request and get a fresh bucket each time. Name it as
+    an explicit ``key_func=`` on every such route;
+    ``test_rate_limit_key_functions`` walks every limited route and fails on a
+    key that does not follow the route's own credential.
+
+    **Do not rename the ``request`` parameter** (see
+    :func:`get_authorization_identifier`).
+    """
+    return _digest_key(_header_bearer_token(request)) or _peer_key(request)
 
 
 def get_peer_ip_identifier(request: Request) -> str:
@@ -261,13 +288,17 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def _is_loopback_dev(request: Request) -> bool:
-    """True for a development request whose peer (the same derivation the
-    rate-limit keys use, :func:`_peer_key`) is a loopback address. A request
-    that came through a proxy is keyed on the proxy-appended address, so a
-    loopback socket peer alone does not exempt it."""
+    """True for a development request whose socket peer AND derived peer (the
+    rightmost ``X-Forwarded-For``, the derivation the rate-limit keys use —
+    :func:`_peer_key`) are both loopback. Either alone is not the dev fleet:
+    a loopback socket peer may be a local proxy forwarding a remote caller,
+    and a loopback ``X-Forwarded-For`` entry may come from a remote peer."""
     if settings.ENVIRONMENT != "development":
         return False
-    return _peer_key(request).removeprefix("peer:") in _LOOPBACK_HOSTS
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    derived = _peer_key(request).removeprefix("peer:")
+    return host in _LOOPBACK_HOSTS and derived in _LOOPBACK_HOSTS
 
 
 def auth_rate_limit(limit_string: str):
