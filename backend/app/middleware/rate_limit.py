@@ -1,8 +1,9 @@
 import functools
 import hashlib
-import logging
 import time
+from typing import Any
 
+import structlog
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -11,7 +12,7 @@ from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -120,21 +121,99 @@ user_limiter = Limiter(
 )
 
 
-# Custom rate limit exceeded handler
+#: What a rate-limit key's prefix says it is keyed on. Every key function in
+#: this module prefixes its key (``bearer:<digest>``, ``peer:<addr>``,
+#: ``user:<id>``, ``refresh-user:<sub>``, ``ip:<addr>``) except slowapi's own
+#: ``get_remote_address``, which answers a bare address.
+_KEY_KIND_BY_PREFIX: tuple[tuple[str, str], ...] = (
+    ("bearer:", "bearer"),
+    ("peer:", "peer"),
+    ("user:", "user"),
+    ("refresh-user:", "user"),
+    ("ip:", "ip"),
+)
+
+
+def _refusal_key_kind(request: Request, key_func: Any) -> str:
+    """``user`` | ``bearer`` | ``peer`` | ``ip`` — what the refusing bucket is
+    keyed on — or ``unknown`` when that cannot be said.
+
+    Derived from the limit's own key function, by re-deriving the key it
+    computed for this request and reading the key's KIND off its prefix. The
+    function's name is not enough: ``get_user_identifier`` keys on the socket
+    address whenever ``request.state.user`` is unset (which, before the limiter
+    runs, it always is), and a header naming it ``user`` would point a reader at
+    a per-user bucket that does not exist. The key itself never leaves this
+    function — it is a bearer digest, an address or a user id.
+    """
+    if key_func is get_remote_address:
+        return "ip"
+    try:
+        key = str(key_func(request))
+    except Exception:
+        return "unknown"
+    for prefix, kind in _KEY_KIND_BY_PREFIX:
+        if key.startswith(prefix):
+            return kind
+    return "unknown"
+
+
+def _refusal_lane(request: Request, limit: Any) -> str:
+    """The limit's scope when it has one, else the ROUTE TEMPLATE
+    (``/api/v1/users/me``, ``/items/{item_id}``) — never the concrete path,
+    which can carry an id. ``unknown`` when neither is readable."""
+    try:
+        scope = limit.scope
+    except Exception:
+        # slowapi evaluates a callable scope against a global it never
+        # defines; no limit here declares one, and a refusal must still answer.
+        scope = ""
+    if isinstance(scope, str) and scope:
+        return scope
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    return template if isinstance(template, str) and template else "unknown"
+
+
 async def rate_limit_exceeded_handler(
     request: Request, exc: RateLimitExceeded
 ) -> Response:
+    """Answer a refusal with the lane it was refused on.
+
+    Every 429 carries ``X-RateLimit-Lane`` (which limit refused) and
+    ``X-RateLimit-Key-Kind`` (what its bucket is keyed on), and logs one
+    ``rate_limit_refused`` line with the same fields — never the key, the
+    token, the address or the user id. Plan
+    ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``,
+    Phase 2: a refusal that named nothing could not be attributed.
+    """
+    limit = exc.limit
+    lane = _refusal_lane(request, limit)
+    key_kind = (
+        _refusal_key_kind(request, limit.key_func) if limit is not None else "unknown"
+    )
+    retry_after = str(exc.retry_after) if hasattr(exc, "retry_after") else "60"
+    logger.warning(
+        "rate_limit_refused",
+        lane=lane,
+        key_kind=key_kind,
+        limit=str(limit.limit) if limit is not None else "unknown",
+        method=request.method,
+        retry_after=retry_after,
+    )
     response = JSONResponse(
         content={
             "error": "RATE_LIMIT_EXCEEDED",
             "message": f"Rate limit exceeded: {exc.detail}",
+            "lane": lane,
+            "key_kind": key_kind,
             "timestamp": time.time(),
         },
         status_code=429,
     )
-    response.headers["Retry-After"] = (
-        str(exc.retry_after) if hasattr(exc, "retry_after") else "60"
-    )
+    response.headers["Retry-After"] = retry_after
+    response.headers["X-RateLimit-Lane"] = lane
+    response.headers["X-RateLimit-Key-Kind"] = key_kind
     return response
 
 
