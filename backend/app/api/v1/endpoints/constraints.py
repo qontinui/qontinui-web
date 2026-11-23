@@ -49,6 +49,7 @@ from app.core.refusal import (
     RefusalHTTPException,
     refusal_error,
 )
+from app.middleware.upstream_refusal import upstream_refusal_headers
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -156,6 +157,8 @@ def _runner_answered_error(resp: httpx.Response) -> RefusalHTTPException:
             f"The runner refused the request ({resp.status_code}): {said}",
             discriminator="constraints_runner_refused",
             glossary_terms=[GlossaryTerm.runner],
+            # A runner 429 keeps the runner's lane and Retry-After.
+            headers=upstream_refusal_headers("runner", resp),
         )
     return refusal_error(
         status.HTTP_502_BAD_GATEWAY,

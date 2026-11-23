@@ -31,6 +31,7 @@ from app.api.deps import get_current_active_user_async
 from app.api.v1.endpoints.agent_sessions import ACTIVE_TENANT_HEADER
 from app.api.v1.endpoints.operations import require_coord_tenant_admin
 from app.core.config import settings
+from app.middleware.upstream_refusal import upstream_http_exception
 from app.models.user import User
 from app.schemas.overlord_labels import OverlordLabelRequest
 from app.services.coord_service_account import (
@@ -107,7 +108,7 @@ def _refuse_coord(resp: httpx.Response, *, posted: bool = False) -> HTTPExceptio
             },
         )
     if 400 <= resp.status_code < 500:
-        return HTTPException(status_code=resp.status_code, detail=coord_detail)
+        return upstream_http_exception(resp, upstream="coord", detail=coord_detail)
     logger.warning(
         "overlord_label_coord_error", status=resp.status_code, body=resp.text[:500]
     )

@@ -20,6 +20,20 @@ and logs one ``rate_limit_refused`` line carrying the same fields:
   bearer digest, an address or a user id, and none of those belongs in a header
   a browser can read or a log line an operator ships.
 
+The same two headers reach a client from every other 429 this backend
+answers, and the last sections of this file enforce that over ``backend/app``
+by walking its source:
+
+* a 429 this backend builds itself (``status_code=429`` /
+  ``status.HTTP_429_*``) passes ``headers=refusal_headers(...)``;
+* a status passed through from an UPSTREAM answer (``<expr>.status_code`` —
+  coord, or a runner) goes through ``app.middleware.upstream_refusal``, which
+  on a 429 names the lane ``<upstream>:<route template>``, key kind
+  ``upstream``, and the upstream's own ``Retry-After``. Re-renders of this
+  app's own errors are listed by name with their reason.
+
+A status held in a plain variable is outside what the walk can trace.
+
 The tests assert on the fixture's LITERAL token, addresses and user id, so a
 handler that leaked any of them fails here whatever shape the leak takes.
 """
@@ -744,38 +758,187 @@ def _headers_from_refusal_helper(call: ast.Call) -> bool:
     return False
 
 
-def test_every_429_emitted_in_app_carries_the_refusal_headers() -> None:
-    """Every call in ``backend/app`` that builds a 429 — ``HTTPException`` or
-    any response class, with the status as ``status_code=`` or positionally,
-    spelled ``429`` or ``status.HTTP_429_*`` — passes
-    ``headers=refusal_headers(...)``, so the refusal names its lane and key
-    kind whoever raised it.
+#: Calls that BUILD an answer (an exception or a response) — the only calls
+#: whose ``status_code`` reaches a client.
+def _is_builder(call: ast.Call) -> bool:
+    name = (
+        call.func.id
+        if isinstance(call.func, ast.Name)
+        else call.func.attr
+        if isinstance(call.func, ast.Attribute)
+        else ""
+    )
+    return (
+        name.endswith("Response")
+        or name.endswith("HTTPException")
+        or name == "refusal_error"
+    )
 
-    What this cannot see: a status held in a variable (``status_code=s``),
-    which no 429 in ``app`` uses today. The walk is over source, so a
-    missing helper call fails here with its file and line.
+
+def _call_name(call: ast.Call) -> str:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return ""
+
+
+#: The helpers that build an answer from an UPSTREAM's status
+#: (``app.middleware.upstream_refusal``): on a 429 they attach the upstream's
+#: lane, key kind ``upstream`` and Retry-After.
+UPSTREAM_HELPERS = frozenset({"upstream_http_exception", "upstream_json_response"})
+
+#: Builders that take ``<expr>.status_code`` from something that is NOT an
+#: upstream answer — this app's own already-built error, re-rendered. Keyed
+#: ``<path under app/>:<enclosing function>``; the bool says the re-render
+#: must forward the original's ``headers=`` (a coord refusal re-worded, whose
+#: lane would otherwise be dropped).
+RERENDERS: dict[str, tuple[str, bool]] = {
+    "app/api/deps.py:_as_sign_in_refusal": (
+        "re-words this app's own auth refusal; never a 429",
+        False,
+    ),
+    "app/api/v1/endpoints/fleet_targets.py:_reraise_coord_refusal": (
+        "re-words an HTTPException the coord proxy helper already built",
+        True,
+    ),
+    "app/api/v1/endpoints/operations/__init__.py:_readable_coord_refusal": (
+        "re-words an HTTPException the coord proxy helper already built",
+        True,
+    ),
+    "app/api/v1/endpoints/workflow_dispatch.py:dispatch_workflow": (
+        "DispatchError carries this app's own literal statuses; never a 429",
+        False,
+    ),
+    "app/middleware/error_handler.py:app_exception_handler": (
+        "renders this app's own AppException",
+        False,
+    ),
+    "app/middleware/error_handler.py:http_exception_handler": (
+        "renders an HTTPException, forwarding its headers",
+        True,
+    ),
+    "app/overview/http.py:refused": (
+        "renders this app's own StoreRefused",
+        False,
+    ),
+    "app/api/v1/endpoints/device_bridge_ws.py:runner_proxy": (
+        "transparent runner proxy: builds raw_headers itself (a repeated "
+        "Set-Cookie must survive) and appends upstream_refusal_headers",
+        False,
+    ),
+}
+
+
+def _builders_with_location(
+    app_root: pathlib.Path,
+) -> list[tuple[str, str, ast.Call]]:
+    """``(file:line, file:function, call)`` for every builder call in app."""
+    found: list[tuple[str, str, ast.Call]] = []
+    for path in sorted(app_root.rglob("*.py")):
+        rel = str(path.relative_to(app_root.parent))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        def visit(node: ast.AST, function: str, rel: str = rel) -> None:
+            for child in ast.iter_child_nodes(node):
+                inner = (
+                    child.name
+                    if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+                    else function
+                )
+                if isinstance(child, ast.Call):
+                    found.append((f"{rel}:{child.lineno}", f"{rel}:{function}", child))
+                visit(child, inner)
+
+        visit(tree, "<module>")
+    return found
+
+
+def _status_values(call: ast.Call) -> list[ast.expr]:
+    return [k.value for k in call.keywords if k.arg == "status_code"] + list(
+        call.args[:1]
+    )
+
+
+def test_every_429_emitted_in_app_carries_the_refusal_headers() -> None:
+    """Every call in ``backend/app`` that builds a LITERAL 429 —
+    ``HTTPException`` or any response class, the status as ``status_code=``
+    or the first positional argument, spelled ``429`` or
+    ``status.HTTP_429_*`` — passes ``headers=refusal_headers(...)``.
+
+    A status taken from an upstream answer is the next test's.
     """
     app_root = pathlib.Path(__file__).resolve().parents[2] / "app"
     emissions: list[str] = []
     missing: list[str] = []
-    for path in sorted(app_root.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            candidates = [k.value for k in node.keywords if k.arg == "status_code"]
-            candidates += list(node.args[:1])
-            if not any(_is_429(c) for c in candidates):
-                continue
-            where = f"{path.relative_to(app_root.parent)}:{node.lineno}"
-            emissions.append(where)
-            if not _headers_from_refusal_helper(node):
-                missing.append(where)
+    for where, _function, node in _builders_with_location(app_root):
+        if not any(_is_429(c) for c in _status_values(node)):
+            continue
+        emissions.append(where)
+        if not _headers_from_refusal_helper(node):
+            missing.append(where)
     # Positive control: the walk finds the 429s it exists to police.
     assert len(emissions) >= 4, emissions
     assert not missing, "429 without headers=refusal_headers(...): " + ", ".join(
         missing
     )
+
+
+def _forwards_headers(call: ast.Call) -> bool:
+    return any(k.arg == "headers" for k in call.keywords)
+
+
+def test_every_upstream_status_pass_through_goes_through_the_helper() -> None:
+    """Every builder whose status is ``<expr>.status_code`` — an upstream's
+    answer passed through, which a coord or runner 429 would leave unnamed —
+    is an ``upstream_http_exception`` / ``upstream_json_response`` call, or
+    passes ``headers=upstream_refusal_headers(...)``. The only exceptions
+    are re-renders of this app's own errors, each listed with its reason in
+    ``RERENDERS``; one that re-words a coord refusal must forward
+    ``headers=``. Fails with the file and line of each site that does not.
+
+    Scope: a status spelled ``<expr>.status_code``. A status held in a plain
+    variable is the helpers' own internals, and is not traced.
+    """
+    app_root = pathlib.Path(__file__).resolve().parents[2] / "app"
+    pass_throughs: list[str] = []
+    missing: list[str] = []
+    rerenders_seen: set[str] = set()
+    for where, function, node in _builders_with_location(app_root):
+        name = _call_name(node)
+        if name in UPSTREAM_HELPERS:
+            # The helper takes the upstream answer itself and reads its
+            # status (and, on a 429 only, its headers).
+            pass_throughs.append(where)
+            continue
+        upstream_status = any(
+            isinstance(v, ast.Attribute) and v.attr == "status_code"
+            for v in _status_values(node)
+        )
+        if not upstream_status or not _is_builder(node):
+            continue
+        headers = next((k.value for k in node.keywords if k.arg == "headers"), None)
+        if (
+            isinstance(headers, ast.Call)
+            and _call_name(headers) == "upstream_refusal_headers"
+        ):
+            pass_throughs.append(where)
+            continue
+        if function in RERENDERS:
+            rerenders_seen.add(function)
+            reason, must_forward = RERENDERS[function]
+            if must_forward and not _forwards_headers(node):
+                missing.append(f"{where} (re-render drops headers: {reason})")
+            continue
+        missing.append(where)
+    assert not missing, (
+        "upstream status passed through without the upstream refusal helper: "
+        + ", ".join(missing)
+    )
+    # Positive control: the coord and runner proxies are found.
+    assert len(pass_throughs) >= 20, pass_throughs
+    stale = set(RERENDERS) - rerenders_seen
+    assert not stale, f"RERENDERS entries that match no site: {sorted(stale)}"
 
 
 def test_refusal_headers_name_the_lane_and_key_kind() -> None:
@@ -809,3 +972,114 @@ def test_a_cognito_throttle_names_its_lane() -> None:
         "X-RateLimit-Key-Kind": "upstream",
         "Retry-After": "7",
     }
+
+
+# --------------------------------------------------------------------------
+# An upstream (coord / runner) 429 passed through names the upstream's lane
+# --------------------------------------------------------------------------
+
+
+def _coord_answers(
+    monkeypatch: pytest.MonkeyPatch, status: int, headers: dict[str, str]
+) -> None:
+    """Every ``httpx.AsyncClient`` the proxies open answers ``status``."""
+    import httpx
+
+    real = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"error": "coord_says"}, headers=headers)
+
+    def client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+
+
+def _proxy_app(call: Any) -> FastAPI:
+    from app.middleware.upstream_refusal import RouteScopeMiddleware
+
+    app = FastAPI()
+    app.add_middleware(RouteScopeMiddleware)
+
+    @app.get("/probe/{item_id}")
+    async def probe(item_id: str) -> Any:
+        return await call()
+
+    return app
+
+
+def test_a_coord_429_raised_through_the_proxy_names_the_coord_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints import operations
+
+    _coord_answers(monkeypatch, 429, {"retry-after": "12"})
+    client = TestClient(
+        _proxy_app(lambda: operations._proxy_coord_get("/coord/fixture"))
+    )
+    resp = client.get(f"/probe/{uuid4()}")
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Lane"] == "coord:/probe/{item_id}"
+    assert resp.headers["X-RateLimit-Key-Kind"] == "upstream"
+    assert resp.headers["Retry-After"] == "12"
+
+
+def test_a_coord_429_returned_through_the_proxy_names_the_coord_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints import operations
+
+    _coord_answers(monkeypatch, 429, {"retry-after": "9"})
+    client = TestClient(
+        _proxy_app(
+            lambda: operations._proxy_coord_passthrough(
+                "GET", "/coord/fixture", tenant_id=uuid4()
+            )
+        )
+    )
+    resp = client.get(f"/probe/{uuid4()}")
+    assert resp.status_code == 429
+    assert resp.headers["X-RateLimit-Lane"] == "coord:/probe/{item_id}"
+    assert resp.headers["X-RateLimit-Key-Kind"] == "upstream"
+    assert resp.headers["Retry-After"] == "9"
+
+
+def test_a_coord_error_that_is_not_a_429_names_no_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints import operations
+
+    _coord_answers(monkeypatch, 503, {"retry-after": "3"})
+    client = TestClient(
+        _proxy_app(lambda: operations._proxy_coord_get("/coord/fixture"))
+    )
+    resp = client.get(f"/probe/{uuid4()}")
+    assert resp.status_code == 503
+    assert "X-RateLimit-Lane" not in resp.headers
+    assert "X-RateLimit-Key-Kind" not in resp.headers
+
+
+def test_an_upstream_429_outside_a_routed_request_reads_unknown_route() -> None:
+    from app.middleware.upstream_refusal import upstream_http_exception
+
+    exc = upstream_http_exception(
+        SimpleNamespace(status_code=429, headers={}), upstream="coord", detail="x"
+    )
+    assert exc.headers == {
+        "X-RateLimit-Lane": "coord:unknown",
+        "X-RateLimit-Key-Kind": "upstream",
+    }
+
+
+def test_an_upstream_answer_that_is_not_a_429_has_its_headers_left_unread() -> None:
+    """A mocked or partial upstream answer with no ``headers`` still passes
+    through on any status but a 429: the helper reads headers only there."""
+    from app.middleware.upstream_refusal import upstream_http_exception
+
+    exc = upstream_http_exception(
+        SimpleNamespace(status_code=403), upstream="coord", detail="refused"
+    )
+    assert exc.status_code == 403
+    assert exc.headers is None

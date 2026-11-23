@@ -93,6 +93,10 @@ from app.middleware.rate_limit import (
     refusal_headers,
     user_limiter,
 )
+from app.middleware.upstream_refusal import (
+    upstream_http_exception,
+    upstream_json_response,
+)
 from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
@@ -1243,8 +1247,9 @@ async def _proxy_coord_get(
         except httpx.TimeoutException as exc:
             raise _coord_timeout(CoordTransportUnavailable, write=False) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     return resp.json()
@@ -1619,8 +1624,9 @@ async def _proxy_coord_write(
             logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     if resp.status_code == 204 or not resp.content:
@@ -1793,7 +1799,7 @@ async def post_github_clone_credential(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- GitHub repo provisioning (new-project initiation) ---------------------
@@ -1878,14 +1884,13 @@ async def _proxy_coord_verbatim(
         content = {"detail": resp.text}
     # Only a real header string is echoed: anything else is no header at all.
     retry_after = resp.headers.get("retry-after")
-    return JSONResponse(
+    return upstream_json_response(
+        resp,
+        upstream="coord",
         content=content,
-        status_code=resp.status_code,
-        headers=(
-            {"Retry-After": retry_after}
-            if isinstance(retry_after, str) and retry_after.strip()
-            else None
-        ),
+        headers={"Retry-After": retry_after}
+        if isinstance(retry_after, str) and retry_after.strip()
+        else None,
     )
 
 
@@ -2705,7 +2710,7 @@ async def post_pr_merge_onboarding_connect_state(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 class OnboardingClaimRequest(BaseModel):
@@ -2842,7 +2847,7 @@ async def post_pr_merge_onboarding_claim(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Zero-touch onboarding: enroll an already-connected installation ------
@@ -2924,7 +2929,7 @@ async def post_pr_merge_onboarding_enroll(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Re-enroll (restore) a deliberately un-enrolled repo --------------------
@@ -2992,7 +2997,7 @@ async def post_pr_merge_onboarding_restore_repo(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Un-enroll ("stop governing") an enrolled repo --------------------------
@@ -3657,7 +3662,7 @@ async def _proxy_coord_passthrough(
         # honestly in coord's own `error` key, under coord's own status, rather
         # than inventing a shape the caller would mis-read as a coord code.
         payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
-    return JSONResponse(status_code=resp.status_code, content=payload)
+    return upstream_json_response(resp, upstream="coord", content=payload)
 
 
 @router.get("/pr-merge/{repo:path}/stuck-nudges")
@@ -3921,8 +3926,9 @@ async def _proxy_coord_post(
             )
             raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     try:
@@ -8381,8 +8387,9 @@ async def _proxy_coord_delete(
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -8941,8 +8948,10 @@ async def get_device_status(
     except httpx.TimeoutException as exc:
         raise _coord_timeout(write=False) from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code, detail=exc.response.text
+        raise upstream_http_exception(
+            exc.response,
+            upstream="coord",
+            detail=exc.response.text,
         ) from exc
 
 
@@ -10938,8 +10947,9 @@ async def stream_coord_session_events(
             async with client.stream("GET", url, headers=headers) as upstream:
                 if upstream.status_code >= 400:
                     body = await upstream.aread()
-                    raise HTTPException(
-                        status_code=upstream.status_code,
+                    raise upstream_http_exception(
+                        upstream,
+                        upstream="coord",
                         detail=body.decode("utf-8", "ignore"),
                     )
                 async for chunk in upstream.aiter_raw():
@@ -11033,8 +11043,9 @@ async def get_coord_session_restore_record(
             async with client.stream("GET", url, headers=headers) as upstream:
                 if upstream.status_code >= 400:
                     body = await upstream.aread()
-                    raise HTTPException(
-                        status_code=upstream.status_code,
+                    raise upstream_http_exception(
+                        upstream,
+                        upstream="coord",
                         detail=body.decode("utf-8", "ignore"),
                     )
                 lines = upstream.aiter_lines()

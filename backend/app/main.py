@@ -63,6 +63,7 @@ from app.middleware.private_uploads import (
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.upstream_refusal import RouteScopeMiddleware
 from app.overview import files as overview_files
 from app.overview.router import (
     CONTRACT_RESPONSE_HEADERS as OVERVIEW_CONTRACT_HEADERS,
@@ -148,6 +149,9 @@ app.add_middleware(
 # says: `user_limiter` has no `enabled=` and limits regardless, and every 429
 # must name its lane (`rate_limit_exceeded_handler`).
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
+# Lets a coord/runner 429 passed through deep inside a route name the route it
+# refused (`app.middleware.upstream_refusal`). Pure ASGI; changes no traffic.
+app.add_middleware(RouteScopeMiddleware)
 if settings.RATE_LIMIT_ENABLED:
     app.state.limiter = limiter
 
