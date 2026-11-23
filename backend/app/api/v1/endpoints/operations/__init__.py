@@ -88,7 +88,11 @@ from app.core.refusal import (
     refusal_error,
 )
 from app.crud import runner_crud
-from app.middleware.rate_limit import get_authorization_identifier, user_limiter
+from app.middleware.rate_limit import (
+    get_authorization_identifier,
+    refusal_headers,
+    user_limiter,
+)
 from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
@@ -16774,8 +16778,13 @@ def _cognito_http_error(
             },
             # AWS's own hint when it sent one; 5s only when it did not. A
             # number we invented would be a guess presented as the service's
-            # answer.
-            headers={"Retry-After": exc.retry_after or "5"},
+            # answer. The lane is the pool's admin API quota, which every
+            # group route shares, so it names no route.
+            headers=refusal_headers(
+                "cognito:admin-api",
+                "upstream",
+                retry_after=exc.retry_after or "5",
+            ),
         )
     if isinstance(exc, CognitoConfigurationError):
         logger.error(

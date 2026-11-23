@@ -201,6 +201,42 @@ def _refusal_lane(request: Request, limit: Any) -> str:
     return f"{holder[0] if holder is not None else 'unknown'}:{_scope_or_template(request, limit)}"
 
 
+#: Every kind a refusal's ``X-RateLimit-Key-Kind`` may name: the slowapi
+#: key prefixes (``_KEY_KIND_BY_PREFIX``), plus ``tenant`` (a tenant-wide
+#: quota) and ``upstream`` (a service behind this backend refused us), and
+#: ``unknown`` when it cannot be said.
+REFUSAL_KEY_KINDS = frozenset(
+    {"user", "bearer", "peer", "ip", "tenant", "upstream", "unknown"}
+)
+
+
+def refusal_headers(
+    lane: str, key_kind: str, *, retry_after: str | None = None
+) -> dict[str, str]:
+    """The headers every 429 this backend answers carries.
+
+    ``X-RateLimit-Lane`` names the limiter and its scope
+    (``<limiter>:<scope or route template>``) and ``X-RateLimit-Key-Kind``
+    what its bucket is keyed on — never a key, a token, an address or an id.
+    ``Retry-After`` only when the refusing side knows it. Every 429 emitted in
+    ``app`` passes ``headers=refusal_headers(...)``
+    (``test_every_429_emitted_in_app_carries_the_refusal_headers``).
+    """
+    if key_kind not in REFUSAL_KEY_KINDS:
+        raise ValueError(f"unknown refusal key kind {key_kind!r}")
+    headers = {"X-RateLimit-Lane": lane, "X-RateLimit-Key-Kind": key_kind}
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return headers
+
+
+def route_template(request: Request) -> str:
+    """The matched route's TEMPLATE (``/items/{item_id}``), never the concrete
+    path, which can carry an id. ``unknown`` when no route matched."""
+    template = getattr(request.scope.get("route"), "path", None)
+    return template if isinstance(template, str) and template else "unknown"
+
+
 def _scope_or_template(request: Request, limit: Any) -> str:
     try:
         scope = limit.scope
@@ -210,9 +246,7 @@ def _scope_or_template(request: Request, limit: Any) -> str:
         scope = ""
     if isinstance(scope, str) and scope:
         return scope
-    route = request.scope.get("route")
-    template = getattr(route, "path", None)
-    return template if isinstance(template, str) and template else "unknown"
+    return route_template(request)
 
 
 #: The lane name of each module limiter, by the variable that holds it. A
@@ -348,7 +382,7 @@ async def rate_limit_exceeded_handler(
         method=request.method,
         retry_after=retry_after,
     )
-    response = JSONResponse(
+    return JSONResponse(
         content={
             "error": "RATE_LIMIT_EXCEEDED",
             "message": f"Rate limit exceeded: {exc.detail}",
@@ -357,11 +391,8 @@ async def rate_limit_exceeded_handler(
             "timestamp": time.time(),
         },
         status_code=429,
+        headers=refusal_headers(lane, key_kind, retry_after=retry_after),
     )
-    response.headers["Retry-After"] = retry_after
-    response.headers["X-RateLimit-Lane"] = lane
-    response.headers["X-RateLimit-Key-Kind"] = key_kind
-    return response
 
 
 # Specific limits for different operations
