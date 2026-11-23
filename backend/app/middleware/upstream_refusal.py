@@ -82,12 +82,24 @@ class UpstreamAnswer(Protocol):
     def headers(self) -> Mapping[str, str]: ...
 
 
-_DELTA_SECONDS = re.compile(r"[0-9]+")
+_DELTA_SECONDS = re.compile(r"[0-9]{1,10}")
+# u32: the bound qontinui-schemas' RefusalEnvelope puts on retry_after_s, so
+# the header and the envelope can always carry the same number.
+_MAX_DELTA_SECONDS = 2**32 - 1
+# IMF-fixdate, the HTTP-date form a sender MUST generate (RFC 9110 §5.6.7).
+_IMF_FIXDATE = re.compile(
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} "
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT"
+)
 
 
 def valid_retry_after(value: object) -> str | None:
     """``value`` when it is a Retry-After a client can act on — delta-seconds
-    (ASCII digits) or an HTTP-date (RFC 9110 §10.2.3) — else ``None``.
+    (ASCII digits, at most a u32, returned without leading zeros) or an
+    IMF-fixdate HTTP-date (RFC 9110 §5.6.7, §10.2.3) that names a real
+    calendar time — else ``None``. The obsolete RFC 850 and asctime date
+    forms are not forwarded.
 
     An upstream's header is forwarded only through here: an arbitrary value
     is at best useless to a client, and one that is not latin-1 cannot be
@@ -97,11 +109,13 @@ def valid_retry_after(value: object) -> str | None:
         return None
     value = value.strip()
     if _DELTA_SECONDS.fullmatch(value):
-        return value
+        seconds = int(value)
+        return str(seconds) if seconds <= _MAX_DELTA_SECONDS else None
+    if not _IMF_FIXDATE.fullmatch(value):
+        return None
     try:
-        value.encode("latin-1")
         parsedate_to_datetime(value)
-    except (UnicodeEncodeError, TypeError, ValueError, IndexError):
+    except (TypeError, ValueError, IndexError):
         return None
     return value
 
