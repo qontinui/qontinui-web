@@ -10,9 +10,11 @@ a proxy address every caller shares).
 ``rate_limit_exceeded_handler`` therefore stamps two headers on every refusal,
 and logs one ``rate_limit_refused`` line carrying the same fields:
 
-* ``X-RateLimit-Lane`` — the limit's scope when it has one, else the ROUTE
-  TEMPLATE (``/api/v1/users/me``, ``/probe/{item_id}``), never the concrete
-  path, which can carry an id.
+* ``X-RateLimit-Lane`` — ``<limiter>:<scope or route template>``: WHICH module
+  limiter refused (``user``, ``default``, ``auth``, ``api``, ``refresh``; else
+  ``unknown``), then the limit's scope when it has one, else the ROUTE
+  TEMPLATE (``user:/api/v1/users/me``, ``user:/probe/{item_id}``) — never the
+  concrete path, which can carry an id.
 * ``X-RateLimit-Key-Kind`` — ``user`` | ``bearer`` | ``peer`` | ``ip``, the kind
   of key the refusing bucket is keyed on. Never the key itself: a key is a
   bearer digest, an address or a user id, and none of those belongs in a header
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import logging
 import pathlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -63,9 +66,18 @@ SECRETS = (BEARER, BEARER_DIGEST, CLIENT_HOST, FORWARDED_LEFT, FORWARDED_RIGHT, 
 
 @pytest.fixture(autouse=True)
 def _fresh_rate_limit_bucket():
+    """Empty counters, and the probe routes this file registers on
+    ``user_limiter`` removed again: slowapi keeps a route's limits on the
+    limiter for its lifetime, so they would otherwise outlive the test."""
+    route_limits = {k: list(v) for k, v in user_limiter._route_limits.items()}
+    dynamic = {k: list(v) for k, v in user_limiter._dynamic_route_limits.items()}
     user_limiter.reset()
     yield
     user_limiter.reset()
+    user_limiter._route_limits.clear()
+    user_limiter._route_limits.update(route_limits)
+    user_limiter._dynamic_route_limits.clear()
+    user_limiter._dynamic_route_limits.update(dynamic)
 
 
 def _headers() -> dict[str, str]:
@@ -121,7 +133,7 @@ def test_a_users_me_refusal_names_its_lane_and_key_kind() -> None:
     refused = client.get(f"{API_PREFIX}/users/me", headers=_headers())
     assert refused.status_code == 429
     assert refused.json()["error"] == "RATE_LIMIT_EXCEEDED"
-    assert refused.headers["X-RateLimit-Lane"] == f"{API_PREFIX}/users/me"
+    assert refused.headers["X-RateLimit-Lane"] == f"user:{API_PREFIX}/users/me"
     # `get_user_identifier` keys on `request.state.user`, which nothing sets
     # before the limiter runs: the bucket this refusal drew on is the socket
     # address. The header says so rather than what the function is named for.
@@ -201,14 +213,14 @@ def test_the_refusal_names_the_key_kind_and_never_the_key(
     assert refused.status_code == 429
     assert refused.headers["X-RateLimit-Key-Kind"] == kind
     # The route TEMPLATE: the concrete path carries the item id.
-    assert refused.headers["X-RateLimit-Lane"] == "/probe/{item_id}"
+    assert refused.headers["X-RateLimit-Lane"] == "user:/probe/{item_id}"
     body = refused.json()
-    assert body["lane"] == "/probe/{item_id}"
+    assert body["lane"] == "user:/probe/{item_id}"
     assert body["key_kind"] == kind
 
     lines = [entry for entry in logs if entry.get("event") == "rate_limit_refused"]
     assert len(lines) == 1, logs
-    assert lines[0]["lane"] == "/probe/{item_id}"
+    assert lines[0]["lane"] == "user:/probe/{item_id}"
     assert lines[0]["bucket_kind"] == kind
 
     _assert_leaks_nothing(
@@ -261,7 +273,7 @@ def test_both_headers_are_cors_published() -> None:
 
 
 # --------------------------------------------------------------------------
-# Lane from a shared limit's scope; Retry-After from the limit's window
+# Lane from a shared limit's scope; Retry-After from the bucket's reset
 # --------------------------------------------------------------------------
 
 
@@ -274,8 +286,8 @@ def test_a_shared_limit_scope_is_the_lane() -> None:
     assert client.get(f"/probe/{item}").status_code == 200
     refused = client.get(f"/probe/{item}")
     assert refused.status_code == 429
-    assert refused.headers["X-RateLimit-Lane"] == "fixture-shared-lane"
-    assert refused.json()["lane"] == "fixture-shared-lane"
+    assert refused.headers["X-RateLimit-Lane"] == "user:fixture-shared-lane"
+    assert refused.json()["lane"] == "user:fixture-shared-lane"
 
 
 @pytest.mark.parametrize(
@@ -402,7 +414,7 @@ async def test_a_refusal_with_no_limit_reads_as_unknown() -> None:
     response = await rate_limit_exceeded_handler(_bare_request(), exc)
     assert response.status_code == 429
     assert response.headers["X-RateLimit-Key-Kind"] == "unknown"
-    assert response.headers["X-RateLimit-Lane"] == "unknown"
+    assert response.headers["X-RateLimit-Lane"] == "unknown:unknown"
     assert response.headers["Retry-After"] == "60"
 
 
@@ -485,7 +497,7 @@ def test_the_refused_line_carries_no_request_context(
     refused = [r for r in records if r.get("event") == "rate_limit_refused"]
     assert len(refused) == 1, out
     line = refused[0]
-    assert line["lane"] == "/probe/{item_id}"
+    assert line["lane"] == "user:/probe/{item_id}"
     # `bucket_kind`, not `key_kind`: the sanitizer redacts any `*key*` field.
     assert line["bucket_kind"] == "peer"
     raw = json.dumps(line)
@@ -565,3 +577,144 @@ def test_the_handler_restores_the_context_when_the_log_call_raises(
         }
     finally:
         structlog.contextvars.clear_contextvars()
+
+
+# --------------------------------------------------------------------------
+# Which limiter refused: every module Limiter is enumerated and named
+# --------------------------------------------------------------------------
+
+
+def test_every_limiter_in_the_module_is_enumerated_and_named() -> None:
+    """The module's ``Limiter(...)`` assignments, read from its SOURCE, are
+    exactly the limiters the handler enumerates, each with a lane name. A new
+    limiter that is not enumerated, or has no name, fails here."""
+    import ast
+    import inspect
+
+    import app.middleware.rate_limit as rate_limit_module
+
+    tree = ast.parse(inspect.getsource(rate_limit_module))
+    declared = {
+        target.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "Limiter"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert declared, "no Limiter(...) assignment found"
+    enumerated = rate_limit_module._module_limiters()
+    assert {variable for variable, _name, _obj in enumerated} == declared
+    names = [name for _variable, name, _obj in enumerated]
+    assert len(set(names)) == len(names), names
+    assert all(name and name != "unknown" for name in names), names
+    assert {v: n for v, n, _ in enumerated} == {
+        "limiter": "default",
+        "user_limiter": "user",
+        "auth_limiter": "auth",
+        "api_limiter": "api",
+        "refresh_limiter": "refresh",
+    }
+
+
+def test_a_dynamic_limit_still_names_its_limiter() -> None:
+    """A callable limit string is held in ``_dynamic_route_limits``, and
+    slowapi builds a fresh ``Limit`` from it per request."""
+    app = FastAPI()
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+    async def probe(request: Request, item_id: str) -> dict[str, str]:
+        return {"ok": item_id}
+
+    probe.__name__ = f"probe_{uuid4().hex}"
+    limited = user_limiter.limit(
+        lambda: "1 per minute", key_func=get_peer_ip_identifier
+    )(probe)
+    app.get("/probe/{item_id}")(limited)
+    client = TestClient(app, client=(CLIENT_HOST, 50000))
+    item = str(uuid4())
+    assert client.get(f"/probe/{item}").status_code == 200
+    refused = client.get(f"/probe/{item}")
+    assert refused.status_code == 429
+    assert refused.headers["X-RateLimit-Lane"] == "user:/probe/{item_id}"
+
+
+def test_a_limit_no_module_limiter_holds_reads_as_unknown_limiter() -> None:
+    from slowapi import Limiter
+
+    stray = Limiter(key_func=get_peer_ip_identifier, storage_uri="memory://")
+    app = FastAPI()
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+    async def probe(request: Request, item_id: str) -> dict[str, str]:
+        return {"ok": item_id}
+
+    probe.__name__ = f"probe_{uuid4().hex}"
+    app.get("/probe/{item_id}")(stray.limit("1 per minute")(probe))
+    client = TestClient(app, client=(CLIENT_HOST, 50000))
+    item = str(uuid4())
+    assert client.get(f"/probe/{item}").status_code == 200
+    refused = client.get(f"/probe/{item}")
+    assert refused.status_code == 429
+    assert refused.headers["X-RateLimit-Lane"] == "unknown:/probe/{item_id}"
+
+
+# --------------------------------------------------------------------------
+# Key functions are called the way slowapi calls them
+# --------------------------------------------------------------------------
+
+
+def test_a_key_function_without_a_request_parameter_is_called_without_one() -> None:
+    """slowapi calls a key function with the request only when it declares a
+    parameter named ``request``; otherwise with no arguments."""
+    from app.middleware.rate_limit import _refusal_key_kind
+
+    def no_request() -> str:
+        return "bearer:fixture"
+
+    assert _refusal_key_kind(_bare_request(), no_request) == "bearer"
+
+
+# --------------------------------------------------------------------------
+# slowapi's own refusal line is dropped; its other warnings are not
+# --------------------------------------------------------------------------
+
+
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+def test_slowapis_refusal_line_is_dropped_and_its_storage_warnings_kept() -> None:
+    import app.middleware.rate_limit  # noqa: F401  (installs the filter)
+
+    slowapi_logger = logging.getLogger("slowapi")
+    collect = _Collect()
+    slowapi_logger.addHandler(collect)
+    try:
+        slowapi_logger.warning(
+            "ratelimit %s (%s) exceeded at endpoint: %s",
+            "1 per 1 minute",
+            f"peer:{CLIENT_HOST}",
+            "/probe/x",
+        )
+        slowapi_logger.warning(
+            "Rate limit storage unreachable - falling back to in-memory storage"
+        )
+        slowapi_logger.warning("Rate limit storage recovered")
+        slowapi_logger.error(
+            "Skipping limit: %s. Empty value found in parameters.", "x"
+        )
+    finally:
+        slowapi_logger.removeHandler(collect)
+    assert [r.getMessage() for r in collect.records] == [
+        "Rate limit storage unreachable - falling back to in-memory storage",
+        "Rate limit storage recovered",
+        "Skipping limit: x. Empty value found in parameters.",
+    ]
