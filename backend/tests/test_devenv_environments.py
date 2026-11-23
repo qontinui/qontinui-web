@@ -41,6 +41,7 @@ from app.crud import devenv_machine_crud
 from app.models.organization import Organization
 from app.schemas.devenv import ConfigEnvelope
 from app.services import devenv_drift
+from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 API_PREFIX = "/api/v1/devenv"
 
@@ -3983,6 +3984,283 @@ class TestCiNodeModelAccessRoundTrip:
             ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
             assert "model_access" not in ci_node
             assert r.json()["requested"]["model_access"] is None
+
+
+class _CiNodeCoordTransport:
+    """Stands in for ``httpx.AsyncClient`` UNDER ``post_to_coord``.
+
+    The enroll dispatch gets a 200; every CI-node dispatch attempt gets
+    ``answer``. Stubbing the transport rather than ``post_to_coord`` keeps the
+    proxy's gateway-retry policy in the path, which is where a 502 is decided.
+    """
+
+    def __init__(self, answer: httpx.Response) -> None:
+        self.answer = answer
+        self.ci_node_attempts = 0
+
+    def __call__(self, *args, **kwargs) -> _CiNodeCoordTransport:
+        return self
+
+    async def __aenter__(self) -> _CiNodeCoordTransport:
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    def scoped_httpx(self) -> object:
+        """An ``httpx`` stand-in for ``coord_proxy`` ONLY: ``AsyncClient`` is
+        this transport, every other attribute the real module's. Patching
+        ``httpx.AsyncClient`` itself would also replace the test's own ASGI
+        client, which is an ``httpx.AsyncClient`` too."""
+        transport = self
+
+        class _ScopedHttpx:
+            AsyncClient = transport
+
+            def __getattr__(self, name: str) -> object:
+                return getattr(httpx, name)
+
+        return _ScopedHttpx()
+
+    async def post(self, url: str, **kwargs) -> httpx.Response:
+        if url.endswith("/devenv/ci-node-dispatch"):
+            self.ci_node_attempts += 1
+            return self.answer
+        return httpx.Response(200, json={"dispatched": True})
+
+
+_STORED_DETAIL = (
+    "A runner that fetches saved settings on connect receives them the next "
+    "time it connects; otherwise apply them again once it is connected."
+)
+_COORD_PUBLISH_FAILED_MESSAGE = "The directive could not be published (redis down)."
+
+
+def _publish_failed(status: int, extra: dict) -> httpx.Response:
+    body = {
+        "error": "directive_publish_failed",
+        "message": _COORD_PUBLISH_FAILED_MESSAGE,
+    }
+    body.update(extra)
+    return httpx.Response(status, json=body)
+
+
+class TestCiNodeStoredButUnpublished:
+    """Under plan ``2026-11-22-ci-node-directive-replays-on-connect`` Phase 2,
+    coord stores every accepted CI-node directive before publishing it, and the
+    runner fetches the stored one on connect (Phase 3). A failed publish after a
+    successful store is a 502 carrying ``stored: true``: the PUT must say the
+    machine applies the settings on its next connect, under its own
+    ``dispatch_error``, not report a refusal or an unreachable coord (Phase
+    2b). Every other answer keeps today's reading exactly, which is what makes
+    this safe to deploy before coord emits the field.
+
+    These run through the real ``post_to_coord`` (only its transport and its
+    backoff sleep are stubbed), because that proxy retries every 502 as a
+    gateway failure unless the caller recognises it."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    async def _put(
+        self, async_db_session, test_user, monkeypatch, answer, name
+    ) -> tuple[dict, int]:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        transport = _CiNodeCoordTransport(answer)
+        monkeypatch.setattr("app.services.coord_proxy.httpx", transport.scoped_httpx())
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        with patch_coord_proxy_sleep():
+            async with _bearer_client(app) as client:
+                machine_id = await self._machine(client, device_id, name)
+                r = await client.put(
+                    f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                    json={"enabled": True},
+                )
+        assert r.status_code == 200, r.text
+        return r.json(), transport.ci_node_attempts
+
+    @pytest.mark.asyncio
+    async def test_ci_node_stored_but_unpublished_applies_on_next_connect(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        body, attempts = await self._put(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            _publish_failed(502, {"stored": True}),
+            "stored-502-box",
+        )
+        # Coord's own answer, taken on the first attempt: not retried (each
+        # retry would store and try to publish the directive again).
+        assert attempts == 1
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 502
+        # A web-owned code, distinct from coord's refusal code, so a client
+        # can tell deferred from refused without reading prose.
+        assert body["dispatch_error"] == "stored_for_next_connect"
+        assert body["dispatch_detail"] == _STORED_DETAIL
+        # Nothing reached the machine now, so nothing may read as "sent".
+        assert body["dispatched_at"] is None
+        assert body["requested"]["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_ci_node_stored_keeps_an_earlier_dispatched_at(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A machine sent settings before keeps that send's timestamp when a
+        later save is stored but not published."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        transport = _CiNodeCoordTransport(
+            httpx.Response(200, json={"dispatched": True})
+        )
+        monkeypatch.setattr("app.services.coord_proxy.httpx", transport.scoped_httpx())
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        with patch_coord_proxy_sleep():
+            async with _bearer_client(app) as client:
+                machine_id = await self._machine(client, device_id, "earlier-box")
+                url = f"{API_PREFIX}/machines/{machine_id}/ci-node"
+                first = await client.put(url, json={"enabled": True})
+                assert first.status_code == 200, first.text
+                sent_at = first.json()["dispatched_at"]
+                assert sent_at is not None
+                transport.answer = _publish_failed(502, {"stored": True})
+                second = await client.put(url, json={"enabled": False})
+        assert second.status_code == 200, second.text
+        body = second.json()
+        assert body["dispatch_error"] == "stored_for_next_connect"
+        assert body["dispatched_at"] == sent_at
+
+    @pytest.mark.asyncio
+    async def test_ci_node_set_config_handler_reports_stored_for_next_connect(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The same outcome, entered through the route handler itself (what
+        the FastAPI router calls) with the real ``post_to_coord`` below it."""
+        from starlette.requests import Request
+
+        from app.api.v1.endpoints.devenv import set_ci_node_config
+        from app.schemas.devenv import CiNodeConfig
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        transport = _CiNodeCoordTransport(_publish_failed(502, {"stored": True}))
+        monkeypatch.setattr("app.services.coord_proxy.httpx", transport.scoped_httpx())
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "handler-box")
+        request = Request(
+            {
+                "type": "http",
+                "method": "PUT",
+                "path": f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                "headers": [(b"authorization", f"Bearer {_CALLER_TOKEN}".encode())],
+                "query_string": b"",
+            }
+        )
+        with patch_coord_proxy_sleep():
+            response = await set_ci_node_config(
+                UUID(machine_id),
+                CiNodeConfig(enabled=True),
+                request,
+                db=async_db_session,
+                current_user=test_user,
+            )
+        assert transport.ci_node_attempts == 1
+        assert response.dispatched is False
+        assert response.dispatch_status == 502
+        assert response.dispatch_error == "stored_for_next_connect"
+        assert response.dispatch_detail == _STORED_DETAIL
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            _publish_failed(502, {}),
+            _publish_failed(502, {"stored": False}),
+            _publish_failed(502, {"stored": "true"}),
+            httpx.Response(502, content=b"<html>bad gateway</html>"),
+            httpx.Response(502, json=[{"stored": True}]),
+            httpx.Response(502, json={"error": "other", "stored": True}),
+            _publish_failed(503, {"stored": True}),
+            _publish_failed(504, {"stored": True}),
+        ],
+        ids=[
+            "absent_older_coord",
+            "stored_false",
+            "stored_not_a_bool",
+            "unparseable_body",
+            "non_object_body",
+            "stored_beside_another_error_code",
+            "stored_beside_a_503",
+            "stored_beside_a_504",
+        ],
+    )
+    async def test_ci_node_502_without_stored_true_reads_as_today(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        answer: httpx.Response,
+    ) -> None:
+        """Today a 502 is a gateway failure to ``post_to_coord``: retried to
+        exhaustion, then reported as coord being unavailable. Unchanged."""
+        body, attempts = await self._put(
+            async_db_session, test_user, monkeypatch, answer, "not-stored-502-box"
+        )
+        assert attempts == 3
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] is None
+        assert body["dispatch_error"] is None
+        assert body["dispatch_detail"] == (
+            "Coord is temporarily unavailable (likely a rolling deploy); retry shortly."
+        )
+        assert body["dispatched_at"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [400, 404], ids=["a_400", "a_404"])
+    async def test_ci_node_stored_beside_a_refusal_is_still_a_refusal(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        status: int,
+    ) -> None:
+        body, attempts = await self._put(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            _publish_failed(status, {"stored": True}),
+            f"stored-beside-{status}-box",
+        )
+        assert attempts == 1
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == status
+        assert body["dispatch_error"] == "directive_publish_failed"
+        # Today's reading: coord's own message, verbatim.
+        assert body["dispatch_detail"] == _COORD_PUBLISH_FAILED_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_ci_node_200_carrying_stored_true_is_delivered_as_today(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        body, attempts = await self._put(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            httpx.Response(200, json={"dispatched": True, "stored": True}),
+            "stored-200-box",
+        )
+        assert attempts == 1
+        assert body["dispatched"] is True
+        assert body["dispatch_error"] is None
+        assert body["dispatched_at"] is not None
 
 
 async def _new_user(db: AsyncSession, label: str):

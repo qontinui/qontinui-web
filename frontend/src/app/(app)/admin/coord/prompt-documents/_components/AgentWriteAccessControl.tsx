@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Check, Lock, LockOpen } from "lucide-react";
 import { tierHelp, tierLabel } from "../_lib/agentWriteTier";
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import {
   AGENT_WRITE_TIERS,
   isAgentWriteTier,
@@ -489,6 +490,9 @@ export function AgentWriteAccessControl({
   saving,
   onSet,
 }: AgentWriteAccessControlProps) {
+  // The cross-tab lock (D3): an explicit `disabled`, so the Radix trigger does
+  // not depend on the page's fieldset reaching it (#6).
+  const pageLocked = usePageLocked();
   /** The tier awaiting confirmation, or `null` when nothing is pending. */
   const [pending, setPending] = useState<AgentWriteTier | null>(null);
   const resolved = resolveAccess(doc);
@@ -601,12 +605,12 @@ export function AgentWriteAccessControl({
       </Badge>
 
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+        <DropdownMenuTrigger asChild disabled={saving || !known || pageLocked}>
           <Button
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            disabled={saving || !known}
+            disabled={saving || !known || pageLocked}
             title={triggerTitle({ resolved, overridesKind })}
             data-testid={`doc-access-toggle-${doc.kind}-${doc.name}`}
           >
@@ -652,7 +656,7 @@ export function AgentWriteAccessControl({
             return (
               <DropdownMenuItem
                 key={tier}
-                disabled={saving || selected}
+                disabled={saving || selected || pageLocked}
                 title={itemTitle({
                   tier,
                   overridesKind,
@@ -757,7 +761,7 @@ export function AgentWriteAccessControl({
                 e.preventDefault();
                 if (pending) void apply(pending);
               }}
-              disabled={saving}
+              disabled={saving || pageLocked}
               data-testid="confirm-open-meta-policy"
             >
               Allow agent writes
