@@ -975,13 +975,8 @@ class TestD3RefusesAnUnmatchableFollowup:
             },
         )
         assert resp.status_code == 422, resp.text
-        body = resp.json()
-        # The production handler serves a refusal_error as ``message`` plus the
-        # typed ``refusal`` envelope; a bare app serves ``detail``.
-        detail = body.get("message", body.get("detail"))
-        assert isinstance(detail, str), body  # the endpoint answered, not pydantic
-        if "refusal" in body:
-            assert body["refusal"]["discriminator"] == "spawned_followup_unmatchable"
+        detail = resp.json()["detail"]
+        assert isinstance(detail, str), detail  # the endpoint answered, not pydantic
         for name in named:
             assert name in detail, (name, detail)
         # Only what is missing is named, in both directions.
@@ -1019,10 +1014,39 @@ class TestD3RefusesAnUnmatchableFollowup:
         assert resp.json()["followup"]["size_class"] == fields["size_class"]
         assert (await _followups(client))["total"] == 1
 
+    async def test_the_served_refusal_carries_its_typed_envelope(
+        self, async_db_session: AsyncSession, api_user
+    ) -> None:
+        """Behind the production HTTP handler the 422 is a typed refusal
+        (``refusal_error``), not a free-text one: ``message`` carries the
+        sentence and ``refusal`` names the site and the next action."""
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        app = _build_app(db_session=async_db_session, user=api_user)
+        app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as served:
+            plan = await _make_artifact(served, stem="d3served")
+            resp = await served.post(
+                f"{API_PREFIX}/{plan}/edges",
+                json={"relation": "spawned_followup", "note": "x", "to_id": None},
+            )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert "size_class" in body["message"], body
+        refusal = body["refusal"]
+        assert refusal["discriminator"] == "spawned_followup_unmatchable", refusal
+        assert refusal["code"] == "invalid_request", refusal
+        assert refusal["next_action"]["kind"] == "fix_request", refusal
+
     async def test_an_owned_followup_is_exempt(self, client: httpx.AsyncClient) -> None:
         """``to_id`` supplied: not open, never matched — and the runner's
-        ``/plan-library/links`` forwards exactly this shape with no anchors or
-        class, so refusing it would refuse a live writer."""
+        ``/plan-library/links`` may forward an owned follow-up with no anchors
+        or class, so refusing it would refuse a live writer."""
         plan = await _make_artifact(client, stem="d3owned")
         owner = await _make_artifact(client, stem="d3owned-target")
         resp = await client.post(

@@ -20401,9 +20401,10 @@ export interface paths {
          *         {"relation": "spawned_followup", "note": "<text>", "to_id": null,
          *          "unanchored_reason": "<why no file>", "size_class": "small"}
          *
-         *     (or ``anchors`` in place of ``unanchored_reason``). ``note`` is then required and must not be blank — with no far end it is the
-         *     entire content of the row, and an empty one puts an unactionable entry in
-         *     the open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
+         *     (or ``anchors`` in place of ``unanchored_reason``). ``note`` is then
+         *     required and must not be blank — with no far end it is the entire content
+         *     of the row, and an empty one puts an unactionable entry in the
+         *     open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
          *     records a follow-up that already has an owner; ``from_id`` is not, because
          *     the relation is inherently outgoing (this artifact surfaced that work).
          *     Re-posting the same note is idempotent on ``(from_id, relation, note)``,
