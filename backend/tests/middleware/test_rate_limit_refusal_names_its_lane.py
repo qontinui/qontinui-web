@@ -718,3 +718,94 @@ def test_slowapis_refusal_line_is_dropped_and_its_storage_warnings_kept() -> Non
         "Rate limit storage recovered",
         "Skipping limit: x. Empty value found in parameters.",
     ]
+
+
+# --------------------------------------------------------------------------
+# Every 429 in backend/app names its lane — not only slowapi's
+# --------------------------------------------------------------------------
+
+
+def _is_429(node: ast.expr) -> bool:
+    if isinstance(node, ast.Constant) and node.value == 429:
+        return True
+    return isinstance(node, ast.Attribute) and node.attr.startswith("HTTP_429")
+
+
+def _headers_from_refusal_helper(call: ast.Call) -> bool:
+    for keyword in call.keywords:
+        if keyword.arg != "headers":
+            continue
+        value = keyword.value
+        return (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "refusal_headers"
+        )
+    return False
+
+
+def test_every_429_emitted_in_app_carries_the_refusal_headers() -> None:
+    """Every call in ``backend/app`` that builds a 429 — ``HTTPException`` or
+    any response class, with the status as ``status_code=`` or positionally,
+    spelled ``429`` or ``status.HTTP_429_*`` — passes
+    ``headers=refusal_headers(...)``, so the refusal names its lane and key
+    kind whoever raised it.
+
+    What this cannot see: a status held in a variable (``status_code=s``),
+    which no 429 in ``app`` uses today. The walk is over source, so a
+    missing helper call fails here with its file and line.
+    """
+    app_root = pathlib.Path(__file__).resolve().parents[2] / "app"
+    emissions: list[str] = []
+    missing: list[str] = []
+    for path in sorted(app_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            candidates = [k.value for k in node.keywords if k.arg == "status_code"]
+            candidates += list(node.args[:1])
+            if not any(_is_429(c) for c in candidates):
+                continue
+            where = f"{path.relative_to(app_root.parent)}:{node.lineno}"
+            emissions.append(where)
+            if not _headers_from_refusal_helper(node):
+                missing.append(where)
+    # Positive control: the walk finds the 429s it exists to police.
+    assert len(emissions) >= 4, emissions
+    assert not missing, "429 without headers=refusal_headers(...): " + ", ".join(
+        missing
+    )
+
+
+def test_refusal_headers_name_the_lane_and_key_kind() -> None:
+    from app.middleware.rate_limit import refusal_headers
+
+    assert refusal_headers("memory-quota:tenant", "tenant") == {
+        "X-RateLimit-Lane": "memory-quota:tenant",
+        "X-RateLimit-Key-Kind": "tenant",
+    }
+    assert refusal_headers("cognito:admin-api", "upstream", retry_after="5") == {
+        "X-RateLimit-Lane": "cognito:admin-api",
+        "X-RateLimit-Key-Kind": "upstream",
+        "Retry-After": "5",
+    }
+    with pytest.raises(ValueError, match="key kind"):
+        refusal_headers("x:y", "token")
+
+
+def test_a_cognito_throttle_names_its_lane() -> None:
+    from app.api.v1.endpoints.operations import _cognito_http_error
+    from app.services.cognito_admin import CognitoThrottledError
+
+    exc = _cognito_http_error(
+        CognitoThrottledError("TooManyRequestsException", retry_after="7"),
+        log_event="fixture",
+        fallback_detail="fixture",
+    )
+    assert exc.status_code == 429
+    assert exc.headers == {
+        "X-RateLimit-Lane": "cognito:admin-api",
+        "X-RateLimit-Key-Kind": "upstream",
+        "Retry-After": "7",
+    }
