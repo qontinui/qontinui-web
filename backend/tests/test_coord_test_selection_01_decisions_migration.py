@@ -53,7 +53,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_test_selection_01"
-_PARENT_REVISION_ID = "coord_test_result_runs_01"
+_PARENT_REVISION_ID = "coord_subprojects_05_note_events"
 _REVISION_FILENAME = "coord_test_selection_01_decisions.py"
 _TABLE = "test_selection_decisions"
 
