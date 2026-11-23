@@ -573,8 +573,10 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
 /**
  * Log a refusal server-side, naming the lane and the kind of principal it
  * refused (`user`: an operator's bearer; `device`: a coord device JWT, keyed
- * `dev:<deviceId>`). The SDK discards a refused heartbeat's and result's
- * response, so this line is where a transport refusal is visible.
+ * `dev:<deviceId>`), and the method when the caller passes it (the runner
+ * door proxy does). Never the principal's id or the request's path. The SDK
+ * discards a refused heartbeat's and result's response, so this line is
+ * where a transport refusal is visible.
  *
  * Logged for the 1st, 2nd, 4th, 8th, … refusal of a principal's lane in a
  * window (`count - limit` a power of two). The SDK keeps its cadence through
@@ -584,7 +586,8 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
  */
 export function logLaneRefused(
   result: RateLimitResult,
-  principalKind: "user" | "device" | null
+  principalKind: "user" | "device" | null,
+  method?: string
 ): void {
   const overflow = result.count - result.limit;
   if (overflow < 1 || (overflow & (overflow - 1)) !== 0) {
@@ -592,6 +595,7 @@ export function logLaneRefused(
   }
   log.warn("lane_refused", {
     lane: result.kind,
+    ...(method === undefined ? {} : { method }),
     principalKind: principalKind ?? "unknown",
     count: result.count,
     limit: result.limit,

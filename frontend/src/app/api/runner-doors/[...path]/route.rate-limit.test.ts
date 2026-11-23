@@ -43,6 +43,16 @@ const FROZEN_NOW = new Date("2026-11-23T12:00:05.000Z");
 
 type Method = "GET" | "POST" | "PUT" | "DELETE";
 
+/** The devices the operator owns; a runner outside them is not proxied. */
+let ownedDeviceIds: string[] = ["DEV-OWN"];
+/**
+ * How the runner answers a door call: a 200, its own 429, or no answer (the
+ * fetch rejects; `abort` aborts the request's signal first, as a browser
+ * giving up does).
+ */
+let runnerAnswer: "ok" | "429" | "unreachable" = "ok";
+let abortBeforeFailing: AbortController | null = null;
+
 function installFetch(): void {
   vi.stubGlobal(
     "fetch",
@@ -60,22 +70,37 @@ function installFetch(): void {
           url.endsWith("/api/v1/devices") &&
           auth === `Bearer ${USER_TOKEN}`
         ) {
-          return Response.json([{ id: "DEV-OWN" }]);
+          return Response.json(ownedDeviceIds.map((id) => ({ id })));
         }
         return new Response(null, { status: 401 });
       }
       if (url.endsWith("/settings/device-info")) {
         return Response.json({ success: true, data: { device_id: "dev-own" } });
       }
+      if (runnerAnswer === "429") {
+        return Response.json(
+          { success: false, code: "RUNNER_BUSY" },
+          { status: 429, headers: { "retry-after": "7" } }
+        );
+      }
+      if (runnerAnswer === "unreachable") {
+        abortBeforeFailing?.abort();
+        throw new TypeError("fetch failed");
+      }
       return Response.json({ success: true, data: { ok: true } });
     })
   );
 }
 
-function door(method: Method, path: string): Promise<Response> {
+function door(
+  method: Method,
+  path: string,
+  signal?: AbortSignal
+): Promise<Response> {
   const host = "localhost:3001";
   const req = new NextRequest(`http://${host}/api/runner-doors${path}`, {
     method,
+    signal,
     headers: {
       host,
       origin: `http://${host}`,
@@ -103,6 +128,9 @@ function door(method: Method, path: string): Promise<Response> {
 beforeEach(() => {
   __resetAuthCache();
   __resetRunnerOwnershipCache();
+  ownedDeviceIds = ["DEV-OWN"];
+  runnerAnswer = "ok";
+  abortBeforeFailing = null;
   vi.stubEnv("BACKEND_URL", BACKEND_URL);
   vi.stubEnv("NODE_ENV", "development");
   vi.stubEnv("QONTINUI_WEB_RUNNER_DOOR_PROXY", "");
@@ -201,5 +229,98 @@ describe("runner door proxy — its own lanes (D1)", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("X-RateLimit-Lane")).toBe("runner-door:read");
     expect(res.headers.get("X-RateLimit-Remaining")).toBe("unknown");
+  });
+});
+
+/** The four budget headers a response after the check carries. */
+function expectBudget(res: Response, lane: string): void {
+  expect(res.headers.get("X-RateLimit-Lane")).toBe(lane);
+  expect(res.headers.get("X-RateLimit-Limit")).not.toBeNull();
+  expect(res.headers.get("X-RateLimit-Remaining")).not.toBeNull();
+  expect(res.headers.get("X-RateLimit-Reset-After")).not.toBeNull();
+}
+
+describe("runner door proxy — every arm after the check carries the budget", () => {
+  it("a runner that is not the operator's own → 403 with the budget", async () => {
+    ownedDeviceIds = ["someone-elses-runner"];
+    const res = await door("POST", "/hooks/abc/test");
+    expect(res.status).toBe(403);
+    expectBudget(res, "runner-door:write");
+  });
+
+  it("the browser giving up → 499 with the budget", async () => {
+    runnerAnswer = "unreachable";
+    abortBeforeFailing = new AbortController();
+    const res = await door(
+      "GET",
+      "/settings/backup/summary",
+      abortBeforeFailing.signal
+    );
+    expect(res.status).toBe(499);
+    expectBudget(res, "runner-door:read");
+  });
+
+  it("a runner that does not answer → 502 with the budget", async () => {
+    runnerAnswer = "unreachable";
+    const res = await door("POST", "/hooks/abc/test");
+    expect(res.status).toBe(502);
+    expectBudget(res, "runner-door:write");
+  });
+});
+
+describe("runner door proxy — a runner's own 429 is not the door's", () => {
+  it("passes the runner's 429 through, marked refused by the runner, with no door lane or budget", async () => {
+    runnerAnswer = "429";
+    const res = await door("POST", "/hooks/abc/test");
+    expect(res.status).toBe(429);
+    expect(res.headers.get("X-RateLimit-Refused-By")).toBe("runner");
+    expect(res.headers.get("retry-after")).toBe("7");
+    for (const name of [
+      "X-RateLimit-Lane",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset-After",
+    ]) {
+      expect(res.headers.get(name), name).toBeNull();
+    }
+    expect(await res.json()).toMatchObject({ code: "RUNNER_BUSY" });
+  });
+
+  it("the door's own 429 is marked by neither the runner nor a missing lane", async () => {
+    for (let n = 1; n <= 20; n++) await door("POST", "/hooks/abc/test");
+    const refused = await door("POST", "/hooks/abc/test");
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("X-RateLimit-Refused-By")).toBeNull();
+    expect(refused.headers.get("X-RateLimit-Lane")).toBe("runner-door:write");
+  });
+});
+
+describe("runner door proxy — a refusal is logged server-side", () => {
+  it("logs lane_refused naming the lane and the method, never the user id or the path", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      for (let n = 1; n <= 20; n++) await door("POST", "/hooks/abc123/test");
+      expect(
+        warn.mock.calls.filter((c) => String(c[0]).includes("lane_refused"))
+      ).toHaveLength(0);
+      await door("POST", "/hooks/abc123/test");
+      const lines = warn.mock.calls.filter((c) =>
+        String(c[0]).includes("lane_refused")
+      );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]![1]).toMatchObject({
+        lane: "runner-door:write",
+        method: "POST",
+        principalKind: "user",
+        count: 21,
+        limit: 20,
+      });
+      const text = JSON.stringify(lines[0]);
+      expect(text).not.toContain(USER_ID);
+      expect(text).not.toContain(USER_TOKEN);
+      expect(text).not.toContain("abc123");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
