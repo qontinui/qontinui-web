@@ -193,6 +193,21 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 600
+    # Socket peers whose X-Forwarded-For the rate-limit keys believe
+    # (comma-separated CIDRs). Application-level proxy trust, independent of
+    # uvicorn's FORWARDED_ALLOW_IPS: from a peer inside one of these the key is
+    # the rightmost X-Forwarded-For entry (what the proxy saw); from any other
+    # peer the header is the caller's own and the key is the socket peer. The
+    # default is loopback plus the private ranges, because the ALB reaches the
+    # tasks from inside the VPC, from a private address. See
+    # app.middleware.rate_limit.peer_ip.
+    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = Field(
+        default="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7",
+        description=(
+            "Comma-separated CIDRs of proxies whose X-Forwarded-For the rate "
+            "limiter trusts; empty trusts none."
+        ),
+    )
 
     # Redis (for task queue) - Optional, will fall back to synchronous operations
     # Default is False for production since we don't have Redis in AWS yet
@@ -555,6 +570,22 @@ class Settings(BaseSettings):
         default=[],
         description="Allowed hosts for TrustedHostMiddleware in production. Empty list uses defaults.",
     )
+
+    @field_validator("RATE_LIMIT_TRUSTED_PROXY_CIDRS")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, v: str) -> str:
+        """Every entry must be a CIDR (no host bits set). A malformed entry
+        fails startup rather than silently trusting or distrusting a proxy."""
+        entries = [e.strip() for e in v.split(",")] if v.strip() else []
+        for entry in entries:
+            try:
+                ipaddress.ip_network(entry, strict=True)
+            except ValueError as exc:
+                raise ValueError(
+                    f"RATE_LIMIT_TRUSTED_PROXY_CIDRS entry {entry!r} is not a "
+                    f"CIDR network: {exc}"
+                ) from exc
+        return ",".join(entries)
 
     @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod

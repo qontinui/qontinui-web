@@ -55,6 +55,8 @@ APP_DIR = Path(__file__).resolve().parents[2] / "app"
 # load balancer. A key that contains it has collapsed onto the node.
 ALB_NODE = "10.0.1.17"
 CALLER_PEER = "203.0.113.9"
+# A public socket peer: a caller reaching the task directly, not via a proxy.
+UNTRUSTED_PEER = "198.51.100.50"
 
 _USERS_ME_LIMIT = 200  # ``@user_limiter.limit("200 per minute")`` on GET /users/me
 
@@ -888,7 +890,7 @@ def test_the_base_websocket_handler_keys_on_the_rightmost_forwarded_entry(
     async def endpoint(websocket: WebSocket) -> None:
         await _Handler().handle_connection(websocket)
 
-    client = TestClient(_ws_app(endpoint, "/ws"))
+    client = TestClient(_ws_app(endpoint, "/ws"), client=(ALB_NODE, 50000))
     for forged in ("6.6.6.6", "7.7.7.7"):
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(
@@ -905,7 +907,10 @@ def test_the_automation_monitor_websocket_keys_on_the_rightmost_forwarded_entry(
 
     from app.api.v1.endpoints.automation_ws import websocket_monitor_endpoint
 
-    client = TestClient(_ws_app(websocket_monitor_endpoint, "/ws/{session_id}"))
+    client = TestClient(
+        _ws_app(websocket_monitor_endpoint, "/ws/{session_id}"),
+        client=(ALB_NODE, 50000),
+    )
     for forged in ("6.6.6.6", "7.7.7.7"):
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(
@@ -928,3 +933,132 @@ def test_a_websocket_with_no_forwarded_header_keys_on_the_socket_peer(
             pass
     # Starlette's TestClient connects as host "testclient".
     assert recorded_connection_keys == ["testclient"]
+
+
+def test_a_websocket_from_an_untrusted_peer_ignores_its_forwarded_header(
+    recorded_connection_keys: list[str],
+) -> None:
+    """Off the ALB path the socket peer is the caller itself, so a forged
+    ``X-Forwarded-For`` must not pick its connection bucket."""
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.api.v1.endpoints.automation_ws import websocket_monitor_endpoint
+
+    client = TestClient(
+        _ws_app(websocket_monitor_endpoint, "/ws/{session_id}"),
+        client=(UNTRUSTED_PEER, 50000),
+    )
+    for forged in ("6.6.6.6", "7.7.7.7"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/ws/s-1", headers={"X-Forwarded-For": forged}
+            ):
+                pass
+    assert recorded_connection_keys == [UNTRUSTED_PEER, UNTRUSTED_PEER]
+
+
+# ---------------------------------------------------------------------------
+# X-Forwarded-For is trusted only from a configured proxy range
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key_func",
+    [
+        get_user_identifier,
+        rate_limit.get_peer_ip_identifier,
+        rate_limit.limiter._key_func,
+        rate_limit.auth_limiter._key_func,
+        rate_limit.api_limiter._key_func,
+        rate_limit.refresh_limiter._key_func,
+    ],
+    ids=lambda f: getattr(f, "__name__", "?"),
+)
+def test_an_untrusted_socket_peer_cannot_forge_its_bucket(
+    key_func: Callable[[Request], str],
+) -> None:
+    """Self-hosted or directly exposed, the socket peer IS the caller: its
+    ``X-Forwarded-For`` is whatever it chose to send, so it is ignored."""
+    keys = {
+        key_func(_request(host=UNTRUSTED_PEER, xff=f"6.6.6.6, {forged}"))
+        for forged in ("7.7.7.7", "8.8.8.8", "9.9.9.9")
+    }
+    assert keys == {f"peer:{UNTRUSTED_PEER}"}
+
+
+@pytest.mark.parametrize(
+    "socket_peer",
+    [
+        "10.20.3.4",
+        "172.16.0.9",
+        "192.168.1.2",
+        "127.0.0.1",
+        "::1",
+        "fd00::5",
+        "::ffff:10.20.3.4",
+    ],
+)
+def test_a_trusted_proxy_peer_hands_over_the_rightmost_entry(socket_peer: str) -> None:
+    request = _request(host=socket_peer, xff=f"6.6.6.6, {CALLER_PEER}")
+    assert rate_limit.peer_ip(request) == CALLER_PEER
+
+
+def test_every_forwarded_header_line_is_read() -> None:
+    """Two ``X-Forwarded-For`` lines (one client-sent, one proxy-added) are
+    one list; reading only the first would hand the client the key."""
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "query_string": b"",
+            "headers": [
+                (b"x-forwarded-for", b"6.6.6.6"),
+                (b"x-forwarded-for", CALLER_PEER.encode()),
+            ],
+            "client": (ALB_NODE, 40000),
+        }
+    )
+    assert rate_limit.peer_ip(request) == CALLER_PEER
+
+
+def test_the_trusted_proxy_ranges_come_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rate_limit.settings, "RATE_LIMIT_TRUSTED_PROXY_CIDRS", "203.0.113.0/24"
+    )
+    behind_configured_proxy = _request(host="203.0.113.50", xff="198.51.100.4")
+    from_default_range = _request(host=ALB_NODE, xff="198.51.100.4")
+    assert rate_limit.peer_ip(behind_configured_proxy) == "198.51.100.4"
+    assert rate_limit.peer_ip(from_default_range) == ALB_NODE
+
+
+def test_the_setting_parses_a_comma_separated_list() -> None:
+    from app.core.config import Settings
+
+    parsed = Settings(RATE_LIMIT_TRUSTED_PROXY_CIDRS=" 10.20.0.0/16 , fd00::/8 ")
+    assert parsed.RATE_LIMIT_TRUSTED_PROXY_CIDRS == "10.20.0.0/16,fd00::/8"
+
+
+def test_the_default_trusts_loopback_and_private_ranges_only() -> None:
+    from app.core.config import Settings
+
+    assert Settings().RATE_LIMIT_TRUSTED_PROXY_CIDRS.split(",") == [
+        "127.0.0.0/8",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "::1/128",
+        "fc00::/7",
+    ]
+
+
+@pytest.mark.parametrize("bad", ["10.0.0.0/33", "not-a-cidr", "10.0.0.0/8,,", "*"])
+def test_a_malformed_trusted_proxy_range_fails_at_startup(bad: str) -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="RATE_LIMIT_TRUSTED_PROXY_CIDRS"):
+        Settings(RATE_LIMIT_TRUSTED_PROXY_CIDRS=bad)

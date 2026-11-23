@@ -30,23 +30,69 @@ else:
     storage_uri = "memory://"
 
 
-def peer_ip(connection: HTTPConnection) -> str:
-    """The address the nearest proxy saw, for an HTTP request or a WebSocket.
+@functools.lru_cache(maxsize=8)
+def _trusted_proxy_networks(
+    cidrs: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` parsed (validated at
+    startup by the setting itself), cached per configured value."""
+    return tuple(ipaddress.ip_network(c) for c in cidrs.split(",") if c)
 
-    The RIGHTMOST ``X-Forwarded-For`` entry (the one the ALB appended, which a
-    client cannot forge), else the socket peer when the connection arrived
-    with no forwarded header, else ``"unknown"`` — see
-    :func:`app.middleware.logging_middleware.peer_ip_from`. Keying on the
-    LEFTMOST entry would let a caller pick a fresh bucket per request, and
-    keying on ``client.host`` behind the ALB would put every caller reaching
-    one ALB node into one bucket. The WebSocket connection-rate limits
-    (``app.websockets.base``, ``automation_ws``) key on this too.
+
+def _ip(address: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """``address`` as an IP (an IPv4-mapped IPv6 address unwrapped to IPv4),
+    or ``None`` when it does not parse — a hostname, ``"testclient"``, empty."""
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _is_trusted_proxy(address: str | None) -> bool:
+    ip = _ip(address)
+    if ip is None:
+        return False
+    return any(
+        ip in net
+        for net in _trusted_proxy_networks(settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS)
+    )
+
+
+def peer_ip(connection: HTTPConnection) -> str:
+    """The address a rate limit keys on, for an HTTP request or a WebSocket.
+
+    When the socket peer (``client.host``) is inside
+    ``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` — the ALB, reaching the tasks
+    from inside the VPC — it is a proxy, and the caller is the RIGHTMOST
+    ``X-Forwarded-For`` entry: the one that proxy appended, which a client
+    cannot forge (:func:`app.middleware.logging_middleware.peer_ip_from`).
+    Every header line is read, so a client-sent line ahead of the proxy's
+    changes nothing. From any other socket peer (self-hosted, a directly
+    exposed task) the socket peer IS the caller and its ``X-Forwarded-For``
+    is its own choice, so the header is ignored. ``"unknown"`` when there is
+    neither.
+
+    This is application-level proxy trust, independent of uvicorn's
+    ``FORWARDED_ALLOW_IPS`` (which decides whether uvicorn rewrites
+    ``client.host`` at all, and is not set in production today).
+
+    Keying on the LEFTMOST entry would let a caller pick a fresh bucket per
+    request, and keying on ``client.host`` behind the ALB would put every
+    caller reaching one ALB node into one bucket. The WebSocket
+    connection-rate limits (``app.websockets.base``, ``automation_ws``) key on
+    this too.
     """
     from app.middleware.logging_middleware import peer_ip_from
 
     client = getattr(connection, "client", None)
     host = getattr(client, "host", None) if client else None
-    return peer_ip_from(connection.headers.get("x-forwarded-for"), host) or "unknown"
+    if not _is_trusted_proxy(host):
+        return host or "unknown"
+    forwarded = ",".join(connection.headers.getlist("x-forwarded-for")) or None
+    return peer_ip_from(forwarded, host) or "unknown"
 
 
 def _peer_key(request: Request) -> str:
@@ -93,14 +139,15 @@ def _bearer_key(request: Request) -> str | None:
     unverified token parser, and the digest keeps a bearer out of log lines
     and Redis keys.
 
-    The key is the TOKEN, not the user it names — a deliberate trade-off
-    (plan ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``
-    D2). For: two logins of the same user (an operator's browser tabs and an
-    agent's own login) get separate buckets, so an agent never spends the
-    operator's budget. Against: a user who mints fresh tokens (a new login or
-    a refresh-token exchange) gets a fresh bucket per token, so the limit
-    bounds each token, not each user. In normal use tokens rotate roughly
-    hourly, far longer than any per-minute window keyed off them.
+    What the limit bounds: each ACCESS TOKEN, not each user. An authenticated
+    caller who deliberately mints fresh Cognito access tokens (a new login or
+    a refresh-token exchange) gets a fresh bucket per token. A per-user
+    (``sub``) ceiling would bound that, but it would also re-merge an agent's
+    own login with the operator's into one bucket — the collapse plan
+    ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429`` D2
+    rejects — so the key is the token digest by design. In normal use tokens
+    rotate roughly hourly, far longer than any per-minute window keyed off
+    them.
     """
     return _digest_key(_presented_token(request))
 
@@ -297,13 +344,8 @@ def _is_loopback(address: str | None) -> bool:
     """True for a loopback IP, including an IPv4-mapped IPv6 one
     (``::ffff:127.0.0.1``) and all of ``127.0.0.0/8``. Anything that does not
     parse as an IP (``None``, ``"unknown"``, a hostname) is not loopback."""
-    try:
-        ip = ipaddress.ip_address(address or "")
-    except ValueError:
-        return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        return ip.ipv4_mapped.is_loopback
-    return ip.is_loopback
+    ip = _ip(address)
+    return ip is not None and ip.is_loopback
 
 
 def _is_loopback_dev(request: Request) -> bool:
