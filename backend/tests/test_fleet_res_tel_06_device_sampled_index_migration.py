@@ -94,8 +94,9 @@ _NEWEST_SQL = f"""
 # backward scan of the ``(sampled_at)`` index meets the probed device's row
 # almost at once and wins on cost by accident, even with this index present,
 # so the probe would not be asking which index serves a device-keyed read;
-# a small share is what separates the two paths. The newest probed row is in the ``wsl`` lane (offset 1, odd), so no single
-# lane's ordered run can answer alone.
+# a small share is what separates the two paths. The newest probed row is in
+# the ``wsl`` lane (offset 1, odd), so no single lane's ordered run can answer
+# alone.
 _SEED_ROWS = 2000
 _PROBED_ROWS = 20
 
@@ -319,7 +320,9 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         assert _ANCHOR_INDEX_NAME not in lateral_plan, lateral_plan
         # The plain (sampled_at) index with a device_id filter is the near-tie
         # alternative; name it so a planner flap reads as that, not a mystery.
-        assert "idx_device_resource_samples_sampled_at" not in lateral_plan, lateral_plan
+        assert (
+            "idx_device_resource_samples_sampled_at" not in lateral_plan
+        ), lateral_plan
         assert not _has_sort(lateral_plan), lateral_plan
         assert any(
             "Index Cond" in line and "device_id" in line
