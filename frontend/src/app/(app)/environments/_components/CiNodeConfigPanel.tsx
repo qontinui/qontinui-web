@@ -156,6 +156,12 @@ export interface DispatchRefusal {
   fixableHere: boolean;
   /** The refusing system's own explanation, when it gave one. */
   detail: string | null;
+  /**
+   * True when nothing was refused and delivery is only DEFERRED: the
+   * coordinator stored the settings and the machine applies them on its next
+   * connect. Rendered without the destructive tone.
+   */
+  deferred?: boolean;
 }
 
 /**
@@ -190,6 +196,18 @@ export function dispatchRefusalCopy(
       headline: "Saved, but qontinui.io could not reach the coordinator.",
       fixableHere: false,
       detail,
+    };
+  }
+  if (state.dispatch_error === STORED_FOR_NEXT_CONNECT) {
+    // Coord stored the directive but could not publish it now: deferred, not
+    // refused. Whether the machine picks it up by itself depends on its runner
+    // version, which the detail says; the headline claims only what happened.
+    return {
+      headline:
+        "Not sent yet: the coordinator saved these settings but could not send them.",
+      fixableHere: false,
+      detail,
+      deferred: true,
     };
   }
   if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
@@ -245,10 +263,47 @@ export function dispatchRefusalCopy(
   };
 }
 
+/** The backend's `dispatch_error` when coord stored the settings but could not
+ *  send them now: the machine applies them on its next connect. */
+export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
 /** The backend's `dispatch_error` when coord did not echo `model_access` back. */
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
 export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
+
+/**
+ * True when the saved settings have not been sent since they were last saved:
+ * saved here (`requested_at`) after the last accepted send (`dispatched_at`),
+ * or never sent. Read from persisted fields, so it survives a reload — a GET
+ * carries no `dispatched` verdict.
+ */
+export function savedButUnsent(state: CiNodeConfigState): boolean {
+  if (!state.configured || !state.requested_at) return false;
+  if (!state.dispatched_at) return true;
+  return Date.parse(state.requested_at) > Date.parse(state.dispatched_at);
+}
+
+/**
+ * Whether Apply may re-send the saved settings unchanged. Yes when the panel's
+ * own copy tells the owner to apply again: a deferred delivery, the two
+ * model-access outcomes, a transport failure (coord never answered, so
+ * `dispatch_status` is null and the copy says to try again shortly), or — read
+ * (`dispatched === null`, after a reload) — settings saved but not sent since.
+ * Never for a machine with no runner, and never right after a refusal coord
+ * answered (an unchanged re-send would be refused again).
+ */
+export function canResendUnchanged(state: CiNodeConfigState): boolean {
+  if (state.reachability === "unlinked") return false;
+  if (dispatchRefusalCopy(state)?.deferred) return true;
+  if (
+    state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
+    state.dispatch_error === MODEL_ACCESS_UNCONFIRMED
+  ) {
+    return true;
+  }
+  if (state.dispatched === false && state.dispatch_status === null) return true;
+  return state.dispatched === null && savedButUnsent(state);
+}
 
 /** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
 export const MAX_CONCURRENT_BUILDS_MIN = 1;
@@ -787,7 +842,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         {state.configured ? (
           <p>
             {state.dispatched_at
-              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.`
+              ? `Last sent to the machine ${new Date(state.dispatched_at).toLocaleString()}. The runner does not acknowledge settings, so "sent" is as far as this goes.${savedButUnsent(state) ? " Saved again since then, and not sent from qontinui.io since." : ""}`
               : "Saved here, but never successfully sent to the machine."}
           </p>
         ) : (
@@ -801,8 +856,13 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             need: whether this is theirs to fix. */}
         {refusal && (
           <div
-            className="space-y-1 text-destructive"
+            className={
+              refusal.deferred
+                ? "space-y-1 text-muted-foreground"
+                : "space-y-1 text-destructive"
+            }
             data-testid="ci-node-dispatch-refusal"
+            data-deferred={refusal.deferred ? "true" : "false"}
             data-dispatch-status={state.dispatch_status ?? ""}
             data-dispatch-error={state.dispatch_error ?? ""}
             data-fixable-here={refusal.fixableHere ? "true" : "false"}
@@ -824,7 +884,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Button
           variant="brand-primary"
           size="sm"
-          disabled={saving || !dirty}
+          disabled={saving || (!dirty && !canResendUnchanged(state))}
           data-testid="ci-node-apply"
           onClick={handleApply}
         >
