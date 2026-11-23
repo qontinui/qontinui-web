@@ -39,17 +39,20 @@ posture). On top of that:
 
 Holdout
 =======
+The split is assigned when the site is created (``POST /sites``), by the
+domain hash alone (``services.design_refs.intake_split``), and never changes.
 Agent-facing reads — ``POST /search``, ``GET /examples/{level}/{id}``,
 ``POST /similar-by-style``, ``POST /compare-to-references`` and
-``GET /principles`` evidence — never return a holdout site, nor one whose split
-is not yet assigned. Only an operator principal may pass
-``include_holdout=true`` (the review UI); any other caller sending it gets 403.
-The CRUD reads (the worker's plumbing) hide ASSIGNED holdout sites from a
-non-operator but keep unassigned ones visible, so a worker can attach pages to
-a site it just created; they are not references. The same rule hides an
-assigned holdout's source copies and bundle from a paired device. A
-non-operator never sees an OPERATOR judgement that touches a site which is not
-a reference — decided per row over every target it names, so a comparison of a
+``GET /principles`` evidence — never return a holdout site, nor one whose
+context is not yet confirmed: they serve a CONFIRMED REFERENCE site only. Only
+an operator principal may pass ``include_holdout=true`` (the review UI); any
+other caller sending it gets 403. The CRUD reads (the worker's plumbing) hide a
+CONFIRMED holdout from a non-operator but keep every unconfirmed site visible,
+whatever its split, so a worker can attach pages to a site it just created;
+an unconfirmed site is not a reference. The same rule hides a confirmed
+holdout's source copies and bundle from a paired device. A non-operator never
+sees an OPERATOR judgement that touches a site which is not a confirmed
+reference — decided per row over every target it names, so a comparison of a
 reference page against a holdout one is hidden through either side — and the
 correction log (which carries the operator's edits) is operator-only: an AI
 judge never sees the operator's judgements of a holdout.
@@ -350,10 +353,10 @@ async def _owned[RowT](
 async def _site_or_404(
     db: AsyncSession, principal: MemoryPrincipal, site_id: UUID
 ) -> Site:
-    """A site of the tenant a CRUD read may show this caller: an ASSIGNED
+    """A site of the tenant a CRUD read may show this caller: a CONFIRMED
     holdout is hidden from every non-operator."""
     site = await _owned(db, Site, principal.tenant_id, site_id)
-    if site is None or (site.split == "holdout" and not is_operator(principal)):
+    if site is None or (svc.is_hidden_holdout(site) and not is_operator(principal)):
         raise _not_found("site")
     return site
 
@@ -777,6 +780,8 @@ async def create_site(body: SiteCreate, principal: Principal, db: Db) -> SiteOut
         tenant_id=principal.tenant_id,
         **body.model_dump(exclude={"domain"}),
         domain=domain,
+        split=await svc.intake_split(db, principal.tenant_id, domain),
+        split_assigned_at=datetime.now(UTC),
     )
     db.add(site)
     await db.commit()
@@ -801,7 +806,9 @@ async def list_sites(
     if tier is not None:
         stmt = stmt.where(Site.tier == tier)
     if not is_operator(principal):
-        stmt = stmt.where(or_(Site.split.is_(None), Site.split != "holdout"))
+        stmt = stmt.where(
+            or_(Site.split != "holdout", Site.context_state != "confirmed")
+        )
     stmt = stmt.order_by(Site.created_at.desc()).limit(limit).offset(offset)
     return [SiteOut.model_validate(row) for row in (await db.execute(stmt)).scalars()]
 
@@ -821,7 +828,7 @@ async def update_site(
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "split_immutable",
-            "split is assigned once, at the first context confirmation, and "
+            "split is assigned once, at intake, by a hash of the domain, and "
             "never changes: a site an agent has seen cannot become a clean "
             "holdout.",
             split=site.split,
@@ -857,20 +864,13 @@ async def confirm_context(
     site_id: UUID, body: ContextConfirm, principal: Principal, db: Db
 ) -> SiteOut:
     """The operator confirms (and may edit) the site context. Every edited
-    field goes to the correction log; the first confirmation assigns
-    ``split``."""
+    field goes to the correction log. The split was assigned at intake and is
+    not touched here."""
     require_operator(principal, "confirm a site context")
     site = await _site_or_404(db, principal, site_id)
     edits = body.model_dump(exclude_unset=True)
     family = edits.get("style_family", site.style_family)
-    if family is None:
-        raise _refusal(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "style_family_required",
-            "A site context is confirmed with a style family: the holdout split "
-            "is drawn within it.",
-        )
-    if await db.get(StyleFamily, family) is None:
+    if family is not None and await db.get(StyleFamily, family) is None:
         raise _refusal(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "unknown_style_family",
@@ -892,7 +892,6 @@ async def confirm_context(
         site.context_state = "confirmed"
         site.context_confirmed_at = datetime.now(UTC)
         site.context_confirmed_by = principal.user_id
-    await svc.assign_split(db, site)
     await db.commit()
     await db.refresh(site)
     return SiteOut.model_validate(site)
@@ -1840,7 +1839,7 @@ async def _judgements(
     """The judgements of ``target_ids`` this caller may see.
 
     A non-operator never sees an OPERATOR row that touches a site which is
-    not a reference (a holdout, or not yet split) — decided per row over
+    not a confirmed reference (a holdout, or unconfirmed) — decided per row over
     EVERY target the row names, so a comparison of a reference page against
     a holdout one stays hidden when read through the reference side."""
     if not target_ids:
@@ -1872,7 +1871,8 @@ async def _judgements(
 
     def reference(target: UUID) -> bool:
         site = sites.get(target)
-        return site is not None and splits.get(site) == "reference"
+        state = splits.get(site) if site is not None else None
+        return state is not None and svc.is_agent_reference_state(*state)
 
     ratings = [r for r in ratings if r.rater_kind == "ai" or reference(r.target_id)]
     comparisons = [
@@ -2360,7 +2360,7 @@ async def list_personality(
         SitePersonality.tenant_id == principal.tenant_id,
         SitePersonality.site_id == site.id,
     )
-    if not is_operator(principal) and site.split != "reference":
+    if not is_operator(principal) and not svc.is_agent_reference(site):
         stmt = stmt.where(SitePersonality.rater_kind == "ai")
     rows = await db.execute(stmt.order_by(SitePersonality.created_at))
     return [PersonalityOut.model_validate(r) for r in rows.scalars()]
@@ -2469,7 +2469,7 @@ async def attach_evidence(
     principle_id: UUID, body: EvidenceAttach, principal: Principal, db: Db
 ) -> PrincipleEvidenceOut:
     """Cite a rating or comparison. ``site_ids`` are derived server-side
-    from its targets; evidence touching a holdout (or not-yet-split) site is
+    from its targets; evidence touching a holdout or unconfirmed site is
     refused here, at insert."""
     principle = await _owned(db, DesignPrinciple, principal.tenant_id, principle_id)
     if principle is None:
@@ -2480,13 +2480,17 @@ async def attach_evidence(
     if not site_ids:
         raise _not_found(body.evidence_kind)
     splits = await svc.site_splits(db, principal.tenant_id, site_ids)
-    not_reference = [str(s) for s in site_ids if splits.get(s) != "reference"]
+    not_reference = [
+        str(s)
+        for s in site_ids
+        if not (s in splits and svc.is_agent_reference_state(*splits[s]))
+    ]
     if not_reference:
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "holdout_evidence_refused",
-            "Evidence touching a holdout site, or a site not yet split, is never "
-            "cited for a principle.",
+            "Evidence touching a holdout site, or a site whose context is not "
+            "confirmed, is never cited for a principle.",
             site_ids=not_reference,
         )
     existing = await db.get(
@@ -2619,17 +2623,39 @@ async def corpus_balance(principal: Principal, db: Db) -> CorpusBalance:
 
     rows = await db.execute(
         select(
-            Site.style_family, Site.industry, Site.price_tier, Site.split, func.count()
+            Site.style_family,
+            Site.industry,
+            Site.price_tier,
+            Site.split,
+            Site.context_state,
+            func.count(),
         )
         .where(Site.tenant_id == principal.tenant_id)
-        .group_by(Site.style_family, Site.industry, Site.price_tier, Site.split)
-        .order_by(Site.style_family, Site.industry, Site.price_tier, Site.split)
+        .group_by(
+            Site.style_family,
+            Site.industry,
+            Site.price_tier,
+            Site.split,
+            Site.context_state,
+        )
+        .order_by(
+            Site.style_family,
+            Site.industry,
+            Site.price_tier,
+            Site.split,
+            Site.context_state,
+        )
     )
     report = await svc.correlation_report(db, principal.tenant_id)
     return CorpusBalance(
         cells=[
             BalanceCell(
-                style_family=r[0], industry=r[1], price_tier=r[2], split=r[3], n=r[4]
+                style_family=r[0],
+                industry=r[1],
+                price_tier=r[2],
+                split=r[3],
+                context_state=r[4],
+                n=r[5],
             )
             for r in rows.all()
         ],

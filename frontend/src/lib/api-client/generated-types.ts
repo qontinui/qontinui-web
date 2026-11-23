@@ -4835,7 +4835,7 @@ export interface paths {
         /**
          * Attach Evidence
          * @description Cite a rating or comparison. ``site_ids`` are derived server-side
-         *     from its targets; evidence touching a holdout (or not-yet-split) site is
+         *     from its targets; evidence touching a holdout or unconfirmed site is
          *     refused here, at insert.
          */
         post: operations["api_v1_design_refs_principles_principle_id_evidence_post"];
@@ -5004,8 +5004,8 @@ export interface paths {
         /**
          * Confirm Context
          * @description The operator confirms (and may edit) the site context. Every edited
-         *     field goes to the correction log; the first confirmation assigns
-         *     ``split``.
+         *     field goes to the correction log. The split was assigned at intake and is
+         *     not touched here.
          */
         post: operations["api_v1_design_refs_sites_site_id_context_confirm_post"];
         delete?: never;
@@ -16534,6 +16534,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repos/{repo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Pr Merge Onboarding Repo
+         * @description Stop governing an enrolled repo: un-enroll it with a recorded reason.
+         *
+         *     Proxies coord's ``DELETE /coord/canonical-repos?repo=<owner/name>``, the
+         *     door ``coord_onboard_unenroll_repo`` shares one core with, and sends the
+         *     reason beside it as ``reason`` (read by coord from plan Phase 7 on). The
+         *     ``owner/name`` path param carries a slash, so it is a ``{repo:path}`` here
+         *     (the restore route's shape); it travels to coord as the ``repo`` query
+         *     parameter. Backs the "Stop governing" action on an enrolled row of the
+         *     Connected Organizations card; the row's undo is Re-enroll (the restore
+         *     route above), on the same card.
+         *
+         *     Authz — ``require_coord_tenant_admin_target``: admin IN THE ACTIVE TENANT,
+         *     the tenant the write lands in. Coord re-checks its own, stricter bar
+         *     (``strategy_admin``) on the forwarded bearer and refuses with ``403
+         *     strategy_admin_required``.
+         *
+         *     Refused HERE, with nothing sent to coord:
+         *       * ``400 {"error": "invalid_repo"}`` — the path is not ``owner/name``;
+         *       * ``400 {"error": "reason_required"}`` — no reason, or only whitespace.
+         *         Un-enrolling is sticky and silent (the repo stops appearing wherever
+         *         coord lists governed repos), so the WHY is required at this door, where
+         *         coord itself treats it as optional (``coord_onboard_unenroll_repo``
+         *         today, the HTTP door's ``reason`` from plan Phase 7);
+         *       * ``400 {"error": "reason_too_long", "max_length": <cap>}`` — over
+         *         :data:`UNENROLL_REASON_MAX` after trimming.
+         *
+         *     Coord's answers:
+         *       * ``204`` — the tenant's governance rows were removed and the tombstone
+         *         written. Answered here as a BODILESS ``204``: not through
+         *         ``_proxy_coord_delete``, which turns a ``204`` into ``200 {"status":
+         *         "ok"}``, and not as the JSON response the verbatim helper builds for
+         *         it (``_proxy_coord_verbatim`` wraps coord's empty body as ``{"detail":
+         *         ""}``, a recorded oddity of that helper's characterization suite,
+         *         ``tests/test_coord_proxy_contract.py``), because a 204 carries no
+         *         content;
+         *       * ``404 {"error": "repo not found: <repo>", "tombstoned": bool, "note":
+         *         str}`` — nothing of the caller tenant's was removed. ``tombstoned``
+         *         says whether a suppression was written anyway and ``note`` says what
+         *         that means for the tenant; both pass through VERBATIM, whatever coord
+         *         sends, because their meaning moves with coord (plan Phase 7 answers
+         *         ``tombstoned: false`` for a tenant that does not govern the repo);
+         *       * any other refusal (``403 strategy_admin_required``, ``400``, ``500``)
+         *         — status and body verbatim.
+         *
+         *     Transport failures are the web's own refusals (``_proxy_coord_verbatim``):
+         *     ``502 coord_unreachable`` (coord never saw the request), ``504
+         *     coord_write_timeout`` / ``answer_lost`` (the removal may have been
+         *     applied — re-read before retrying).
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repos_repo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -18322,6 +18389,63 @@ export interface paths {
          *     ``request`` is also required by the slowapi limiter.
          */
         patch: operations["api_v1_operations_tenants_tenant_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Topics
+         * @description List the tenant's topics — proxy coord's ``GET /coord/topics``.
+         *
+         *     coord answers ``{"as_of", "tables_ready", "unassigned_subprojects",
+         *     "topics": [...]}``; each topic carries its cached rollup (``headline``,
+         *     ``top_reason``, ``subprojects_total``, ``subprojects_working``,
+         *     ``unknown_members``, ``last_activity_at``, ``last_rollup_as_of``), any of
+         *     which may be ``null`` — unknown, never zero. ``status`` and ``limit`` are
+         *     forwarded only when set. A coord whose migration has not applied answers
+         *     ``503 {"error": "schema_migration_pending"}``, which reaches the browser as
+         *     that object.
+         */
+        get: operations["api_v1_operations_topics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/topics/{topic_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Topic
+         * @description One topic with its members — proxy coord's ``GET /coord/topics/{id}``.
+         *
+         *     The body is coord's verbatim: ``topic`` (the list fields plus
+         *     ``next_steps``, ``intent_ref``, ``aliases``, ``created_by`` and
+         *     ``merged_into``), ``members`` (each subproject with its ``weight``,
+         *     ``state``, ``decided_by`` and the ``basis`` entries that put it there),
+         *     ``children`` and ``history``. coord answers 404 for an id that is unknown
+         *     in the caller's tenant, and 503 ``schema_migration_pending`` before its
+         *     migration applies; both pass through as objects.
+         */
+        get: operations["api_v1_operations_topics_topic_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/operations/trees/by-device/{device_id}": {
@@ -29400,6 +29524,11 @@ export interface components {
         };
         /** BalanceCell */
         BalanceCell: {
+            /**
+             * Context State
+             * @enum {string}
+             */
+            context_state: "proposed" | "confirmed";
             /** Industry */
             industry: string | null;
             /** N */
@@ -29409,8 +29538,11 @@ export interface components {
              * @enum {string}
              */
             price_tier: "budget" | "mid" | "premium" | "luxury" | "unknown";
-            /** Split */
-            split: ("reference" | "holdout") | null;
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "reference" | "holdout";
             /** Style Family */
             style_family: string | null;
         };
@@ -52947,10 +53079,16 @@ export interface components {
              * @enum {string}
              */
             review_state: "pending" | "approved" | "rejected";
-            /** Split */
-            split: ("reference" | "holdout") | null;
-            /** Split Assigned At */
-            split_assigned_at: string | null;
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "reference" | "holdout";
+            /**
+             * Split Assigned At
+             * Format: date-time
+             */
+            split_assigned_at: string;
             /** Style Family */
             style_family: string | null;
             /** Tags */
@@ -84448,6 +84586,38 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_pr_merge_onboarding_repos_repo_delete: {
+        parameters: {
+            query: {
+                /** @description Why coord stops governing the repository, recorded on the un-enrollment tombstone. Required and non-blank; at most 500 characters after trimming. */
+                reason: string;
+            };
+            header?: never;
+            path: {
+                repo: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_pr_merge_onboarding_repos_repo_restore_post: {
         parameters: {
             query?: never;
@@ -86420,6 +86590,70 @@ export interface operations {
                 "application/json": components["schemas"]["TenantRenameIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_topics_get: {
+        parameters: {
+            query?: {
+                /** @description Lifecycle filter, forwarded as sent: `proposed`, `active`, `dormant`, `retired` (coord's vocabulary; coord decides the default). */
+                status?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_topics_topic_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -4,18 +4,21 @@
  * A dial that reports what was WRITTEN rather than what RESOLVES is worse than
  * no dial: it tells the operator the fleet is in a state it is not in, and
  * nothing else on the page contradicts it. This domain adds a second way to get
- * that wrong, because coord answers `effective_level: "off"` for three
- * different facts and they do NOT all resolve the same way:
+ * that wrong, because three different facts must stay distinguishable. Since
+ * qontinui-coord#4239, coord serves the typed default as `effective_level`
+ * when no row matches (before it, that answer read `"off"`):
  *
  * | Row | `effective_level` | `resolved_scope` | In force |
  * |---|---|---|---|
- * | none | `"off"` | `"none"` | `tightening_only` — the code default |
+ * | none | `"tightening_only"` — coord's typed default | `"none"` | `tightening_only`, flagged defaulted |
  * | present, master off | `"off"` | the band | `off` — an operator's choice |
  * | present, unparseable level | the raw string | the band | `off` — fail-closed |
+ * | none, unparseable level | the raw string | `"none"` | UNKNOWN — vocabulary skew |
  *
- * Collapsing the first into `off` disables, on screen, a capability every
- * untouched tenant is using. Collapsing the third into the default reports a
- * broken row as working. Both are pinned below.
+ * Labelling the first as an operator's choice misreports an untouched tenant.
+ * Collapsing the third into a default reports an unreadable row as working;
+ * showing the fourth as `off` claims a level coord is not enforcing. All are
+ * pinned below.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -66,7 +69,8 @@ const SectionGuard = withPageGuard(PINNED_PAGE);
 /** Nobody has ever written a row for this tenant. */
 const NO_ROW = {
   domain: "policy_write",
-  effective_level: "off",
+  // coord's typed default, served with no row (qontinui-coord#4239).
+  effective_level: "tightening_only",
   master_enabled: false,
   resolved_scope: "none",
   can_edit: true,
@@ -103,8 +107,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("usePolicyWritePolicy — 'no row' is the code default, not off", () => {
-  it("resolves a missing row to tightening_only and flags it as defaulted", async () => {
+describe("usePolicyWritePolicy — 'no row' is coord's served default", () => {
+  it("shows the served default for a missing row and flags it as defaulted", async () => {
     getMock.mockResolvedValue(NO_ROW);
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
@@ -112,10 +116,11 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    // The raw wire value. Rendering THIS is the bug the hook exists to avoid.
-    expect(result.current.policy?.effective_level).toBe("off");
-    // What coord actually enforces when no row matched.
+    // What coord serves, and enforces, when no row matched.
+    expect(result.current.policy?.effective_level).toBe("tightening_only");
     expect(result.current.displayLevel).toBe("tightening_only");
+    expect(result.current.unrecognizedLevel).toBeNull();
+    expect(result.current.defaultUnreadable).toBe(false);
     expect(result.current.isDefaulted).toBe(true);
     expect(getMock).toHaveBeenCalledWith(
       expect.stringContaining("domain=policy_write")
@@ -131,9 +136,34 @@ describe("usePolicyWritePolicy — 'no row' is the code default, not off", () =>
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // A row exists, so `off` is an operator's decision and must survive intact.
-    // Keying the default on `effective_level === "off"` instead of on the scope
-    // band would convert this back to `tightening_only` and make the dial
-    // unturnoffable.
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(false);
+  });
+
+  it("reads the served default rather than a console copy of it", async () => {
+    // A no-row answer serving a level that is NOT the old console constant:
+    // only reading `effective_level` passes this; a revert to a hardcoded
+    // `tightening_only` fails it.
+    getMock.mockResolvedValue({ ...NO_ROW, effective_level: "full" });
+
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.displayLevel).toBe("full");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.unrecognizedLevel).toBeNull();
+  });
+
+  it("honours a master-disabled row as off", async () => {
+    getMock.mockResolvedValue({ ...OFF_TENANT, master_enabled: false });
+
+    const { result } = renderHook(() => usePolicyWritePolicy(), {
+      wrapper: SectionGuard,
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
     expect(result.current.displayLevel).toBe("off");
     expect(result.current.isDefaulted).toBe(false);
   });
@@ -157,7 +187,7 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     // stored string as "in force" would report a fleet that is fully blocked as
     // one running the ordinary default.
     expect(result.current.displayLevel).toBe("off");
-    // Deliberately NOT the no-row default: nobody-ruled and ruled-unreadably
+    // Deliberately NOT the typed default: nobody-ruled and ruled-unreadably
     // are different facts and resolve in opposite directions.
     expect(result.current.displayLevel).not.toBe("tightening_only");
     expect(result.current.isDefaulted).toBe(false);
@@ -177,18 +207,22 @@ describe("usePolicyWritePolicy — an unparseable level is off, not the default"
     expect(result.current.unrecognizedLevel).toBeNull();
   });
 
-  it("does not flag the no-row case as unrecognised", async () => {
-    // `NO_ROW` carries `effective_level: "off"`, which IS in the vocabulary —
-    // but the branch order matters: `isDefaulted` must win, or an untouched
-    // tenant would be reported as a broken row.
-    getMock.mockResolvedValue(NO_ROW);
+  it("shows a no-row answer whose served level is unparseable as UNKNOWN", async () => {
+    // Vocabulary skew: coord serving, with no row, a default this console does
+    // not know. Coord enforces that default, so `off` would be false; the
+    // console used to substitute its own copy of `tightening_only` here,
+    // which masked this.
+    getMock.mockResolvedValue({ ...NO_ROW, effective_level: "tighten" });
 
     const { result } = renderHook(() => usePolicyWritePolicy(), {
       wrapper: SectionGuard,
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.unrecognizedLevel).toBeNull();
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.defaultUnreadable).toBe(true);
+    expect(result.current.displayLevel).toBeNull();
+    expect(result.current.unrecognizedLevel).toBe("tighten");
   });
 });
 

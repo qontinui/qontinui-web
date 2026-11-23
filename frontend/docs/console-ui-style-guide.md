@@ -4,7 +4,7 @@
 records the patterns the first post-guide page had to add; §3.4 records the
 alerts page's retirement and the Dev Ops Conditions panel; §3.5 records the computers console; §3.6 the CI dashboard; §3.7 adds the
 share primitives; §6.5 adds the presentation lens)
-**Last Updated:** 2026-10-24
+**Last Updated:** 2026-11-19
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
 `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
@@ -92,10 +92,49 @@ citation already written points at the wrong scope.
   `/automation-rules`, `/prompt-documents`) take **R9 (chrome) and R3 (palette)
   only**. R1/R2/R5 are about list surfaces and do not apply to a form.
 
-The general house styling rules still apply underneath this guide, not instead of
-it: `src/styles/components.css` for the CSS classes used in JSX, `src/config/theme.ts`
-for programmatic values. This guide adds _composition_ rules those two files cannot
-express.
+The general house styling layers still apply underneath this guide, not instead of
+it:
+
+- **Components:** `src/components/ui/*` — the shadcn-style primitives (`Button`,
+  `Badge`, `Card`, `Input`, …) imported as `@/components/ui/<name>`. This is the
+  component layer to compose from; the console primitives of
+  [§3](#3-the-primitive-catalogue) are built on top of it.
+- **Class families:** `src/styles/components.css` holds about 130 classes in two
+  groups.
+  - _Families with a primitive equivalent_ are legacy: `.btn-*` (`Button`),
+    `.card*` (`Card`), `.badge*` (`Badge`), `.input` (`Input`), `.select`
+    (`Select`), `.checkbox` (`Checkbox`), `.radio` (`RadioGroup`) and
+    `.form-label` (`Label`), all from `@/components/ui/*`. New code uses the
+    primitive and does not extend these families.
+  - _The remaining families have no primitive yet_ and stay in `components.css`:
+    `.form-group` and `.form-error`, `.panel*`, `.explorer-panel*`,
+    `.item-card*`, `.tab-*` (the accent and container classes; `ui/tabs` carries
+    no accent variants), `.log-*`, `.status-*`, `.empty-state*`, `.scroll-area*`
+    / `.scroll-container` (plain overflow utilities, unlike the Radix
+    `ui/scroll-area`), `.scrollbar-*`, `.z-*`, `.elevation-*`, `.glow-*`,
+    `.pulse-glow`, `.gradient-text`, `.grid-*`, `.animate-*`,
+    `.layout-full-height`, the `.text-*` typography scale, and
+    `.text-ellipsis-start`, which is a truncation utility rather than
+    typography.
+  - To see how much code still uses the legacy families, run from the repo root
+    `git grep -lE 'className="([^"]* )?(btn-|card-|badge-|form-label)' -- 'frontend/src/*.tsx' 'frontend/src/*.ts' | wc -l`.
+    It returned **18** on 2026-11-21. It counts `.ts`/`.tsx` files under
+    `frontend/src` containing a literal `className="..."` string with a class
+    that starts with `btn-`, `card-` or `badge-`, or is `form-label`. Every
+    class it matched that day is defined in `components.css`, and none of the
+    18 files restyles one locally, so all 18 are legacy-family uses. It misses
+    the bare `.card`, `.badge`, `.input`, `.select`, `.checkbox` and `.radio`
+    classes, and any class passed through `className={...}` or `cn()`.
+- **Programmatic values:** `src/config/theme.ts` (`colors.*`, `shadows.*`,
+  `spacing.*`, `reactFlow.*`).
+- **Generated token layer:** `src/config/tokens.css`, `theme.css` and `tokens.ts`,
+  compiled from `design/language.dtcg.json` by `design-kit compile` (§6.1). They are
+  not hand-edited, `tokens.css` / `tokens.ts` are inert unless imported, and
+  `theme.css` must not be imported in this app — see §6.1. The app's runtime colour
+  variables still come from `@qontinui/design-tokens/css`, imported by
+  `src/app/globals.css`.
+
+This guide adds _composition_ rules those layers cannot express.
 
 ---
 
@@ -1863,6 +1902,43 @@ shipped silently:
 | **A reference opens where it lives, or says why it cannot**                                  | `subprojects/RefLink.tsx` over `subprojectStatus.ts` (`refTarget`)                                                                                | A console link (a session, gate, question, work unit or other subproject), a new tab for a GitHub PR (an `https:` url only), or plain text whose `title` — and screen-reader text — names why it is not linked: a work unit whose slug is not known, since its page is slug-keyed. A session that joined through a gate's continuation links "its gate" in its sentence; the raw `via_ref` is on the raw line (R8). A reason whose cause lies in another subproject shows that subproject's headline — its badge, in its attention colour — beside the ref to it (D6), and nothing when coord sent no headline this build knows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §3.12's "a control with nowhere to go … says why", applied to a reason's reference list.                                                                                                                                                                                                                                                                                                                      |
 | **A link about a row lives in its expansion, not on its line**                               | `subprojects/SubprojectChip.tsx` (`SubprojectChipText`, `SubprojectChipCell`), `sessions/SessionsConsole.tsx`, `sessions/SessionRowExpansion.tsx` | A `/sessions` row names its subproject on the line as TEXT, in the LAST column and only from `xl` (the line's fixed columns already fill it at `md` and `lg`); the link is beside "Open full view ↗" in the expanded row, at every width. A row's line is one `<button>` (R5), and a link inside it would be nested interactive content that toggles the row as well. Sessions are looked up in batches of at most 200, the rows on screen first: a new one at once, a failed lookup after a minute, and every other answer — a membership included, since a session can be moved and a headline changes — after about three. An answer stays on screen while it is re-read, and a failed re-read keeps it, said to be not current; only a session never answered is a "lookup failed" dash. The console's one list poll is that lookup's slow poll, so it adds no timer. Its accessible names are short ("subproject: dashboards, stalled"; "subproject: none"); the full sentence is the title.                                                                                                                                                                                                                                                                                 | R2 fixes the line's slots and R5 makes the line the toggle; neither said where a per-row link goes once the line carries a column that names something linkable.                                                                                                                                                                                                                                              |
 
+### 3.17 The topics console — recorded under §6.4
+
+`/admin/coord/topics` and its `[id]` detail (plan
+`2026-11-16-subproject-topics-agents-and-coord-group-subprojects-into-topics-without-the-operator`
+Phase 8, D9) compose `HealthStrip`, `FilterTabs`, `RecordList`/`RecordRow`/
+`RecordDetail`, `StatusBadge`, `RowTime`, `CollapsiblePanel` and
+`RefreshButton`, and register one palette in `CONSOLE_PALETTES` from
+`components/admin/coord/topics/topicStatus.ts`: a topic's rolled-up headline,
+in the subprojects' own vocabulary and hues. It adds no primitive. Three things
+are recorded rather than shipped silently:
+
+- **Tab counts are counted from the one list coord serves.** coord's
+  `GET /coord/topics` is unpaginated, so each tab's count is the loaded list
+  filtered by headline — `–` on every tab until a read answered, and a `*`
+  note on every tab when the latest read failed and the list is the last good
+  one. A topic never rolled up (`headline: null`) is listed under All only and
+  counted by the strip's `unknown` badge. A `503 schema_migration_pending` is
+  said as "topics not available yet (migration pending)", never as no topics.
+- **The subprojects list's Topic column reads the list's own `topic`, beside
+  its `topics_status`.** Each row's time slot leads with `topic <title>`, or
+  `no topic` when coord sent `topic: null` under `topics_status: "ok"`. A
+  `null` under `"unavailable:<reason>"`, or a list with no `topics_status` (an
+  older coord), is `topic –` titled with the reason — never "no topic". The
+  rows' topics are `ok` only when every read behind them said so. "Group by
+  topic" groups the loaded rows by topic, named topics by title and "No
+  topic" last, from those same fields — no per-topic read. While the topics
+  are unknown it is a disabled control whose title names the reason (the
+  title sits on a wrapper, since a disabled button shows none).
+- **A 200 with `tables_ready: false` is unknown everywhere on the page.**
+  An amber notice says the list is not authoritative, the strip reads "Topic
+  tables not ready", every tab count is `–` and an empty view says whether
+  any topic is in it is unknown — never "No topic yet." On the detail page a
+  `parent_topic_id` is a "Part of its parent topic" link and an `intent_ref`
+  is named ("Anchored to intent `kind/name`, claim …"); an absent parent or
+  anchor shows nothing, since an unparented or unanchored topic is a normal
+  state rather than an unknown one.
+
 ---
 
 ## 4. The attention palette
@@ -2047,37 +2123,79 @@ made it unreadable and moved the cost onto the reader.
 mechanisms. Putting them all in one file would make three of them unenforceable —
 so each has one home, and this table says plainly which ones actually gate a PR.
 
-| Layer                                                                   | Artefact                                                                                            | Enforced by                                                                                                                               | Gates a PR?                                                                                                                       |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`)                                           | Human review; cited from every console component's module doc                                                                             | **No** — review only                                                                                                              |
-| **Executable** — the primitives every console page composes from        | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx`          | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't                            | **Yes** — `tsc` + `vitest`                                                                                                        |
-| **Declarative atoms** — density and palette as CSS-property rules       | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`)                             | **Nothing. There is no evaluator for this file anywhere in the fleet.**                                                                   | **No**                                                                                                                            |
-| **CI-enforced atoms** — what actually bites                             | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock`               | **Yes, but indirectly** — the workflow is _not_ a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
-| **Lint** — the shapes that must not come back                           | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures)                         | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite | **Yes** — `npm run lint --max-warnings 0`                                                                                         |
+| Layer                                                                   | Artefact                                                                                                                     | Enforced by                                                                                                                                                | Gates a PR?                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`)                                                                    | Human review; cited from every console component's module doc                                                                                              | **No** — review only                                                                                                                                                                                                                                                                                                           |
+| **Executable** — the primitives every console page composes from        | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx`                                   | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't                                             | **Yes** — `tsc` + `vitest`                                                                                                                                                                                                                                                                                                     |
+| **Declarative atoms** — density and palette as CSS-property rules       | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`), generated from `frontend/design/language.dtcg.json` | `design-kit compile --check` + `design-kit validate-guide` over two fixtures, in `design-guide.yml`'s `design-guide` job (§6.1). Not over the app's routes | **Yes, but indirectly** — not a required check yet (requiring it is Phase 9 of plan `2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check`); a red run holds the PR in coord's merge train, as the style gate's does (§6.2). It covers drift and the rules themselves, not a page's conformance. See §6.1 |
+| **CI-enforced atoms** — what actually bites                             | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json`                          | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock`                                | **Yes, but indirectly** — the workflow is _not_ a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2                                                                                                                                                                                              |
+| **Lint** — the shapes that must not come back                           | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures)                                                  | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite                  | **Yes** — `npm run lint --max-warnings 0`                                                                                                                                                                                                                                                                                      |
 
-### 6.1 The declarative layer has no evaluator — say so, do not imply otherwise
+### 6.1 The declarative layer is generated, and the `validate-guide` step evaluates it
 
-`qontinui-web.styleguide.uibridge.json` is a real, schema-valid record (6 tokens,
-15 CSS-property rules conforming to the UI Bridge `StyleGuideConfig` type). It is
-also read by **nothing**:
+`qontinui-web.styleguide.uibridge.json` is **generated**, not hand-written. Its
+source is `frontend/design/language.dtcg.json`, which imports
+`@qontinui/design-tokens` (at a git ref, recorded in the compile report) and
+states only what the package does not: the type-scale unit, the spacing and
+radius scales, breakpoints, depth, weights, leading and tracking, the state
+contract and the density budget, each `authored(<notification_ref>)`. Colour
+and the type family are identity values: they are resolved from the package
+or left `undeclared`, never authored. `design-kit compile` (from
+`qontinui/qontinui-design-kit`, pinned by `frontend/design/kit/package-lock.json`)
+writes the guide and its siblings (`tokens.css`, `tokens.ts`, `theme.css`,
+`compile-report.json`, `design-budgets.json`, `visual-system.thresholds.json`)
+into `frontend/src/config/`. Edit the source and recompile; a hand edit to any
+of those files fails CI.
 
-- `.github/workflows/style-gate.yml` runs `vision-audit analyze --analyzer all`
-  (`:568`) and `vision-audit assert --assertions <spec>` (`:596`). It never reads
-  the styleguide JSON.
-- `vision-audit` has **no style-guide input at all** — zero matches for
-  `styleguide|style_guide|StyleGuide` across `qontinui-schemas`.
-- Nothing under `qontinui-web/` references the file: zero matches for
-  `styleguide.uibridge` or `STYLE_GUIDE_FILE_EXTENSION` outside `node_modules`.
+Three of those siblings are not for this app to consume: `tokens.ts` and
+`tokens.css` are inert unless imported, and **`theme.css` must not be imported
+here** — it opens `@theme inline { --*: initial; ... }`, which would wipe the
+app's whole Tailwind default theme. They are committed because `compile --check`
+compares every output.
 
-The file is discovered only by the UI Bridge SDK's **filename convention**
+The `Generated style guide (compile --check + validate-guide)` job in
+`.github/workflows/design-guide.yml` (hosted runner) evaluates it. That
+workflow has no `paths:` filter: it runs in full on every pull request and on
+`main`, `develop` and coord's merge-candidate refs, so the check reports on a
+backend-only PR too.
+
+- `design-kit compile --check` fails when the committed outputs differ from a
+  fresh compile of the source.
+- `design-kit validate-guide` runs every rule of the guide through the UI
+  Bridge's published `validateElement` (via `@qontinui/ui-bridge-wrapper`'s
+  `ui-bridge-inject`) over `frontend/design/fixtures/conforming.html`, which
+  must pass, and over `off-scale.html`, which must fail with exit 1 and name each
+  of its four seeded violations (`palette-color`, `palette-background-color`,
+  `font-size-on-scale`, `border-radius-on-scale`). The second run is the
+  negative control: a step that cannot redden proves nothing. Exit 3 (the
+  instrument could not measure) fails the job in both runs.
+
+Know what this does NOT cover. The job evaluates the guide over the two
+fixtures, **not over the app's routes**, so it shows that the guide's rules
+bite, not that a console page conforms — and today most pages would not:
+
+- **Type scale.** `fontSizes` is the package's `typeScale` times the source's
+  `type.unit` 0.5 (11, 12, 14, 22, 28, 32 px), not the app's Tailwind scale (12,
+  14, 16, 18, 20, 24, 30, 36 px). Text at 16 or 18 px fails `font-size-on-scale`.
+- **Colour.** The palette is the package's. A colour taken from
+  `src/config/theme.ts` instead (its zinc text greys `#E4E4E7`, `#A1A1AA`,
+  `#71717A`, `#52525B`) fails `palette-color`.
+- **Type family.** `fontFamilies` reads `system-ui` / `ui-monospace`: the kit's
+  platform fallbacks for an `undeclared` family, not the app's Geist faces.
+- **Rules no longer carried.** Every hand-written rule is gone: the per-class
+  `.btn-*`, `.card`, `.input` and `.badge` radius, background and font-size
+  rules, the h1–h3 size and weight rules, `btn-font-weight`,
+  `btn-cursor-pointer`, `interactive-cursor`, `body-text-size`,
+  `text-color-compliance` and `font-size-range`. The generated rules are
+  kit-shaped (palette, type scale, radius scale, kit state matrices), and the
+  source has no way to state a per-class rule.
+
+Running `validate-guide` over a route, and deciding the type scale and the
+greys, are follow-ups, not claims this section makes. The UI Bridge SDK still
+discovers the file by its filename convention
 (`STYLE_GUIDE_FILE_EXTENSION` in `ui-bridge/packages/ui-bridge/src/specs/style-types.ts`),
-by a consumer that does not run in this repo's CI. There is no import, so a rename
-or a move would break it silently with no compile error.
-
-Rules added there are **the declarative written-down contract and a human review
-aid. They do not gate a PR. Do not present them as enforcement.** Teaching
-`vision-audit` to evaluate a `StyleGuideConfig` is a real follow-up in
-`qontinui-schemas` — it is not done, and this guide does not assume it.
+so the path is load-bearing; `vision-audit` (`style-gate.yml`) still does not
+read it.
 
 ### 6.2 What the CI layer actually does, and its one trap
 
@@ -2480,7 +2598,8 @@ document.documentElement`.
 - `frontend/docs/architecture-sidebar-navigation.md` — console navigation structure
 - `frontend/docs/STATE_MANAGEMENT.md` — where server state lives (React Query is the
   single source of truth; a health strip derives from it, never re-fetches)
-- `frontend/src/styles/components.css` — the CSS classes used in JSX
+- `frontend/src/components/ui/` — the component primitives to compose from
+- `frontend/src/styles/components.css` — class families: legacy where a `ui/` primitive exists, current where none does
 - `frontend/src/config/theme.ts` — programmatic values (`colors.*`, `spacing.*`)
 - `qontinui-claude-config/knowledge-base/qontinui-specific/shared-frontend-packages.md`
   — the four-layer frontend package split

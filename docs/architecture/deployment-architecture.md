@@ -91,7 +91,7 @@ graph TB
         end
 
         subgraph "Storage Container"
-            MinIO[MinIO S3-Compatible<br/>Port 9000<br/>Local Object Storage]
+            ObjStore[versitygw S3-Compatible<br/>Port 9000<br/>Local Object Storage]
         end
 
         subgraph "Email Container"
@@ -108,7 +108,7 @@ graph TB
     NextDev -->|API Proxy| UvicornDev
     UvicornDev --> FastAPIDev
     FastAPIDev -->|Query| PostgresLocal
-    FastAPIDev -->|Store| MinIO
+    FastAPIDev -->|Store| ObjStore
     FastAPIDev -->|Send| Mailhog
     FastAPIDev -->|Cache| RedisLocal
     FastAPIDev -->|ML API| QontinuiAPIDev
@@ -118,7 +118,7 @@ graph TB
     style FastAPIDev fill:#009688
     style PostgresLocal fill:#336791
     style RedisLocal fill:#DC382D
-    style MinIO fill:#C72E49
+    style ObjStore fill:#C72E49
     style Mailhog fill:#6F42C1
 ```
 
@@ -264,7 +264,7 @@ sequenceDiagram
 #### Development Services
 - **PostgreSQL**: Local database instance
 - **Redis**: Local caching instance
-- **MinIO**: S3-compatible local storage
+- **versitygw**: S3-compatible local storage (replaced MinIO)
 - **Mailhog**: Email testing and inspection
 - **Hot Reload**: Automatic code reloading
 
@@ -285,7 +285,7 @@ sequenceDiagram
 | Backend | Uvicorn Dev (localhost:8000) | AWS Elastic Beanstalk + ALB |
 | Database | PostgreSQL (Docker) | AWS RDS PostgreSQL |
 | Cache | Redis (Docker) | Redis Cloud/ElastiCache |
-| Storage | MinIO (Docker) | AWS S3 |
+| Storage | versitygw (Docker) | AWS S3 |
 | Email | Mailhog (Docker) | AWS SES |
 | ASGI Server | Uvicorn (single worker) | Uvicorn (multi-worker) |
 | SSL | None (HTTP) | Automatic (HTTPS) |
