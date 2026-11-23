@@ -4263,6 +4263,117 @@ class TestCiNodeStoredButUnpublished:
         assert body["dispatched_at"] is not None
 
 
+_SUPERSEDED_DETAIL = (
+    "A newer settings change for this machine was sent instead of this one. "
+    "Re-open these settings to see what the machine was sent."
+)
+
+
+class TestCiNodeSupersededByNewer:
+    """Coord answers 200 ``{"dispatched": false, "superseded_by_newer": true}``
+    when a concurrent, newer directive for the same device won its store race
+    (qontinui-coord#4406): nothing was published for THIS request, so the PUT
+    must not report it as delivered. A 2xx whose body carries no
+    ``dispatched: false`` keeps today's delivered reading."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    async def _two_puts(
+        self, async_db_session, test_user, monkeypatch, second_answer, name
+    ) -> tuple[str, dict, int]:
+        """A first PUT coord delivers, then a second PUT answered with
+        ``second_answer``. Returns the first send's ``dispatched_at``, the
+        second PUT's body, and the dispatch attempt count."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        transport = _CiNodeCoordTransport(
+            httpx.Response(200, json={"dispatched": True})
+        )
+        monkeypatch.setattr("app.services.coord_proxy.httpx", transport.scoped_httpx())
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        with patch_coord_proxy_sleep():
+            async with _bearer_client(app) as client:
+                machine_id = await self._machine(client, device_id, name)
+                url = f"{API_PREFIX}/machines/{machine_id}/ci-node"
+                first = await client.put(url, json={"enabled": True})
+                assert first.status_code == 200, first.text
+                sent_at = first.json()["dispatched_at"]
+                assert sent_at is not None
+                transport.answer = second_answer
+                second = await client.put(url, json={"enabled": False})
+        assert second.status_code == 200, second.text
+        return sent_at, second.json(), transport.ci_node_attempts
+
+    @pytest.mark.asyncio
+    async def test_superseded_200_is_not_delivered(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        sent_at, body, attempts = await self._two_puts(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            httpx.Response(
+                200,
+                json={
+                    "dispatched": False,
+                    "stored": False,
+                    "superseded_by_newer": True,
+                },
+            ),
+            "superseded-box",
+        )
+        assert attempts == 2
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 200
+        assert body["dispatch_error"] == "superseded_by_newer"
+        assert body["dispatch_detail"] == _SUPERSEDED_DETAIL
+        # Nothing was published for this request: the earlier send's
+        # timestamp stands.
+        assert body["dispatched_at"] == sent_at
+        # The save itself still landed.
+        assert body["requested"]["enabled"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            httpx.Response(200, json={"dispatched": True}),
+            httpx.Response(200, json={"ok": True}),
+            httpx.Response(200, json={"dispatched": "false"}),
+            httpx.Response(200, json=[{"dispatched": False}]),
+            httpx.Response(200, content=b"accepted"),
+        ],
+        ids=[
+            "dispatched_true",
+            "field_absent_older_coord",
+            "dispatched_not_a_bool",
+            "non_object_body",
+            "non_json_body",
+        ],
+    )
+    async def test_200_without_dispatched_false_is_delivered_as_today(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        answer: httpx.Response,
+    ) -> None:
+        sent_at, body, attempts = await self._two_puts(
+            async_db_session, test_user, monkeypatch, answer, "delivered-box"
+        )
+        assert attempts == 2
+        assert body["dispatched"] is True
+        assert body["dispatch_error"] is None
+        assert body["dispatched_at"] is not None
+        assert body["dispatched_at"] >= sent_at
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User

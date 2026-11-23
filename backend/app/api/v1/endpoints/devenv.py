@@ -1140,6 +1140,34 @@ CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
 )
 
 
+#: ``dispatch_error`` when coord answered 2xx but published nothing for THIS
+#: request: a concurrent, newer directive for the same device won coord's store
+#: race (``dispatched: false, superseded_by_newer: true``), and coord sent that
+#: one instead. Web-owned, like the codes above.
+CI_NODE_SUPERSEDED_BY_NEWER = "superseded_by_newer"
+#: ``dispatch_detail`` for that outcome.
+CI_NODE_SUPERSEDED_BY_NEWER_DETAIL = (
+    "A newer settings change for this machine was sent instead of this one. "
+    "Re-open these settings to see what the machine was sent."
+)
+
+
+def _coord_declined_dispatch(resp: httpx.Response) -> bool:
+    """True when a 2xx body says ``dispatched`` is exactly ``false``.
+
+    Coord answers 200 with ``dispatched: false`` when a newer directive for the
+    same device superseded this one, so nothing was published for THIS
+    request. An absent field, a non-boolean, or an unparseable or non-object
+    body is False and keeps the 2xx-means-delivered reading a coord predating
+    the field relies on.
+    """
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("dispatched") is False
+
+
 def _coord_stored_directive(resp: httpx.Response) -> bool:
     """True only for coord's ``directive_publish_failed`` 502 carrying
     ``stored: true``.
@@ -1384,6 +1412,19 @@ async def set_ci_node_config(
             dispatch_status=resp.status_code,
             dispatch_error=code,
             dispatch_detail=message,
+        )
+
+    if _coord_declined_dispatch(resp):
+        # SUPERSEDED: coord accepted the call but published nothing for it,
+        # because a newer directive for this device won. ``dispatched_at``
+        # does not move — this request's settings never reached the machine.
+        return _ci_node_response(
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_status=resp.status_code,
+            dispatch_error=CI_NODE_SUPERSEDED_BY_NEWER,
+            dispatch_detail=CI_NODE_SUPERSEDED_BY_NEWER_DETAIL,
         )
 
     await machine_repo.update(
