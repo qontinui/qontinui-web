@@ -33,11 +33,13 @@ What is asserted, against the real alembic chain on a throwaway database:
 7. **The step order is load-bearing:** running the revision's own SQL in the
    pre-vet order (backfill ``proposal_live`` before the cleanup) makes the
    index build fail with ``23505``; the shipped order builds it. The module's
-   ``UPGRADE_STEPS`` is pinned to the shipped order, and step 1 already holds
-   ``ACCESS EXCLUSIVE`` on the child, so ``ADD COLUMN`` takes no new lock.
+   ``UPGRADE_STEPS`` is pinned to the shipped order, and a recording ``op``
+   pins what ``upgrade()`` and ``downgrade()`` actually execute: the lock
+   timeout, the parent lock, the child lock and its reset, before any DDL.
 8. **Concurrency and coord's statement shapes, after upgrade:** a child
    inserted under a parent whose cancel is in flight in another connection
-   waits for it and reads ``false`` (the ``FOR SHARE`` in the child trigger);
+   waits for it — observed from a third connection as a lock wait on the
+   canceller — and reads ``false`` (the ``FOR SHARE`` in the child trigger);
    and coord's ``heal_missing_rebased_tip`` shape — one ``WITH`` statement that
    flips the parent to terminal and writes the child — runs and leaves the
    child ``false``.
@@ -49,13 +51,14 @@ test Postgres, skipped when none is reachable.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Iterator
 from types import ModuleType
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
 from tests._alembic_harness import (
@@ -246,6 +249,11 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     lone_live, cancelled_h3 = _pid(6), _pid(7)
     _seed(engine, lone_live, "queued", head_3)
     _seed(engine, cancelled_h3, "cancelled", head_3)
+    # Head 4: a blocked-by-overlap loser is cancellable (the refusal exempts it).
+    head_4 = [(_REPO, "feat/four", "5" * 40)]
+    overlap_keeper, overlap_loser = _pid(11), _pid(12)
+    _seed(engine, overlap_keeper, "awaiting-ci", head_4)
+    _seed(engine, overlap_loser, "blocked-by-overlap", head_4)
 
     run_alembic(root, url, "upgrade", _REVISION_ID)
 
@@ -260,6 +268,10 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     assert error == _error_for(tie_old)
     assert _proposal(engine, merged_h1) == ("merged", None, None)
     assert _proposal(engine, lone_live)[0] == "queued"
+    status, cancelled_at, error = _proposal(engine, overlap_loser)
+    assert status == "cancelled" and cancelled_at is not None
+    assert error == _error_for(overlap_keeper)
+    assert _proposal(engine, overlap_keeper)[0] == "awaiting-ci"
     assert _proposal(engine, cancelled_h3)[2] is None, (
         "a pre-existing cancel is not rewritten"
     )
@@ -304,6 +316,28 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     assert live_before and live_after
     assert xmin_after == xmin_before, "a live-to-live move must not write the child"
 
+    # A child write that does not name proposal_live (coord's rebase / CI /
+    # overlap writers) leaves it alone; one that names it is recomputed from
+    # the parent, so no writer can store a wrong value.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE coord.merge_proposal_repos "
+                "SET rebase_result = CAST('{}' AS jsonb) WHERE proposal_id = :p"
+            ),
+            {"p": lone_live},
+        )
+        conn.execute(
+            text(
+                "UPDATE coord.merge_proposal_repos SET proposal_live = true "
+                "WHERE proposal_id = :p"
+            ),
+            {"p": merged_h1},
+        )
+    assert _child(engine, lone_live)[0] is True
+    assert _child(engine, merged_h1)[0] is False, "a forged `true` must be recomputed"
+
+    # A parent flip still reaches the child (the nested write names the column).
     _set_status(engine, lone_live, "conflict")
     assert _child(engine, lone_live)[0] is False
     _seed(engine, _pid(10), "queued", head_3)
@@ -359,8 +393,13 @@ def test_livehead_01_refuses_to_cancel_a_batch_member_or_multi_repo_loser(
     # The whole upgrade rolled back: nothing cancelled, no column, no index —
     # and no liveness function, which step 2 created BEFORE the refusal, so
     # only a real rollback removes it.
-    for pid in (batch_loser, keeper_1, keeper_2, multi_loser):
-        assert _proposal(engine, pid)[0] in ("queued", "landing"), pid
+    for pid, seeded in (
+        (batch_loser, "queued"),
+        (keeper_1, "landing"),
+        (keeper_2, "queued"),
+        (multi_loser, "queued"),
+    ):
+        assert _proposal(engine, pid)[0] == seeded, pid
     assert column_info(engine, "merge_proposal_repos", "proposal_live") is None
     assert not index_exists(engine, _INDEX_NAME)
     assert not _objects_present(engine)["is_live_fn"], "step 2 survived a RAISE"
@@ -461,39 +500,57 @@ def test_livehead_01_step_order_cleanup_before_backfill_is_load_bearing(
     assert _child(engine, _pid(2))[0] is False
 
 
-def _own_lock_modes(conn: object, table: str) -> set[str]:
-    rows = conn.execute(  # type: ignore[attr-defined]
-        text(
-            """
-            SELECT mode FROM pg_locks
-             WHERE locktype = 'relation' AND granted
-               AND pid = pg_backend_pid()
-               AND relation = CAST(:t AS regclass)
-            """
-        ),
-        {"t": table},
-    )
-    return {str(r[0]) for r in rows}
+class _RecordingOp:
+    """Stands in for ``alembic.op``: records every statement, executes none."""
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def execute(self, statement: str) -> None:
+        self.statements.append(statement)
 
 
-def test_livehead_01_step_1_takes_every_table_lock_up_front(
-    db_at_parent: tuple[Engine, str],
-) -> None:
-    """Parent SHARE ROW EXCLUSIVE, then child ACCESS EXCLUSIVE; ADD COLUMN adds none."""
-    engine, _url = db_at_parent
+def _record(fn_name: str) -> tuple[ModuleType, list[str]]:
     rev = _revision()
-    with engine.begin() as conn:
-        conn.execute(text(rev.LOCK_PARENT_SQL))
-        conn.execute(text(rev.LOCK_CHILD_SQL))
-        parent = _own_lock_modes(conn, "coord.merge_proposals")
-        child = _own_lock_modes(conn, "coord.merge_proposal_repos")
-        assert "ShareRowExclusiveLock" in parent, parent
-        assert "AccessExclusiveLock" in child, child
-        conn.execute(text(rev.ADD_COLUMN_SQL))
-        assert _own_lock_modes(conn, "coord.merge_proposal_repos") == child, (
-            "ADD COLUMN must not take a lock step 1 did not already hold"
-        )
-        conn.rollback()
+    recorder = _RecordingOp()
+    setattr(rev, "op", recorder)  # noqa: B010 - replace the module global upgrade() reads
+    getattr(rev, fn_name)()
+    return rev, recorder.statements
+
+
+def test_livehead_01_upgrade_executes_timeout_parent_lock_child_lock_reset_then_ddl() -> (
+    None
+):
+    """What upgrade() runs is the pinned order, every table lock before any DDL."""
+    rev, executed = _record("upgrade")
+    assert rev.UPGRADE_STEPS[:2] == (rev.LOCK_PARENT_SQL, rev.LOCK_CHILD_SQL)
+    assert "coord.merge_proposals IN SHARE ROW EXCLUSIVE" in rev.LOCK_PARENT_SQL
+    assert "coord.merge_proposal_repos IN ACCESS EXCLUSIVE" in rev.LOCK_CHILD_SQL
+    assert executed == [
+        rev.LOCK_TIMEOUT_SQL,
+        rev.LOCK_PARENT_SQL,
+        rev.LOCK_CHILD_SQL,
+        rev.RESET_LOCK_TIMEOUT_SQL,
+        *rev.UPGRADE_STEPS[2:],
+    ]
+
+
+def test_livehead_01_downgrade_locks_parent_then_child_before_any_drop() -> None:
+    """Downgrade takes the parent lock first too, under the timeout, before DDL."""
+    rev, executed = _record("downgrade")
+    assert executed[:4] == [
+        rev.LOCK_TIMEOUT_SQL,
+        rev.DOWNGRADE_LOCK_PARENT_SQL,
+        rev.DOWNGRADE_LOCK_CHILD_SQL,
+        rev.RESET_LOCK_TIMEOUT_SQL,
+    ]
+    assert "coord.merge_proposals IN ACCESS EXCLUSIVE" in rev.DOWNGRADE_LOCK_PARENT_SQL
+    assert "coord.merge_proposal_repos IN ACCESS EXCLUSIVE" in (
+        rev.DOWNGRADE_LOCK_CHILD_SQL
+    )
+    rest = executed[4:]
+    assert rest and all("LOCK TABLE" not in sql for sql in rest)
+    assert rest[0].startswith("DROP INDEX"), rest
 
 
 def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
@@ -517,9 +574,11 @@ def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
             {"p": parent, "a": uuid.uuid4()},
         )
     errors: list[BaseException] = []
+    pid_b: list[int] = []
 
-    conn_a = engine.connect()
+    conn_a: Connection = engine.connect()
     tx_a = conn_a.begin()
+    pid_a = int(conn_a.execute(text("SELECT pg_backend_pid()")).scalar_one())
     conn_a.execute(
         text(
             "UPDATE coord.merge_proposals SET status = 'cancelled' "
@@ -531,7 +590,10 @@ def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
     def insert_child() -> None:
         try:
             with engine.begin() as conn_b:
-                conn_b.execute(text("SET LOCAL lock_timeout = '20s'"))
+                pid_b.append(
+                    int(conn_b.execute(text("SELECT pg_backend_pid()")).scalar_one())
+                )
+                conn_b.execute(text("SET LOCAL lock_timeout = '30s'"))
                 conn_b.execute(
                     text(
                         "INSERT INTO coord.merge_proposal_repos "
@@ -545,14 +607,29 @@ def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
 
     worker = threading.Thread(target=insert_child)
     worker.start()
-    worker.join(timeout=2)
-    blocked = worker.is_alive()
+    # Observe the wait from a THIRD connection: B is blocked by A's lock, not
+    # merely slow. Poll until B is seen waiting on A, or B finishes, or 15 s.
+    blocked_by_a = False
+    deadline = time.monotonic() + 15
+    with engine.connect() as observer:
+        while time.monotonic() < deadline and not blocked_by_a:
+            if pid_b:
+                blockers = observer.execute(
+                    text("SELECT pg_blocking_pids(:b)"), {"b": pid_b[0]}
+                ).scalar_one()
+                observer.rollback()
+                blocked_by_a = pid_a in (blockers or [])
+                if not blocked_by_a and not worker.is_alive():
+                    break
+            time.sleep(0.05)
     tx_a.commit()
     conn_a.close()
     worker.join(timeout=30)
     assert not worker.is_alive()
     assert not errors, errors
-    assert blocked, "the child insert must wait for the in-flight parent cancel"
+    assert blocked_by_a, (
+        "the child insert must wait on the in-flight parent cancel (pg_blocking_pids)"
+    )
     assert _child(engine, parent)[0] is False, "stale `true` under a cancelled parent"
 
     # A3: coord's heal_missing_rebased_tip shape (merge_scheduler.rs) — ONE

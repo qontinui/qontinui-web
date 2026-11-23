@@ -13,16 +13,22 @@ What this adds
   true iff the status is NOT one of ``('merged', 'conflict', 'cancelled',
   'shadow-landed')``, coord's ``TERMINAL_PROPOSAL_STATUSES``
   (``crates/coord/src/merge.rs``). This is the ONLY SQL spelling of the
-  terminal set; coord's Phase 3 DB test pins it to the Rust constant.
+  terminal set. The plan's Phase 3 (coord) WILL add a DB test pinning it to
+  the Rust constant; until then nothing mechanical keeps the two in step.
 * ``coord.merge_proposal_repos.proposal_live boolean NOT NULL DEFAULT false``
   — the parent's liveness, copied onto the child, because ``status`` lives on
   ``coord.merge_proposals`` while ``(repo, branch, head_sha)`` lives on the
   child, and a partial unique index cannot span two tables.
 * Two triggers keep it true:
 
-  - ``trg_merge_proposal_repos_proposal_live`` — ``BEFORE INSERT OR UPDATE``
-    on the child: ``NEW.proposal_live`` is always RECOMPUTED from the parent's
-    status, so no writer can store a wrong value. On INSERT (or a re-parenting
+  - ``trg_merge_proposal_repos_proposal_live`` — ``BEFORE INSERT OR UPDATE OF
+    proposal_id, proposal_live`` on the child: ``NEW.proposal_live`` is
+    RECOMPUTED from the parent's status on every insert and on every update
+    that names the column (or re-parents the row), so no writer can store a
+    wrong value. An update of any other column (coord's rebase, CI and overlap
+    writers) cannot change the column, so it skips the parent read; the parent
+    trigger's nested write names ``proposal_live``, so a parent flip still
+    reaches the child (the test covers both). On INSERT (or a re-parenting
     UPDATE) it reads the parent ``FOR SHARE``, so a child inserted while
     another transaction is changing the parent's status waits for that change
     and sees its result instead of a stale ``true``. That WIDENS contention
@@ -52,14 +58,23 @@ What a writer sees afterwards
 A second live proposal at a held head fails its child INSERT with SQLSTATE
 ``23505`` on ``uq_merge_proposal_repos_live_head``. A status UPDATE that
 revives a terminal row while another live row holds its head fails the same
-way (raised from the parent trigger), and the row stays terminal. coord's
-Phase 1 (``pr_merge/live_head_guard.rs``) maps exactly that error to each
-writer's existing "already live" outcome, and runs revives under a savepoint.
-coord never needs the index at query time: it reacts to the error, so a
-database without this revision still works.
+way (raised from the parent trigger), and the row stays terminal.
 
-The index is NOT deferrable (Postgres cannot defer a partial unique index), so
-it is checked row by row, as each row is written. A transaction — or a single
+**Deploy precondition — a REQUIREMENT on coord, not existing code.** The plan's
+Phase 1 (qontinui-coord; a ``pr_merge/live_head_guard.rs`` module, written in
+parallel with this revision, no PR at the time of writing) MUST map exactly
+that error — SQLSTATE ``23505`` on ``uq_merge_proposal_repos_live_head`` — to
+each writer's existing "already live" outcome, and MUST run every revive under
+a savepoint, BEFORE this revision is applied in production (plan D5). A coord
+build without it surfaces the ``23505`` as a writer error. With it, coord never
+needs the index at query time: it reacts to the error, so such a coord still
+works against a database without this revision.
+
+The invariant is a partial UNIQUE INDEX, checked row by row as each row is
+written, by choice: Phase 1 keys on the unique-violation ``23505`` it raises.
+A deferrable ``EXCLUDE ... WHERE (proposal_live) DEFERRABLE`` constraint could
+be checked at commit instead, but it raises ``23P01``, and a deferrable
+constraint cannot serve as an ``ON CONFLICT`` arbiter. A transaction — or a single
 statement — that hands liveness from one proposal to another at the same head
 must make the OLD row terminal BEFORE it revives the new one; in the other
 order, or in one multi-row UPDATE whose row trigger for the revive fires
@@ -145,8 +160,9 @@ under the house ``SET LOCAL lock_timeout = '3s'`` followed by the REQUIRED
   costs readers nothing extra and removes a mid-transaction lock UPGRADE
   (``SHARE ROW EXCLUSIVE`` -> ``ACCESS EXCLUSIVE``) that could deadlock with a
   reader of ``merge_proposal_repos`` that then writes ``merge_proposals``. So
-  steps 2-6 take no new table lock and need no timeout of their own (the
-  test asserts ``ADD COLUMN`` adds none). Readers of ``merge_proposal_repos``
+  steps 2-6 take no new table lock and need no timeout of their own. (The
+  test pins, through a recording ``op``, that ``upgrade()`` executes the
+  timeout, the parent lock, the child lock and the reset before any DDL.) Readers of ``merge_proposal_repos``
   wait for the whole migration; the tables are bounded by the live queue plus
   history, so that is short.
 
@@ -204,8 +220,14 @@ classifier skips ``downgrade()``, so its drops play no part in the hold.
 Downgrade — and restoring a cancelled row by hand
 ==========================================================================
 
-``downgrade()`` drops the index, both triggers, both trigger functions, the
-liveness function and the column. **It does NOT un-cancel the rows the
+``downgrade()`` first takes ``ACCESS EXCLUSIVE`` on ``coord.merge_proposals``
+and then on ``coord.merge_proposal_repos`` — parent first, like the upgrade
+and coord's writers, under the same ``3s`` timeout, before any DDL. ACCESS
+EXCLUSIVE on the parent (not the upgrade's SHARE ROW EXCLUSIVE) because
+``DROP TRIGGER`` needs it, and taking it up front avoids a mid-transaction
+lock upgrade; it blocks parent readers for the (short) downgrade. Then it
+drops the index, both triggers, both trigger functions, the liveness function
+and the column. **It does NOT un-cancel the rows the
 cleanup cancelled.** To restore one by hand, find it by its error text and put
 it back in the queue (its previous error, normally NULL for a queued row, is
 not recoverable; ``queued`` is the safe re-entry status, the scheduler
@@ -418,7 +440,8 @@ END
 $fn$;
 
 CREATE OR REPLACE TRIGGER trg_merge_proposal_repos_proposal_live
-    BEFORE INSERT OR UPDATE ON coord.merge_proposal_repos
+    BEFORE INSERT OR UPDATE OF proposal_id, proposal_live
+    ON coord.merge_proposal_repos
     FOR EACH ROW
     EXECUTE FUNCTION coord.merge_proposal_repos_set_proposal_live();
 
@@ -450,7 +473,8 @@ UPGRADE_STEPS: tuple[str, ...] = (
     INDEX_SQL,
 )
 
-_LOCK_STEPS = (LOCK_PARENT_SQL, LOCK_CHILD_SQL)
+# A slice, not a second tuple: the order the test pins is the order run.
+_LOCK_STEPS = UPGRADE_STEPS[:2]
 
 
 def upgrade() -> None:
@@ -466,9 +490,23 @@ def upgrade() -> None:
         op.execute(statement)
 
 
+# Downgrade's locks: parent first, both ACCESS EXCLUSIVE (DROP TRIGGER on the
+# parent needs it), taken before any DDL so no later statement upgrades one.
+DOWNGRADE_LOCK_PARENT_SQL = "LOCK TABLE coord.merge_proposals IN ACCESS EXCLUSIVE MODE"
+DOWNGRADE_LOCK_CHILD_SQL = (
+    "LOCK TABLE coord.merge_proposal_repos IN ACCESS EXCLUSIVE MODE"
+)
+
+
 def downgrade() -> None:
-    """Drop index, triggers, functions and column. Cancelled rows stay cancelled."""
+    """Lock parent then child; drop index, triggers, functions, column.
+
+    Cancelled rows stay cancelled.
+    """
     op.execute(LOCK_TIMEOUT_SQL)
+    op.execute(DOWNGRADE_LOCK_PARENT_SQL)
+    op.execute(DOWNGRADE_LOCK_CHILD_SQL)
+    op.execute(RESET_LOCK_TIMEOUT_SQL)
     op.execute("DROP INDEX IF EXISTS coord.uq_merge_proposal_repos_live_head")
     op.execute(
         "DROP TRIGGER IF EXISTS trg_merge_proposals_propagate_live "
@@ -486,4 +524,3 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE coord.merge_proposal_repos DROP COLUMN IF EXISTS proposal_live"
     )
-    op.execute(RESET_LOCK_TIMEOUT_SQL)
