@@ -41,7 +41,7 @@ const USER_TOKEN = "operator-bearer";
 const USER_ID = "user-1";
 const FROZEN_NOW = new Date("2026-11-23T12:00:05.000Z");
 
-type Method = "GET" | "POST";
+type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 function installFetch(): void {
   vi.stubGlobal(
@@ -83,7 +83,7 @@ function door(method: Method, path: string): Promise<Response> {
       "content-type": "application/json",
       "x-qontinui-runner-port": "9876",
     },
-    body: method === "GET" ? undefined : "{}",
+    body: method === "GET" || method === "DELETE" ? undefined : "{}",
   });
   const segments = path.split("/").filter(Boolean);
   const ctx = { params: Promise.resolve({ path: segments }) };
@@ -172,6 +172,18 @@ describe("runner door proxy — its own lanes (D1)", () => {
       code: "RUNNER_DOOR_RATE_LIMITED",
       lane: "runner-door:write",
     });
+  });
+
+  it("PUT and DELETE door calls draw on runner-door:write too", async () => {
+    for (const method of ["PUT", "DELETE"] as const) {
+      const res = await door(method, "/hooks/abc");
+      expect(res.status, method).toBe(200);
+      expect(res.headers.get("X-RateLimit-Lane"), method).toBe(
+        "runner-door:write"
+      );
+    }
+    const third = await door("POST", "/hooks/abc/test");
+    expect(third.headers.get("X-RateLimit-Remaining")).toBe("17");
   });
 
   it("every response after the check carries the lane's budget", async () => {
