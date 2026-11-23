@@ -207,7 +207,8 @@ RELATION_MEANINGS: Final[dict[str, str]] = {
     "spawned_followup": (
         "THIS artifact surfaced work it deliberately did not do. The only "
         "relation that may omit to_id (the follow-up has no artifact yet); "
-        "note is then required."
+        "that one-ended form then requires note, size_class, and a non-empty "
+        "anchors or an unanchored_reason — anything less is a 422."
     ),
     "refutes": (
         "THIS measurement FALSIFIES THAT artifact's claim. Two-ended (to_id "
@@ -361,7 +362,11 @@ def closed_fields() -> list[ClosedFieldVocabulary]:
             ),
             accepted_by=[_EDGE_CREATE, _ANCHORS_PUT],
             values=_terms(FollowupSizeClass, SIZE_CLASS_MEANINGS),
-            note="Omitted is UNCLASSIFIED — never read as small.",
+            note=(
+                "Required on a one-ended spawned_followup POST (422 when "
+                "omitted). UNCLASSIFIED — never read as small — is what a "
+                "legacy row, or one written with to_id, carries without it."
+            ),
         ),
         ClosedFieldVocabulary(
             field="size_class_source",
