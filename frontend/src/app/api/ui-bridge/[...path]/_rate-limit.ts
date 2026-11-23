@@ -42,6 +42,16 @@
  *   - result:    16 tabs × 2 relay snapshots × 6 opens/min
  *                + 3 drivers × (60 + 20) commands/min                   = 432
  *
+ * The runner door proxy (`app/api/_runner-hop/door-proxy.ts`) is not the
+ * relay, and its calls are not relay commands. It draws on two lanes of its
+ * own, `runner-door:read` (GET/HEAD) and `runner-door:write` (everything
+ * else), at the command lanes' ceilings (60 and 20 per principal per minute)
+ * but on separate counters (`laneForRunnerDoor`). Billed to the command
+ * lanes, a page polling a runner door spent the operator's relay command
+ * budget, and a 429 from either could not be told apart (plan
+ * 2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429, D1). Its
+ * refusal is `RUNNER_DOOR_RATE_LIMITED`, naming the lane.
+ *
  * A refusal on a transport sub-lane is `TRANSPORT_RATE_LIMITED`, naming the
  * lane — the envelope, not the caller's command budget. The SDK discards the
  * response to a heartbeat or a result, so `route.ts` also logs refusals
@@ -128,12 +138,31 @@ export const TRANSPORT_RESULT_LIMIT_PER_MIN =
   TRANSPORT_ENVELOPE_TABS * RELAY_RESULTS_PER_TAB_PER_MIN +
   TRANSPORT_ENVELOPE_DRIVERS * (READ_LIMIT_PER_MIN + WRITE_LIMIT_PER_MIN);
 
-/** The lane a request draws on: a command lane or a transport sub-lane. */
-export type RateLimitKind = "read" | "write" | `transport:${SdkTransportLane}`;
+/**
+ * The runner door proxy's lanes. Same ceilings as the command lanes — a door
+ * call is one operator action, as a relay command is — on counters of their
+ * own, so neither surface spends the other's budget.
+ */
+export const RUNNER_DOOR_READ_LIMIT_PER_MIN = 60;
+export const RUNNER_DOOR_WRITE_LIMIT_PER_MIN = 20;
+
+/** A runner door proxy lane (`door-proxy.ts`). */
+export type RunnerDoorLane = "runner-door:read" | "runner-door:write";
+
+/**
+ * The lane a request draws on: a relay command lane, a relay transport
+ * sub-lane, or a runner door proxy lane.
+ */
+export type RateLimitKind =
+  | "read"
+  | "write"
+  | `transport:${SdkTransportLane}`
+  | RunnerDoorLane;
 
 /**
  * Each lane's ceiling and its counter-key prefix. The prefixes are distinct
- * (`r`, `w`, `t:s`, `t:h`, `t:c`), so no two lanes ever share a counter.
+ * (`r`, `w`, `t:s`, `t:h`, `t:c`, `rd:r`, `rd:w`), so no two lanes ever share
+ * a counter.
  */
 const LANES: Readonly<
   Record<RateLimitKind, { limit: number; keyPrefix: string }>
@@ -152,10 +181,44 @@ const LANES: Readonly<
     limit: TRANSPORT_RESULT_LIMIT_PER_MIN,
     keyPrefix: "t:c",
   },
+  "runner-door:read": {
+    limit: RUNNER_DOOR_READ_LIMIT_PER_MIN,
+    keyPrefix: "rd:r",
+  },
+  "runner-door:write": {
+    limit: RUNNER_DOOR_WRITE_LIMIT_PER_MIN,
+    keyPrefix: "rd:w",
+  },
 };
 
-function isTransportLane(kind: RateLimitKind): boolean {
-  return kind.startsWith("transport:");
+/** The code and message a refusal on `kind` answers with. */
+function refusalFor(result: RateLimitResult): {
+  code: string;
+  message: string;
+} {
+  if (result.kind.startsWith("transport:")) {
+    return {
+      code: "TRANSPORT_RATE_LIMITED",
+      message:
+        `SDK transport rate limit exceeded on ${result.kind}; ` +
+        `${result.count} requests in the current minute window, limit ` +
+        `${result.limit} (sized for ${TRANSPORT_ENVELOPE_TABS} live tabs ` +
+        `and ${TRANSPORT_ENVELOPE_DRIVERS} driving principals)`,
+    };
+  }
+  if (result.kind.startsWith("runner-door:")) {
+    return {
+      code: "RUNNER_DOOR_RATE_LIMITED",
+      message:
+        `runner door proxy rate limit exceeded on ${result.kind}; ` +
+        `${result.count} requests in the current minute window, limit ` +
+        `${result.limit}`,
+    };
+  }
+  return {
+    code: "RATE_LIMITED",
+    message: `rate limit exceeded; ${result.count} requests in the current minute window`,
+  };
 }
 
 /* -------------------------------------------------------------------- */
@@ -487,18 +550,13 @@ export function withRateLimitHeaders(
 }
 
 export function rateLimitedResponse(result: RateLimitResult): Response {
-  const transport = isTransportLane(result.kind);
+  const { code, message } = refusalFor(result);
   return new Response(
     JSON.stringify({
       success: false,
-      code: transport ? "TRANSPORT_RATE_LIMITED" : "RATE_LIMITED",
+      code,
       lane: result.kind,
-      message: transport
-        ? `SDK transport rate limit exceeded on ${result.kind}; ` +
-          `${result.count} requests in the current minute window, limit ` +
-          `${result.limit} (sized for ${TRANSPORT_ENVELOPE_TABS} live tabs ` +
-          `and ${TRANSPORT_ENVELOPE_DRIVERS} driving principals)`
-        : `rate limit exceeded; ${result.count} requests in the current minute window`,
+      message,
       retryAfterSec: result.retryAfterSec,
     }),
     {
@@ -542,9 +600,9 @@ export function logLaneRefused(
 }
 
 /**
- * Map an HTTP method to the rate-limit kind (read vs write). GET and
- * HEAD are reads; everything else is a write. `door-proxy.ts` bills its
- * runner-door calls this way; the relay uses `laneFor`.
+ * Map an HTTP method to the relay's command lane (read vs write). GET and
+ * HEAD are reads; everything else is a write. The relay picks lanes with
+ * `laneFor`, which falls back to this for any non-transport route.
  */
 export function kindForMethod(method: string): "read" | "write" {
   return method === "GET" || method === "HEAD" ? "read" : "write";
@@ -558,4 +616,15 @@ export function kindForMethod(method: string): "read" | "write" {
 export function laneFor(path: string, method: string): RateLimitKind {
   const transport = sdkTransportLane(path, method);
   return transport === null ? kindForMethod(method) : `transport:${transport}`;
+}
+
+/**
+ * The lane a runner door proxy call draws on, from its method alone: GET and
+ * HEAD read, everything else writes — on the door's own counters, never the
+ * relay's command lanes.
+ */
+export function laneForRunnerDoor(method: string): RunnerDoorLane {
+  return kindForMethod(method) === "read"
+    ? "runner-door:read"
+    : "runner-door:write";
 }

@@ -17,17 +17,25 @@
  *   6. headers        - only `content-type` and `accept`;
  *   7. response       - passed through, so the runner's typed errors reach
  *                       `readRunnerOriginRefusal` unchanged;
- *   8. rate limit and - the UI Bridge relay's per-user limit, and one local
- *      audit             `runner-door-proxy: forwarded` line per call (never a
- *                       body: it may carry API keys).
+ *   8. rate limit and - the runner door's OWN per-user lanes,
+ *      audit             `runner-door:read` (GET/HEAD) and `runner-door:write`
+ *                       (`laneForRunnerDoor`, on the relay's limiter but never
+ *                       its command lanes), checked before the ownership
+ *                       probe. A refusal is 429 `RUNNER_DOOR_RATE_LIMITED`
+ *                       naming the lane, and every response after the check
+ *                       carries that lane's budget (`X-RateLimit-Lane`,
+ *                       `-Limit`, `-Remaining`, `-Reset-After`). Then one
+ *                       local `runner-door-proxy: forwarded` line per call
+ *                       (never a body: it may carry API keys).
  */
 
 import type { NextRequest } from "next/server";
 import { matchRunnerDoorRoute } from "@/lib/runner/door-routes";
 import {
   checkRateLimit,
-  kindForMethod,
+  laneForRunnerDoor,
   rateLimitedResponse,
+  withRateLimitHeaders,
 } from "../ui-bridge/[...path]/_rate-limit";
 import {
   authenticateOperator,
@@ -120,9 +128,12 @@ export async function handleRunnerDoorRequest(
   const port = runnerPortOf(request);
   if (port === null) return badRunnerPortResponse();
 
-  // 8a (before any runner probe). Rate limit (fail-open when Redis is absent, as the relay's is).
-  const rl = await checkRateLimit(auth.userId, kindForMethod(method));
+  // 8a (before any runner probe). The runner door's own lane (fail-open when
+  // Redis is absent, as the relay's is). From here on every response carries
+  // the lane's budget.
+  const rl = await checkRateLimit(auth.userId, laneForRunnerDoor(method));
   if (!rl.allowed) return rateLimitedResponse(rl);
+  const withBudget = (response: Response) => withRateLimitHeaders(response, rl);
 
   // 5b. The runner on that port must be one of this operator's paired
   // devices: Host and Origin bind only browsers (bridge-session.ts).
@@ -130,7 +141,7 @@ export async function handleRunnerDoorRequest(
     `http://127.0.0.1:${port}`,
     auth.token
   );
-  if (notOwned) return notOwned;
+  if (notOwned) return withBudget(notOwned);
 
   // 6. Forward with only content-type and accept.
   const hasBody = method !== "GET" && method !== "HEAD";
@@ -151,17 +162,17 @@ export async function handleRunnerDoorRequest(
     // The browser gave up: nobody receives an answer, and it is not a runner
     // failure, so it is not audited as one.
     if (request.signal.aborted) {
-      return json(
-        499,
-        "RUNNER_HOP_CLIENT_CLOSED",
-        "The client closed the request"
+      return withBudget(
+        json(499, "RUNNER_HOP_CLIENT_CLOSED", "The client closed the request")
       );
     }
     audit({ userId: auth.userId, method, route: pattern, status: 502, port });
-    return json(
-      502,
-      "RUNNER_UNREACHABLE",
-      `Runner not reachable on 127.0.0.1:${port}: ${err instanceof Error ? err.message : String(err)}`
+    return withBudget(
+      json(
+        502,
+        "RUNNER_UNREACHABLE",
+        `Runner not reachable on 127.0.0.1:${port}: ${err instanceof Error ? err.message : String(err)}`
+      )
     );
   }
   audit({
@@ -178,5 +189,7 @@ export async function handleRunnerDoorRequest(
     const value = upstream.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
-  return new Response(upstream.body, { status: upstream.status, headers });
+  return withBudget(
+    new Response(upstream.body, { status: upstream.status, headers })
+  );
 }
