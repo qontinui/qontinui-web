@@ -4264,9 +4264,10 @@ class TestCiNodeStoredButUnpublished:
 
 
 _SUPERSEDED_DETAIL = (
-    "A newer settings change for this machine was sent instead of this one. "
-    "Re-open these settings to see what the machine was sent."
+    "A newer settings change for this machine was sent instead of this one, "
+    "so the settings saved here may not be what the machine is using."
 )
+_SUPERSEDED_BODY = {"dispatched": False, "stored": False, "superseded_by_newer": True}
 
 
 class TestCiNodeSupersededByNewer:
@@ -4285,7 +4286,13 @@ class TestCiNodeSupersededByNewer:
         return r.json()["machine"]["id"]
 
     async def _two_puts(
-        self, async_db_session, test_user, monkeypatch, second_answer, name
+        self,
+        async_db_session,
+        test_user,
+        monkeypatch,
+        second_answer,
+        name,
+        second_payload: dict | None = None,
     ) -> tuple[str, dict, int]:
         """A first PUT coord delivers, then a second PUT answered with
         ``second_answer``. Returns the first send's ``dispatched_at``, the
@@ -4306,7 +4313,9 @@ class TestCiNodeSupersededByNewer:
                 sent_at = first.json()["dispatched_at"]
                 assert sent_at is not None
                 transport.answer = second_answer
-                second = await client.put(url, json={"enabled": False})
+                second = await client.put(
+                    url, json=second_payload or {"enabled": False}
+                )
         assert second.status_code == 200, second.text
         return sent_at, second.json(), transport.ci_node_attempts
 
@@ -4318,14 +4327,7 @@ class TestCiNodeSupersededByNewer:
             async_db_session,
             test_user,
             monkeypatch,
-            httpx.Response(
-                200,
-                json={
-                    "dispatched": False,
-                    "stored": False,
-                    "superseded_by_newer": True,
-                },
-            ),
+            httpx.Response(200, json=_SUPERSEDED_BODY),
             "superseded-box",
         )
         assert attempts == 2
@@ -4338,6 +4340,45 @@ class TestCiNodeSupersededByNewer:
         assert body["dispatched_at"] == sent_at
         # The save itself still landed.
         assert body["requested"]["enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_superseded_wins_over_the_model_access_relay_check(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A superseded body carries no ``applied`` echo, so a save that set
+        ``model_access`` would read as ``model_access_unconfirmed`` if the
+        relay check ran first. It must read as superseded."""
+        sent_at, body, _ = await self._two_puts(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            httpx.Response(200, json=_SUPERSEDED_BODY),
+            "superseded-model-access-box",
+            second_payload={"enabled": False, "model_access": True},
+        )
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "superseded_by_newer"
+        assert body["dispatched_at"] == sent_at
+
+    @pytest.mark.asyncio
+    async def test_dispatched_false_without_a_known_reason_is_not_delivered(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """``dispatched: false`` with no ``superseded_by_newer: true`` is still
+        not a delivery, and is not given the superseded copy."""
+        sent_at, body, _ = await self._two_puts(
+            async_db_session,
+            test_user,
+            monkeypatch,
+            httpx.Response(
+                200, json={"dispatched": False, "superseded_by_newer": "yes"}
+            ),
+            "not-dispatched-box",
+        )
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 200
+        assert body["dispatch_error"] == "coord_not_dispatched"
+        assert body["dispatched_at"] == sent_at
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

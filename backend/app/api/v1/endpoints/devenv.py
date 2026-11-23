@@ -1145,27 +1145,43 @@ CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
 #: race (``dispatched: false, superseded_by_newer: true``), and coord sent that
 #: one instead. Web-owned, like the codes above.
 CI_NODE_SUPERSEDED_BY_NEWER = "superseded_by_newer"
-#: ``dispatch_detail`` for that outcome.
+#: ``dispatch_detail`` for that outcome. It does NOT point the owner at this
+#: page's saved settings: those are web's copy of THIS save, and the newer
+#: directive may have come from another writer (coord's agent door), so they
+#: can be exactly what the machine was not sent.
 CI_NODE_SUPERSEDED_BY_NEWER_DETAIL = (
-    "A newer settings change for this machine was sent instead of this one. "
-    "Re-open these settings to see what the machine was sent."
+    "A newer settings change for this machine was sent instead of this one, "
+    "so the settings saved here may not be what the machine is using."
+)
+#: ``dispatch_error`` when coord answered 2xx with ``dispatched: false`` and
+#: no reason this backend recognises. Nothing was published, so it is not
+#: reported as delivered, and no reason is invented for it.
+CI_NODE_NOT_DISPATCHED = "coord_not_dispatched"
+CI_NODE_NOT_DISPATCHED_DETAIL = (
+    "The coordinator accepted these settings but did not send them to the machine."
 )
 
 
-def _coord_declined_dispatch(resp: httpx.Response) -> bool:
-    """True when a 2xx body says ``dispatched`` is exactly ``false``.
+def _coord_declined_dispatch(resp: httpx.Response) -> str | None:
+    """The ``dispatch_error`` for a 2xx whose body says ``dispatched`` is
+    exactly ``false``, else None.
 
-    Coord answers 200 with ``dispatched: false`` when a newer directive for the
-    same device superseded this one, so nothing was published for THIS
-    request. An absent field, a non-boolean, or an unparseable or non-object
-    body is False and keeps the 2xx-means-delivered reading a coord predating
-    the field relies on.
+    Coord answers 200 with ``dispatched: false, superseded_by_newer: true``
+    when a newer directive for the same device superseded this one, so nothing
+    was published for THIS request. ``dispatched: false`` without that reason
+    is still not a delivery, under a generic code. An absent ``dispatched``, a
+    non-boolean, or an unparseable or non-object body is None and keeps the
+    2xx-means-delivered reading a coord predating the field relies on.
     """
     try:
         body = resp.json()
     except ValueError:
-        return False
-    return isinstance(body, dict) and body.get("dispatched") is False
+        return None
+    if not isinstance(body, dict) or body.get("dispatched") is not False:
+        return None
+    if body.get("superseded_by_newer") is True:
+        return CI_NODE_SUPERSEDED_BY_NEWER
+    return CI_NODE_NOT_DISPATCHED
 
 
 def _coord_stored_directive(resp: httpx.Response) -> bool:
@@ -1414,17 +1430,24 @@ async def set_ci_node_config(
             dispatch_detail=message,
         )
 
-    if _coord_declined_dispatch(resp):
-        # SUPERSEDED: coord accepted the call but published nothing for it,
-        # because a newer directive for this device won. ``dispatched_at``
-        # does not move — this request's settings never reached the machine.
+    declined = _coord_declined_dispatch(resp)
+    if declined is not None:
+        # NOT PUBLISHED: coord accepted the call but sent nothing for it,
+        # typically because a newer directive for this device won. Checked
+        # before the model-access relay check, whose "unconfirmed" reading
+        # would otherwise mislabel it. ``dispatched_at`` does not move: this
+        # request's settings never reached the machine.
         return _ci_node_response(
             machine,
             reachability,
             dispatched=False,
             dispatch_status=resp.status_code,
-            dispatch_error=CI_NODE_SUPERSEDED_BY_NEWER,
-            dispatch_detail=CI_NODE_SUPERSEDED_BY_NEWER_DETAIL,
+            dispatch_error=declined,
+            dispatch_detail=(
+                CI_NODE_SUPERSEDED_BY_NEWER_DETAIL
+                if declined == CI_NODE_SUPERSEDED_BY_NEWER
+                else CI_NODE_NOT_DISPATCHED_DETAIL
+            ),
         )
 
     await machine_repo.update(
