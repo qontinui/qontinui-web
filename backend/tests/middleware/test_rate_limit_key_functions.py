@@ -122,9 +122,7 @@ def users_me_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def test_two_bearers_on_one_host_get_independent_buckets(
-    users_me_client: TestClient,
-) -> None:
+def test_two_bearers_on_one_host_get_distinct_keys() -> None:
     # Key level: same socket peer (the ALB node), different bearers.
     key_a = get_user_identifier(_request(bearer="token-a"))
     key_b = get_user_identifier(_request(bearer="token-b"))
@@ -132,7 +130,12 @@ def test_two_bearers_on_one_host_get_independent_buckets(
     assert key_a.startswith("bearer:") and key_b.startswith("bearer:")
     assert "token-a" not in key_a  # hashed, never embedded
 
-    # Endpoint level: bearer A spends its whole /users/me budget ...
+
+def test_two_bearers_on_one_host_get_independent_buckets(
+    users_me_client: TestClient,
+) -> None:
+    # Endpoint level, entered only through GET /api/v1/users/me: bearer A
+    # spends its whole budget ...
     auth_a = {"Authorization": "Bearer token-a"}
     auth_b = {"Authorization": "Bearer token-b"}
     codes_a = [
