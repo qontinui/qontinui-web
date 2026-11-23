@@ -7,6 +7,7 @@ import { ApiConfig } from "./api-config";
 import { csrfService } from "./csrf-service";
 import { RetryStrategy } from "./retry-strategy";
 import { createLogger } from "@/lib/logger";
+import { isAbortOrTimeout, timeoutAbortReason } from "@/lib/abort-reasons";
 
 const log = createLogger("HttpClient");
 
@@ -901,8 +902,7 @@ export class HttpClient {
     // rejection (the telemetry beacon) can tell this timeout, which is an
     // incident, from a caller's or a navigation's `AbortError`, which is not.
     const timeoutId = setTimeout(
-      () =>
-        controller.abort(new DOMException("Request timed out", "TimeoutError")),
+      () => controller.abort(timeoutAbortReason()),
       timeoutMs
     );
 
@@ -966,8 +966,7 @@ export class HttpClient {
 
       // The header timeout: the platform rejects with the abort's
       // `TimeoutError` reason (an older runtime may still say `AbortError`).
-      const name = (error as { name?: unknown } | null)?.name;
-      if (name === "TimeoutError" || name === "AbortError") {
+      if (isAbortOrTimeout(error)) {
         throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
