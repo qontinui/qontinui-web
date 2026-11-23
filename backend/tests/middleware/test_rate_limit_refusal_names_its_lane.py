@@ -1119,6 +1119,15 @@ def test_a_websocket_route_names_its_template() -> None:
         ("１２", None),  # full-width digits: not delta-seconds
         ("☃", None),  # not latin-1 at all
         ("", None),
+        ("0012", "12"),  # leading zeros normalised
+        ("4294967295", "4294967295"),  # u32 max
+        ("4294967296", None),  # past the envelope's u32
+        ("9" * 5000, None),  # int() of this raises past 4300 digits
+        ("21 Oct 2026 07:28:00", None),  # no weekday, no zone
+        ("Wed, 21 Oct 26 07:28:00 GMT", None),  # two-digit year
+        ("Wed, 21 Oct 2026 07:28:00 +0200", None),  # not GMT
+        ("Wed, 32 Oct 2026 07:28:00 GMT", None),  # no such day
+        ("Wed, 21 Oct 2026 07:28:00 GMT\x00", None),
     ],
 )
 def test_an_upstream_retry_after_is_forwarded_only_when_it_is_valid(
@@ -1186,3 +1195,20 @@ def test_a_runner_429_is_a_retry_later_refusal() -> None:
     assert exc.headers is not None
     assert exc.headers["X-RateLimit-Key-Kind"] == "upstream"
     assert exc.headers["Retry-After"] == "4"
+    assert exc.refusal.next_action.retry_after_s == 4
+
+
+def test_a_runner_429_with_an_oversized_retry_after_is_still_a_429() -> None:
+    """A delta-seconds value past the envelope's u32 is dropped from both the
+    header and the envelope instead of failing the refusal."""
+    import httpx
+
+    from app.api.v1.endpoints.constraints import _runner_answered_error
+
+    exc = _runner_answered_error(
+        httpx.Response(429, text="slow down", headers={"retry-after": "9" * 5000})
+    )
+    assert exc.status_code == 429
+    assert exc.refusal.next_action.retry_after_s is None
+    assert exc.headers is not None
+    assert "Retry-After" not in exc.headers
