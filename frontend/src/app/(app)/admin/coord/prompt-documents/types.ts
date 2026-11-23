@@ -1035,18 +1035,6 @@ export const POLICY_WRITE_LEVELS = [
 export type PolicyWriteLevel = (typeof POLICY_WRITE_LEVELS)[number];
 
 /**
- * What coord applies when NO row matches — deliberately NOT the resolver's bare
- * `"off"`.
- *
- * `resolve_effective` answers `off` for both "nobody wrote a row" and "an
- * operator turned it off". Taking the first literally would disable, fleet-wide
- * and on deploy, a capability that works today. `tightening_only` is exactly
- * coord's shipped behaviour, so a tenant that never touches the dial sees no
- * change. Mirrors coord's `POLICY_WRITE_DEFAULT`.
- */
-export const POLICY_WRITE_DEFAULT_LEVEL: PolicyWriteLevel = "tightening_only";
-
-/**
  * Whether a string coord returned is a level this console can interpret.
  *
  * Nothing validates `level` anywhere on the way in — coord's PUT takes it as
@@ -1069,12 +1057,13 @@ export function isPolicyWriteLevel(value: string): value is PolicyWriteLevel {
 
 /**
  * What coord ENFORCES for a level it cannot parse — the most restrictive one,
- * not [`POLICY_WRITE_DEFAULT_LEVEL`].
+ * never the typed default.
  *
- * The asymmetry is coord's and is deliberate: *no row* means nobody expressed an
- * opinion, so today's shipped behaviour applies; an *unparseable row* means
- * somebody expressed an opinion coord cannot read, which is a different and more
- * alarming fact. Mirrors `PolicyWriteLevel::parse_fail_closed`.
+ * The asymmetry is coord's and is deliberate: *no row* means nobody expressed
+ * an opinion, so coord serves its typed default (`tightening_only`, today's
+ * shipped behaviour — qontinui-coord#4239); an *unparseable row* means
+ * somebody expressed an opinion coord cannot read, which is a different and
+ * more alarming fact. Mirrors `PolicyWriteLevel::parse_fail_closed`.
  */
 export const POLICY_WRITE_FAIL_CLOSED_LEVEL: PolicyWriteLevel = "off";
 
@@ -1455,18 +1444,6 @@ export const POLICY_UPSTREAM_DOMAIN = "policy_upstream";
 /** The levels, most restrictive first. Mirrors coord's `PolicyUpstreamLevel::ALL`. */
 export const POLICY_UPSTREAM_LEVELS = ["off", "notify", "auto"] as const;
 export type PolicyUpstreamLevel = (typeof POLICY_UPSTREAM_LEVELS)[number];
-
-/**
- * What coord applies when NO row matches — `auto`, deliberately NOT the
- * resolver's bare `"off"`.
- *
- * `resolve_effective` answers `off` both for "nobody wrote a row" and for "an
- * operator turned it off", and D6 warns at length that reading the first
- * literally ships the whole feature dark: publications would land and nothing
- * would ever fan out, with no error anywhere. Mirrors coord's
- * `POLICY_UPSTREAM_DEFAULT`.
- */
-export const POLICY_UPSTREAM_DEFAULT_LEVEL: PolicyUpstreamLevel = "auto";
 
 /**
  * The most restrictive reading of an UNPARSEABLE row.
@@ -1864,20 +1841,6 @@ export const POLICY_AUTO_PUBLISH_DOMAIN = "policy_auto_publish";
 export const POLICY_AUTO_PUBLISH_LEVELS = ["off", "on"] as const;
 export type PolicyAutoPublishLevel =
   (typeof POLICY_AUTO_PUBLISH_LEVELS)[number];
-
-/**
- * What coord applies when NO row matches — `on`, deliberately NOT the
- * resolver's bare `"off"`.
- *
- * The same trap `POLICY_UPSTREAM_DEFAULT_LEVEL` documents, and here it is the
- * whole feature: `resolve_effective` answers `off` both for "nobody wrote a row"
- * and for "an operator turned it off", so reading the first literally would ship
- * automatic publishing dark — the worker would decide nothing, hold nothing and
- * publish nothing, with no error anywhere, which is indistinguishable from the
- * eight silent days this plan exists to end. Mirrors coord's
- * `POLICY_AUTO_PUBLISH_DEFAULT`.
- */
-export const POLICY_AUTO_PUBLISH_DEFAULT_LEVEL: PolicyAutoPublishLevel = "on";
 
 /**
  * The most restrictive reading of an UNPARSEABLE row — `off`, never the typed
