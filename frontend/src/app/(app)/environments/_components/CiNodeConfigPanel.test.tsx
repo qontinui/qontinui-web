@@ -812,7 +812,7 @@ describe("CiNodeConfigPanel — model access", () => {
           requested_at: "2026-11-22T12:00:00Z",
           dispatched_at: "2026-11-22T11:00:00Z",
           dispatch_detail:
-            "A newer settings change for this machine was sent instead of this one. Re-open these settings to see what the machine was sent.",
+            "A newer settings change for this machine was sent instead of this one, so the settings saved here may not be what the machine is using.",
         })
       )
     );
