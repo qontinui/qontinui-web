@@ -31,6 +31,9 @@ What is asserted
    state in which an Index Only Scan elsewhere becomes cheap. Autovacuum is
    disabled on the table for the seeded span so no plan above races it; this
    case sets the map deliberately, and the setting is reset afterwards.
+3c. **The readers' real shape rides it too** — ``JOIN tenant_devices ... CROSS
+   JOIN LATERAL (newest sample, LIMIT 1)`` over a multi-device binding set is a
+   Nested Loop of per-device index descents with no Sort node.
 4. Idempotency: ``stamp`` back to the parent and ``upgrade`` again leaves the
    same valid index untouched — same oid and same storage file.
 5. Downgrade removes it; rows survive.
@@ -40,6 +43,8 @@ test Postgres, skipped when none is reachable.
 """
 
 from __future__ import annotations
+
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -87,11 +92,11 @@ _NEWEST_SQL = f"""
 # exists to find. Four other devices publish 2000 rows each, all NEWER, so the
 # probed device is ~0.25% of the table. With an evenly interleaved seed a
 # backward scan of the ``(sampled_at)`` index meets the probed device's row
-# almost at once and wins on cost by accident, WITH this index present
-# (measured), so the probe would not be asking which index serves a
-# device-keyed read; a 2% share still left a near-tie (2.17 vs 2.13). The
-# newest probed row is in the ``wsl`` lane (offset 1, odd), so no single
-# lane's ordered run can answer alone.
+# almost at once and wins on cost by accident, even with this index present,
+# so the probe would not be asking which index serves a device-keyed read;
+# a small share is what separates the two paths. The newest probed row is in
+# the ``wsl`` lane (offset 1, odd), so no single lane's ordered run can answer
+# alone.
 _SEED_ROWS = 2000
 _PROBED_ROWS = 20
 
@@ -262,6 +267,72 @@ def test_fleet_res_tel_06_index_serves_newest_sample_per_device() -> None:
         assert not _has_sort(vm_plan), vm_plan
         assert _device_is_index_cond(vm_plan), vm_plan
         assert _newest(engine) == _expected_newest(engine)
+
+        # 3c. The readers' real shape: JOIN tenant_devices ... CROSS JOIN LATERAL
+        # (newest sample per device, LIMIT 1) — computer_alerts_watcher's
+        # MACHINE_COMPUTERS_SQL probe. Over a multi-device binding set the
+        # planner must still drive one ordered index descent per device from a
+        # Nested Loop, with no Sort anywhere.
+        tenant_id = str(uuid4())
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
+                    "VALUES (CAST(:t AS uuid), :slug, 'fleet_res_tel_06 test tenant')"
+                ),
+                {"t": tenant_id, "slug": f"fleetrestel06-{uuid4().hex[:8]}"},
+            )
+            for i, device_id in enumerate((_DEVICE, *_OTHER_DEVICES)):
+                conn.execute(
+                    text(
+                        "INSERT INTO coord.devices "
+                        "(device_id, name, hostname, tenant_id, capabilities) "
+                        "VALUES (CAST(:d AS uuid), :name, :host, CAST(:t AS uuid), "
+                        "CAST('[\"coord_target\"]' AS jsonb))"
+                    ),
+                    {
+                        "d": device_id,
+                        "name": f"seed-{i}",
+                        "host": f"seed-{i}",
+                        "t": tenant_id,
+                    },
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO coord.tenant_devices (tenant_id, device_id) "
+                        "VALUES (CAST(:t AS uuid), CAST(:d AS uuid))"
+                    ),
+                    {"t": tenant_id, "d": device_id},
+                )
+            conn.execute(text("ANALYZE coord.tenant_devices"))
+        lateral_sql = f"""
+            SELECT max(ds.sampled_at)
+              FROM coord.tenant_devices td
+             CROSS JOIN LATERAL (
+                   SELECT s.sampled_at FROM coord.device_resource_samples s
+                    WHERE s.device_id = td.device_id
+                    ORDER BY s.sampled_at DESC LIMIT 1) ds
+             WHERE td.tenant_id = '{tenant_id}'
+        """
+        lateral_plan = _plan_for(engine, lateral_sql)
+        assert "Nested Loop" in lateral_plan, lateral_plan
+        assert _INDEX_NAME in lateral_plan, lateral_plan
+        assert _ANCHOR_INDEX_NAME not in lateral_plan, lateral_plan
+        # The plain (sampled_at) index with a device_id filter is the near-tie
+        # alternative; name it so a planner flap reads as that, not a mystery.
+        assert "idx_device_resource_samples_sampled_at" not in lateral_plan, (
+            lateral_plan
+        )
+        assert not _has_sort(lateral_plan), lateral_plan
+        assert any(
+            "Index Cond" in line and "device_id" in line
+            for line in lateral_plan.splitlines()
+        ), lateral_plan
+        with engine.connect() as conn:
+            lateral_newest = conn.execute(text(lateral_sql)).scalar_one()
+        assert lateral_newest == scalar(
+            engine, "SELECT max(sampled_at) FROM coord.device_resource_samples"
+        )
 
         # 4. Idempotency — re-running over its own schema is a no-op: same oid
         # (not rebuilt), same storage file (not REINDEXed), still valid.
