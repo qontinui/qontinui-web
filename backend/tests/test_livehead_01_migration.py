@@ -69,6 +69,7 @@ from tests._alembic_harness import (
     ephemeral_database,
     index_exists,
     index_state,
+    is_superuser,
     load_revision_module,
     run_alembic,
 )
@@ -98,7 +99,9 @@ def _error_for(keeper: uuid.UUID) -> str:
     return f"duplicate live proposal for this head; kept {keeper} (alembic livehead_01)"
 
 
-pytestmark = pytest.mark.skipif(
+# Only the tests that need a database carry this; the two recording-`op`
+# tests run everywhere, so the lock-order pins never skip.
+_needs_postgres = pytest.mark.skipif(
     not can_connect(admin_database_url()),
     reason=(
         "Postgres not reachable at the conftest URL. CI provisions a "
@@ -201,6 +204,36 @@ def _assert_live_head_violation(excinfo: pytest.ExceptionInfo[IntegrityError]) -
     assert getattr(diag, "constraint_name", None) == _INDEX_NAME, orig
 
 
+def _child_trigger_calls(conn: Connection) -> int:
+    """Calls of the child trigger function so far in this transaction."""
+    return int(
+        conn.execute(
+            text(
+                """
+                SELECT coalesce(sum(calls), 0) FROM pg_stat_xact_user_functions
+                 WHERE schemaname = 'coord'
+                   AND funcname = 'merge_proposal_repos_set_proposal_live'
+                """
+            )
+        ).scalar_one()
+    )
+
+
+def _parent_scans(conn: Connection) -> int:
+    """Scans of coord.merge_proposals so far in this transaction."""
+    return int(
+        conn.execute(
+            text(
+                """
+                SELECT coalesce(sum(coalesce(seq_scan, 0) + coalesce(idx_scan, 0)), 0)
+                  FROM pg_stat_xact_user_tables
+                 WHERE schemaname = 'coord' AND relname = 'merge_proposals'
+                """
+            )
+        ).scalar_one()
+    )
+
+
 def _objects_present(engine: Engine) -> dict[str, bool]:
     with engine.connect() as conn:
         row = conn.execute(
@@ -225,6 +258,7 @@ def _objects_present(engine: Engine) -> dict[str, bool]:
     }
 
 
+@_needs_postgres
 def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     db_at_parent: tuple[Engine, str],
 ) -> None:
@@ -317,9 +351,20 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     assert xmin_after == xmin_before, "a live-to-live move must not write the child"
 
     # A child write that does not name proposal_live (coord's rebase / CI /
-    # overlap writers) leaves it alone; one that names it is recomputed from
-    # the parent, so no writer can store a wrong value.
+    # overlap writers) does not fire the child trigger at all, so it neither
+    # calls the trigger function nor reads the parent; one that names the
+    # column is recomputed from the parent, so no writer can store a wrong
+    # value. Both are counted inside ONE transaction: function calls through
+    # track_functions (a superuser setting — CI's role is one), and scans of
+    # coord.merge_proposals through pg_stat_xact_user_tables (any role). The
+    # forged write afterwards is the positive control: both counters move.
+    # Deltas, not absolute values: the xact views also carry this backend's
+    # not-yet-flushed counts from earlier statements on the pooled connection.
+    superuser = is_superuser(engine)
     with engine.begin() as conn:
+        if superuser:
+            conn.execute(text("SET LOCAL track_functions = 'pl'"))
+        calls_0, scans_0 = _child_trigger_calls(conn), _parent_scans(conn)
         conn.execute(
             text(
                 "UPDATE coord.merge_proposal_repos "
@@ -327,6 +372,8 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
             ),
             {"p": lone_live},
         )
+        calls_after_unrelated = _child_trigger_calls(conn)
+        scans_after_unrelated = _parent_scans(conn)
         conn.execute(
             text(
                 "UPDATE coord.merge_proposal_repos SET proposal_live = true "
@@ -334,6 +381,17 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
             ),
             {"p": merged_h1},
         )
+        calls_after_forged = _child_trigger_calls(conn)
+        scans_after_forged = _parent_scans(conn)
+    assert scans_after_unrelated == scans_0, "an unrelated child write read the parent"
+    assert scans_after_forged > scans_after_unrelated, (
+        "the counter must see the trigger's parent read"
+    )
+    if superuser:
+        assert calls_after_unrelated == calls_0, (
+            "an unrelated child write fired the trigger"
+        )
+        assert calls_after_forged == calls_after_unrelated + 1, calls_after_forged
     assert _child(engine, lone_live)[0] is True
     assert _child(engine, merged_h1)[0] is False, "a forged `true` must be recomputed"
 
@@ -363,6 +421,7 @@ def test_livehead_01_cleanup_then_index_enforces_one_live_row_per_head(
     assert _child(engine, lone_live)[0] is False
 
 
+@_needs_postgres
 def test_livehead_01_refuses_to_cancel_a_batch_member_or_multi_repo_loser(
     db_at_parent: tuple[Engine, str],
 ) -> None:
@@ -405,6 +464,7 @@ def test_livehead_01_refuses_to_cancel_a_batch_member_or_multi_repo_loser(
     assert not _objects_present(engine)["is_live_fn"], "step 2 survived a RAISE"
 
 
+@_needs_postgres
 def test_livehead_01_refuses_to_cancel_a_loser_past_queued(
     db_at_parent: tuple[Engine, str],
 ) -> None:
@@ -455,6 +515,7 @@ def _revision() -> ModuleType:
     return load_revision_module(_REVISION_PATH, "livehead_01_under_test")
 
 
+@_needs_postgres
 def test_livehead_01_step_order_cleanup_before_backfill_is_load_bearing(
     db_at_parent: tuple[Engine, str],
 ) -> None:
@@ -553,6 +614,7 @@ def test_livehead_01_downgrade_locks_parent_then_child_before_any_drop() -> None
     assert rest[0].startswith("DROP INDEX"), rest
 
 
+@_needs_postgres
 def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
     db_at_parent: tuple[Engine, str],
 ) -> None:
@@ -576,17 +638,6 @@ def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
     errors: list[BaseException] = []
     pid_b: list[int] = []
 
-    conn_a: Connection = engine.connect()
-    tx_a = conn_a.begin()
-    pid_a = int(conn_a.execute(text("SELECT pg_backend_pid()")).scalar_one())
-    conn_a.execute(
-        text(
-            "UPDATE coord.merge_proposals SET status = 'cancelled' "
-            "WHERE proposal_id = :p"
-        ),
-        {"p": parent},
-    )
-
     def insert_child() -> None:
         try:
             with engine.begin() as conn_b:
@@ -606,25 +657,43 @@ def test_livehead_01_concurrent_cancel_and_coord_statement_shapes(
             errors.append(exc)
 
     worker = threading.Thread(target=insert_child)
-    worker.start()
-    # Observe the wait from a THIRD connection: B is blocked by A's lock, not
-    # merely slow. Poll until B is seen waiting on A, or B finishes, or 15 s.
     blocked_by_a = False
-    deadline = time.monotonic() + 15
-    with engine.connect() as observer:
-        while time.monotonic() < deadline and not blocked_by_a:
-            if pid_b:
-                blockers = observer.execute(
-                    text("SELECT pg_blocking_pids(:b)"), {"b": pid_b[0]}
-                ).scalar_one()
-                observer.rollback()
-                blocked_by_a = pid_a in (blockers or [])
-                if not blocked_by_a and not worker.is_alive():
-                    break
-            time.sleep(0.05)
-    tx_a.commit()
-    conn_a.close()
-    worker.join(timeout=30)
+    conn_a: Connection = engine.connect()
+    tx_a = conn_a.begin()
+    try:
+        pid_a = int(conn_a.execute(text("SELECT pg_backend_pid()")).scalar_one())
+        conn_a.execute(
+            text(
+                "UPDATE coord.merge_proposals SET status = 'cancelled' "
+                "WHERE proposal_id = :p"
+            ),
+            {"p": parent},
+        )
+        worker.start()
+        # Observe the wait from a THIRD connection: B is blocked by A's lock,
+        # not merely slow. Poll until B is seen waiting on A, B finishes, or
+        # 15 s pass.
+        deadline = time.monotonic() + 15
+        with engine.connect() as observer:
+            while time.monotonic() < deadline and not blocked_by_a:
+                if pid_b:
+                    blockers = observer.execute(
+                        text("SELECT pg_blocking_pids(:b)"), {"b": pid_b[0]}
+                    ).scalar_one()
+                    observer.rollback()
+                    blocked_by_a = pid_a in (blockers or [])
+                    if not blocked_by_a and not worker.is_alive():
+                        break
+                time.sleep(0.05)
+        tx_a.commit()
+    finally:
+        # On any failure above: release A's row lock so B (and teardown) are
+        # not left waiting, and never leave the thread running.
+        if tx_a.is_active:
+            tx_a.rollback()
+        conn_a.close()
+        if worker.ident is not None:
+            worker.join(timeout=30)
     assert not worker.is_alive()
     assert not errors, errors
     assert blocked_by_a, (
