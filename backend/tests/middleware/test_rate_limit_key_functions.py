@@ -14,10 +14,13 @@ The contract pinned here:
   bucket, and one bearer from two peers always does;
 * with no bearer the key is the RIGHTMOST ``X-Forwarded-For`` entry (the
   address the ALB appended), so a forged leftmost entry buys no fresh bucket;
-* no key function reachable from ``backend/app`` keys on ``client.host`` alone
-  when ``X-Forwarded-For`` is present. That last test is enumerated — every
-  ``key_func=`` in ``backend/app`` and every ``Limiter`` in ``rate_limit.py`` —
-  not a sample.
+* no rate-limit key reachable from ``backend/app`` — slowapi's and the
+  WebSocket connection limits' — keys on ``client.host`` alone when
+  ``X-Forwarded-For`` is present. The slowapi half is enumerated (every
+  ``key_func=`` in ``backend/app`` and every ``Limiter`` in ``rate_limit.py``),
+  not a sample;
+* every limited route's key follows the credential its own auth accepts, and
+  a route whose auth is optional never keys on a credential.
 """
 
 from __future__ import annotations
@@ -25,16 +28,15 @@ from __future__ import annotations
 import ast
 import hashlib
 import importlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, WebSocket
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.testclient import TestClient
-from limits.storage import MemoryStorage
-from limits.strategies import FixedWindowRateLimiter
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request
@@ -97,11 +99,11 @@ def _request(
 
 
 @pytest.fixture
-def users_me_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def users_me_client() -> Iterator[TestClient]:
     """The real ``users.py`` router, limited by the real ``user_limiter``.
 
-    The limiter's storage is swapped for a fresh in-memory one for this test
-    only, so the budget starts full and no other test's traffic counts.
+    The limiter's storage is reset before and after, so the budget starts
+    full and no other test's traffic counts.
     Only the auth dependency is stubbed: it returns one user whatever the
     bearer, which is the point — the bucket must follow the bearer, not the
     user row and not the host.
@@ -109,9 +111,9 @@ def users_me_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.users import router as users_router
 
-    storage = MemoryStorage()
-    monkeypatch.setattr(user_limiter, "_storage", storage)
-    monkeypatch.setattr(user_limiter, "_limiter", FixedWindowRateLimiter(storage))
+    # The module limiter's storage is ``memory://`` under test settings;
+    # reset() empties it so the budget starts full (and again on teardown).
+    user_limiter.reset()
 
     caller = SimpleNamespace(
         id=uuid4(),
@@ -130,7 +132,8 @@ def users_me_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.dependency_overrides[get_current_active_user_async] = lambda: caller
     app.include_router(users_router, prefix="/api/v1/users")
-    return TestClient(app)
+    yield TestClient(app)
+    user_limiter.reset()
 
 
 def test_two_bearers_on_one_host_get_distinct_keys() -> None:
@@ -395,7 +398,7 @@ def test_a_cookie_caller_cannot_buy_a_fresh_bucket_with_a_junk_bearer(
 
 
 @pytest.fixture
-def users_me_real_auth_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def users_me_real_auth_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """GET /users/me through the REAL fastapi-users dependency.
 
     ``CookieOrBearerTransport`` -> ``CognitoJWTStrategy.read_token`` run
@@ -412,9 +415,9 @@ def users_me_real_auth_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from app.auth import cognito_user
     from app.db.session import get_async_db
 
-    storage = MemoryStorage()
-    monkeypatch.setattr(user_limiter, "_storage", storage)
-    monkeypatch.setattr(user_limiter, "_limiter", FixedWindowRateLimiter(storage))
+    # The module limiter's storage is ``memory://`` under test settings;
+    # reset() empties it so the budget starts full (and again on teardown).
+    user_limiter.reset()
 
     caller = SimpleNamespace(
         id=uuid4(),
@@ -443,7 +446,8 @@ def users_me_real_auth_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.dependency_overrides[get_async_db] = _unconnected_session
     app.include_router(users_router, prefix="/api/v1/users")
-    return TestClient(app)
+    yield TestClient(app)
+    user_limiter.reset()
 
 
 def test_a_cookie_authed_caller_rotating_junk_bearers_still_hits_its_budget(
@@ -480,6 +484,12 @@ def test_a_cookie_authed_caller_rotating_junk_bearers_still_hits_its_budget(
         # A non-loopback socket peer forwarding a loopback XFF entry is not
         # the dev fleet: BOTH the socket peer and the derived peer must be.
         ("203.0.113.9", "127.0.0.1", False),
+        # Loopback is the address class, not a string list.
+        ("::ffff:127.0.0.1", None, True),
+        ("127.0.0.2", None, True),
+        ("127.0.0.1", "::ffff:127.0.0.1", True),
+        ("not-an-ip", None, False),
+        ("testclient", None, False),
     ],
 )
 def test_the_dev_loopback_exemption_reads_the_peer_the_key_reads(
@@ -488,11 +498,6 @@ def test_the_dev_loopback_exemption_reads_the_peer_the_key_reads(
     monkeypatch.setattr(rate_limit.settings, "ENVIRONMENT", "development")
     request = _request(host=host, xff=xff)
     assert rate_limit._is_loopback_dev(request) is exempt
-    derived = rate_limit.get_peer_ip_identifier(request).removeprefix("peer:")
-    both_loopback = (
-        host in rate_limit._LOOPBACK_HOSTS and derived in rate_limit._LOOPBACK_HOSTS
-    )
-    assert both_loopback is exempt
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +528,7 @@ _EVENTS_INGEST_LIMIT = 120  # ``@user_limiter.limit("120 per minute")``
 
 
 @pytest.fixture
-def events_ingest_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def events_ingest_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """POST /events/workflow through the REAL ``get_authenticated_device``.
 
     ``HTTPBearer`` extraction runs unmodified; only the lowest layer, the
@@ -540,9 +545,9 @@ def events_ingest_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     from app.api.v1.endpoints.events import router as events_router
     from app.db.session import get_async_db
 
-    storage = MemoryStorage()
-    monkeypatch.setattr(user_limiter, "_storage", storage)
-    monkeypatch.setattr(user_limiter, "_limiter", FixedWindowRateLimiter(storage))
+    # The module limiter's storage is ``memory://`` under test settings;
+    # reset() empties it so the budget starts full (and again on teardown).
+    user_limiter.reset()
 
     owner = SimpleNamespace(id=uuid4(), is_active=True)
 
@@ -561,7 +566,8 @@ def events_ingest_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.dependency_overrides[get_async_db] = _unconnected_session
     app.include_router(events_router, prefix="/api/v1/events")
-    return TestClient(app)
+    yield TestClient(app)
+    user_limiter.reset()
 
 
 def test_a_device_rotating_junk_cookies_still_hits_its_ingest_budget(
@@ -596,13 +602,16 @@ def test_a_device_rotating_junk_cookies_still_hits_its_ingest_budget(
 # ---------------------------------------------------------------------------
 
 
-def _auth_kinds(dependant: object) -> set[str]:
-    """Which credential extractors a route's dependency tree runs."""
-    from fastapi.security import HTTPBearer
+def _auth_kinds(dependant: object) -> tuple[set[str], bool]:
+    """(credential extractors a route's dependency tree runs, whether its auth
+    is OPTIONAL — every auth dependency in it lets an unauthenticated caller
+    through)."""
+    import inspect
 
     from app.auth.config import CookieOrBearerScheme
 
     kinds: set[str] = set()
+    required = optional = False
     stack = [dependant]
     while stack:
         node = stack.pop()
@@ -611,30 +620,68 @@ def _auth_kinds(dependant: object) -> set[str]:
             kinds.add("cookie_or_bearer")
         elif isinstance(call, HTTPBearer):
             kinds.add("http_bearer")
+            if call.auto_error:
+                required = True
+            else:
+                optional = True
+        elif getattr(call, "__qualname__", "").endswith(
+            ("current_user_dependency", "current_user_token_dependency")
+        ):
+            # fastapi-users' current_user(optional=...) dependency. It is
+            # generated by makefun (``with_signature``), which keeps the real
+            # closure in the generated function's globals as ``_func_impl_``.
+            impl = call.__globals__.get("_func_impl_", call)
+            closed_over = inspect.getclosurevars(impl).nonlocals
+            assert "optional" in closed_over, (
+                f"cannot read whether {call.__qualname__} is optional; the walk "
+                "must not guess"
+            )
+            if closed_over["optional"]:
+                optional = True
+            else:
+                required = True
         stack.extend(getattr(node, "dependencies", []))
-    return kinds
+    return kinds, optional and not required
 
 
-def test_every_limited_route_keys_on_the_credential_its_auth_accepts() -> None:
-    """Walks every mounted API route that carries a limit on any of the five
-    module Limiters and checks the limit's key against the route's auth:
+def _module_limiters() -> list[Limiter]:
+    """Every ``Limiter`` instance in ``rate_limit.py``, found the way
+    :func:`_enumerated_key_funcs` finds them rather than listed by hand."""
+    return [v for _, v in sorted(vars(rate_limit).items()) if isinstance(v, Limiter)]
 
-    * ``get_user_identifier`` / ``get_authorization_identifier`` (cookie
-      first, then bearer) only on routes authenticated by the fastapi-users
-      ``CookieOrBearerScheme`` and by nothing else;
-    * ``get_device_bearer_identifier`` (bearer only) only on routes
-      authenticated by an ``HTTPBearer`` (device token) and by nothing else;
-    * peer and refresh-subject keys trust no credential, so any route.
+
+def _registered_limits(limiters: list[Limiter]) -> dict[str, list[object]]:
+    """Every limit on every limiter, per endpoint name — static
+    (``_route_limits``) and dynamic (``_dynamic_route_limits``) alike, EXTENDED
+    across limiters so an endpoint carrying limits from two of them keeps
+    both."""
+    registered: dict[str, list[object]] = {}
+    for lim in limiters:
+        for table in (lim._route_limits, lim._dynamic_route_limits):
+            for name, limits in table.items():
+                registered.setdefault(name, []).extend(limits)
+    return registered
+
+
+def _limit_mismatches(
+    routes: list[object], limiters: list[Limiter]
+) -> tuple[list[str], set[str], set[str]]:
+    """(problems, mounted limit names, registered limit names) for ``routes``.
+
+    A credential-keyed limit must sit on a route whose auth uses exactly that
+    credential: ``get_user_identifier`` / ``get_authorization_identifier``
+    (cookie first, then bearer) on the fastapi-users ``CookieOrBearerScheme``
+    and nothing else; ``get_device_bearer_identifier`` (bearer only) on an
+    ``HTTPBearer`` device token and nothing else. Peer and refresh-subject
+    keys trust no credential, so any route. A route whose auth is optional
+    may carry no credential-keyed limit at all.
     """
     from fastapi.routing import APIRoute
 
-    from app.api.v1.api import api_router
-
-    credential_keys = {
+    credential_keys: dict[object, set[str]] = {
         get_user_identifier: {"cookie_or_bearer"},
         get_authorization_identifier: {"cookie_or_bearer"},
     }
-    # Absent on a tree without it: the walk still runs and names the routes.
     device_key = getattr(rate_limit, "get_device_bearer_identifier", None)
     if device_key is not None:
         credential_keys[device_key] = {"http_bearer"}
@@ -642,42 +689,242 @@ def test_every_limited_route_keys_on_the_credential_its_auth_accepts() -> None:
         rate_limit.get_peer_ip_identifier,
         rate_limit._get_refresh_token_subject,
     }
-    limiters = [
-        rate_limit.limiter,
-        rate_limit.user_limiter,
-        rate_limit.auth_limiter,
-        rate_limit.api_limiter,
-        rate_limit.refresh_limiter,
-    ]
-    registered = {
-        name: limits for lim in limiters for name, limits in lim._route_limits.items()
-    }
+    registered = _registered_limits(limiters)
 
     mounted: set[str] = set()
     problems: list[str] = []
-    for route in api_router.routes:
+    for route in routes:
         if not isinstance(route, APIRoute):
             continue
         name = f"{route.endpoint.__module__}.{route.endpoint.__name__}"
         if name not in registered:
             continue
         mounted.add(name)
-        kinds = _auth_kinds(route.dependant)
+        kinds, auth_is_optional = _auth_kinds(route.dependant)
         for limit in registered[name]:
-            key_func = limit.key_func
+            key_func = getattr(limit, "key_func", None) or getattr(
+                limit, "key_function", None
+            )
             if key_func in credential_free_keys:
                 continue
             wanted = credential_keys.get(key_func)
+            label = f"{sorted(route.methods)} {route.path}"
             if wanted is None:
-                problems.append(f"{route.path}: unknown key {key_func!r}")
+                problems.append(f"{label}: unknown key {key_func!r}")
+            elif auth_is_optional:
+                problems.append(
+                    f"{label}: key {key_func.__name__} trusts a credential, but "
+                    "the route's auth is optional, so a caller picks its own "
+                    "bucket with any junk token; key it on the peer"
+                )
             elif kinds != wanted:
                 problems.append(
-                    f"{sorted(route.methods)} {route.path}: key "
-                    f"{key_func.__name__} expects auth {sorted(wanted)}, "
-                    f"route authenticates with {sorted(kinds)}"
+                    f"{label}: key {key_func.__name__} expects auth "
+                    f"{sorted(wanted)}, route authenticates with {sorted(kinds)}"
                 )
+    return problems, mounted, set(registered)
 
+
+def test_every_limited_route_keys_on_the_credential_its_auth_accepts() -> None:
+    """Walks every mounted API route that carries a limit on any module
+    ``Limiter`` and checks each limit's key against the route's auth."""
+    from app.api.v1.api import api_router
+
+    problems, mounted, registered = _limit_mismatches(
+        list(api_router.routes), _module_limiters()
+    )
     assert problems == []
     # Coverage of the walk itself: every registered limit is on a mounted route.
-    assert set(registered) - mounted == set()
+    assert registered - mounted == set()
     assert len(mounted) >= 20
+
+
+def test_the_walk_finds_the_five_module_limiters() -> None:
+    assert len(_module_limiters()) == 5
+
+
+def _temporary_router() -> object:
+    from fastapi import APIRouter
+
+    return APIRouter()
+
+
+def test_the_walk_checks_every_limiter_on_a_route() -> None:
+    """One endpoint carrying limits from TWO limiters: the credential-keyed
+    one on the wrong auth must be reported even though the other limiter's
+    peer-keyed limit on the same endpoint is fine. A per-name dict overwrite
+    across limiters would keep only one of them."""
+    device_bearer = HTTPBearer(auto_error=True)
+    wrong = Limiter(key_func=get_user_identifier, storage_uri="memory://")
+    fine = Limiter(key_func=rate_limit.get_peer_ip_identifier, storage_uri="memory://")
+
+    router = _temporary_router()
+
+    @router.get("/two-limiters")  # type: ignore[attr-defined]
+    @fine.limit("10 per minute")
+    @wrong.limit("10 per minute")
+    async def two_limiters(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials = Depends(device_bearer),
+    ) -> dict[str, str]:
+        return {}
+
+    problems, mounted, _ = _limit_mismatches(
+        list(router.routes),  # type: ignore[attr-defined]
+        [wrong, fine],
+    )
+    assert len(mounted) == 1
+    assert problems == [
+        "['GET'] /two-limiters: key get_user_identifier expects auth "
+        "['cookie_or_bearer'], route authenticates with ['http_bearer']"
+    ]
+
+
+def test_the_walk_checks_dynamic_limits_too() -> None:
+    """A limit given as a callable lands in ``_dynamic_route_limits``."""
+    device_bearer = HTTPBearer(auto_error=True)
+    wrong = Limiter(key_func=get_user_identifier, storage_uri="memory://")
+    router = _temporary_router()
+
+    @router.get("/dynamic")  # type: ignore[attr-defined]
+    @wrong.limit(lambda: "10 per minute")
+    async def dynamic(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials = Depends(device_bearer),
+    ) -> dict[str, str]:
+        return {}
+
+    problems, mounted, _ = _limit_mismatches(
+        list(router.routes),  # type: ignore[attr-defined]
+        [wrong],
+    )
+    assert len(mounted) == 1
+    assert len(problems) == 1 and "/dynamic" in problems[0]
+
+
+@pytest.mark.parametrize("arm", ["fastapi_users_optional", "http_bearer_optional"])
+def test_the_walk_rejects_a_credential_key_on_optional_auth(arm: str) -> None:
+    """With optional auth a caller may present NO valid credential and still
+    reach the endpoint, so a credential-keyed bucket is the caller's to pick:
+    every junk token is a fresh bucket. Such a route must key on the peer."""
+    from app.auth.config import current_active_user_optional
+
+    if arm == "fastapi_users_optional":
+        dependency = current_active_user_optional
+        key_func: Callable[..., str] = get_user_identifier
+    else:
+        dependency = HTTPBearer(auto_error=False)
+        key_func = getattr(
+            rate_limit, "get_device_bearer_identifier", get_user_identifier
+        )
+
+    lim = Limiter(key_func=key_func, storage_uri="memory://")
+    router = _temporary_router()
+
+    @router.get("/optional")  # type: ignore[attr-defined]
+    @lim.limit("10 per minute")
+    async def optional(
+        request: Request, caller: object = Depends(dependency)
+    ) -> dict[str, str]:
+        return {}
+
+    problems, mounted, _ = _limit_mismatches(
+        list(router.routes),  # type: ignore[attr-defined]
+        [lim],
+    )
+    assert len(mounted) == 1
+    assert len(problems) == 1 and "optional" in problems[0], problems
+
+
+def test_the_two_per_caller_key_names_are_one_function() -> None:
+    assert get_authorization_identifier is get_user_identifier
+
+
+# ---------------------------------------------------------------------------
+# WebSocket connection limits key on the same peer as the HTTP keys
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def recorded_connection_keys(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records the address each connection-rate check is made for, and refuses
+    the connection so the handler stops before authentication."""
+    from app.websockets.rate_limiter import RateLimiter
+
+    seen: list[str] = []
+
+    def _refuse(cls: object, ip_address: str, limit: int = 5, window: int = 60) -> bool:
+        seen.append(ip_address)
+        return False
+
+    monkeypatch.setattr(
+        RateLimiter, "check_connection_rate_limit", classmethod(_refuse)
+    )
+    return seen
+
+
+def _ws_app(route: Callable[..., object], path: str) -> FastAPI:
+    app = FastAPI()
+    app.add_api_websocket_route(path, route)  # type: ignore[arg-type]
+    return app
+
+
+def test_the_base_websocket_handler_keys_on_the_rightmost_forwarded_entry(
+    recorded_connection_keys: list[str],
+) -> None:
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.websockets.base import BaseWebSocketHandler
+
+    class _Handler(BaseWebSocketHandler):
+        endpoint_name = "test"
+
+        async def on_connect(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("the rate check refuses before connect")
+
+        async def on_message(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("the rate check refuses before any message")
+
+    async def endpoint(websocket: WebSocket) -> None:
+        await _Handler().handle_connection(websocket)
+
+    client = TestClient(_ws_app(endpoint, "/ws"))
+    for forged in ("6.6.6.6", "7.7.7.7"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/ws", headers={"X-Forwarded-For": f"{forged}, {CALLER_PEER}"}
+            ):
+                pass
+    assert recorded_connection_keys == [CALLER_PEER, CALLER_PEER]
+
+
+def test_the_automation_monitor_websocket_keys_on_the_rightmost_forwarded_entry(
+    recorded_connection_keys: list[str],
+) -> None:
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.api.v1.endpoints.automation_ws import websocket_monitor_endpoint
+
+    client = TestClient(_ws_app(websocket_monitor_endpoint, "/ws/{session_id}"))
+    for forged in ("6.6.6.6", "7.7.7.7"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/ws/s-1", headers={"X-Forwarded-For": f"{forged}, {CALLER_PEER}"}
+            ):
+                pass
+    assert recorded_connection_keys == [CALLER_PEER, CALLER_PEER]
+
+
+def test_a_websocket_with_no_forwarded_header_keys_on_the_socket_peer(
+    recorded_connection_keys: list[str],
+) -> None:
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.api.v1.endpoints.automation_ws import websocket_monitor_endpoint
+
+    client = TestClient(_ws_app(websocket_monitor_endpoint, "/ws/{session_id}"))
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/s-1"):
+            pass
+    # Starlette's TestClient connects as host "testclient".
+    assert recorded_connection_keys == ["testclient"]

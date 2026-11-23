@@ -1,5 +1,6 @@
 import functools
 import hashlib
+import ipaddress
 import logging
 import time
 
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
+from starlette.requests import HTTPConnection
 
 from app.core.config import settings
 
@@ -28,23 +30,28 @@ else:
     storage_uri = "memory://"
 
 
-def _peer_key(request: Request) -> str:
-    """``peer:<address>`` for the address the nearest proxy saw.
+def peer_ip(connection: HTTPConnection) -> str:
+    """The address the nearest proxy saw, for an HTTP request or a WebSocket.
 
     The RIGHTMOST ``X-Forwarded-For`` entry (the one the ALB appended, which a
-    client cannot forge), else the socket peer when the request arrived with
-    no forwarded header — see
+    client cannot forge), else the socket peer when the connection arrived
+    with no forwarded header, else ``"unknown"`` — see
     :func:`app.middleware.logging_middleware.peer_ip_from`. Keying on the
     LEFTMOST entry would let a caller pick a fresh bucket per request, and
-    keying on ``request.client.host`` behind the ALB would put every caller
-    reaching one ALB node into one bucket.
+    keying on ``client.host`` behind the ALB would put every caller reaching
+    one ALB node into one bucket. The WebSocket connection-rate limits
+    (``app.websockets.base``, ``automation_ws``) key on this too.
     """
     from app.middleware.logging_middleware import peer_ip_from
 
-    client = getattr(request, "client", None)
+    client = getattr(connection, "client", None)
     host = getattr(client, "host", None) if client else None
-    peer = peer_ip_from(request.headers.get("x-forwarded-for"), host)
-    return f"peer:{peer or 'unknown'}"
+    return peer_ip_from(connection.headers.get("x-forwarded-for"), host) or "unknown"
+
+
+def _peer_key(request: Request) -> str:
+    """``peer:<address>`` for :func:`peer_ip`."""
+    return f"peer:{peer_ip(request)}"
 
 
 def _presented_token(request: Request) -> str | None:
@@ -84,10 +91,16 @@ def _bearer_key(request: Request) -> str | None:
 
     The token is HASHED, never decoded: this must not become a second,
     unverified token parser, and the digest keeps a bearer out of log lines
-    and Redis keys. Tokens rotate roughly hourly, which is far longer than any
-    per-minute window keyed off them. Because the key is the token, not the
-    user id, two logins of the same user (an operator's browser and an agent's
-    own login) get separate buckets.
+    and Redis keys.
+
+    The key is the TOKEN, not the user it names — a deliberate trade-off
+    (plan ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``
+    D2). For: two logins of the same user (an operator's browser tabs and an
+    agent's own login) get separate buckets, so an agent never spends the
+    operator's budget. Against: a user who mints fresh tokens (a new login or
+    a refresh-token exchange) gets a fresh bucket per token, so the limit
+    bounds each token, not each user. In normal use tokens rotate roughly
+    hourly, far longer than any per-minute window keyed off them.
     """
     return _digest_key(_presented_token(request))
 
@@ -100,39 +113,28 @@ def _digest_key(token: str | None) -> str | None:
 
 
 def get_user_identifier(request: Request) -> str:
-    """Per-CALLER bucket for ``user_limiter``: the bearer when there is one,
-    else the peer.
+    """Per-CALLER bucket for every route authenticated by fastapi-users:
+    ``user_limiter``'s default key, and the explicit key of the operations
+    admin routes (exported there as ``get_authorization_identifier``).
 
     Returns ``bearer:<digest>`` of the token authentication uses (the
     ``access_token`` cookie, else the ``Authorization`` bearer — see
-    :func:`_presented_token`), and ``peer:<rightmost X-Forwarded-For>`` (see
-    :func:`_peer_key`) for a request carrying neither. It deliberately does NOT read ``request.state.user``: nothing in
-    the app sets it, and slowapi calls a key function inside the endpoint
-    wrapper with only the raw request in hand. Reading it was why this used to
-    return ``ip:{client.host}`` for every request — one bucket per ALB node,
-    shared by every user, agent browser and runner.
+    :func:`_presented_token`; on keying the token rather than the user, see
+    :func:`_bearer_key`), and ``peer:<rightmost X-Forwarded-For>`` (see
+    :func:`peer_ip`) for a request carrying neither. Behind Vercel/ALB every
+    request arrives from a handful of source IPs, so an IP-keyed limit would
+    collapse every caller into one bucket.
 
-    **Do not rename the ``request`` parameter** (see
-    :func:`get_authorization_identifier`).
-    """
-    return _bearer_key(request) or _peer_key(request)
+    It deliberately does NOT read ``request.state.user``: nothing in the app
+    sets it, and slowapi calls a key function inside the endpoint wrapper with
+    only the raw request in hand. Reading it was why this used to return
+    ``ip:{client.host}`` for every request — one bucket per ALB node, shared
+    by every user, agent browser and runner.
 
-
-def get_authorization_identifier(request: Request) -> str:
-    """Per-CALLER rate-limit bucket for bearer-authenticated admin routes.
-
-    Same problem ``_get_refresh_token_subject`` (below) solves for the
-    refresh endpoint: behind Vercel/ALB every request arrives from a handful
-    of source IPs, so an IP-keyed limit collapses every operator into one
-    bucket and one person's cleanup run throttles everybody else's.
-
-    Every route keyed here authenticates through fastapi-users
-    (``get_current_active_user_async`` directly or via ``require_admin``),
-    i.e. through the cookie-first scheme, so the token that scheme uses
-    identifies the caller (see :func:`_bearer_key`). With no token it falls
-    back to the peer (see :func:`_peer_key`) — an
-    unauthenticated caller never reaches these routes, so that arm only covers
-    oddities like a probe.
+    A route authenticated by an ``HTTPBearer`` device token must use
+    :func:`get_device_bearer_identifier` instead, and a route with OPTIONAL
+    auth must key on the peer; ``test_rate_limit_key_functions`` walks every
+    limited route and enforces both.
 
     **Do not rename the ``request`` parameter.** slowapi decides whether to
     call a key function with the request or with no arguments by looking for
@@ -142,6 +144,11 @@ def get_authorization_identifier(request: Request) -> str:
     and raise inside the limiter rather than here.
     """
     return _bearer_key(request) or _peer_key(request)
+
+
+#: The name the operations admin routes import. One function, two names: the
+#: routes it keys authenticate through the same fastapi-users scheme.
+get_authorization_identifier = get_user_identifier
 
 
 def get_device_bearer_identifier(request: Request) -> str:
@@ -157,7 +164,7 @@ def get_device_bearer_identifier(request: Request) -> str:
     key that does not follow the route's own credential.
 
     **Do not rename the ``request`` parameter** (see
-    :func:`get_authorization_identifier`).
+    :func:`get_user_identifier`).
     """
     return _digest_key(_header_bearer_token(request)) or _peer_key(request)
 
@@ -166,7 +173,7 @@ def get_peer_ip_identifier(request: Request) -> str:
     """Per-PEER bucket for unauthenticated public reads (see :func:`_peer_key`).
 
     **Do not rename the ``request`` parameter** (see
-    :func:`get_authorization_identifier`).
+    :func:`get_user_identifier`).
     """
     return _peer_key(request)
 
@@ -278,27 +285,38 @@ refresh_limiter = Limiter(
 )
 
 
-# Loopback hosts treated as "the dev fleet" — exempt from auth rate limits
-# in development. The primary runner, every spawned test runner, and the
+# Loopback callers are treated as "the dev fleet" — exempt from auth rate
+# limits in development. The primary runner, every spawned test runner, and the
 # supervisor all phone home over 127.0.0.1 on a dev box, so without an
 # exemption they share a single 5/min bucket and concurrent test spawns
 # starve each other (and the primary). Production traffic is unaffected:
 # this only fires when ENVIRONMENT == "development".
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _is_loopback(address: str | None) -> bool:
+    """True for a loopback IP, including an IPv4-mapped IPv6 one
+    (``::ffff:127.0.0.1``) and all of ``127.0.0.0/8``. Anything that does not
+    parse as an IP (``None``, ``"unknown"``, a hostname) is not loopback."""
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped.is_loopback
+    return ip.is_loopback
 
 
 def _is_loopback_dev(request: Request) -> bool:
     """True for a development request whose socket peer AND derived peer (the
     rightmost ``X-Forwarded-For``, the derivation the rate-limit keys use —
-    :func:`_peer_key`) are both loopback. Either alone is not the dev fleet:
+    :func:`peer_ip`) are both loopback. Either alone is not the dev fleet:
     a loopback socket peer may be a local proxy forwarding a remote caller,
     and a loopback ``X-Forwarded-For`` entry may come from a remote peer."""
     if settings.ENVIRONMENT != "development":
         return False
     client = getattr(request, "client", None)
     host = getattr(client, "host", None) if client else None
-    derived = _peer_key(request).removeprefix("peer:")
-    return host in _LOOPBACK_HOSTS and derived in _LOOPBACK_HOSTS
+    return _is_loopback(host) and _is_loopback(peer_ip(request))
 
 
 def auth_rate_limit(limit_string: str):
