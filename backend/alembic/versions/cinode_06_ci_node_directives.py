@@ -1,7 +1,7 @@
 """runner-as-CI-node — coord.ci_node_directives (latest accepted directive per device)
 
 Revision ID: cinode_06_ci_node_directives
-Revises: coord_conditions_02_honest_runs
+Revises: coord_subprojects_05_note_events
 Create Date: 2026-11-22
 
 Phase 1 of plan ``2026-11-22-ci-node-directive-replays-on-connect`` (decision
@@ -70,7 +70,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cinode_06_ci_node_directives"
-down_revision: str | Sequence[str] | None = "coord_conditions_02_honest_runs"
+down_revision: str | Sequence[str] | None = "coord_subprojects_05_note_events"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

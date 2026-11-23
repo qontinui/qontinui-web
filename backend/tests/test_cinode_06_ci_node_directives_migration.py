@@ -57,7 +57,7 @@ _REVISION_FILENAME = "cinode_06_ci_node_directives.py"
 
 # Pinned as a literal so a re-point of down_revision is a deliberate change of
 # this line, the assignment, and the Revises header together.
-_PARENT_REVISION_ID = "coord_conditions_02_honest_runs"
+_PARENT_REVISION_ID = "coord_subprojects_05_note_events"
 
 _SCHEMA = "coord"
 _TABLE = "ci_node_directives"
