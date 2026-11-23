@@ -1140,3 +1140,62 @@ def test_a_malformed_trusted_proxy_range_fails_at_startup(bad: str) -> None:
 
     with pytest.raises(ValidationError, match="RATE_LIMIT_TRUSTED_PROXY_CIDRS"):
         Settings(RATE_LIMIT_TRUSTED_PROXY_CIDRS=bad)
+
+
+# ---------------------------------------------------------------------------
+# Startup names the effective trusted ranges, and whether they are a default
+# ---------------------------------------------------------------------------
+
+
+def test_settings_record_whether_the_trusted_ranges_are_the_default() -> None:
+    from app.core.config import Settings
+
+    assert Settings(ENVIRONMENT="production").rate_limit_trusted_proxy_cidrs_is_default
+    assert not Settings(
+        ENVIRONMENT="production", RATE_LIMIT_TRUSTED_PROXY_CIDRS="10.20.0.0/16"
+    ).rate_limit_trusted_proxy_cidrs_is_default
+    assert not Settings(
+        ENVIRONMENT="production", RATE_LIMIT_TRUSTED_PROXY_CIDRS=""
+    ).rate_limit_trusted_proxy_cidrs_is_default
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        (
+            {"ENVIRONMENT": "production"},
+            [",".join(_DEPLOYED_DEFAULT), "default for ENVIRONMENT=production"],
+        ),
+        (
+            {"ENVIRONMENT": "development"},
+            ["127.0.0.0/8,::1/128", "default for ENVIRONMENT=development"],
+        ),
+        (
+            {"ENVIRONMENT": "production", "RATE_LIMIT_TRUSTED_PROXY_CIDRS": ""},
+            ["(none)", "explicit"],
+        ),
+    ],
+    ids=["production-default", "development-default", "explicit-empty"],
+)
+def test_the_startup_line_names_the_ranges_and_their_source(
+    kwargs: dict[str, str], expected: list[str]
+) -> None:
+    from app.core.config import Settings
+
+    message = rate_limit.trusted_proxy_ranges_message(Settings(**kwargs))
+    for fragment in expected:
+        assert fragment in message, message
+
+
+def test_the_startup_line_is_logged_once_at_info(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    rate_limit.log_trusted_proxy_ranges.cache_clear()
+    with caplog.at_level(logging.INFO, logger=rate_limit.logger.name):
+        rate_limit.log_trusted_proxy_ranges()
+        rate_limit.log_trusted_proxy_ranges()
+    lines = [r for r in caplog.records if "trusted proxy ranges" in r.getMessage()]
+    assert len(lines) == 1
+    assert lines[0].levelno == logging.INFO

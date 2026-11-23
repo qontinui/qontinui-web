@@ -11,7 +11,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.requests import HTTPConnection
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,25 @@ def _trusted_proxy_networks(
     """``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` parsed (validated at
     startup by the setting itself), cached per configured value."""
     return tuple(ipaddress.ip_network(c) for c in cidrs.split(",") if c)
+
+
+def trusted_proxy_ranges_message(config: Settings) -> str:
+    """The startup line naming the effective trusted proxy ranges and where
+    they came from (a per-ENVIRONMENT default, or an explicit setting)."""
+    cidrs = config.RATE_LIMIT_TRUSTED_PROXY_CIDRS or ""
+    source = (
+        f"default for ENVIRONMENT={config.ENVIRONMENT}"
+        if config.rate_limit_trusted_proxy_cidrs_is_default
+        else "explicit RATE_LIMIT_TRUSTED_PROXY_CIDRS"
+    )
+    return f"rate limit: trusted proxy ranges {cidrs or '(none)'} ({source})"
+
+
+@functools.cache
+def log_trusted_proxy_ranges() -> None:
+    """Log :func:`trusted_proxy_ranges_message` once, at INFO. Called at
+    import, so a deployment can read which peers' X-Forwarded-For it trusts."""
+    logger.info(trusted_proxy_ranges_message(settings))
 
 
 def _ip(address: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
@@ -226,6 +245,9 @@ def get_peer_ip_identifier(request: Request) -> str:
     :func:`get_user_identifier`).
     """
     return _peer_key(request)
+
+
+log_trusted_proxy_ranges()
 
 
 # The app-wide limiter (``app.state.limiter``), keyed per peer.

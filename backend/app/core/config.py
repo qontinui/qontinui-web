@@ -15,6 +15,7 @@ from pydantic import (
     AnyHttpUrl,
     Field,
     PostgresDsn,
+    PrivateAttr,
     field_validator,
     model_validator,
 )
@@ -213,13 +214,22 @@ class Settings(BaseSettings):
     # app.middleware.rate_limit.peer_ip.
     #
     # Unset, the default depends on ENVIRONMENT (``_default_trusted_proxies``):
-    # deployed (production, and staging, which is what production reports)
-    # trusts loopback plus the private ranges, because the tasks sit behind
-    # the ALB in private subnets; development trusts loopback only, because a
-    # self-hosted backend may be reached directly from a LAN, a Docker bridge
-    # or a VPN, all private addresses that must not pick their own bucket.
-    # An explicit value always wins; empty trusts nothing. A self-hoster
-    # behind their own proxy sets it to that proxy's address range.
+    # - production or staging (production itself reports staging): loopback
+    #   plus EVERY RFC1918/ULA peer (10/8, 172.16/12, 192.168/16, fc00::/7).
+    #   That is correct only when the app is reachable SOLELY through a proxy
+    #   in those ranges. The hosted deployment is ASSUMED to be such a case
+    #   (tasks behind the ALB in private subnets); that is not verified from
+    #   this repo.
+    # - development: loopback only, because a local backend may be reached
+    #   directly from a LAN, a Docker bridge or a VPN.
+    # A production-posture deployment that is reachable DIRECTLY from a
+    # private network (LAN, VPN, Docker bridge) MUST set this explicitly: to
+    # its proxy's addresses, or to an empty value when there is no proxy.
+    # Otherwise any such client can forge X-Forwarded-For and pick its own
+    # rate-limit bucket. An explicit value always wins; empty trusts nothing.
+    # The effective ranges, and whether they are the default, are logged once
+    # at startup (app.middleware.rate_limit.log_trusted_proxy_ranges).
+    _trusted_proxy_cidrs_is_default: bool = PrivateAttr(default=False)
     RATE_LIMIT_TRUSTED_PROXY_CIDRS: str | None = Field(
         default=None,
         description=(
@@ -610,11 +620,20 @@ class Settings(BaseSettings):
                 ) from exc
         return ",".join(entries)
 
+    @property
+    def rate_limit_trusted_proxy_cidrs_is_default(self) -> bool:
+        """True when RATE_LIMIT_TRUSTED_PROXY_CIDRS was unset and filled from
+        ENVIRONMENT, False when it was set explicitly (including empty)."""
+        return self._trusted_proxy_cidrs_is_default
+
     @model_validator(mode="after")
     def _default_trusted_proxies(self) -> "Settings":
         """Fill an unset RATE_LIMIT_TRUSTED_PROXY_CIDRS from ENVIRONMENT
         (see the setting's comment). Deployed means production or staging:
         production reports ``environment: staging`` on ``/health``."""
+        self._trusted_proxy_cidrs_is_default = (
+            self.RATE_LIMIT_TRUSTED_PROXY_CIDRS is None
+        )
         if self.RATE_LIMIT_TRUSTED_PROXY_CIDRS is None:
             if self.ENVIRONMENT in ("production", "staging"):
                 self.RATE_LIMIT_TRUSTED_PROXY_CIDRS = ",".join(
