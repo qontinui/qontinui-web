@@ -1,5 +1,7 @@
 import functools
 import hashlib
+import logging
+import math
 import time
 from typing import Any
 
@@ -13,6 +15,14 @@ from slowapi.util import get_remote_address
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
+
+# slowapi logs every refusal itself, at WARNING, naming the bucket KEY (a
+# bearer digest or an address) and the concrete path:
+# "ratelimit 1 per 1 minute (peer:<addr>) exceeded at endpoint: /items/<id>".
+# `rate_limit_exceeded_handler` logs the refusal without either
+# (`rate_limit_refused`), so slowapi's own line is held to ERROR and above —
+# its configuration errors ("Skipping limit ...") still pass.
+logging.getLogger("slowapi").setLevel(logging.ERROR)
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -175,16 +185,49 @@ def _refusal_lane(request: Request, limit: Any) -> str:
     return template if isinstance(template, str) and template else "unknown"
 
 
-def _refusal_retry_after(limit: Any) -> str:
-    """Seconds until the refusing limit's window has surely rolled over: the
-    window's length (``3600`` for ``N per hour``). slowapi's exception carries
-    no reset time, and the window length is the bound a caller can wait out.
-    ``60`` only when the limit cannot say."""
+def _limiter_holding(limit: Any) -> Limiter | None:
+    """The module limiter that registered ``limit`` — slowapi's exception names
+    the limit, not the limiter whose storage counted it."""
+    for candidate in (
+        limiter,
+        user_limiter,
+        auth_limiter,
+        api_limiter,
+        refresh_limiter,
+    ):
+        for registered in candidate._route_limits.values():
+            if any(entry is limit for entry in registered):
+                return candidate
+    return None
+
+
+def _refusal_retry_after(request: Request, limit: Any) -> str:
+    """Seconds until the refusing bucket admits again.
+
+    Read from the limiter's own storage when it can say: slowapi leaves the
+    refused bucket's identifiers on ``request.state.view_rate_limit``, and
+    ``get_window_stats`` answers that bucket's reset time. Otherwise the
+    window's length (``3600`` for ``N per hour``) — the longest a caller can
+    have to wait. ``60`` only when the limit cannot say either. A storage
+    error never fails the refusal; it only falls back.
+    """
     try:
-        expiry = int(limit.limit.get_expiry())
+        window = int(limit.limit.get_expiry())
     except Exception:
         return "60"
-    return str(expiry) if expiry > 0 else "60"
+    if window <= 0:
+        return "60"
+    try:
+        holder = _limiter_holding(limit)
+        item, identifiers = request.state.view_rate_limit
+        if holder is not None:
+            stats = holder.limiter.get_window_stats(item, *identifiers)
+            until_reset = math.ceil(stats.reset_time - time.time())
+            if 0 < until_reset <= window:
+                return str(until_reset)
+    except Exception:
+        pass
+    return str(window)
 
 
 def _log_refusal(**fields: str) -> None:
@@ -195,12 +238,16 @@ def _log_refusal(**fields: str) -> None:
     ``path`` (which can carry an id) there. This line names a lane and a bucket
     kind, never a caller, so the context is set aside for this one call and
     restored after it — the request's later lines keep their correlation.
+    ``request_id`` alone is kept: it identifies the request, not the caller,
+    and joins this line to the request's own started/completed lines.
 
     The bucket kind is logged as ``bucket_kind``: the log sanitizer redacts
     every field whose name contains ``key``.
     """
     saved = structlog.contextvars.get_contextvars()
     structlog.contextvars.clear_contextvars()
+    if "request_id" in saved:
+        structlog.contextvars.bind_contextvars(request_id=saved["request_id"])
     try:
         logger.warning("rate_limit_refused", **fields)
     finally:
@@ -225,7 +272,7 @@ async def rate_limit_exceeded_handler(
     key_kind = (
         _refusal_key_kind(request, limit.key_func) if limit is not None else "unknown"
     )
-    retry_after = _refusal_retry_after(limit)
+    retry_after = _refusal_retry_after(request, limit)
     _log_refusal(
         lane=lane,
         bucket_kind=key_kind,

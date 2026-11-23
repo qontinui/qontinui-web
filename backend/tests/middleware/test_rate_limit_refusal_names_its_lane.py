@@ -280,11 +280,13 @@ def test_a_shared_limit_scope_is_the_lane() -> None:
 
 @pytest.mark.parametrize(
     ("limit", "window_seconds"),
-    [("1 per hour", "3600"), ("1 per minute", "60"), ("1 per day", "86400")],
+    [("1 per hour", 3600), ("1 per minute", 60), ("1 per day", 86400)],
 )
-def test_retry_after_is_the_limits_window_not_an_invented_60(
-    limit: str, window_seconds: str
+def test_retry_after_is_bounded_by_the_limits_window_not_an_invented_60(
+    limit: str, window_seconds: int
 ) -> None:
+    """Refused straight after the first hit, the wait is (almost) the whole
+    window — whatever its length, never a fixed 60."""
     client = TestClient(
         _probe_app(get_peer_ip_identifier, limit=limit), client=(CLIENT_HOST, 50000)
     )
@@ -293,9 +295,50 @@ def test_retry_after_is_the_limits_window_not_an_invented_60(
         assert client.get(f"/probe/{item}").status_code == 200
         refused = client.get(f"/probe/{item}")
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == window_seconds
+    retry_after = int(refused.headers["Retry-After"])
+    assert window_seconds - 5 <= retry_after <= window_seconds
     lines = [entry for entry in logs if entry.get("event") == "rate_limit_refused"]
-    assert [line["retry_after"] for line in lines] == [window_seconds]
+    assert [line["retry_after"] for line in lines] == [str(retry_after)]
+
+
+def test_retry_after_is_the_time_until_this_keys_window_resets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ten minutes into a ``1 per hour`` window, the caller waits the 50
+    minutes left — read from the limiter's own (memory) storage — not the
+    window's full hour."""
+    import time as time_module
+
+    client = TestClient(
+        _probe_app(get_peer_ip_identifier, limit="1 per hour"),
+        client=(CLIENT_HOST, 50000),
+    )
+    item = str(uuid4())
+    started = time_module.time()
+    assert client.get(f"/probe/{item}").status_code == 200
+    monkeypatch.setattr(time_module, "time", lambda: started + 600)
+    refused = client.get(f"/probe/{item}")
+    assert refused.status_code == 429
+    # ceil() of the 50 minutes left, measured from the first hit.
+    assert 2995 <= int(refused.headers["Retry-After"]) <= 3001
+
+
+def test_retry_after_falls_back_to_the_window_when_storage_cannot_say(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unreadable(*args: Any, **kwargs: Any) -> Any:
+        raise ConnectionError("storage unreachable")
+
+    monkeypatch.setattr(user_limiter.limiter, "get_window_stats", unreadable)
+    client = TestClient(
+        _probe_app(get_peer_ip_identifier, limit="1 per hour"),
+        client=(CLIENT_HOST, 50000),
+    )
+    item = str(uuid4())
+    assert client.get(f"/probe/{item}").status_code == 200
+    refused = client.get(f"/probe/{item}")
+    assert refused.status_code == 429
+    assert refused.headers["Retry-After"] == "3600"
 
 
 # --------------------------------------------------------------------------
@@ -379,7 +422,11 @@ def test_the_refused_line_carries_no_request_context(
     console formatter, not ``capture_logs`` (which replaces the chain and so
     never merges context). Only the formatter's output stream is ours: a
     private buffer, so no global handler is left pointing at a test's stream.
-    The previous handlers and structlog configuration are restored exactly.
+    Logger caching is switched off for the test's duration, and the two
+    module loggers the request path logs through are fresh proxies, so no
+    logger built on the production chain is cached anywhere: restoring the
+    previous handlers and structlog configuration afterwards restores the
+    logging state the test found.
     """
     import io
     import json
@@ -388,6 +435,7 @@ def test_the_refused_line_carries_no_request_context(
     import structlog
 
     import app.middleware.rate_limit as rate_limit_module
+    import app.middleware.request_id as request_id_module
     from app.config.logging_config import configure_logging
 
     root = logging.getLogger()
@@ -397,6 +445,7 @@ def test_the_refused_line_carries_no_request_context(
     buffer = io.StringIO()
     try:
         configure_logging("production")
+        structlog.configure(cache_logger_on_first_use=False)
         capture = logging.StreamHandler(buffer)
         capture.setFormatter(root.handlers[0].formatter)
         root.handlers = [capture]
@@ -407,13 +456,24 @@ def test_the_refused_line_carries_no_request_context(
             "logger",
             structlog.get_logger(rate_limit_module.__name__),
         )
+        monkeypatch.setattr(
+            request_id_module,
+            "logger",
+            structlog.get_logger(request_id_module.__name__),
+        )
         client = TestClient(
             _probe_app(get_peer_ip_identifier, request_id_middleware=True),
             client=(CLIENT_HOST, 50000),
         )
         item = str(uuid4())
+        request_id = f"req-{uuid4().hex}"
         assert client.get(f"/probe/{item}").status_code == 200
-        assert client.get(f"/probe/{item}").status_code == 429
+        assert (
+            client.get(
+                f"/probe/{item}", headers={"X-Request-ID": request_id}
+            ).status_code
+            == 429
+        )
     finally:
         root.handlers = previous_handlers
         root.setLevel(previous_level)
@@ -433,10 +493,27 @@ def test_the_refused_line_carries_no_request_context(
     assert item not in raw
     assert "client_host" not in line
     assert "path" not in line
-    # Positive control: the context really was bound for this request, and it
-    # is still there for the lines after the refusal.
-    finished = [r for r in records if r.get("event") != "rate_limit_refused"]
-    assert any(r.get("client_host") == CLIENT_HOST for r in finished), out
+    # The request id identifies the request, not the caller: it stays, so the
+    # refusal joins the request's own started/completed lines.
+    assert line["request_id"] == request_id
+    # Positive control: this request's request_started line carries
+    # client_host, so the context WAS bound when the refusal logged — its
+    # absence above is the set-aside, not a context that was never there.
+    started = [
+        r
+        for r in records
+        if r.get("event") == "request_started" and r.get("request_id") == request_id
+    ]
+    assert [r.get("client_host") for r in started] == [CLIENT_HOST], out
+    # And the refusal joins the request's completion line by request_id.
+    assert any(
+        r.get("event") == "request_completed" and r.get("request_id") == request_id
+        for r in records
+    ), out
+    # slowapi's own refusal warning names the bucket KEY and the concrete path
+    # ("ratelimit 1 per 1 minute (peer:<addr>) exceeded at endpoint: /probe/<id>").
+    # The refusal line above replaces it; it must not be emitted.
+    assert not [r for r in records if r.get("logger") == "slowapi"], out
 
 
 def test_the_handler_restores_the_request_context_it_set_aside() -> None:
@@ -455,6 +532,34 @@ def test_the_handler_restores_the_request_context_it_set_aside() -> None:
             retry_after="60",
         )
         assert structlog.contextvars.get_contextvars() == {
+            "client_host": CLIENT_HOST,
+            "path": "/probe/x",
+        }
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+
+def test_the_handler_restores_the_context_when_the_log_call_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import structlog
+
+    import app.middleware.rate_limit as rate_limit_module
+
+    class _Raising:
+        def warning(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("log sink failed")
+
+    monkeypatch.setattr(rate_limit_module, "logger", _Raising())
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(
+        request_id="req-1", client_host=CLIENT_HOST, path="/probe/x"
+    )
+    try:
+        with pytest.raises(RuntimeError, match="log sink failed"):
+            rate_limit_module._log_refusal(lane="/probe/{item_id}")
+        assert structlog.contextvars.get_contextvars() == {
+            "request_id": "req-1",
             "client_host": CLIENT_HOST,
             "path": "/probe/x",
         }
