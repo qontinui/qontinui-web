@@ -21,13 +21,15 @@
  *    wrapper (fetch/CORS/network failures), and a ``securitypolicyviolation``
  *    (CSP) listener;
  *  - on each incident: scrub (§3.2) → build a ClientTelemetryEvent → enqueue;
- *  - transmits via ``navigator.sendBeacon`` / ``fetch(keepalive:true)`` to a
+ *  - transmits via an OBSERVED ``fetch(keepalive:true)`` (``navigator.sendBeacon``
+ *    only while the page is hiding, where a fetch may not complete) to a
  *    DEDICATED, hardcoded ingest origin from ``NEXT_PUBLIC_TELEMETRY_INGEST_URL``
  *    — CRITICAL: a SEPARATE env var, NEVER derived from ``NEXT_PUBLIC_API_URL``
  *    (the worked-example bug WAS a wrong API URL; the sensor must not share the
  *    failure mode it observes — §3.3 / real-user-observation §4 sensor
  *    integrity);
- *  - applies client-side sampling + rate-limit + circuit-breaker;
+ *  - applies client-side sampling + rate-limit + circuit-breaker, a
+ *    per-signature burst throttle, and the ingest's own 429 rate-limit window;
  *  - honors GPC (``navigator.globalPrivacyControl === true``) + DNT
  *    (``navigator.doNotTrack === "1"``) → sets ``opt_out`` and drops at source;
  *  - filters to OWN-bundle frames only (carve-out: drops third-party /
@@ -63,6 +65,19 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 /** Top N stack frames to keep. */
 const MAX_FRAMES = 10;
+/**
+ * Window within which a second incident with the same signature is dropped.
+ * A burst of identical failures (11 ``/operations/*`` 504s on one load, coord
+ * finding 687e0dbd) is one incident, not eleven envelopes.
+ */
+const SIGNATURE_THROTTLE_MS = 60_000;
+/** Bound on remembered signatures, so the throttle map cannot grow unbounded. */
+const SIGNATURE_THROTTLE_MAX = 200;
+/**
+ * Backoff applied to a 429 whose rate-limit headers are absent or unreadable
+ * (the same 60 s default the Sentry JS SDK uses).
+ */
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
 
 // --- module state ------------------------------------------------------------
 
@@ -83,11 +98,19 @@ interface BeaconState {
   // circuit breaker
   consecutiveFailures: number;
   tripped: boolean;
+  /** Epoch ms before which nothing is sent: the ingest's own 429 window. */
+  rateLimitedUntil: number;
+  /** Last send time per incident signature (burst throttle; insertion-ordered). */
+  lastSentBySignature: Map<string, number>;
+  /** True between ``pagehide`` and ``pageshow``: only sendBeacon can still deliver. */
+  pageHiding: boolean;
   // teardown handles
   prevOnError: OnErrorEventHandler | null;
   prevOnRejection: ((ev: PromiseRejectionEvent) => void) | null;
   originalFetch: typeof fetch | null;
   cspListener: ((ev: SecurityPolicyViolationEvent) => void) | null;
+  pageHideListener: (() => void) | null;
+  pageShowListener: (() => void) | null;
 }
 
 let state: BeaconState | null = null;
@@ -228,13 +251,53 @@ function withinRateLimit(): boolean {
   return state.sentTimestamps.length < RATE_LIMIT_MAX;
 }
 
+/** Identity of an incident for the burst throttle: what makes two "the same". */
+function signatureOf(event: ClientTelemetryEvent): string {
+  return [
+    event.kind,
+    event.http_status ?? "",
+    event.request_host ?? "",
+    event.request_path_tmpl ?? "",
+    event.error_message_norm ?? "",
+  ].join("|");
+}
+
+/** True when an identical incident was sent within the throttle window. */
+function isThrottled(signature: string, now: number): boolean {
+  if (!state) return true;
+  const last = state.lastSentBySignature.get(signature);
+  return last !== undefined && now - last < SIGNATURE_THROTTLE_MS;
+}
+
+function rememberSignature(signature: string, now: number): void {
+  if (!state) return;
+  const seen = state.lastSentBySignature;
+  seen.delete(signature); // re-insert so insertion order tracks recency
+  seen.set(signature, now);
+  if (seen.size <= SIGNATURE_THROTTLE_MAX) return;
+  for (const [sig, t] of seen) {
+    if (now - t >= SIGNATURE_THROTTLE_MS) seen.delete(sig);
+  }
+  // Still over the bound: evict the oldest.
+  while (seen.size > SIGNATURE_THROTTLE_MAX) {
+    const oldest = seen.keys().next().value;
+    if (oldest === undefined) break;
+    seen.delete(oldest);
+  }
+}
+
 function transmit(event: ClientTelemetryEvent): void {
   if (!state) return;
   if (state.tripped) return; // circuit breaker open
+  const now = Date.now();
+  if (now < state.rateLimitedUntil) return; // ingest told us to back off
+  const signature = signatureOf(event);
+  if (isThrottled(signature, now)) return; // burst of an identical incident
   if (!withinRateLimit()) return;
   if (Math.random() > state.sampleRate) return; // sampling
 
-  state.sentTimestamps.push(Date.now());
+  state.sentTimestamps.push(now);
+  rememberSignature(signature, now);
   // DSN-mode: serialize a Sentry envelope sent as text/plain (CORS-safelisted →
   // no preflight; auth rides in the envelope header's dsn field). Generic mode:
   // the raw scrubbed-event JSON to the configured ingest URL (the §3.3 contract).
@@ -245,39 +308,40 @@ function transmit(event: ClientTelemetryEvent): void {
   const contentType = dsnMode ? "text/plain;charset=UTF-8" : "application/json";
   const url = state.transmitUrl;
 
-  let ok = false;
-  try {
-    if (
-      typeof navigator !== "undefined" &&
-      typeof navigator.sendBeacon === "function"
-    ) {
-      const blob = new Blob([body], { type: contentType });
-      ok = navigator.sendBeacon(url, blob);
+  // While the page is hiding a fetch may never complete, so hand the envelope
+  // to sendBeacon. Its ``true`` means only "queued": the ingest's answer is
+  // unobservable, so it is neither success nor failure for the breaker.
+  if (
+    state.pageHiding &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.sendBeacon === "function"
+  ) {
+    try {
+      if (navigator.sendBeacon(url, new Blob([body], { type: contentType }))) {
+        return;
+      }
+    } catch {
+      /* fall through to the observed fetch */
     }
-  } catch {
-    ok = false;
   }
 
-  if (!ok) {
-    // Fallback to keepalive fetch. We do NOT await — best-effort.
-    try {
-      void fetchKeepalive(url, body, contentType)
-        .then(() => onTransmitSuccess())
-        .catch(() => onTransmitFailure());
-      return;
-    } catch {
-      onTransmitFailure();
-      return;
-    }
+  // The live-page transport: a keepalive fetch whose answer we read, so
+  // Sentry's 429 reaches the rate limiter and a non-2xx reaches the breaker.
+  try {
+    void fetchKeepalive(url, body, contentType).then(
+      onIngestResponse,
+      onTransmitFailure
+    );
+  } catch {
+    onTransmitFailure();
   }
-  onTransmitSuccess();
 }
 
 function fetchKeepalive(
   url: string,
   body: string,
   contentType: string
-): Promise<unknown> {
+): Promise<Response> {
   // Use the ORIGINAL fetch (captured before we wrapped it) so our own beacon
   // POST never re-enters the fetch wrapper / observes itself.
   const f = state?.originalFetch ?? fetch;
@@ -285,12 +349,70 @@ function fetchKeepalive(
     method: "POST",
     body,
     keepalive: true,
+    // text/plain (DSN mode) is a CORS-safelisted content type, so this POST
+    // is a "simple" request — no preflight against the ingest. Sentry's ingest
+    // answers it with CORS headers (the Sentry JS SDK's own fetch transport
+    // relies on this) and exposes its rate-limit headers.
     headers: { "Content-Type": contentType },
     // No credentials — the ingest origin is decoupled from the app (§3.3) and
     // we never want to attach app cookies to telemetry.
     credentials: "omit",
     mode: "cors",
   });
+}
+
+/** Classify the ingest's answer: only a 2xx is success. */
+function onIngestResponse(res: Response): void {
+  if (!state) return;
+  const backoffMs = rateLimitBackoffMs(res);
+  if (backoffMs !== null) {
+    state.rateLimitedUntil = Math.max(
+      state.rateLimitedUntil,
+      Date.now() + backoffMs
+    );
+  }
+  if (res.status >= 200 && res.status < 300) onTransmitSuccess();
+  else onTransmitFailure();
+}
+
+/**
+ * How long the ingest asked us to stop, in ms, or ``null`` for no limit.
+ *
+ * Follows the Sentry JS SDK's ``updateRateLimits`` precedence:
+ * ``X-Sentry-Rate-Limits`` (format
+ * ``<retry_after>:<categories>:<scope>[:<reason>[:<namespaces>]]``, groups
+ * comma-separated, categories semicolon-separated, empty categories = all)
+ * wins; else on a 429 ``Retry-After`` (delta-seconds or an HTTP-date); else on
+ * a 429 the conservative 60 s default — which is also what a 429 gets when CORS
+ * hides both headers. The beacon sends only error events, so only groups that
+ * cover the ``error`` category (or every category) apply.
+ */
+function rateLimitBackoffMs(res: Response): number | null {
+  const limits = res.headers.get("X-Sentry-Rate-Limits");
+  if (limits) {
+    let maxMs: number | null = null;
+    for (const group of limits.split(",")) {
+      const [retryAfter = "", categories = ""] = group.trim().split(":");
+      const seconds = Number.parseInt(retryAfter, 10);
+      const delayMs = (Number.isNaN(seconds) ? 60 : seconds) * 1000;
+      const cats = categories.split(";").filter(Boolean);
+      if (cats.length === 0 || cats.includes("error")) {
+        maxMs = Math.max(maxMs ?? 0, delayMs);
+      }
+    }
+    return maxMs;
+  }
+  if (res.status !== 429) return null;
+  return parseRetryAfterMs(res.headers.get("Retry-After"));
+}
+
+function parseRetryAfterMs(header: string | null): number {
+  if (!header) return DEFAULT_RATE_LIMIT_BACKOFF_MS;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isNaN(seconds)) return seconds * 1000;
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return DEFAULT_RATE_LIMIT_BACKOFF_MS;
 }
 
 function onTransmitSuccess(): void {
@@ -550,6 +672,11 @@ function installFetchWrapper(): void {
       // tracking-protection block, not our defect. Re-throw either way — we
       // observe, we never swallow the app's error.
       if (isIgnoredHost(host)) throw err;
+      // An aborted request (AbortController, or the navigation that tore it
+      // down) is the caller's decision, not a failure. Capturing it emitted a
+      // Sentry envelope on every navigation clicked right after load (coord
+      // finding 687e0dbd).
+      if (isAborted(err, input, init)) throw err;
       capture({
         kind: crossOrigin ? "cors_failure" : "fetch_failure",
         error_name: e?.name ?? "TypeError",
@@ -566,6 +693,23 @@ function installFetchWrapper(): void {
     }
   };
   window.fetch = wrapped;
+}
+
+/**
+ * Was this request aborted rather than failed? True for an ``AbortError``
+ * (a DOMException in browsers) and for any rejection of a request whose own
+ * signal is aborted, whatever error the platform threw for it. Also true once
+ * the page is hiding: a request torn down with the document is not a defect.
+ */
+function isAborted(
+  err: unknown,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined
+): boolean {
+  if ((err as { name?: unknown } | null)?.name === "AbortError") return true;
+  if (init?.signal?.aborted) return true;
+  if (input instanceof Request && input.signal.aborted) return true;
+  return state?.pageHiding === true;
 }
 
 function requestUrlOf(input: RequestInfo | URL): string {
@@ -632,10 +776,15 @@ export function installBeacon(): boolean {
     sentTimestamps: [],
     consecutiveFailures: 0,
     tripped: false,
+    rateLimitedUntil: 0,
+    lastSentBySignature: new Map(),
+    pageHiding: false,
     prevOnError: window.onerror ?? null,
     prevOnRejection: null,
     originalFetch: null,
     cspListener: null,
+    pageHideListener: null,
+    pageShowListener: null,
   };
 
   // window.onerror — chain to any previous handler.
@@ -674,6 +823,19 @@ export function installBeacon(): boolean {
   state.cspListener = cspListener;
   document.addEventListener("securitypolicyviolation", cspListener);
 
+  // Page lifecycle: while hiding, only sendBeacon can still deliver; a
+  // bfcache restore (pageshow) returns to the observed fetch transport.
+  const pageHideListener = () => {
+    if (state) state.pageHiding = true;
+  };
+  const pageShowListener = () => {
+    if (state) state.pageHiding = false;
+  };
+  state.pageHideListener = pageHideListener;
+  state.pageShowListener = pageShowListener;
+  window.addEventListener("pagehide", pageHideListener);
+  window.addEventListener("pageshow", pageShowListener);
+
   // fetch wrapper (fetch / CORS / network failures)
   installFetchWrapper();
 
@@ -695,6 +857,10 @@ export function uninstallBeacon(): void {
         "securitypolicyviolation",
         state.cspListener
       );
+    if (state.pageHideListener)
+      window.removeEventListener("pagehide", state.pageHideListener);
+    if (state.pageShowListener)
+      window.removeEventListener("pageshow", state.pageShowListener);
     window.onerror = state.prevOnError;
   }
   state = null;
