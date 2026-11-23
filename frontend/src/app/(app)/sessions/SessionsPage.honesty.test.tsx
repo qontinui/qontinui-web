@@ -66,7 +66,9 @@ describe("SessionsPage — the population's entry point", () => {
     listConsolidatedSessions.mockImplementation(() => new Promise(() => {}));
     render(<SessionsPage />);
 
-    const root = document.querySelector('[data-ui-bridge-id="sessions.console"]');
+    const root = document.querySelector(
+      '[data-ui-bridge-id="sessions.console"]'
+    );
     expect(root).not.toBeNull();
     expect(root!.className).toMatch(/(^|\s)@container(\s|$)/);
 
@@ -96,12 +98,30 @@ describe("SessionsPage — the population's entry point", () => {
     }
   });
 
+  it("mounts the console inside a fitWidth page ScrollArea", () => {
+    // Belt-and-braces beside the console's own container root: the page
+    // body's ScrollArea passes `fitWidth`, so Radix's `display: table` wrapper
+    // cannot grow to the widest child of ANYTHING in this scroll area.
+    listConsolidatedSessions.mockImplementation(() => new Promise(() => {}));
+    render(<SessionsPage />);
+
+    const root = document.querySelector(
+      '[data-ui-bridge-id="sessions.console"]'
+    );
+    expect(root).not.toBeNull();
+    const viewport = root!.closest('[data-slot="scroll-area-viewport"]');
+    expect(viewport).not.toBeNull();
+    expect(viewport!.className).toContain("[&>div]:!block");
+  });
+
   it("discloses the 500-row ceiling once a capped read lands", async () => {
     listConsolidatedSessions.mockResolvedValue(cappedLifecycleEnvelope());
     render(<SessionsPage />);
 
     const note = await screen.findByTestId("sessions-console-truncated");
-    expect(note).toHaveTextContent(/500 most recently started lifecycle sessions/);
+    expect(note).toHaveTextContent(
+      /500 most recently started lifecycle sessions/
+    );
     expect(note).toHaveTextContent(/fleet totals may be higher/);
     // Only the capped half is named.
     expect(note).not.toHaveTextContent(/agent sessions/);
