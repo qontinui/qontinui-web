@@ -642,12 +642,21 @@ describe("RecordRow (R2, R4)", () => {
    * `getBoundingClientRect` would encode it.
    */
   it("sizes the reason by the row's own width and keeps the label's 12rem floor", () => {
+    // Mounted the way the consoles mount it: through `RecordList`'s
+    // `renderRow`, so the contract is observed on the population's path.
     render(
-      <RecordRow
-        {...base}
-        expanded={false}
-        onToggle={() => {}}
-        data-testid="row"
+      <RecordList
+        items={[base]}
+        itemKey={(r) => r.identity}
+        loaded
+        renderRow={(r, ctx) => (
+          <RecordRow
+            {...r}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+            data-testid="row"
+          />
+        )}
       />
     );
     const classes = (el: Element) => el.className.split(/\s+/);
