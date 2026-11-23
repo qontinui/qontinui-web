@@ -61,6 +61,29 @@ UNTRUSTED_PEER = "198.51.100.50"
 _USERS_ME_LIMIT = 200  # ``@user_limiter.limit("200 per minute")`` on GET /users/me
 
 
+@pytest.fixture(autouse=True)
+def _deployed_proxy_trust(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests model the deployed posture: the backend behind the ALB,
+    whose nodes have private addresses (``ALB_NODE``). The test settings run
+    as ``development``, whose default trusts loopback only, so the deployed
+    default is pinned here. Tests of the defaults themselves build their own
+    ``Settings``."""
+    monkeypatch.setattr(
+        rate_limit.settings,
+        "RATE_LIMIT_TRUSTED_PROXY_CIDRS",
+        ",".join(
+            [
+                "127.0.0.0/8",
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "::1/128",
+                "fc00::/7",
+            ]
+        ),
+    )
+
+
 def _request(
     *,
     host: str = ALB_NODE,
@@ -1041,17 +1064,72 @@ def test_the_setting_parses_a_comma_separated_list() -> None:
     assert parsed.RATE_LIMIT_TRUSTED_PROXY_CIDRS == "10.20.0.0/16,fd00::/8"
 
 
-def test_the_default_trusts_loopback_and_private_ranges_only() -> None:
+_DEPLOYED_DEFAULT = [
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "::1/128",
+    "fc00::/7",
+]
+
+
+@pytest.mark.parametrize("environment", ["production", "staging"])
+def test_the_deployed_default_trusts_loopback_and_private_ranges(
+    environment: str,
+) -> None:
+    """Deployed, the tasks sit behind the ALB in private subnets. Both
+    deployed values count: production itself reports ``environment:
+    staging`` on ``/health``, so a production-only default would key every
+    caller on the ALB node again."""
     from app.core.config import Settings
 
-    assert Settings().RATE_LIMIT_TRUSTED_PROXY_CIDRS.split(",") == [
+    parsed = Settings(ENVIRONMENT=environment)
+    assert parsed.RATE_LIMIT_TRUSTED_PROXY_CIDRS.split(",") == _DEPLOYED_DEFAULT
+
+
+def test_the_development_default_trusts_loopback_only() -> None:
+    """A self-hosted or local backend may be reached directly from a LAN,
+    a Docker bridge or a VPN, all private addresses: trusting their
+    ``X-Forwarded-For`` would let any of them rotate buckets."""
+    from app.core.config import Settings
+
+    parsed = Settings(ENVIRONMENT="development")
+    assert parsed.RATE_LIMIT_TRUSTED_PROXY_CIDRS.split(",") == [
         "127.0.0.0/8",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
         "::1/128",
-        "fc00::/7",
     ]
+
+
+@pytest.mark.parametrize(
+    "explicit,expected",
+    [("203.0.113.0/24", "203.0.113.0/24"), ("", "")],
+    ids=["a-range", "empty-trusts-nothing"],
+)
+def test_an_explicit_value_overrides_the_default_in_production(
+    explicit: str, expected: str
+) -> None:
+    from app.core.config import Settings
+
+    parsed = Settings(ENVIRONMENT="production", RATE_LIMIT_TRUSTED_PROXY_CIDRS=explicit)
+    assert parsed.RATE_LIMIT_TRUSTED_PROXY_CIDRS == expected
+
+
+def test_a_private_direct_client_in_development_cannot_forge_its_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import Settings
+
+    monkeypatch.setattr(
+        rate_limit.settings,
+        "RATE_LIMIT_TRUSTED_PROXY_CIDRS",
+        Settings(ENVIRONMENT="development").RATE_LIMIT_TRUSTED_PROXY_CIDRS,
+    )
+    keys = {
+        rate_limit.get_peer_ip_identifier(_request(host="192.168.1.5", xff=forged))
+        for forged in ("6.6.6.6", "7.7.7.7")
+    }
+    assert keys == {"peer:192.168.1.5"}
 
 
 @pytest.mark.parametrize("bad", ["10.0.0.0/33", "not-a-cidr", "10.0.0.0/8,,", "*"])

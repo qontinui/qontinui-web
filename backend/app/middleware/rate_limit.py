@@ -57,7 +57,9 @@ def _is_trusted_proxy(address: str | None) -> bool:
         return False
     return any(
         ip in net
-        for net in _trusted_proxy_networks(settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS)
+        for net in _trusted_proxy_networks(
+            settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS or ""
+        )
     )
 
 
@@ -66,7 +68,8 @@ def peer_ip(connection: HTTPConnection) -> str:
 
     When the socket peer (``client.host``) is inside
     ``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` — the ALB, reaching the tasks
-    from inside the VPC — it is a proxy, and the caller is the RIGHTMOST
+    from inside the VPC; the default depends on ENVIRONMENT, see the setting
+    in ``app.core.config`` — it is a proxy, and the caller is the RIGHTMOST
     ``X-Forwarded-For`` entry: the one that proxy appended, which a client
     cannot forge (:func:`app.middleware.logging_middleware.peer_ip_from`).
     Every header line is read, so a client-sent line ahead of the proxy's

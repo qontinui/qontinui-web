@@ -67,6 +67,18 @@ def derived_cognito_issuer(*, region: str, pool_id: str) -> str:
     return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
 
 
+# RATE_LIMIT_TRUSTED_PROXY_CIDRS defaults, by ENVIRONMENT.
+_LOCAL_TRUSTED_PROXY_CIDRS = ("127.0.0.0/8", "::1/128")
+_DEPLOYED_TRUSTED_PROXY_CIDRS = (
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "::1/128",
+    "fc00::/7",
+)
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
 
@@ -197,15 +209,23 @@ class Settings(BaseSettings):
     # (comma-separated CIDRs). Application-level proxy trust, independent of
     # uvicorn's FORWARDED_ALLOW_IPS: from a peer inside one of these the key is
     # the rightmost X-Forwarded-For entry (what the proxy saw); from any other
-    # peer the header is the caller's own and the key is the socket peer. The
-    # default is loopback plus the private ranges, because the ALB reaches the
-    # tasks from inside the VPC, from a private address. See
+    # peer the header is the caller's own and the key is the socket peer. See
     # app.middleware.rate_limit.peer_ip.
-    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str = Field(
-        default="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7",
+    #
+    # Unset, the default depends on ENVIRONMENT (``_default_trusted_proxies``):
+    # deployed (production, and staging, which is what production reports)
+    # trusts loopback plus the private ranges, because the tasks sit behind
+    # the ALB in private subnets; development trusts loopback only, because a
+    # self-hosted backend may be reached directly from a LAN, a Docker bridge
+    # or a VPN, all private addresses that must not pick their own bucket.
+    # An explicit value always wins; empty trusts nothing. A self-hoster
+    # behind their own proxy sets it to that proxy's address range.
+    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str | None = Field(
+        default=None,
         description=(
             "Comma-separated CIDRs of proxies whose X-Forwarded-For the rate "
-            "limiter trusts; empty trusts none."
+            "limiter trusts; unset picks a per-ENVIRONMENT default; empty "
+            "trusts none."
         ),
     )
 
@@ -573,9 +593,12 @@ class Settings(BaseSettings):
 
     @field_validator("RATE_LIMIT_TRUSTED_PROXY_CIDRS")
     @classmethod
-    def validate_trusted_proxy_cidrs(cls, v: str) -> str:
+    def validate_trusted_proxy_cidrs(cls, v: str | None) -> str | None:
         """Every entry must be a CIDR (no host bits set). A malformed entry
-        fails startup rather than silently trusting or distrusting a proxy."""
+        fails startup rather than silently trusting or distrusting a proxy.
+        ``None`` (unset) is filled per ENVIRONMENT after validation."""
+        if v is None:
+            return None
         entries = [e.strip() for e in v.split(",")] if v.strip() else []
         for entry in entries:
             try:
@@ -586,6 +609,22 @@ class Settings(BaseSettings):
                     f"CIDR network: {exc}"
                 ) from exc
         return ",".join(entries)
+
+    @model_validator(mode="after")
+    def _default_trusted_proxies(self) -> "Settings":
+        """Fill an unset RATE_LIMIT_TRUSTED_PROXY_CIDRS from ENVIRONMENT
+        (see the setting's comment). Deployed means production or staging:
+        production reports ``environment: staging`` on ``/health``."""
+        if self.RATE_LIMIT_TRUSTED_PROXY_CIDRS is None:
+            if self.ENVIRONMENT in ("production", "staging"):
+                self.RATE_LIMIT_TRUSTED_PROXY_CIDRS = ",".join(
+                    _DEPLOYED_TRUSTED_PROXY_CIDRS
+                )
+            else:
+                self.RATE_LIMIT_TRUSTED_PROXY_CIDRS = ",".join(
+                    _LOCAL_TRUSTED_PROXY_CIDRS
+                )
+        return self
 
     @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod
