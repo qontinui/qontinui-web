@@ -38,6 +38,7 @@ import {
   misconfiguredResponse,
   unauthenticatedResponse,
   upstreamErrorResponse,
+  upstreamRefusalFrom,
 } from "../ui-bridge/[...path]/_auth";
 
 /** Server kill switch / demo-box force flag for the door proxy route. */
@@ -328,10 +329,7 @@ export async function checkRunnerOwnedBy(
     return upstreamErrorResponse({ status: 503, retryAfter: null });
   }
   if (resp.status === 429 || resp.status >= 500) {
-    return upstreamErrorResponse({
-      status: resp.status,
-      retryAfter: resp.headers.get("retry-after"),
-    });
+    return upstreamErrorResponse(upstreamRefusalFrom(resp));
   }
   if (resp.status === 401 || resp.status === 403) {
     return unauthenticatedResponse();

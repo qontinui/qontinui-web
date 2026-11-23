@@ -52,6 +52,23 @@ let ownedDeviceIds: string[] = ["DEV-OWN"];
  */
 let runnerAnswer: "ok" | "429" | "unreachable" = "ok";
 let abortBeforeFailing: AbortController | null = null;
+/** Whether the backend rate-limits the auth probe or the ownership probe. */
+let backend429: "none" | "auth" | "devices" = "none";
+
+/** A backend 429 as `rate_limit_exceeded_handler` answers it. */
+function backendRefusal(lane: string): Response {
+  return Response.json(
+    { error: "RATE_LIMIT_EXCEEDED", lane, key_kind: "ip" },
+    {
+      status: 429,
+      headers: {
+        "retry-after": "30",
+        "x-ratelimit-lane": lane,
+        "x-ratelimit-key-kind": "ip",
+      },
+    }
+  );
+}
 
 function installFetch(): void {
   vi.stubGlobal(
@@ -60,6 +77,12 @@ function installFetch(): void {
       const url = String(input);
       const auth = new Headers(init?.headers).get("authorization") ?? "";
       if (url.startsWith(BACKEND_URL)) {
+        if (backend429 === "auth" && url.endsWith("/api/v1/auth/users/me")) {
+          return backendRefusal("default:/api/v1/auth/users/me");
+        }
+        if (backend429 === "devices" && url.endsWith("/api/v1/devices")) {
+          return backendRefusal("user:/api/v1/devices");
+        }
         if (
           url.endsWith("/api/v1/auth/users/me") &&
           auth === `Bearer ${USER_TOKEN}`
@@ -131,6 +154,7 @@ beforeEach(() => {
   ownedDeviceIds = ["DEV-OWN"];
   runnerAnswer = "ok";
   abortBeforeFailing = null;
+  backend429 = "none";
   vi.stubEnv("BACKEND_URL", BACKEND_URL);
   vi.stubEnv("NODE_ENV", "development");
   vi.stubEnv("QONTINUI_WEB_RUNNER_DOOR_PROXY", "");
@@ -321,6 +345,42 @@ describe("runner door proxy — a refusal is logged server-side", () => {
       expect(text).not.toContain("abc123");
     } finally {
       warn.mockRestore();
+    }
+  });
+});
+
+describe("runner door proxy — a backend's 429 is the backend's", () => {
+  const DOOR_BUDGET = [
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset-After",
+  ];
+
+  it("the ownership probe's 429 carries the backend's lane and key kind, refused by the backend, and no door budget", async () => {
+    backend429 = "devices";
+    const res = await door("POST", "/hooks/abc/test");
+    expect(res.status).toBe(429);
+    expect(res.headers.get("X-RateLimit-Refused-By")).toBe("backend");
+    expect(res.headers.get("X-RateLimit-Lane")).toBe("user:/api/v1/devices");
+    expect(res.headers.get("X-RateLimit-Key-Kind")).toBe("ip");
+    expect(res.headers.get("Retry-After")).toBe("30");
+    for (const name of DOOR_BUDGET) {
+      expect(res.headers.get(name), name).toBeNull();
+    }
+  });
+
+  it("the operator auth probe's 429 carries the backend's lane and key kind, refused by the backend", async () => {
+    backend429 = "auth";
+    const res = await door("GET", "/settings/backup/summary");
+    expect(res.status).toBe(429);
+    expect(res.headers.get("X-RateLimit-Refused-By")).toBe("backend");
+    expect(res.headers.get("X-RateLimit-Lane")).toBe(
+      "default:/api/v1/auth/users/me"
+    );
+    expect(res.headers.get("X-RateLimit-Key-Kind")).toBe("ip");
+    expect(res.headers.get("Retry-After")).toBe("30");
+    for (const name of DOOR_BUDGET) {
+      expect(res.headers.get(name), name).toBeNull();
     }
   });
 });
