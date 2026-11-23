@@ -128,9 +128,9 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "ci_measure_01_dispatch_measurement"`` — ``main``'s single
+``down_revision = "coord_conditions_02_honest_runs"`` — ``main``'s single
 alembic head, measured 2026-11-22 with ``scripts/ci/count_alembic_heads.py``
-(``HEAD_COUNT=1``) at ``origin/main`` ``ea67cd404``. ``coord_subprojects_04``
+(``HEAD_COUNT=1``) at ``origin/main`` ``4c7f77651`` (re-pointed after main gained ``coord_conditions_02_honest_runs``). ``coord_subprojects_04``
 is NOT the head (``cirscope_02_devices_ci_runner_scope_index`` already chains
 off it). A re-point is three coupled edits: ``down_revision``, the ``Revises:``
 line below, and ``_PARENT_REVISION_ID`` in
@@ -140,7 +140,7 @@ Hand-authored; ``alembic revision --autogenerate`` was not run (served policy
 ``production-and-cost`` ``alembic-sole-authorship``).
 
 Revision ID: coord_subprojects_05_note_events
-Revises: ci_measure_01_dispatch_measurement
+Revises: coord_conditions_02_honest_runs
 Create Date: 2026-11-22
 
 """
@@ -151,7 +151,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_subprojects_05_note_events"
-down_revision: str | None = "ci_measure_01_dispatch_measurement"
+down_revision: str | None = "coord_conditions_02_honest_runs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

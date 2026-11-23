@@ -71,7 +71,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 import check_coord_column_drops as guard  # noqa: E402
 
 _REVISION_ID = "coord_subprojects_05_note_events"
-_PARENT_REVISION_ID = "ci_measure_01_dispatch_measurement"
+_PARENT_REVISION_ID = "coord_conditions_02_honest_runs"
 _REVISION_FILENAME = "coord_subprojects_05_note_events.py"
 
 _SCHEMA = "coord"
