@@ -162,6 +162,12 @@ export interface DispatchRefusal {
    * connect. Rendered without the destructive tone.
    */
   deferred?: boolean;
+  /**
+   * True when nothing was refused but THIS save was not sent because a newer
+   * change for the same machine was sent instead. Rendered without the
+   * destructive tone, and never re-sendable unchanged.
+   */
+  superseded?: boolean;
 }
 
 /**
@@ -208,6 +214,18 @@ export function dispatchRefusalCopy(
       fixableHere: false,
       detail,
       deferred: true,
+    };
+  }
+  if (state.dispatch_error === SUPERSEDED_BY_NEWER) {
+    // Coord answered 2xx but published nothing for THIS save: a newer change
+    // for the same machine won and was sent instead. Not a refusal, and not a
+    // delivery to re-send — re-sending this one would undo the newer change.
+    return {
+      headline:
+        "Not sent: a newer settings change for this machine was sent instead.",
+      fixableHere: false,
+      detail,
+      superseded: true,
     };
   }
   if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
@@ -266,6 +284,9 @@ export function dispatchRefusalCopy(
 /** The backend's `dispatch_error` when coord stored the settings but could not
  *  send them now: the machine applies them on its next connect. */
 export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
+/** The backend's `dispatch_error` when coord answered 2xx but sent a newer
+ *  change for the same machine instead of this one. */
+export const SUPERSEDED_BY_NEWER = "superseded_by_newer";
 /** The backend's `dispatch_error` when coord did not echo `model_access` back. */
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
@@ -857,12 +878,13 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         {refusal && (
           <div
             className={
-              refusal.deferred
+              refusal.deferred || refusal.superseded
                 ? "space-y-1 text-muted-foreground"
                 : "space-y-1 text-destructive"
             }
             data-testid="ci-node-dispatch-refusal"
             data-deferred={refusal.deferred ? "true" : "false"}
+            data-superseded={refusal.superseded ? "true" : "false"}
             data-dispatch-status={state.dispatch_status ?? ""}
             data-dispatch-error={state.dispatch_error ?? ""}
             data-fixable-here={refusal.fixableHere ? "true" : "false"}

@@ -800,6 +800,36 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
   });
 
+  it("a save the coordinator superseded with a newer change reads as not sent, not refused, and is not re-sendable", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          reachability: "online",
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "superseded_by_newer",
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: "2026-11-22T11:00:00Z",
+          dispatch_detail:
+            "A newer settings change for this machine was sent instead of this one. Re-open these settings to see what the machine was sent.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box.textContent).toMatch(
+      /newer settings change .* was sent instead/
+    );
+    expect(box.textContent).not.toMatch(/did not send them/);
+    expect(box).toHaveAttribute("data-superseded", "true");
+    expect(box).toHaveAttribute("data-deferred", "false");
+    expect(box.className).not.toMatch(/text-destructive/);
+    expect(box).toHaveAttribute("data-fixable-here", "false");
+    // Re-sending this save unchanged would undo the newer change.
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+  });
+
   it("a plain coordinator refusal keeps the destructive tone", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(
