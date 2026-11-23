@@ -252,6 +252,24 @@ the reason is hidden below a 45rem row, shown at 22ch from 45rem and at 40ch
 from 53rem, and yields width (`shrink-[999]`) before the label goes under its
 12rem floor (`basis-48`).
 
+The same holds for what a **consumer** puts in a slot. An optional chip group,
+secondary badge or short text that drops out on a narrow row hides by the ROW
+too: `@min-[45rem]/record-row:` beside the reason, `@min-[53rem]/record-row:`
+one rung up. It never uses a viewport breakpoint (`sm:` … `2xl:`), because a
+console narrowed by the sidebar, a split pane or a dialog would keep it
+revealed and hand it the label's width. Text that can be cut yields first
+(`min-w-0 shrink-[999] truncate`, its whole value in a `title`). A chip or
+badge hides whole rather than shrinking, since a clipped one misstates what it
+says. The exception is a badge whose value is free text or a name (`TreeRow`'s
+branch, `QuestionRow`'s plan phase): it gets a `max-w-[…ch]` cap and an inner
+`min-w-0 truncate` span, with the whole value in its `title`. Whatever drops
+out stays readable in the detail panel. A row hand-built without `RecordRow`
+follows the same rule by naming its own line as the container: the agent
+registry's line is `@container/agent-row`, and the merge train's row button is
+`@container/train-row`.
+`components/console/recordRowSlots.test.ts` scans every `<RecordRow>`'s slots
+for a viewport variant.
+
 Overflow is **truncation with a `title`**, never wrapping. Wrapping is what makes a
 list unscannable: a wrapped row changes height, so the eye cannot use vertical
 rhythm to skim.

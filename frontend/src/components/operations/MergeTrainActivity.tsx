@@ -715,6 +715,17 @@ function RepoDetail({
         </Section>
       )}
 
+      {/* The line's churn group drops out below a 53rem row; this is where
+          the four readings stay readable at every width. */}
+      <Section title="Candidate-CI churn">
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground"
+          data-testid={`train-churn-detail-${row.repo}`}
+        >
+          <ChurnCells churn={row.churn} testIdPrefix="churn-detail-" />
+        </div>
+      </Section>
+
       {/* Why it is paused — the ranked reasons, in full prose. */}
       {row.reasons.length > 0 && (
         <Section title="Why it is waiting">
@@ -826,6 +837,45 @@ function Field({
   );
 }
 
+/**
+ * The four per-repo churn readings, in one order. Rendered on the collapsed
+ * line (`churn-…` testids) and again in the detail (`churn-detail-…`), so a
+ * row too narrow for the line's group still reads them.
+ */
+function ChurnCells({
+  churn,
+  testIdPrefix,
+}: {
+  churn: RepoTrainRow["churn"];
+  testIdPrefix: string;
+}) {
+  return (
+    <>
+      <ChurnCell
+        label="green discarded"
+        reading={churn.greenDiscarded}
+        testId={`${testIdPrefix}green-discarded`}
+      />
+      <ChurnCell
+        label="base-move discards"
+        reading={churn.baseMoveDiscards}
+        testId={`${testIdPrefix}base-move-discards`}
+      />
+      <ChurnCell
+        label="CI min / land"
+        reading={churn.ciMinutesPerLand}
+        testId={`${testIdPrefix}ci-minutes-per-land`}
+      />
+      <ChurnCell
+        label="proposal→land p90"
+        reading={churn.proposalAgeAtLandP90}
+        testId={`${testIdPrefix}proposal-age-at-land-p90`}
+        format={formatDuration}
+      />
+    </>
+  );
+}
+
 function ChurnCell({
   label,
   reading,
@@ -914,7 +964,11 @@ function RepoRow({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 text-left"
+        // `@container/train-row`: the line is its own NAMED query container,
+        // so the churn group below answers to the ROW's width, not the
+        // viewport's. On the button, not the root: the root also holds the
+        // expanded detail.
+        className="@container/train-row flex w-full items-center gap-2 text-left"
         aria-expanded={expanded}
       >
         {expanded ? (
@@ -965,35 +1019,18 @@ function RepoRow({
         </span>
 
         {/* Candidate-CI churn for THIS repo, from coord's economics row. Four
-            mono readings on the line (R2 — still one line; dropped below `lg`
-            like the reason slot, the hover note survives on each). `—` is
-            UNKNOWN, never 0, and carries coord's basis / coverage note as its
-            title so the dash explains itself. */}
+            mono readings on the line (R2 — still one line). They drop out
+            below a 53rem ROW — the button's `@container/train-row`, the rung
+            where RecordRow's reason widens — never by the viewport, so a
+            narrowed column drops them too; the detail's "Candidate-CI churn"
+            section repeats them at every width. `—` is UNKNOWN, never 0, and
+            carries coord's basis / coverage note as its title so the dash
+            explains itself. */}
         <span
-          className="hidden lg:flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground"
+          className="hidden @min-[53rem]/train-row:flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground"
           data-testid={`train-churn-${row.repo}`}
         >
-          <ChurnCell
-            label="green discarded"
-            reading={row.churn.greenDiscarded}
-            testId="churn-green-discarded"
-          />
-          <ChurnCell
-            label="base-move discards"
-            reading={row.churn.baseMoveDiscards}
-            testId="churn-base-move-discards"
-          />
-          <ChurnCell
-            label="CI min / land"
-            reading={row.churn.ciMinutesPerLand}
-            testId="churn-ci-minutes-per-land"
-          />
-          <ChurnCell
-            label="proposal→land p90"
-            reading={row.churn.proposalAgeAtLandP90}
-            testId="churn-proposal-age-at-land-p90"
-            format={formatDuration}
-          />
+          <ChurnCells churn={row.churn} testIdPrefix="churn-" />
         </span>
 
         <span className="flex shrink-0 flex-wrap items-center gap-1">
