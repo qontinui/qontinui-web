@@ -86,7 +86,18 @@ function door(method: Method, path: string): Promise<Response> {
     body: method === "GET" ? undefined : "{}",
   });
   const segments = path.split("/").filter(Boolean);
-  return route[method](req, { params: Promise.resolve({ path: segments }) });
+  const ctx = { params: Promise.resolve({ path: segments }) };
+  // Each verb is named, so the call site states the route entry it uses.
+  switch (method) {
+    case "GET":
+      return route.GET(req, ctx);
+    case "POST":
+      return route.POST(req, ctx);
+    case "PUT":
+      return route.PUT(req, ctx);
+    case "DELETE":
+      return route.DELETE(req, ctx);
+  }
 }
 
 beforeEach(() => {
