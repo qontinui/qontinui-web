@@ -17,7 +17,7 @@ Two rules shape every schema here:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -40,6 +40,7 @@ EvidenceRole = Literal["supports", "counterexample"]
 EvidenceKind = Literal["perception_rating", "comparison"]
 AssetClass = Literal["image", "svg", "icon", "font", "text"]
 JobScope = Literal["page", "crawl", "flow"]
+JobBrowser = Literal["launched", "attached"]
 JobSource = Literal["operator", "cli", "mcp", "discovery"]
 JobState = Literal[
     "proposed", "rejected", "queued", "running", "done", "failed", "cancelled"
@@ -481,14 +482,31 @@ class CorrectionOut(_Out):
 # ═════════════════════════════ capture jobs ═════════════════════════════
 
 
+#: The most URLs one batch takes. The frontend's ``CAPTURE_JOB_BATCH_MAX_URLS``
+#: (``frontend/src/lib/api/design-refs.ts``) is pinned to this through the
+#: OpenAPI snapshot's ``maxItems``.
+CAPTURE_JOB_BATCH_MAX_URLS = 200
+
+#: One capture-job URL, bounded the same at the single and the batch door.
+JobUrl = Annotated[str, Field(min_length=1, max_length=4000)]
+
+
 class CaptureJobCreate(_Strict):
-    url: str = Field(min_length=1, max_length=4000)
+    url: JobUrl
     scope_kind: JobScope = "page"
     crawl_depth: int | None = Field(default=None, ge=1, le=10)
     flow_goal: str | None = None
     notes: str | None = None
     source: JobSource = "operator"
     is_reproduction: bool = False
+    browser: JobBrowser = "launched"
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _strip_url(cls, value: Any) -> Any:
+        """Strip before the length bound, as the batch door strips each entry:
+        a whitespace-only ``url`` is then empty and refused (422)."""
+        return value.strip() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _scope_whole(self) -> CaptureJobCreate:
@@ -500,13 +518,67 @@ class CaptureJobCreate(_Strict):
 
 
 class CaptureJobUpdate(_Strict):
-    """A worker's or operator's move of one job."""
+    """A worker's or operator's move of one job. Finishing a running job is
+    ``/complete``'s and re-queueing a failed one is ``/retry``'s, not this;
+    the one deliberate exception is an operator's ``running -> cancelled``.
+    While a job runs, only its claimant (or an operator) writes its fields."""
 
     state: JobState | None = None
     derived_tier: Tier | None = None
     tier_reason: dict[str, Any] | None = None
     error: str | None = None
     lease_seconds: int | None = Field(default=None, ge=10, le=3600)
+
+
+class CaptureJobBatchCreate(_Strict):
+    """One job per URL: a pasted list. Scope, notes and flags are shared."""
+
+    urls: list[JobUrl] = Field(min_length=1, max_length=CAPTURE_JOB_BATCH_MAX_URLS)
+    scope_kind: JobScope = "page"
+    crawl_depth: int | None = Field(default=None, ge=1, le=10)
+    flow_goal: str | None = None
+    notes: str | None = None
+    source: JobSource = "operator"
+    is_reproduction: bool = False
+    browser: JobBrowser = "launched"
+
+    @model_validator(mode="after")
+    def _scope_whole(self) -> CaptureJobBatchCreate:
+        if (self.scope_kind == "crawl") != (self.crawl_depth is not None):
+            raise ValueError("crawl_depth is sent exactly when scope_kind is crawl")
+        if (self.scope_kind == "flow") != (self.flow_goal is not None):
+            raise ValueError("flow_goal is sent exactly when scope_kind is flow")
+        return self
+
+
+class CaptureJobBatchRefused(_Out):
+    url: str
+    error: str
+    message: str
+
+
+class CaptureJobRetry(_Strict):
+    #: Re-queue as ``attached`` for a site a launched capture could not read.
+    browser: JobBrowser | None = None
+
+
+class CaptureJobComplete(_Strict):
+    """The end of a running job. ``failed`` carries the reason.
+
+    Who may send it is decided by the caller's credential, not by the body: the
+    credential that claimed the job, or an operator.
+    """
+
+    outcome: Literal["done", "failed"]
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _reason(self) -> CaptureJobComplete:
+        if self.outcome == "failed" and not self.error:
+            raise ValueError("a failed job carries its error")
+        if self.outcome == "done" and self.error is not None:
+            raise ValueError("a done job carries no error")
+        return self
 
 
 class CaptureJobClaim(_Strict):
@@ -527,6 +599,7 @@ class CaptureJobOut(_Out):
     submitter_id: str | None
     is_reproduction: bool
     state: JobState
+    browser: JobBrowser
     claimed_by: str | None
     claimed_until: datetime | None
     derived_tier: Tier | None
@@ -534,6 +607,11 @@ class CaptureJobOut(_Out):
     error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class CaptureJobBatchOut(_Out):
+    created: list[CaptureJobOut]
+    refused: list[CaptureJobBatchRefused]
 
 
 # ═════════════════════════════ search ═════════════════════════════

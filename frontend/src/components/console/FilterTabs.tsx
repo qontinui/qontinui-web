@@ -62,6 +62,11 @@ export interface FilterTab<Id extends string> {
    */
   countNote?: string | null;
   /**
+   * The count is a FLOOR, not a total: it was read from a bounded page and
+   * more rows exist beyond it. Rendered as `N+`.
+   */
+  countIsFloor?: boolean;
+  /**
    * Render the count in the attention hue. Reserve it for a count of rows that
    * genuinely need a human (R3) — a red number nobody must act on is the same
    * bug as a red badge nobody must act on.
@@ -85,9 +90,13 @@ export interface FilterTabsProps<Id extends string> {
   className?: string;
 }
 
-/** R6's unfetched-count rule, in one place. */
-function renderCount(count: number | null | undefined): ReactNode {
-  return count == null ? "–" : count;
+/** R6's unfetched-count rule, in one place; a floor reads `N+`. */
+function renderCount(
+  count: number | null | undefined,
+  isFloor?: boolean
+): ReactNode {
+  if (count == null) return "–";
+  return isFloor ? `${count}+` : count;
 }
 
 export function FilterTabs<Id extends string>({
@@ -123,7 +132,7 @@ export function FilterTabs<Id extends string>({
             }`}
             title={tab.countNote ?? undefined}
           >
-            {renderCount(tab.count)}
+            {renderCount(tab.count, tab.countIsFloor)}
             {tab.countNote && tab.count != null ? (
               <span aria-hidden="true">*</span>
             ) : null}
