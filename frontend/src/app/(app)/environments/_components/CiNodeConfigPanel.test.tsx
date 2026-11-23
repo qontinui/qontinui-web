@@ -745,6 +745,8 @@ describe("CiNodeConfigPanel — model access", () => {
       /does not carry the model-access choice/
     );
     expect(refusal).toHaveAttribute("data-fixable-here", "false");
+    // Its detail says to apply again once the coordinator is updated.
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
   });
 
   it("an answer that could not confirm the value is UNKNOWN, not 'older coordinator'", async () => {
@@ -767,6 +769,143 @@ describe("CiNodeConfigPanel — model access", () => {
       /did not confirm the model-access choice/
     );
     expect(refusal.textContent).not.toMatch(/does not carry/);
+  });
+
+  it("settings the coordinator stored for the next connect read as deferred, not refused", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          reachability: "offline",
+          dispatched: false,
+          dispatch_status: 502,
+          dispatch_error: "stored_for_next_connect",
+          // What a real PUT answers: saved now, never accepted for sending.
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+          dispatch_detail:
+            "A runner that fetches saved settings on connect receives them the next time it connects; otherwise apply them again once it is connected.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box.textContent).toMatch(/Not sent yet: the coordinator saved/);
+    expect(box.textContent).toMatch(/fetches saved settings on connect/);
+    expect(box.textContent).not.toMatch(/did not send them/);
+    expect(box).toHaveAttribute("data-deferred", "true");
+    expect(box.className).not.toMatch(/text-destructive/);
+    expect(box).toHaveAttribute("data-fixable-here", "false");
+    // The detail says to apply again, so Apply stays usable on a clean draft.
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("a plain coordinator refusal keeps the destructive tone", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: 404,
+          dispatch_error: "device_not_found_in_tenant",
+          dispatch_detail: "device d-1 is not registered to your tenant",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box).toHaveAttribute("data-deferred", "false");
+    expect(box.className).toMatch(/text-destructive/);
+  });
+
+  it("a value refusal the owner can fix keeps Apply disabled until an edit", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          ...WILDCARD_REFUSAL,
+          configured: true,
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+  });
+
+  it("settings saved after the last send stay re-sendable after a reload, and say so", async () => {
+    // GET-shaped: a read carries no dispatched verdict.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: null,
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: "2026-11-21T12:00:00Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const panel = await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+    expect(panel.textContent).toMatch(
+      /Saved again since then, and not sent from qontinui\.io since\./
+    );
+  });
+
+  it("after coord could not be reached, Apply retries the unchanged settings", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: null,
+          dispatch_error: null,
+          dispatch_detail:
+            "Coord is temporarily unavailable (likely a rolling deploy); retry shortly.",
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("a machine with no runner cannot re-send unchanged settings", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          reachability: "unlinked",
+          dispatched: null,
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+  });
+
+  it("settings already sent since they were saved cannot be re-sent unchanged", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: null,
+          requested_at: "2026-11-21T12:00:00Z",
+          dispatched_at: "2026-11-22T12:00:00Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const panel = await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+    expect(panel.textContent).not.toMatch(/Saved again since then/);
   });
 
   it("configsEqual treats a config predating the field as unset, not as a change", () => {

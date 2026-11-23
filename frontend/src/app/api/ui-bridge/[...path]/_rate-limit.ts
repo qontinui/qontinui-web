@@ -81,7 +81,10 @@
 import IORedis, { type Redis } from "ioredis";
 
 import { createLogger } from "@/lib/logger";
-import { safeRedisErrorText } from "@/lib/ui-bridge/redis-redact";
+import {
+  redisHostOnly,
+  safeRedisErrorText,
+} from "@/lib/ui-bridge/redis-redact";
 import {
   isParseableRedisUrl,
   REDIS_URL_UNPARSEABLE_MESSAGE,
@@ -204,6 +207,7 @@ function getClient(): Redis | null {
       // Don't log on every retry — ioredis emits these in storms. One
       // line at warn-level is enough for an operator to notice.
       log.warn("redis_error_failing_open", {
+        host: redisHostOnly(url),
         error: safeRedisErrorText(err, [url]),
       });
     });
@@ -211,6 +215,7 @@ function getClient(): Redis | null {
     return c;
   } catch (err) {
     log.warn("redis_init_failed_failing_open", {
+      host: redisHostOnly(url),
       error: safeRedisErrorText(err, [url]),
     });
     client = null;
