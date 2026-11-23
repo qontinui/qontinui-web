@@ -346,4 +346,261 @@ describe("beacon transport honesty", () => {
       expect(sends(h)).toBe(2);
     });
   });
+
+  describe("timeouts are incidents, caller aborts are not", () => {
+    /** An app request that rejects the way the platform does: with the signal's reason. */
+    function rejectOnAbort() {
+      h.appResponse = (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) return reject(signal.reason);
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+    }
+
+    it("a client timeout aborting with a TimeoutError reason IS captured", async () => {
+      rejectOnAbort();
+      expect(installBeacon()).toBe(true);
+      const controller = new AbortController();
+      const pending = window.fetch(`${API_URL}/api/v1/operations/slow`, {
+        signal: controller.signal,
+      });
+      controller.abort(new DOMException("Request timed out", "TimeoutError"));
+      await expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+      await flush();
+
+      expect(sends(h)).toBe(1);
+    });
+
+    it("an AbortSignal.timeout expiry IS captured", async () => {
+      rejectOnAbort();
+      expect(installBeacon()).toBe(true);
+      const pending = window.fetch(`${API_URL}/api/v1/operations/slow`, {
+        signal: AbortSignal.timeout(1),
+      });
+      await expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+      await flush();
+
+      expect(sends(h)).toBe(1);
+    });
+
+    it("a navigation/user abort (default AbortError reason) is NOT captured", async () => {
+      rejectOnAbort();
+      expect(installBeacon()).toBe(true);
+      const controller = new AbortController();
+      const pending = window.fetch(`${API_URL}/api/v1/operations/slow`, {
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await flush();
+
+      expect(sends(h)).toBe(0);
+    });
+
+    it("a Request input whose own signal aborted is NOT captured", async () => {
+      const boom = new TypeError("Failed to fetch");
+      h.appResponse = async () => {
+        throw boom;
+      };
+      expect(installBeacon()).toBe(true);
+      const controller = new AbortController();
+      controller.abort();
+      const request = new Request(`${API_URL}/api/v1/operations/health`, {
+        signal: controller.signal,
+      });
+
+      await expect(window.fetch(request)).rejects.toBe(boom);
+      await flush();
+
+      expect(sends(h)).toBe(0);
+    });
+
+    it("a rejection while the page is hiding is NOT captured", async () => {
+      h.appResponse = async () => {
+        throw new TypeError("Failed to fetch");
+      };
+      expect(installBeacon()).toBe(true);
+      window.dispatchEvent(new Event("pagehide"));
+
+      await expect(
+        window.fetch(`${API_URL}/api/v1/operations/health`)
+      ).rejects.toThrow();
+      await flush();
+
+      expect(sends(h)).toBe(0);
+    });
+  });
+
+  describe("ingest answers that are neither success nor failure", () => {
+    it("a 429 opens the window but does not count toward the breaker", async () => {
+      expect(installBeacon()).toBe(true);
+      h.ingestResponse = () => new Response(null, { status: 500 });
+      for (const p of ["a", "b", "c", "d"]) {
+        await appFailure(`/api/v1/operations/${p}`);
+      }
+      h.ingestResponse = () =>
+        new Response(null, { status: 429, headers: { "Retry-After": "1" } });
+      await appFailure("/api/v1/operations/e");
+      expect(sends(h)).toBe(5);
+
+      vi.setSystemTime(Date.now() + 2_000);
+      h.ingestResponse = () => new Response(null, { status: 200 });
+      // 4 failures + a 429: the breaker has NOT tripped.
+      await appFailure("/api/v1/operations/f");
+      expect(sends(h)).toBe(6);
+    });
+
+    it("a keepalive fetch rejected before reaching ingest counts as neither, and retries once via sendBeacon", async () => {
+      h.beaconReturns = true;
+      h.ingestResponse = () => {
+        throw new TypeError("Failed to fetch");
+      };
+      expect(installBeacon()).toBe(true);
+
+      for (const p of ["a", "b", "c", "d", "e", "f"]) {
+        await appFailure(`/api/v1/operations/${p}`);
+      }
+
+      // Every envelope was attempted (the breaker did not trip on rejections)…
+      expect(h.ingestFetches).toHaveLength(6);
+      // …and each rejected one was retried exactly once through sendBeacon.
+      expect(h.beaconCalls).toBe(6);
+    });
+
+    it("a throw inside the response handler never becomes an unhandled rejection", async () => {
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      try {
+        // A Response whose headers getter throws: the handler blows up.
+        h.ingestResponse = () => {
+          const res = new Response(null, { status: 200 });
+          Object.defineProperty(res, "headers", {
+            get() {
+              throw new Error("handler boom");
+            },
+          });
+          return res;
+        };
+        expect(installBeacon()).toBe(true);
+        await appFailure("/api/v1/operations/a");
+        await flush();
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
+    });
+  });
+
+  describe("rate-limit header details", () => {
+    async function firstSendAnswered(res: () => Response) {
+      h.ingestResponse = res;
+      expect(installBeacon()).toBe(true);
+      await appFailure("/api/v1/operations/first");
+      expect(sends(h)).toBe(1);
+      h.ingestResponse = () => new Response(null, { status: 200 });
+    }
+
+    it("honours an HTTP-date Retry-After", async () => {
+      const until = new Date(Date.now() + 120_000).toUTCString();
+      await firstSendAnswered(
+        () =>
+          new Response(null, { status: 429, headers: { "Retry-After": until } })
+      );
+
+      vi.setSystemTime(Date.now() + 119_000);
+      await appFailure("/api/v1/operations/second");
+      expect(sends(h)).toBe(1);
+
+      vi.setSystemTime(Date.now() + 2_000);
+      await appFailure("/api/v1/operations/third");
+      expect(sends(h)).toBe(2);
+    });
+
+    it("a rate-limit group naming only `transaction` does not back off error events", async () => {
+      await firstSendAnswered(
+        () =>
+          new Response(null, {
+            status: 429,
+            headers: { "X-Sentry-Rate-Limits": "600:transaction:organization" },
+          })
+      );
+
+      await appFailure("/api/v1/operations/second");
+      expect(sends(h)).toBe(2);
+    });
+
+    it("a 2xx carrying X-Sentry-Rate-Limits applies it", async () => {
+      await firstSendAnswered(
+        () =>
+          new Response(null, {
+            status: 200,
+            headers: { "X-Sentry-Rate-Limits": "60:error:key" },
+          })
+      );
+
+      vi.setSystemTime(Date.now() + 59_000);
+      await appFailure("/api/v1/operations/second");
+      expect(sends(h)).toBe(1);
+
+      vi.setSystemTime(Date.now() + 2_000);
+      await appFailure("/api/v1/operations/third");
+      expect(sends(h)).toBe(2);
+    });
+
+    it("caps any rate-limit delay at one hour", async () => {
+      await firstSendAnswered(
+        () =>
+          new Response(null, {
+            status: 429,
+            headers: { "X-Sentry-Rate-Limits": "86400:error:organization" },
+          })
+      );
+
+      vi.setSystemTime(Date.now() + 3_601_000);
+      await appFailure("/api/v1/operations/second");
+      expect(sends(h)).toBe(2);
+    });
+
+    it("caps a huge Retry-After at one hour", async () => {
+      await firstSendAnswered(
+        () =>
+          new Response(null, {
+            status: 429,
+            headers: { "Retry-After": "999999" },
+          })
+      );
+
+      vi.setSystemTime(Date.now() + 3_601_000);
+      await appFailure("/api/v1/operations/second");
+      expect(sends(h)).toBe(2);
+    });
+  });
+
+  describe("throttle signature distinguishes distinct errors of one class", () => {
+    it("two window errors with different top frames both send", async () => {
+      expect(installBeacon()).toBe(true);
+      const own = window.location.origin;
+      for (const fn of ["alpha", "beta"]) {
+        const err = new Error("boom");
+        err.stack = `Error: boom\n    at ${fn} (${own}/_next/app.js:1${fn.length}:5)`;
+        window.onerror?.("boom", undefined, undefined, undefined, err);
+      }
+      await flush();
+      expect(sends(h)).toBe(2);
+    });
+
+    it("the same error on two different routes both send", async () => {
+      expect(installBeacon()).toBe(true);
+      const err = new Error("boom");
+      err.stack = `Error: boom\n    at alpha (${window.location.origin}/_next/app.js:10:5)`;
+      window.history.pushState({}, "", "/first");
+      window.onerror?.("boom", undefined, undefined, undefined, err);
+      window.history.pushState({}, "", "/second");
+      window.onerror?.("boom", undefined, undefined, undefined, err);
+      window.history.pushState({}, "", "/");
+      await flush();
+      expect(sends(h)).toBe(2);
+    });
+  });
 });

@@ -896,7 +896,15 @@ export class HttpClient {
     // outlasts the backend's own timeout (otherwise the AbortController fires
     // first and surfaces the misleading "backend may be starting up" text in
     // place of the real backend error body).
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    //
+    // The abort carries a typed `TimeoutError` reason so an observer of the
+    // rejection (the telemetry beacon) can tell this timeout, which is an
+    // incident, from a caller's or a navigation's `AbortError`, which is not.
+    const timeoutId = setTimeout(
+      () =>
+        controller.abort(new DOMException("Request timed out", "TimeoutError")),
+      timeoutMs
+    );
 
     // Honour a caller `signal`. The request below must run on `controller`'s
     // signal (the header timeout aborts through it), so the caller's is LINKED
@@ -956,7 +964,10 @@ export class HttpClient {
         throw error;
       }
 
-      if ((error as Error).name === "AbortError") {
+      // The header timeout: the platform rejects with the abort's
+      // `TimeoutError` reason (an older runtime may still say `AbortError`).
+      const name = (error as { name?: unknown } | null)?.name;
+      if (name === "TimeoutError" || name === "AbortError") {
         throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
