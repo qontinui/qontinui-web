@@ -36,8 +36,10 @@ function capitalise(s: string): string {
  * `permission_auto_accept`, `account_selection_mode` and `image_generation`
  * on tenant policy;
  * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` +
- * `label` and layers its own level vocabulary on top (a no-row default, a
- * fail-closed parse), so the honesty properties below are
+ * `label` and layers its own level vocabulary on top (a fail-closed parse,
+ * and a console-side no-row default only for domains that still keep one —
+ * `policy_write` and `policy_upstream` read coord's served default instead,
+ * qontinui-coord#4239), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
  * to be hand-copied, and the refresh-vs-write race fix reached only two.
  *

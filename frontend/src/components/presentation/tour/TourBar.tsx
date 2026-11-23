@@ -226,10 +226,6 @@ function TourPosition({ view }: { view: TourView }) {
 
 /** End tour: off the tour in this tab; the page stays in presentation mode. */
 function EndTourButton({ onEnd }: { onEnd: () => void }) {
-  const onEndRef = useRef(onEnd);
-  useEffect(() => {
-    onEndRef.current = onEnd;
-  });
   const customActions = useMemo(
     () => ({
       "end-tour": {
@@ -238,12 +234,12 @@ function EndTourButton({ onEnd }: { onEnd: () => void }) {
         description: TOUR_LABELS.endTourTitle,
         effect: "read" as const,
         handler: () => {
-          onEndRef.current();
+          onEnd();
           return true;
         },
       },
     }),
-    []
+    [onEnd]
   );
   const { ref } = useUIElement({
     id: "tour-bar-end",
