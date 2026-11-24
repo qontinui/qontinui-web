@@ -75,6 +75,19 @@ describe("/admin/coord/gates stale-while-revalidate banners", () => {
     expect(screen.queryByTestId("gates-coord-unavailable")).toBeNull();
   });
 
+  // Plan 2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport
+  // Phase 2 step 7: the freshness label is the page's only statement of how
+  // old the list is, so it wraps rather than hides at any viewport.
+  it("renders the freshness label at every width — never hidden by a breakpoint", async () => {
+    getOverview.mockResolvedValue(healthy());
+    render(<CoordGatesPage />);
+    const label = await screen.findByTestId("gates-updated-ago");
+    expect(label.className.split(/\s+/)).not.toContain("hidden");
+    expect(label.className).not.toMatch(
+      /(^|\s)(sm|md|lg|xl|2xl):(hidden|inline|block|flex|inline-flex)\b/,
+    );
+  });
+
   it("reconnecting (last-known-good) shows the subtle hint, NOT the hard banner", async () => {
     getOverview.mockResolvedValue({
       ...healthy(),
