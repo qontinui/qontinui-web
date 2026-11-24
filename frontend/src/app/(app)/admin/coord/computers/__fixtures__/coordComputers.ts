@@ -207,6 +207,8 @@ export function listFx(
     unattributed_ci_runners: ok ? [] : null,
     ambiguous_ci_runners: ok ? [] : null,
     registrar_read_ok: ok,
+    unreported_devices: [],
+    unreported_read_ok: true,
     schema_pending: false,
     staleness: STALENESS,
     ...over,
