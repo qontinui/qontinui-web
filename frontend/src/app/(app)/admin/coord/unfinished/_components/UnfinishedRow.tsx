@@ -71,9 +71,14 @@ export function UnfinishedRow({
           >
             {gone ? "process gone" : "liveness unknown"}
           </Badge>
+          {/* Shown from a 45rem ROW (RecordRow's `@container/record-row`),
+              never by the viewport, and the first item to give up width
+              (`shrink-[999]`), so the label keeps its 12rem floor; the title
+              keeps the whole verdict reachable when it truncates. */}
           <span
-            className="hidden text-[11px] text-muted-foreground sm:inline"
+            className="hidden @min-[45rem]/record-row:inline min-w-0 shrink-[999] truncate text-[11px] text-muted-foreground"
             data-testid="unfinished-verdict"
+            title={`sweep: ${verdictLabel(row.resume_verdict)}`}
           >
             sweep: {verdictLabel(row.resume_verdict)}
           </span>
