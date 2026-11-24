@@ -1,5 +1,6 @@
 """Device verification endpoints."""
 
+import math
 import uuid as uuid_lib
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_active_user, get_async_db
 from app.core.error_codes import ErrorCode
 from app.middleware.error_handler import validation_error
-from app.middleware.rate_limit import auth_rate_limit
+from app.middleware.rate_limit import auth_rate_limit, refusal_headers, route_template
 from app.models.user import User
 from app.services.device_session_service import device_session_service
 
@@ -106,11 +107,18 @@ async def resend_device_verification(
     if device_session.verification_sent_at:
         time_since_last = datetime.now(UTC) - device_session.verification_sent_at
         if time_since_last < timedelta(minutes=5):
+            wait = timedelta(minutes=5) - time_since_last
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
                     f"Please wait {5 - time_since_last.seconds // 60} more minutes "
                     "before resending"
+                ),
+                # One resend per device session per 5 minutes, for this user.
+                headers=refusal_headers(
+                    f"verification-resend:{route_template(request)}",
+                    "user",
+                    retry_after=str(max(1, math.ceil(wait.total_seconds()))),
                 ),
             )
 
