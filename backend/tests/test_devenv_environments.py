@@ -4264,8 +4264,9 @@ class TestCiNodeStoredButUnpublished:
 
 
 _SUPERSEDED_DETAIL = (
-    "A newer settings change for this machine was sent instead of this one, "
-    "so the settings saved here may not be what the machine is using."
+    "The coordinator already holds a newer settings change for this machine "
+    "and will use it instead of this one, so the settings saved here may not "
+    "be what the machine is using."
 )
 _SUPERSEDED_BODY = {"dispatched": False, "stored": False, "superseded_by_newer": True}
 
