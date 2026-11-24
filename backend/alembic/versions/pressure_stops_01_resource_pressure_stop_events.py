@@ -12,6 +12,7 @@ table, its comment and one index beside its keys, all in ONE transaction::
          calibration, fleet_calibration, suppressed_count, dropped_before,
          box_stats)
         ix_resource_pressure_stop_events_tenant_device_observed
+        ix_resource_pressure_stop_events_observed_at
             (tenant_id, device_id, observed_at DESC)
 
 Every name, type, default and key is the one the plan's Phase 1 fixes. The coord
@@ -173,10 +174,22 @@ def upgrade() -> None:
             ON coord.resource_pressure_stop_events (tenant_id, device_id, observed_at DESC)
         """
     )
+    # The 90-day retention prune deletes on observed_at alone, which the
+    # composite index above cannot serve (its leading columns are tenant and
+    # device).
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_resource_pressure_stop_events_observed_at
+            ON coord.resource_pressure_stop_events (observed_at)
+        """
+    )
 
 
 def downgrade() -> None:
     """Drop the index, then the table. The recorded events do not return."""
+    op.execute(
+        "DROP INDEX IF EXISTS coord.ix_resource_pressure_stop_events_observed_at"
+    )
     op.execute(
         "DROP INDEX IF EXISTS coord.ix_resource_pressure_stop_events_tenant_device_observed"
     )

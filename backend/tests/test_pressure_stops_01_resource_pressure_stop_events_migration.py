@@ -57,6 +57,7 @@ _REVISION_FILENAME = "pressure_stops_01_resource_pressure_stop_events.py"
 _SCHEMA = "coord"
 _TABLE = "resource_pressure_stop_events"
 _INDEX = "ix_resource_pressure_stop_events_tenant_device_observed"
+_RETENTION_INDEX = "ix_resource_pressure_stop_events_observed_at"
 _TIMESTAMPTZ = "timestamp with time zone"
 
 # (name, information_schema data_type, nullable, default substring or None), in
@@ -114,9 +115,11 @@ _UPGRADE_STATEMENTS: tuple[str, ...] = (
     "CREATE TABLE IF NOT EXISTS coord.resource_pressure_stop_events (",
     "COMMENT ON TABLE coord.resource_pressure_stop_events IS",
     f"CREATE INDEX IF NOT EXISTS {_INDEX} ON coord.resource_pressure_stop_events (",
+    f"CREATE INDEX IF NOT EXISTS {_RETENTION_INDEX} ON coord.resource_pressure_stop_events (",
 )
 
 _DOWNGRADE_STATEMENTS: tuple[str, ...] = (
+    f"DROP INDEX IF EXISTS coord.{_RETENTION_INDEX}",
     f"DROP INDEX IF EXISTS coord.{_INDEX}",
     "DROP TABLE IF EXISTS coord.resource_pressure_stop_events",
 )
@@ -332,6 +335,25 @@ def test_upgrade_creates_the_keys_index_and_comment(stop_events_db: Engine) -> N
     )
     assert comment and "never zero" in comment
 
+    with stop_events_db.connect() as conn:
+        retention = conn.execute(
+            text(
+                """
+                SELECT pg_get_indexdef(i.indexrelid) AS indexdef, i.indisvalid
+                  FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                 WHERE c.relname = :name
+                """
+            ),
+            {"name": _RETENTION_INDEX},
+        ).one()
+    # The retention prune filters on observed_at alone; the composite index
+    # cannot serve that, so this one must exist and lead with observed_at.
+    assert retention.indisvalid is True
+    assert retention.indexdef == (
+        f"CREATE INDEX {_RETENTION_INDEX} ON coord.resource_pressure_stop_events "
+        "USING btree (observed_at)"
+    )
+
 
 @_needs_pg
 def test_a_minimal_insert_keeps_unknown_counts_null_and_defaults_the_rest(
@@ -401,9 +423,11 @@ def test_downgrade_removes_the_table_and_re_upgrade_restores_it() -> None:
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _INDEX)
+        assert index_exists(engine, _RETENTION_INDEX)
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, _SCHEMA, _TABLE)
         assert not index_exists(engine, _INDEX)
+        assert not index_exists(engine, _RETENTION_INDEX)
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _INDEX)
