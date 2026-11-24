@@ -196,6 +196,64 @@ describe("<ShareList>", () => {
     expect(screen.getByText("Y")).toHaveAttribute("title", "wire_token_y");
   });
 
+  /**
+   * The detail answers to the LINE's width, not the viewport's (plan
+   * `2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport`
+   * Phase 2 step 6). The ENCODED half: jsdom has no layout engine, so this
+   * pins the class contract; the geometry is an operated UI Bridge check.
+   */
+  it("sizes the detail by the line's own width, keeps the label's 12rem floor, and titles the line with the detail", () => {
+    render(
+      <ShareList
+        data-testid="list"
+        total={6}
+        items={[
+          {
+            key: "x",
+            label: "X",
+            count: 3,
+            detail: "p50 unknown · 3/0/0 started/refused/deferred",
+            detailTitle: "X — the whole sentence",
+          },
+          {
+            key: "y",
+            label: "Y",
+            count: 2,
+            detail: "2 reached you · 1 agent",
+          },
+          { key: "z", label: "Z", count: 1 },
+        ]}
+      />
+    );
+    const classes = (el: Element) => el.className.split(/\s+/);
+    const lines = within(screen.getByTestId("list")).getAllByRole("listitem");
+    for (const line of lines) {
+      expect(classes(line)).toContain("@container/share-row");
+    }
+
+    const detail = screen.getByText("2 reached you · 1 agent");
+    expect(classes(detail)).toContain("hidden");
+    expect(classes(detail)).toContain("@min-[39rem]/share-row:inline");
+    expect(classes(detail)).toContain("shrink-[999]");
+    expect(classes(detail)).toContain("max-w-[28ch]");
+    expect(classes(detail)).not.toContain("shrink-0");
+    expect(detail.className).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/);
+
+    const label = screen.getByText("Y");
+    expect(classes(label)).toContain("grow");
+    expect(classes(label)).toContain("basis-48");
+    expect(classes(label)).not.toContain("flex-1");
+
+    // A hidden detail's own title cannot be hovered and lines have no
+    // expansion, so the LINE carries the detail's text at every width.
+    const byKey = (k: string) =>
+      lines.find((l) => l.getAttribute("data-share-key") === k);
+    expect(byKey("x")).toHaveAttribute("title", "X — the whole sentence");
+    expect(byKey("y")).toHaveAttribute("title", "2 reached you · 1 agent");
+    // No detail, no line title.
+    expect(byKey("z")).not.toHaveAttribute("title");
+  });
+
   it("says unknown — never 0 — for a line with no count, and ranks it last", () => {
     render(
       <ShareList
