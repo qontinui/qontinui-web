@@ -37,6 +37,8 @@ nothing; set ``DATABASE_URL`` to an admin URL of a test Postgres):
    the new table through ``coordrls_01``'s default privileges.
 6. **Downgrade removes the table and the five columns (and only them), and a
    re-upgrade restores them.**
+7. **A re-applied upgrade (stamp at the parent, upgrade again) over the
+   existing shape is harmless** -- the ``IF NOT EXISTS`` posture -- and keeps rows.
 """
 
 from __future__ import annotations
@@ -472,3 +474,40 @@ def test_downgrade_removes_exactly_what_upgrade_added_and_re_upgrade_restores_it
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert ceiling <= {r.column_name for r in _columns(engine, _REGISTRY)}
         assert table_exists(engine, _SCHEMA, _OBSERVED)
+
+
+@_needs_pg
+def test_a_re_applied_upgrade_over_the_existing_shape_is_harmless() -> None:
+    """The ``IF NOT EXISTS`` posture: re-stamping at the parent and upgrading
+    again over the already-present columns and table succeeds and keeps rows."""
+    root = backend_root()
+    with ephemeral_database(admin_database_url(), "coord_ar02i") as (engine, url):
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        tenant = str(uuid.uuid4())
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO coord.agent_registry_observed_names "
+                    "(tenant_id, agent_name) VALUES (:t, 'kept')"
+                ),
+                {"t": tenant},
+            )
+        shape = {
+            table: [tuple(r) for r in _columns(engine, table)]
+            for table in (_REGISTRY, _OBSERVED)
+        }
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert {
+            table: [tuple(r) for r in _columns(engine, table)]
+            for table in (_REGISTRY, _OBSERVED)
+        } == shape
+        with engine.connect() as conn:
+            kept = conn.execute(
+                text(
+                    "SELECT count(*) FROM coord.agent_registry_observed_names "
+                    "WHERE tenant_id = :t"
+                ),
+                {"t": tenant},
+            ).scalar_one()
+        assert kept == 1
