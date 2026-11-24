@@ -246,9 +246,11 @@ export default function CoordGatesPage() {
             gone with the old gates panel and cannot be rebuilt here — gates on
             a closed PR or a dead SHA stay in this list.
           </span>
+          {/* The page's only statement of how old the list is, so it wraps
+              with the buttons rather than hiding on a narrow column. */}
           {updatedAt !== null && !reconnecting && (
             <span
-              className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
+              className="text-xs text-muted-foreground tabular-nums"
               data-testid="gates-updated-ago"
               title={
                 overview
