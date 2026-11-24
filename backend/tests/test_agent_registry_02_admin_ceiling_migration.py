@@ -21,7 +21,8 @@ Without a database (always runs):
    ``agent_registry_01`` convention), no ``op.get_bind()`` read.
 
 Against a real Postgres (skipped when none is reachable — a skip proves
-nothing; set ``DATABASE_URL`` to an admin URL of a test Postgres):
+nothing; set ``QONTINUI_TEST_PG_DSN`` (or ``DATABASE_URL``) to an admin URL of a
+test Postgres):
 
 3. **A row that existed before the upgrade reads ``admin_disabled = false``**
    with every other ceiling column NULL, and keeps its ``default_enabled``:
@@ -61,6 +62,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    column_comment,
     declared_parent_revision_id,
     ephemeral_database,
     load_revision_module,
@@ -117,7 +119,7 @@ _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
     reason=(
         "Postgres not reachable at the conftest URL. CI provisions a postgres "
-        "service; locally, bring one up or set DATABASE_URL."
+        "service; locally, set QONTINUI_TEST_PG_DSN (or DATABASE_URL)."
     ),
 )
 
@@ -227,7 +229,9 @@ def test_every_statement_is_static_sql_and_drops_live_in_downgrade() -> None:
         for n in ast.walk(ast.parse(_revision_source()))
         if isinstance(n, ast.Attribute)
     }
-    assert "get_bind" not in attrs, "coord's migration classifier rejects bind reads"
+    assert "get_bind" not in attrs, (
+        "no bind: coord's migration classifier cannot inspect SQL run through one"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +398,7 @@ def test_a_minimal_observation_insert_and_the_key_conflict(
 def test_the_observe_upsert_bumps_last_seen_and_keeps_first_seen(
     ceiling_db: tuple[Engine, str],
 ) -> None:
-    """The statement shape coord's observe route issues: ON CONFLICT on the
+    """The statement shape coord's Phase 3 observe route will issue: ON CONFLICT on the
     primary key, bumping ``last_seen_at`` and the device, never ``first_seen_at``."""
     engine, _ = ceiling_db
     tenant = str(uuid.uuid4())
@@ -511,3 +515,33 @@ def test_a_re_applied_upgrade_over_the_existing_shape_is_harmless() -> None:
                 {"t": tenant},
             ).scalar_one()
         assert kept == 1
+
+
+# (table, column or None for the table comment, a substring the comment carries)
+_COMMENTS: tuple[tuple[str, str | None, str], ...] = (
+    (_REGISTRY, "admin_disabled", "CEILING"),
+    (_REGISTRY, "admin_disposition", "degrade"),
+    (_REGISTRY, "admin_disabled_by", "LAST admin-switch write"),
+    (_REGISTRY, "admin_disabled_at", "LAST admin-switch write"),
+    (_REGISTRY, "admin_reason", "LAST admin-switch write"),
+    (_OBSERVED, None, "UNKNOWN_AGENT"),
+    (_OBSERVED, "spawn_path_hint", "UNKNOWN"),
+    (_OBSERVED, "last_device_id", "most recent observation"),
+)
+
+
+@_needs_pg
+def test_every_comment_the_upgrade_writes_is_present(
+    ceiling_db: tuple[Engine, str],
+) -> None:
+    engine, _ = ceiling_db
+    for table, column, needle in _COMMENTS:
+        if column is None:
+            with engine.connect() as conn:
+                comment = conn.execute(
+                    text("SELECT obj_description(to_regclass(:t), 'pg_class')"),
+                    {"t": f"coord.{table}"},
+                ).scalar_one()
+        else:
+            comment = column_comment(engine, table, column)
+        assert comment and needle in comment, (table, column, comment)
