@@ -59,6 +59,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.deps import get_current_active_user_async
 from app.core.config import settings
 from app.core.refusal import GlossaryTerm, NextActionKind, RefusalCode, refusal_error
+from app.middleware.upstream_refusal import upstream_http_exception
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -175,7 +176,7 @@ async def _proxy_coord_get(
                 detail="timeout waiting for coord",
             )
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise upstream_http_exception(resp, upstream="coord", detail=resp.text)
     return resp.json()
 
 

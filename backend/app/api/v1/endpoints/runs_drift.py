@@ -19,6 +19,8 @@ import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
+from app.middleware.upstream_refusal import upstream_http_exception
+
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 
@@ -53,8 +55,9 @@ async def _proxy_get(path: str) -> dict[str, Any]:
 
     if resp.status_code >= 400:
         body = resp.json() if resp.content else {}
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="runner",
             detail=body.get("error", f"runner returned {resp.status_code}"),
         )
 
