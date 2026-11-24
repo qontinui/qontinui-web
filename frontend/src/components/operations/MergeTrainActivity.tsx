@@ -715,7 +715,7 @@ function RepoDetail({
         </Section>
       )}
 
-      {/* The line's churn group drops out below a 53rem row; this is where
+      {/* The line's churn group drops out below a 64rem row; this is where
           the four readings stay readable at every width. */}
       <Section title="Candidate-CI churn">
         <div
@@ -1020,14 +1020,17 @@ function RepoRow({
 
         {/* Candidate-CI churn for THIS repo, from coord's economics row. Four
             mono readings on the line (R2 — still one line). They drop out
-            below a 53rem ROW — the button's `@container/train-row`, the rung
-            where RecordRow's reason widens — never by the viewport, so a
+            below a 64rem ROW — the button's `@container/train-row` — never by
+            the viewport. The rung is this row's own estimate, not RecordRow's:
+            the readings are ~530 px of 11px mono, and with the chevron, repo,
+            activity badge, gaps and up to three non-wrapping reason chips the
+            line needs about 1000 px before they fit, so a
             narrowed column drops them too; the detail's "Candidate-CI churn"
             section repeats them at every width. `—` is UNKNOWN, never 0, and
             carries coord's basis / coverage note as its title so the dash
             explains itself. */}
         <span
-          className="hidden @min-[53rem]/train-row:flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground"
+          className="hidden @min-[64rem]/train-row:flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground"
           data-testid={`train-churn-${row.repo}`}
         >
           <ChurnCells churn={row.churn} testIdPrefix="churn-" />

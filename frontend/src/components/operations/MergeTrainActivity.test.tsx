@@ -536,7 +536,7 @@ describe("MergeTrainActivity candidate-CI churn", () => {
     const cluster = screen.getByTestId(`train-churn-${WEB}`);
     // Keyed to the row line's own container, never the viewport: a narrowed
     // column drops it too.
-    expectRowKeyedReveal(cluster, "@min-[53rem]/train-row:flex");
+    expectRowKeyedReveal(cluster, "@min-[64rem]/train-row:flex");
     const line = within(screen.getByTestId(`train-row-${WEB}`)).getByRole(
       "button"
     );

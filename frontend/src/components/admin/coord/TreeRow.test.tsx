@@ -82,8 +82,10 @@ describe("branchBadgeText", () => {
   it.each([
     ["main", "main"],
     ["feat/spec-ci", "feat/spec-ci"],
-    // exactly at the threshold: whole
-    ["a".repeat(20), "a".repeat(20)],
+    // exactly at the threshold (20), with a slash: whole
+    [`feat/${"x".repeat(15)}`, `feat/${"x".repeat(15)}`],
+    // one past it: the tail
+    [`feat/${"x".repeat(16)}`, `…/${"x".repeat(16)}`],
     // over it with a segment: the tail
     [LONG_BRANCH, `…/${SLUG}`],
     // over it with no slash, or a trailing slash: whole (the cap truncates)

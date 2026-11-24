@@ -14,13 +14,13 @@ import { expect } from "vitest";
 /**
  * A Tailwind VIEWPORT variant: `sm:` … `2xl:`, their `min-` and `max-` forms,
  * their `not-` negations (`not-sm:`, `not-max-md:`), and the arbitrary
- * `min-[…]:` / `max-[…]:` media forms — at the start of a class or stacked
+ * `min-[…]:` / `max-[…]:` media forms and an arbitrary `[@media(…)]:` — at the start of a class or stacked
  * after another variant (`hover:sm:`). Every one of them compiles to a
  * `@media` rule in Tailwind 4.3.0. A container variant starts with `@`
  * (`@min-[45rem]/record-row:`), so it never matches.
  */
 export const VIEWPORT_VARIANT =
-  /(^|[\s:])((not-)?(min-|max-)?(sm|md|lg|xl|2xl)|(not-)?(min|max)-\[[^\]]*\]):/;
+  /(^|[\s:])((not-)?(min-|max-)?(sm|md|lg|xl|2xl)|(not-)?(min|max)-\[[^\]]*\]|\[@media[^\]]*\]):/;
 
 /**
  * Asserts `el` is hidden by default and revealed by exactly `reveal` (for

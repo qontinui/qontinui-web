@@ -266,7 +266,8 @@ branch, `QuestionRow`'s plan phase): it gets a `max-w-[…ch]` cap and an inner
 out stays readable in the detail panel. A row hand-built without `RecordRow`
 follows the same rule by naming its own line as the container: the agent
 registry's line is `@container/agent-row`, and the merge train's row button is
-`@container/train-row`.
+`@container/train-row` (its churn group sits at its own measured-by-estimate
+64rem rung, being far wider than a reason).
 `components/console/recordRowSlots.test.ts` scans every `<RecordRow>`'s slots
 for a viewport variant.
 

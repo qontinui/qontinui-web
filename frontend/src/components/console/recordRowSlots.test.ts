@@ -185,7 +185,8 @@ describe("the detector catches the shape it names", () => {
           '<span className="hidden min-md:inline" />' +
           '<span className="not-sm:flex" />' +
           '<span className="not-max-lg:hidden" />' +
-          '<span className="min-[900px]:inline" /></>}'
+          '<span className="min-[900px]:inline" />' +
+          '<span className="[@media(min-width:40rem)]:flex" /></>}'
       )
     );
     expect(violations.map((v) => v.classes)).toEqual([
@@ -197,6 +198,7 @@ describe("the detector catches the shape it names", () => {
       "not-sm:flex",
       "not-max-lg:hidden",
       "min-[900px]:inline",
+      "[@media(min-width:40rem)]:flex",
     ]);
   });
 

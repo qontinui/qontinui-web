@@ -595,8 +595,8 @@ export default function CoordAgentRegistryPage() {
                   {def.label}
                 </Badge>
                 {/* From a 45rem ROW, like RecordRow's reason, never by the
-                    viewport; the expanded panel's policy button names the
-                    state at every width. */}
+                    viewport; at every width the expanded panel's policy toggle
+                    ("Stop requiring a disposition") implies the state. */}
                 {row.policy_required && (
                   <Badge
                     variant="outline"
