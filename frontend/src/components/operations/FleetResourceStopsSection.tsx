@@ -50,6 +50,7 @@ import {
   formatSessions,
   formatStopCount,
   guardLaneLabel,
+  suppressionNote,
   stopLaneLabel,
 } from "./fleetResourceStops";
 import type { ResourceStopRow } from "./fleetResourceStops";
@@ -82,9 +83,10 @@ export const FleetResourceStopsSection = memo(
       return map;
     }, [devices]);
 
-    // `table_present` is read as a strict `false`: an absent field is a coord
-    // that predates it, which is unknown rather than "present and empty".
-    const tableAbsent = data?.table_present === false;
+    // Only a literal `true` means the table was read. A missing or
+    // non-boolean `table_present` is unknown, which renders as "not
+    // available" and never as "No pressure stops recorded".
+    const tableAbsent = data != null && data.table_present !== true;
     const rows: ResourceStopRow[] = tableAbsent ? [] : (data?.stops ?? []);
     const critical = rows.filter((r) => r.severity === "critical").length;
 
@@ -171,6 +173,7 @@ export const FleetResourceStopsSection = memo(
                 <tr className="text-left text-[11px] text-muted-foreground">
                   <th className="py-1 pr-3 font-medium">When</th>
                   <th className="py-1 pr-3 font-medium">Machine</th>
+                  <th className="py-1 pr-3 font-medium">Kind</th>
                   <th className="py-1 pr-3 font-medium">Lane</th>
                   <th className="py-1 pr-3 font-medium">Severity</th>
                   <th className="py-1 pr-3 font-medium">What</th>
@@ -208,6 +211,20 @@ export const FleetResourceStopsSection = memo(
                             hostname: hostname ?? null,
                           },
                           hostname ?? row.device_id
+                        )}
+                      </td>
+                      <td
+                        className="py-1.5 pr-3 text-[11px]"
+                        data-testid="fleet-resource-stops-kind"
+                      >
+                        {row.stop_kind}
+                        {suppressionNote(row) && (
+                          <span
+                            className="ml-1 text-muted-foreground"
+                            data-testid="fleet-resource-stops-suppressed"
+                          >
+                            ({suppressionNote(row)})
+                          </span>
                         )}
                       </td>
                       <td className="py-1.5 pr-3 text-[11px]">
