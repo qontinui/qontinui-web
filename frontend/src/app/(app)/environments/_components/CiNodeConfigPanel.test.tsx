@@ -830,6 +830,30 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
   });
 
+  it("settings the coordinator accepted but did not send, for no named reason, read as not sent rather than refused", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          reachability: "online",
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "coord_not_dispatched",
+          requested_at: "2026-11-22T12:00:00Z",
+          dispatched_at: null,
+          dispatch_detail:
+            "The coordinator accepted these settings but did not send them to the machine.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const box = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(box.textContent).toMatch(/Not sent: the coordinator accepted/);
+    expect(box).toHaveAttribute("data-superseded", "false");
+    expect(box.className).not.toMatch(/text-destructive/);
+    expect(box).toHaveAttribute("data-fixable-here", "false");
+  });
+
   it("a plain coordinator refusal keeps the destructive tone", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(
