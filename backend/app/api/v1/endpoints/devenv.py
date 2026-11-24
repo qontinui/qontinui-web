@@ -1142,16 +1142,18 @@ CI_NODE_STORED_FOR_NEXT_CONNECT_DETAIL = (
 
 #: ``dispatch_error`` when coord answered 2xx but published nothing for THIS
 #: request: a concurrent, newer directive for the same device won coord's store
-#: race (``dispatched: false, superseded_by_newer: true``), and coord sent that
-#: one instead. Web-owned, like the codes above.
+#: race (``dispatched: false, superseded_by_newer: true``). Coord says only that
+#: the newer one was STORED and the device converges on it, not that it was
+#: sent, so neither do we. Web-owned, like the codes above.
 CI_NODE_SUPERSEDED_BY_NEWER = "superseded_by_newer"
 #: ``dispatch_detail`` for that outcome. It does NOT point the owner at this
 #: page's saved settings: those are web's copy of THIS save, and the newer
 #: directive may have come from another writer (coord's agent door), so they
 #: can be exactly what the machine was not sent.
 CI_NODE_SUPERSEDED_BY_NEWER_DETAIL = (
-    "A newer settings change for this machine was sent instead of this one, "
-    "so the settings saved here may not be what the machine is using."
+    "The coordinator already holds a newer settings change for this machine "
+    "and will use it instead of this one, so the settings saved here may not "
+    "be what the machine is using."
 )
 #: ``dispatch_error`` when coord answered 2xx with ``dispatched: false`` and
 #: no reason this backend recognises. Nothing was published, so it is not
