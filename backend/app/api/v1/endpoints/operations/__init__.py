@@ -7207,6 +7207,94 @@ async def get_fleet_resource_samples(
     )
 
 
+# ---- Fleet pressure stops (Dev Ops "Pressure stops" table) ---------------
+#
+# Plan: `2026-11-24-pressure-stops-record-box-stats-in-coord` Phase 4. Backs
+# the "Pressure stops" table on `/admin/coord/devops`.
+#
+# Each row is one runner resource-guard refusal or deferral (coord table
+# `coord.resource_pressure_stop_events`, authored by alembic revision
+# `pressure_stops_01_resource_pressure_stop_events`). Web never reads that
+# table directly (`test_coord_schema_boundary_guard.py`); the rows come over
+# coord HTTP, routed through THIS backend so the operator bearer is forwarded
+# and tenant scoping stays server-side.
+#
+# **Honesty.** Coord answers `table_present: false` when the relation does
+# not exist yet, and an EMPTY `stops` list then means UNKNOWN, not "no
+# stops". Every nullable stat (session counts, CI runners) is null for
+# UNKNOWN, never 0. This proxy adds no defaults and fills no zeroes.
+
+
+@router.get("/fleet/resource-stops")
+async def get_fleet_resource_stops(
+    device_id: UUID | None = Query(
+        default=None,
+        description="Narrow to one device. Tenant scoping still applies on top.",
+    ),
+    lane: str | None = Query(
+        default=None,
+        description="Narrow to one metric lane: memory_free_commit | thread_pressure.",
+    ),
+    guard_lane: str | None = Query(
+        default=None,
+        description="Narrow to the pool that refused: host | wsl | threads.",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339 instant or UTC date; inclusive lower bound.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description="Page size. Coord clamps it and echoes `limit_clamped`.",
+    ),
+    summary: bool | None = Query(
+        default=None,
+        description="true adds coord's per-device roll-up.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched::
+
+        {"table_present": <bool>, "count": <int>, "stops": [StopRow, ...],
+         "bounded": <bool>, "limit": <int>, "limit_clamped": <bool>,
+         "summary": <object | null>}
+
+    ``table_present: false`` means the coord table does not exist yet — an
+    empty ``stops`` list is then UNKNOWN, never "no stops". ``bounded`` is
+    true when ``limit`` truncated the page. A ``StopRow`` carries
+    ``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that
+    refused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,
+    the nullable stats ``session_count_terminal``,
+    ``session_count_live_claude``, ``active_ci_runners`` and
+    ``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /
+    ``fleet_calibration`` objects as the runner recorded them.
+
+    Query params are forwarded verbatim WITHOUT local validation: coord
+    refuses a value outside its vocabulary (422) and clamps ``limit``, and a
+    local rewrite here would turn a refusal into a different, wider read.
+    """
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if lane is not None:
+        params["lane"] = lane
+    if guard_lane is not None:
+        params["guard_lane"] = guard_lane
+    if since is not None:
+        params["since"] = since
+    if limit is not None:
+        params["limit"] = limit
+    if summary is not None:
+        params["summary"] = summary
+    return await _proxy_coord_get(
+        "/coord/devices/resource-stops",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Volume free space (disk monitoring, Phase 1) ------------------------
 #
 # Plan: `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1 steps
