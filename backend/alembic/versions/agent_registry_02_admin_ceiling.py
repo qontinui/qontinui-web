@@ -175,6 +175,27 @@ def upgrade() -> None:
     )
     op.execute(
         """
+        COMMENT ON COLUMN coord.agent_registry.admin_disabled_by IS
+            'Actor of the LAST admin-switch write, in either direction (a '
+            're-enable writes it too). NULL = no admin has ever switched this row.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.agent_registry.admin_disabled_at IS
+            'Time of the LAST admin-switch write, in either direction. NULL = no '
+            'admin has ever switched this row.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.agent_registry.admin_reason IS
+            'Free-text reason the admin gave on the LAST admin-switch write. NULL '
+            '= none given, or no admin has ever switched this row.'
+        """
+    )
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS coord.agent_registry_observed_names (
             tenant_id        uuid         NOT NULL,
             agent_name       text         NOT NULL,
@@ -194,6 +215,21 @@ def upgrade() -> None:
             'The observed source of the admin agent catalog (plan '
             '2026-11-24-tenant-admins-switch-agent-spawns-off-per-agent-type D2). '
             'Written by coord only; alembic authors the DDL.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.agent_registry_observed_names.spawn_path_hint IS
+            'The spawn path the reporting hook could tell (e.g. '
+            'in_session_subagent). NULL = it could tell nothing, which is UNKNOWN, '
+            'not a default. Vocabulary is coord-enforced, no CHECK.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.agent_registry_observed_names.last_device_id IS
+            'Device that sent the most recent observation. NULL = the report '
+            'carried no device.'
         """
     )
 

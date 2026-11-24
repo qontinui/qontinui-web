@@ -30,8 +30,11 @@ nothing; set ``DATABASE_URL`` to an admin URL of a test Postgres):
    the observed-names table's columns in order, its exact primary key, and no
    CHECK on either table.
 5. **The observed-names upsert coord will issue works**: a minimal insert gets
-   both timestamps from ``now()``, and a second insert of the same key
-   conflicts on the primary key.
+   both timestamps from ``now()``, a second plain insert of the same key
+   conflicts on the primary key, and the ``ON CONFLICT ... DO UPDATE`` upsert
+   bumps ``last_seen_at`` / ``last_device_id`` while keeping ``first_seen_at``.
+   The tenant roles (``coord_tenant``, ``coord_tenant_preflight``) hold DML on
+   the new table through ``coordrls_01``'s default privileges.
 6. **Downgrade removes the table and the five columns (and only them), and a
    re-upgrade restores them.**
 """
@@ -383,6 +386,66 @@ def test_a_minimal_observation_insert_and_the_key_conflict(
     assert excinfo.value.orig.diag.constraint_name == (  # type: ignore[union-attr]
         "agent_registry_observed_names_pkey"
     )
+
+
+@_needs_pg
+def test_the_observe_upsert_bumps_last_seen_and_keeps_first_seen(
+    ceiling_db: tuple[Engine, str],
+) -> None:
+    """The statement shape coord's observe route issues: ON CONFLICT on the
+    primary key, bumping ``last_seen_at`` and the device, never ``first_seen_at``."""
+    engine, _ = ceiling_db
+    tenant = str(uuid.uuid4())
+    device = str(uuid.uuid4())
+    upsert = text(
+        """
+        INSERT INTO coord.agent_registry_observed_names
+            (tenant_id, agent_name, last_device_id, spawn_path_hint)
+        VALUES (:t, 'custom-agent', :d, 'in_session_subagent')
+        ON CONFLICT (tenant_id, agent_name) DO UPDATE
+            SET last_seen_at = now(),
+                last_device_id = EXCLUDED.last_device_id,
+                spawn_path_hint = EXCLUDED.spawn_path_hint
+        RETURNING first_seen_at, last_seen_at
+        """
+    )
+    with engine.begin() as conn:
+        first = conn.execute(upsert, {"t": tenant, "d": str(uuid.uuid4())}).one()
+    with engine.begin() as conn:
+        conn.execute(text("SELECT pg_sleep(0.01)"))
+        second = conn.execute(upsert, {"t": tenant, "d": device}).one()
+    assert second.first_seen_at == first.first_seen_at
+    assert second.last_seen_at > first.last_seen_at
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT last_device_id FROM coord.agent_registry_observed_names "
+                "WHERE tenant_id = :t"
+            ),
+            {"t": tenant},
+        ).all()
+    assert [str(r.last_device_id) for r in rows] == [device]
+
+
+_TENANT_ROLES = ("coord_tenant", "coord_tenant_preflight")
+
+
+@_needs_pg
+def test_the_tenant_roles_can_use_the_new_table(
+    ceiling_db: tuple[Engine, str],
+) -> None:
+    """``coordrls_01``'s default privileges must reach the new table, or the
+    first tenant-scoped coord path that touches it is a ``42501``."""
+    engine, _ = ceiling_db
+    with engine.connect() as conn:
+        for role in _TENANT_ROLES:
+            for relation in (f"coord.{_OBSERVED}", f"coord.{_REGISTRY}"):
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    granted = conn.execute(
+                        text("SELECT has_table_privilege(:r, :rel, :p)"),
+                        {"r": role, "rel": relation, "p": privilege},
+                    ).scalar_one()
+                    assert granted is True, (role, relation, privilege)
 
 
 @_needs_pg
