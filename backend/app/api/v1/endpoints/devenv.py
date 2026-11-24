@@ -1432,6 +1432,13 @@ async def set_ci_node_config(
 
     declined = _coord_declined_dispatch(resp)
     if declined is not None:
+        logger.info(
+            "devenv_ci_node_dispatch_declined",
+            machine_id=str(machine.id),
+            target_device_id=str(machine.coord_device_id),
+            status=resp.status_code,
+            dispatch_error=declined,
+        )
         # NOT PUBLISHED: coord accepted the call but sent nothing for it,
         # typically because a newer directive for this device won. Checked
         # before the model-access relay check, whose "unconfirmed" reading
