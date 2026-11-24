@@ -83,13 +83,17 @@ normalization (lowercase, ``[a-z0-9_-]``; plan D6) is likewise coord's.
 Lock posture
 ============
 
-The ``ALTER`` takes a brief ``ACCESS EXCLUSIVE`` lock on
-``coord.agent_registry``, which coord reads on every spawn authorization and
-every ``/effective`` call. ``env.py`` runs the batch in one transaction, so
-both directions bound the wait with ``SET LOCAL lock_timeout = '3s'`` and
-restore the default afterwards: a blocked apply fails fast instead of queueing
-every registry read behind it. The new table is invisible to every other
-session until this transaction commits.
+The ``ALTER`` takes an ``ACCESS EXCLUSIVE`` lock on ``coord.agent_registry``,
+which coord reads on every spawn authorization and every ``/effective`` call.
+``env.py`` runs the whole batch in one transaction (``env.py``
+``context.begin_transaction()``), so once granted the lock is held until the
+BATCH commits, including any later revisions applied in the same run. It is
+brief only when this revision is the last in its batch. Both directions bound
+the WAIT with ``SET LOCAL lock_timeout = '3s'`` and restore the default
+afterwards: a blocked apply fails fast instead of queueing every registry read
+behind it. ``coordrls_01``'s ``autocommit_block`` is the escape if the hold
+ever matters. The new table is invisible to every other session until the
+batch commits.
 
 Idempotency / authorship posture
 ================================
