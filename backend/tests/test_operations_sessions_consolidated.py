@@ -16,6 +16,12 @@ What these lock down, in the order the plan states them:
   `session_worktrees.rs:710` idiom — and the loser is UNKNOWN, not linked.
 * **Trap 7** — the default (no `shape`) response is coord's payload passed
   through unchanged, so the shipped `/sessions` fat-card list is untouched.
+* **Each half names its ceiling** — plan
+  `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+  Phase 3 (U4). Both coord reads stop at 500 rows, so each half carries the
+  shared bounded-read envelope: a half that came back FULL is `unknown`, never
+  `complete`, and its count is what coord SERVED, before this route's own
+  `device` / `status` / `q` narrowing.
 """
 
 from __future__ import annotations
@@ -112,6 +118,43 @@ def _agent_row(agent_id: str, *, device_id: str | None = DEVICE_A) -> dict[str, 
     }
 
 
+def _lifecycle_rows(n: int, **overrides: Any) -> list[dict[str, Any]]:
+    """``n`` unbridged lifecycle rows (each a `lifecycle_only` row on its own),
+    every one carrying ``overrides``."""
+    return [
+        {**_lifecycle_row(f"s-{i:03d}", bridge=None), **overrides} for i in range(n)
+    ]
+
+
+def _agent_rows(n: int) -> list[dict[str, Any]]:
+    """``n`` agent rows no lifecycle row bridges."""
+    return [_agent_row(str(uuid4())) for _ in range(n)]
+
+
+def _expected_bound(*, shown: int, complete: bool, limit: int = 500) -> dict[str, Any]:
+    """One half's ``bound`` exactly as the wire must carry it.
+
+    Spelled out key by key rather than built with ``app.core.bounded_read``, so
+    a change to what the builders serialize fails here instead of passing by
+    construction. Every key is present and ``null`` is a value (the envelope's
+    contract — never ``exclude_none``). A FULL half is ``unknown`` with
+    ``truncated`` / ``total`` null: never ``true`` (no extra row was fetched to
+    prove more exist) and never ``false`` (nothing proves there are not).
+    """
+    return {
+        "available": True,
+        "bound_kind": "complete" if complete else "unknown",
+        "count": shown,
+        "enumerate_via": None,
+        "filter_narrowed": None,
+        "limit": limit,
+        "next_cursor": None,
+        "shown": shown,
+        "total": None,
+        "truncated": False if complete else None,
+    }
+
+
 class _CoordStub:
     """Answers `/sessions` and `/coord/agent-sessions` off one mocked client.
 
@@ -126,10 +169,15 @@ class _CoordStub:
         lifecycle: list[dict[str, Any]],
         agents: list[dict[str, Any]] | None,
         agent_status: int = 200,
+        lifecycle_payload: dict[str, Any] | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.agents = agents
         self.agent_status = agent_status
+        # When set, `/sessions` answers 200 with THIS body verbatim instead of
+        # coord's envelope around `lifecycle` — for a body coord should never
+        # send.
+        self.lifecycle_payload = lifecycle_payload
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
     async def get(self, url: str, params=None, headers=None):  # noqa: ANN001
@@ -140,6 +188,8 @@ class _CoordStub:
             return _mock_response(
                 200, {"sessions": self.agents or [], "count": len(self.agents or [])}
             )
+        if self.lifecycle_payload is not None:
+            return _mock_response(200, self.lifecycle_payload)
         return _mock_response(
             200,
             {"count": len(self.lifecycle), "scope": "all", "sessions": self.lifecycle},
@@ -217,7 +267,15 @@ class TestThreeRowClasses:
             "agent_only": 1,
             "unknown": 0,
         }
-        assert body["agent_half"] == {"read": "ok"}
+        # Both halves answered well below coord's 500-row ceilings: complete.
+        assert body["lifecycle_half"] == {
+            "read": "ok",
+            "bound": _expected_bound(shown=2, complete=True),
+        }
+        assert body["agent_half"] == {
+            "read": "ok",
+            "bound": _expected_bound(shown=2, complete=True),
+        }
 
         # The linked row carries BOTH halves.
         assert by_class["linked"]["agent_session"]["id"] == BRIDGE
@@ -629,3 +687,165 @@ class TestSessionLookup:
         # The closed lifecycle row's agent half was never served, so nothing
         # coord matched was hidden.
         assert body["withheld_by_filter"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Each half names its ceiling — plan
+# `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+# Phase 3 (U4)
+# ---------------------------------------------------------------------------
+
+
+class TestEachHalfNamesItsCeiling:
+    """coord's `/sessions` stops at `LIMIT 500` (the most recently STARTED
+    sessions) and `/coord/agent-sessions` at 500 (the most recently SEEN). A
+    half that came back full may have more rows behind it, and nothing coord
+    sends says whether it does — so that half is `unknown`, never `complete`,
+    and the console can say "at least" instead of presenting a sample as the
+    fleet."""
+
+    @pytest.mark.parametrize(
+        ("served", "complete"),
+        [(0, True), (499, True), (500, False)],
+        ids=["empty", "below-ceiling", "at-ceiling"],
+    )
+    def test_the_lifecycle_half_says_which_side_of_coords_ceiling_it_landed_on(
+        self, auth_client, served, complete
+    ):
+        stub = _CoordStub(lifecycle=_lifecycle_rows(served), agents=[])
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated")
+        finally:
+            patcher.stop()
+        assert r.status_code == 200
+        half = r.json()["lifecycle_half"]
+        assert half["read"] == "ok"
+        assert half["bound"]["bound_kind"] == ("complete" if complete else "unknown")
+        # `false` only below the ceiling; at it, `null` — never `true`, which
+        # would claim rows were seen beyond the page when none were fetched.
+        assert half["bound"]["truncated"] is (False if complete else None)
+        assert half == {
+            "read": "ok",
+            "bound": _expected_bound(shown=served, complete=complete),
+        }
+
+    @pytest.mark.parametrize(
+        ("served", "complete"),
+        [(499, True), (500, False)],
+        ids=["below-join-limit", "at-join-limit"],
+    )
+    def test_the_agent_half_says_which_side_of_its_join_limit_it_landed_on(
+        self, auth_client, served, complete
+    ):
+        stub = _CoordStub(lifecycle=[], agents=_agent_rows(served))
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated")
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert body["agent_half"]["bound"]["bound_kind"] == (
+            "complete" if complete else "unknown"
+        )
+        assert body["agent_half"]["bound"]["truncated"] is (False if complete else None)
+        assert body["agent_half"] == {
+            "read": "ok",
+            "bound": _expected_bound(shown=served, complete=complete),
+        }
+        # The agent-only class itself is unchanged: the agent half is real, so
+        # its rows stay — qualifying `agent_only` is the console's job.
+        assert body["row_class_counts"]["agent_only"] == served
+
+    @pytest.mark.parametrize(
+        ("query", "dropped_overrides"),
+        [
+            ("status=live", {"state": "closed"}),
+            (f"device={DEVICE_A}", {"device_id": DEVICE_B}),
+            (
+                "q=console",
+                {
+                    "repo": "qontinui-coord",
+                    "branch": "main",
+                    "intent": {"purpose": "unrelated"},
+                },
+            ),
+        ],
+        ids=["status", "device", "q"],
+    )
+    def test_the_lifecycle_count_is_what_coord_served_not_what_the_filter_kept(
+        self, auth_client, query, dropped_overrides
+    ):
+        """coord served its full 500; this route's own narrowing kept 40. The
+        bound describes coord's READ — counted after the narrowing, a Live tab
+        keeping 40 of 500 would read as a complete fleet of 40."""
+        kept = _lifecycle_rows(40)  # active, on DEVICE_A, purpose "ship the console"
+        dropped = [
+            {**row, "id": f"x-{row['id']}"}
+            for row in _lifecycle_rows(460, **dropped_overrides)
+        ]
+        stub = _CoordStub(lifecycle=kept + dropped, agents=[])
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated&{query}")
+        finally:
+            patcher.stop()
+        body = r.json()
+        # The narrowing still happened …
+        assert body["count"] == 40
+        # … and the bound still describes the 500 coord served.
+        bound = body["lifecycle_half"]["bound"]
+        assert bound["shown"] == bound["count"] == 500
+        assert bound["bound_kind"] == "unknown"
+        assert bound["truncated"] is None
+
+    def test_a_failed_agent_read_carries_no_bound_and_the_lifecycle_half_keeps_its_own(
+        self, auth_client
+    ):
+        """A read that failed has no page to bound. Its absence is the
+        statement; a `bound` beside `read: "failed"` would describe rows that
+        never arrived."""
+        stub = _CoordStub(
+            lifecycle=[_lifecycle_row("s1", bridge=BRIDGE)],
+            agents=None,
+            agent_status=502,
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated")
+        finally:
+            patcher.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["agent_half"]["read"] == "failed"
+        assert "bound" not in body["agent_half"]
+        assert set(body["agent_half"]) == {"read", "detail"}
+        # The lifecycle half IS an answer, and still names its bound.
+        assert body["lifecycle_half"] == {
+            "read": "ok",
+            "bound": _expected_bound(shown=1, complete=True),
+        }
+
+    def test_a_lifecycle_body_with_no_sessions_list_is_unknown_never_complete(
+        self, auth_client
+    ):
+        """A 200 that carries no `sessions` list served nothing countable. Its
+        rows render as none (as before), but its bound must not be `complete`:
+        `truncated: false` would assert "you have seen everything" over a read
+        that said nothing at all."""
+        stub = _CoordStub(
+            lifecycle=[],
+            agents=[],
+            lifecycle_payload={"count": 0, "scope": "all"},
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated")
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert body["sessions"] == []
+        assert body["lifecycle_half"] == {
+            "read": "ok",
+            "bound": _expected_bound(shown=0, complete=False),
+        }
