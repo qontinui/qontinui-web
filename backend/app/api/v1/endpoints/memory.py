@@ -123,6 +123,7 @@ from app.core.refusal import (
     RefusalHTTPException,
     refusal_error,
 )
+from app.middleware.rate_limit import refusal_headers
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
@@ -1045,6 +1046,9 @@ async def _write_records(
                 "used_rows": usage.row_count,
                 "quota_rows": usage.quota_rows,
             },
+            # The tenant's storage quota: no window resets it, so no
+            # Retry-After — only deleting rows or a larger quota frees it.
+            headers=refusal_headers("memory-quota:tenant", "tenant"),
         )
 
     # 4. Insert every genuinely-new unique content in ONE set-based
