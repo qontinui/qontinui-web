@@ -14355,6 +14355,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/resource-stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Resource Stops
+         * @description Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched::
+         *
+         *         {"table_present": <bool>, "count": <int>, "stops": [StopRow, ...],
+         *          "bounded": <bool>, "limit": <int>, "limit_clamped": <bool>,
+         *          "summary": <object | null>}
+         *
+         *     ``table_present: false`` means the coord table does not exist yet — an
+         *     empty ``stops`` list is then UNKNOWN, never "no stops". ``bounded`` is
+         *     true when ``limit`` truncated the page. A ``StopRow`` carries
+         *     ``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that
+         *     refused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,
+         *     the nullable stats ``session_count_terminal``,
+         *     ``session_count_live_claude``, ``active_ci_runners`` and
+         *     ``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /
+         *     ``fleet_calibration`` objects as the runner recorded them.
+         *
+         *     Query params are forwarded verbatim WITHOUT local validation: coord
+         *     refuses a value outside its vocabulary (422) and clamps ``limit``, and a
+         *     local rewrite here would turn a refusal into a different, wider read.
+         */
+        get: operations["api_v1_operations_fleet_resource_stops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/runners/{runner_id}": {
         parameters: {
             query?: never;
@@ -82485,6 +82525,48 @@ export interface operations {
                 history_points?: number | null;
                 /** @description false skips the history query entirely (strip-only render). */
                 history?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_resource_stops_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow to one device. Tenant scoping still applies on top. */
+                device_id?: string | null;
+                /** @description Narrow to one metric lane: memory_free_commit | thread_pressure. */
+                lane?: string | null;
+                /** @description Narrow to the pool that refused: host | wsl | threads. */
+                guard_lane?: string | null;
+                /** @description RFC 3339 instant or UTC date; inclusive lower bound. */
+                since?: string | null;
+                /** @description Page size. Coord clamps it and echoes `limit_clamped`. */
+                limit?: number | null;
+                /** @description true adds coord's per-device roll-up. */
+                summary?: boolean | null;
             };
             header?: never;
             path?: never;

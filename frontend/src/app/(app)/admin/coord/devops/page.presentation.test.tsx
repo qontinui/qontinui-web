@@ -63,7 +63,7 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
     fetch: async (url: string, init?: unknown) =>
-      /fleet\/health|resource-samples|worktree-slots|ci-runners|fault-to-visibility|dispatch-roles|coord\/audit/.test(
+      /fleet\/health|resource-samples|resource-stops|worktree-slots|ci-runners|fault-to-visibility|dispatch-roles|coord\/audit/.test(
         String(url)
       )
         ? new Response(JSON.stringify(await httpGet(url, init)), {
@@ -820,6 +820,7 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       "fleet-resource-error",
       "ci-run-error",
       "fleet-worktree-slots-error",
+      "fleet-resource-stops-error",
     ]) {
       await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy());
     }
@@ -886,6 +887,7 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       "fleet-resource-error",
       "ci-run-error",
       "fleet-worktree-slots-error",
+      "fleet-resource-stops-error",
     ]) {
       expect(screen.getByTestId(testId), testId).toHaveTextContent(
         FAILURE_REASON_WITHHELD
