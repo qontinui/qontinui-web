@@ -29,6 +29,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PlanRow } from "./PlanRow";
+import { expectRowKeyedReveal } from "@/test/recordRowSlot";
 
 // One shared spy, so the Phase 3 cases can assert that Spawn DID or DID NOT
 // navigate. `vi.hoisted` is required: `vi.mock` is hoisted above every plain
@@ -471,9 +472,26 @@ describe("PlanRow body signals", () => {
     expect(screen.queryByTestId("coord-plan-body-signal")).toBeNull();
   });
 
+  it("drops the marker group by the ROW's width, never the viewport's", () => {
+    // RecordRow's root is `@container/record-row`; the group hides below a
+    // 45rem row like the row's own reason, so a console narrowed by the
+    // sidebar or a split pane drops it too. A viewport `sm:` reveal kept it
+    // on such a row and took the label's width.
+    renderRow({
+      slug: "2026-09-01-x",
+      status: "in_progress",
+      body_provenance: "never_scanned",
+      has_body: false,
+    });
+    expectRowKeyedReveal(
+      screen.getByTestId("coord-plan-body-signal"),
+      "@min-[45rem]/record-row:inline-flex"
+    );
+  });
+
   it("repeats the markers in the detail, where the caveat can be READ", () => {
-    // The row's chips are dropped below `sm` and their caveat lives in a
-    // `title`, which a touch device cannot hover.
+    // The row's chips are dropped below a 45rem row and their caveat lives in
+    // a `title`, which a touch device cannot hover.
     renderRow(
       {
         slug: "2026-09-01-x",
