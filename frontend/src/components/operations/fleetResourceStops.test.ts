@@ -13,6 +13,7 @@ import {
   formatStopCount,
   guardLaneLabel,
   stopLaneLabel,
+  suppressionNote,
 } from "./fleetResourceStops";
 import type { ResourceStopRow } from "./fleetResourceStops";
 
@@ -142,5 +143,49 @@ describe("calibration summary", () => {
     expect(
       calibrationSummary(row({ fleet_calibration: { active_trials: 1 } })).fleet
     ).toBe("recorded");
+  });
+});
+
+describe("omitted fields are unknown, not a crash or a number", () => {
+  const omit = (o: Record<string, unknown>) =>
+    row(o as Partial<ResourceStopRow>);
+
+  it("renders a missing calibration as none recorded and a missing fleet one as unknown", () => {
+    expect(
+      calibrationSummary(
+        omit({ calibration: undefined, fleet_calibration: undefined })
+      )
+    ).toEqual({ effective: "none recorded", fleet: "unknown" });
+  });
+
+  it("renders a missing observed or limit as unknown, never NaN", () => {
+    expect(formatObservedVsLimit(omit({ observed: undefined }))).toBe(
+      "unknown"
+    );
+    expect(formatObservedVsLimit(omit({ limit_value: undefined }))).toBe(
+      "unknown"
+    );
+    expect(formatStopCount(undefined)).toBe("unknown");
+  });
+});
+
+describe("suppressionNote", () => {
+  it("says nothing for zero counts", () => {
+    expect(suppressionNote(row())).toBeNull();
+  });
+  it("shows positive counts", () => {
+    expect(
+      suppressionNote(row({ suppressed_count: 4, dropped_before: 2 }))
+    ).toBe("4 suppressed, 2 dropped before");
+  });
+  it("keeps an omitted count unknown, never 0", () => {
+    expect(
+      suppressionNote(
+        row({
+          suppressed_count: undefined,
+          dropped_before: 0,
+        } as unknown as Partial<ResourceStopRow>)
+      )
+    ).toBe("suppressed: unknown");
   });
 });

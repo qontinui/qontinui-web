@@ -93,8 +93,8 @@ export function guardLaneLabel(guardLane: string | null): string {
 }
 
 /** A recorded count: null is `unknown`, never `0`. */
-export function formatStopCount(n: number | null): string {
-  return n === null || !Number.isFinite(n) ? "unknown" : String(n);
+export function formatStopCount(n: number | null | undefined): string {
+  return n == null || !Number.isFinite(n) ? "unknown" : String(n);
 }
 
 /**
@@ -104,7 +104,8 @@ export function formatStopCount(n: number | null): string {
  */
 export function formatObservedVsLimit(row: ResourceStopRow): string {
   const { observed, limit_value: limit } = row;
-  if (observed === null || limit === null) return "unknown";
+  // `== null`: an omitted field (undefined) is as unknown as an explicit null.
+  if (observed == null || limit == null) return "unknown";
   if (row.lane === "memory_free_commit") {
     return `${formatBytes(observed)} free / floor ${formatBytes(limit)}`;
   }
@@ -154,7 +155,7 @@ export function calibrationSummary(row: ResourceStopRow): {
 } {
   const calibration = row.calibration;
   let effective: string;
-  if (calibration === null || Object.keys(calibration).length === 0) {
+  if (calibration == null || Object.keys(calibration).length === 0) {
     effective = "none recorded";
   } else {
     const sources = new Set<string>();
@@ -166,10 +167,27 @@ export function calibrationSummary(row: ResourceStopRow): {
   }
   const fleetState = row.fleet_calibration?.state;
   const fleet =
-    row.fleet_calibration === null
+    row.fleet_calibration == null
       ? "unknown"
       : typeof fleetState === "string"
         ? fleetState
         : "recorded";
   return { effective, fleet };
+}
+
+/**
+ * The coalescing markers on a row: how many identical refusals were folded
+ * into it (`suppressed_count`) and how many the runner dropped before it
+ * (`dropped_before`). Zero adds nothing to say; an omitted count is
+ * `unknown`, never `0`. Returns null when there is nothing to show.
+ */
+export function suppressionNote(row: ResourceStopRow): string | null {
+  const parts: string[] = [];
+  const sc = row.suppressed_count as number | null | undefined;
+  const db = row.dropped_before as number | null | undefined;
+  if (sc == null || !Number.isFinite(sc)) parts.push("suppressed: unknown");
+  else if (sc > 0) parts.push(`${sc} suppressed`);
+  if (db == null || !Number.isFinite(db)) parts.push("dropped before: unknown");
+  else if (db > 0) parts.push(`${db} dropped before`);
+  return parts.length > 0 ? parts.join(", ") : null;
 }

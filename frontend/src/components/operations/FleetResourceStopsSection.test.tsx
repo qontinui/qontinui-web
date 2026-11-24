@@ -101,6 +101,7 @@ describe("FleetResourceStopsSection", () => {
     expect(cells).toEqual([
       "10m ago",
       "spaceship",
+      "refused_spawn",
       "Low memory (WSL)",
       "critical",
       "terminal_spawn",
@@ -155,6 +156,54 @@ describe("FleetResourceStopsSection", () => {
     expect(
       screen.getByTestId("fleet-resource-stops-unavailable-badge")
     ).toHaveTextContent("not available");
+  });
+
+  it("renders a response with no table_present as not available, never as empty", () => {
+    const data = response({ stops: [], count: 0 });
+    delete (data as Partial<ResourceStopsResponse>).table_present;
+    renderSection(hook({ data }));
+    expect(
+      screen.getByTestId("fleet-resource-stops-not-available")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("fleet-resource-stops-empty")).toBeNull();
+  });
+
+  it("renders a row whose calibration and observed fields are omitted", () => {
+    const partial = stop({
+      lane: "thread_pressure",
+    }) as Partial<ResourceStopRow>;
+    delete partial.calibration;
+    delete partial.fleet_calibration;
+    delete partial.observed;
+    renderSection(
+      hook({ data: response({ stops: [partial as ResourceStopRow] }) })
+    );
+    const row = screen.getByTestId("fleet-resource-stops-row");
+    expect(row).toHaveTextContent("none recorded");
+    expect(row).toHaveTextContent("unknown");
+    expect(row).not.toHaveTextContent("NaN");
+  });
+
+  it("shows the stop kind and the suppressed / dropped markers", () => {
+    renderSection(
+      hook({
+        data: response({
+          stops: [
+            stop({
+              stop_kind: "deferred_ci_job",
+              suppressed_count: 3,
+              dropped_before: 2,
+            }),
+          ],
+        }),
+      })
+    );
+    expect(screen.getByTestId("fleet-resource-stops-kind")).toHaveTextContent(
+      "deferred_ci_job"
+    );
+    expect(
+      screen.getByTestId("fleet-resource-stops-suppressed")
+    ).toHaveTextContent("3 suppressed, 2 dropped before");
   });
 
   it("says no stops are recorded only when the table was read and is empty", () => {
