@@ -395,6 +395,7 @@ def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
                     f"({exc.status_code}). Retry; if it persists, check coord."
                 ),
             },
+            headers=exc.headers,
         )
     if isinstance(detail, dict) and "message" not in detail:
         error = detail.get("error")
@@ -406,6 +407,9 @@ def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
                     "message": f"coord refused the designation: {error}",
                     "coord_error": error,
                 },
+                # A coord 429 keeps its lane and Retry-After
+                # (`upstream_http_exception`).
+                headers=exc.headers,
             )
     return exc
 

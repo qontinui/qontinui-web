@@ -84,6 +84,7 @@ from app.core.refusal import (
     refusal_error,
 )
 from app.db.session import AsyncSessionLocal
+from app.middleware.upstream_refusal import upstream_http_exception
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -276,7 +277,7 @@ async def _coord_request(
             detail = resp.json()
         except ValueError:
             detail = resp.text
-        raise HTTPException(status_code=resp.status_code, detail=detail)
+        raise upstream_http_exception(resp, upstream="coord", detail=detail)
     if resp.is_success:
         try:
             return resp.json()
