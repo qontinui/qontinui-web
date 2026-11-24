@@ -417,8 +417,11 @@ def test_the_observe_upsert_bumps_last_seen_and_keeps_first_seen(
     )
     with engine.begin() as conn:
         first = conn.execute(upsert, {"t": tenant, "d": str(uuid.uuid4())}).one()
+    # now() is fixed at transaction start, so the sleep gets its own
+    # transaction: the second upsert's transaction then starts strictly later.
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_sleep(0.01)"))
+    with engine.begin() as conn:
         second = conn.execute(upsert, {"t": tenant, "d": device}).one()
     assert second.first_seen_at == first.first_seen_at
     assert second.last_seen_at > first.last_seen_at
