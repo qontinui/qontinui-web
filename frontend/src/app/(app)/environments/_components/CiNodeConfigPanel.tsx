@@ -172,7 +172,7 @@ export interface DispatchRefusal {
   notRefused?: boolean;
   /**
    * True for the one accepted-but-not-sent reason the coordinator names: a
-   * newer change for the same machine was sent instead of this save.
+   * newer change for the same machine is held and will be used instead.
    */
   superseded?: boolean;
 }
@@ -224,12 +224,13 @@ export function dispatchRefusalCopy(
     };
   }
   if (state.dispatch_error === SUPERSEDED_BY_NEWER) {
-    // Coord answered 2xx but published nothing for THIS save: a newer change
-    // for the same machine won and was sent instead. Not a refusal, and not a
-    // delivery to re-send — re-sending this one would undo the newer change.
+    // Coord answered 2xx but published nothing for THIS save: it already
+    // holds a newer change for the same machine (stored, not necessarily sent
+    // yet) and the machine converges on that. Not a refusal, and not a
+    // delivery to re-send: re-sending this one would undo the newer change.
     return {
       headline:
-        "Not sent: a newer settings change for this machine was sent instead.",
+        "Not sent: the coordinator holds a newer settings change for this machine and will use that instead.",
       fixableHere: false,
       detail,
       notRefused: true,
@@ -303,8 +304,8 @@ export function dispatchRefusalCopy(
 /** The backend's `dispatch_error` when coord stored the settings but could not
  *  send them now: the machine applies them on its next connect. */
 export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
-/** The backend's `dispatch_error` when coord answered 2xx but sent a newer
- *  change for the same machine instead of this one. */
+/** The backend's `dispatch_error` when coord answered 2xx but sent nothing:
+ *  it already holds a newer change for the same machine and uses that. */
 export const SUPERSEDED_BY_NEWER = "superseded_by_newer";
 /** The backend's `dispatch_error` when coord answered 2xx with
  *  `dispatched: false` and no reason the backend recognises. */
@@ -338,6 +339,9 @@ export function savedButUnsent(state: CiNodeConfigState): boolean {
 export function canResendUnchanged(state: CiNodeConfigState): boolean {
   if (state.reachability === "unlinked") return false;
   if (dispatchRefusalCopy(state)?.deferred) return true;
+  // Accepted but not sent for no named reason: no newer change is known to
+  // exist, so an unchanged re-send cannot undo one.
+  if (state.dispatch_error === NOT_DISPATCHED) return true;
   if (
     state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
     state.dispatch_error === MODEL_ACCESS_UNCONFIRMED

@@ -812,14 +812,14 @@ describe("CiNodeConfigPanel — model access", () => {
           requested_at: "2026-11-22T12:00:00Z",
           dispatched_at: "2026-11-22T11:00:00Z",
           dispatch_detail:
-            "A newer settings change for this machine was sent instead of this one, so the settings saved here may not be what the machine is using.",
+            "The coordinator already holds a newer settings change for this machine and will use it instead of this one, so the settings saved here may not be what the machine is using.",
         })
       )
     );
     render(<CiNodeConfigPanel machine={MACHINE} />);
     const box = await screen.findByTestId("ci-node-dispatch-refusal");
     expect(box.textContent).toMatch(
-      /newer settings change .* was sent instead/
+      /holds a newer settings change for this machine and will use that instead/
     );
     expect(box.textContent).not.toMatch(/did not send them/);
     expect(box).toHaveAttribute("data-superseded", "true");
@@ -852,6 +852,8 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(box).toHaveAttribute("data-superseded", "false");
     expect(box.className).not.toMatch(/text-destructive/);
     expect(box).toHaveAttribute("data-fixable-here", "false");
+    // No newer change is known, so re-sending unchanged is offered.
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
   });
 
   it("a plain coordinator refusal keeps the destructive tone", async () => {
