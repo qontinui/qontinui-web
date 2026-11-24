@@ -34,6 +34,10 @@ vi.mock("sonner", () => ({
 }));
 
 import UnfinishedSessionsPage from "./page";
+import {
+  expectRowKeyedReveal,
+  expectYieldsBeforeLabel,
+} from "@/test/recordRowSlot";
 
 const UNFINISHED_API = "/api/v1/operations/unfinished-sessions";
 const RESUME_UNFINISHED_API =
@@ -143,6 +147,23 @@ describe("UnfinishedSessionsPage", () => {
     render(<UnfinishedSessionsPage />);
     await screen.findByTestId("unfinished-read-failed");
     expect(screen.queryByTestId("unfinished-empty")).toBeNull();
+  });
+
+  it("reveals the sweep verdict by the ROW's width and lets it yield to the label", async () => {
+    route({
+      state: "ok",
+      reason: null,
+      detail: null,
+      sessions: [ROW],
+      truncated: false,
+    });
+    render(<UnfinishedSessionsPage />);
+    await screen.findByTestId("unfinished-row");
+    const verdict = screen.getByTestId("unfinished-verdict");
+    expectRowKeyedReveal(verdict, "@min-[45rem]/record-row:inline");
+    expectYieldsBeforeLabel(verdict);
+    // It truncates, so its whole text rides in its title.
+    expect(verdict).toHaveAttribute("title", verdict.textContent ?? "");
   });
 
   it("Resume posts the row's device and account; Dismiss posts dismiss", async () => {
