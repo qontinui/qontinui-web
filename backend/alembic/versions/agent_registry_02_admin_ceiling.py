@@ -69,8 +69,8 @@ Column authority
   (e.g. ``in_session_subagent``), NULL when it could tell nothing.
   ``tenant_id`` carries no foreign key, matching ``coord.agent_registry``
   (``agent_registry_01``'s design notes). The composite primary key is the
-  upsert target, the by-tenant catalog read (``tenant_id`` leading) and the
-  replica identity, so no second index is needed.
+  upsert target and serves the by-tenant catalog read (``tenant_id``
+  leading), so no second index is needed.
 
 No CHECK constraints
 ====================
