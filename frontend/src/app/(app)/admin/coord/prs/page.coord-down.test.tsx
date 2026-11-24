@@ -115,6 +115,22 @@ describe("/admin/coord/prs coord-down retention", () => {
     ).toMatch(/showing last data/i);
   });
 
+  // Plan 2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport
+  // Phase 2 step 8: the freshness label is the page's only statement of how
+  // old the list is, so it wraps with its group rather than hiding.
+  it("renders the freshness label at every width, in a group that wraps", async () => {
+    getPrs.mockResolvedValue(healthy([row(1)]));
+    render(<CoordPrsPage />);
+    const label = await screen.findByTestId("prs-updated-ago");
+    expect(label.className.split(/\s+/)).not.toContain("hidden");
+    expect(label.className).not.toMatch(
+      /(^|\s)(sm|md|lg|xl|2xl):(hidden|inline|block|flex|inline-flex)\b/,
+    );
+    expect(label.parentElement?.className.split(/\s+/)).toContain(
+      "flex-wrap",
+    );
+  });
+
   it("shows the hard banner + empty state when the very first fetch is degraded", async () => {
     getPrs.mockResolvedValue(degraded("boom"));
     render(<CoordPrsPage />);
