@@ -820,7 +820,12 @@ export function SessionsConsole({
     // and a row's min-content holds its whole unwrapped purpose label. A
     // container's intrinsic width ignores its content, so the console takes
     // its column's width and every `truncate` / `flex-wrap` inside engages.
-    // It is also the root the row's `@min-[…]` column thresholds query.
+    // The row's `@min-[…]` column thresholds no longer query this root: they
+    // are UNNAMED, so they bind to the nearest container, which is now each
+    // row's own `@container/record-row` (RecordRow). The row is a block child
+    // of `RecordList` directly inside this root with no `className`, so its
+    // width is this root's — the thresholds read the same number, measured on
+    // the element whose parts the budget below sums.
     <div className="@container space-y-3" data-ui-bridge-id="sessions.console">
       <HealthStrip
         level={health.level}
@@ -1117,10 +1122,12 @@ function SessionConsoleRow({
       onToggle={onToggle}
       data-testid="sessions-console-row"
       label={
-        // The optional columns answer to the CONSOLE's width, not the
-        // viewport's: beside the 256 px sidebar a 1280 px viewport leaves a
-        // 976 px (61rem) console, where `md:`–`xl:` switched all six on and
-        // the row outgrew its column. Budget, worst case from `lg` up: the
+        // The optional columns answer to the ROW's width (RecordRow's
+        // `@container/record-row`, which these unnamed queries bind to and
+        // which is the console's width here), not the viewport's: beside the
+        // 256 px sidebar a 1280 px viewport leaves a 976 px (61rem) console,
+        // where `md:`–`xl:` switched all six on and the row outgrew its
+        // column. Budget, worst case from a 53rem row up: the
         // row's fixed parts ≈ 719 px (chrome 26, gaps 60, identity ~76, two
         // status badges ~170, reason ≤ 40ch ~305, time ~70, chevron 14) plus
         // the purpose's 12rem floor, then each column adds its width and a
