@@ -147,9 +147,17 @@ function CandidateRow({
           >
             <StatusBadge status={readiness} palette={CANDIDATE_PALETTE} />
           </span>
+          {/* The optional cells below answer to the ROW (RecordRow's
+              `@container/record-row`), never the viewport: shown from a 45rem
+              row like the row's own reason, the coord cell from 53rem, where
+              the reason widens. The texts give up width first
+              (`shrink-[999]`, truncating, the whole value in a `title`), so
+              the label keeps its 12rem floor; the currency badge hides whole,
+              because a clipped badge would misstate it. */}
           <span
-            className="hidden sm:inline text-[11px] text-muted-foreground whitespace-nowrap"
+            className="hidden @min-[45rem]/record-row:inline min-w-0 shrink-[999] truncate text-[11px] text-muted-foreground"
             data-testid="coord-candidate-status"
+            title={candidate.status || "no status"}
           >
             {candidate.status || "no status"}
           </span>
@@ -157,10 +165,12 @@ function CandidateRow({
               row came from, and the schema asks for it to be read BEFORE any
               document-layer field below it. */}
           <span
-            className="hidden sm:inline text-[11px] text-muted-foreground whitespace-nowrap"
+            className="hidden @min-[45rem]/record-row:inline min-w-0 shrink-[999] truncate text-[11px] text-muted-foreground"
             data-testid="coord-candidate-document-state"
             data-document-state={documentState ?? "unstated"}
-            title={
+            // The cell truncates, so its title leads with the cell's own
+            // value before explaining it.
+            title={`doc: ${documentState ?? "unstated"} — ${
               documentState === "present"
                 ? "An artifact row backs this candidate, so its body and edges are readable."
                 : documentState === "unsynced"
@@ -168,14 +178,14 @@ function CandidateRow({
                   : documentState === "absent"
                     ? "No artifact row and no source_path: coord knows of the work and no document for it has been seen anywhere."
                     : "This response carried no document_state for this row, so which corpus layer it came from is UNKNOWN — it is not 'present'."
-            }
+            }`}
           >
             doc: {documentState ?? "unstated"}
           </span>
           {/* `null` only on a work-unit-only row, where `doc:` above says
               why; `candidateCurrency` resolves every other shape to a badge. */}
           {currency !== null && (
-            <span className="hidden sm:inline-flex">
+            <span className="hidden @min-[45rem]/record-row:inline-flex">
               <StatusCurrencyBadge
                 currency={currency}
                 testId="coord-candidate-currency"
@@ -183,10 +193,12 @@ function CandidateRow({
             </span>
           )}
           <span
-            className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
+            className={`hidden @min-[53rem]/record-row:inline min-w-0 shrink-[999] truncate text-[11px] ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
             data-testid="coord-candidate-coord"
             data-unknown={coord.unknown ? "true" : "false"}
-            title={coord.detail}
+            // The label as well as the detail: the cell truncates, so the
+            // title is where its own words stay reachable.
+            title={`${coord.label}: ${coord.detail}`}
           >
             {coord.label}
           </span>
@@ -225,6 +237,29 @@ function CandidateRow({
                 {coord.label}
               </span>
               <span className="text-muted-foreground"> — {coord.detail}</span>
+            </div>
+            {/* The row's status, doc and currency cells drop out below a
+                45rem row; this line is where they stay readable at every
+                width. Its own testids, so a query for a row cell never
+                matches two elements. */}
+            <div data-testid="coord-candidate-detail-cells">
+              <span className="text-muted-foreground">Status: </span>
+              <span className="text-foreground/90">
+                {candidate.status || "no status"}
+              </span>
+              <span className="text-muted-foreground"> · doc: </span>
+              <span className="text-foreground/90">
+                {documentState ?? "unstated"}
+              </span>
+              {currency !== null && (
+                <>
+                  <span className="text-muted-foreground"> · </span>
+                  <StatusCurrencyBadge
+                    currency={currency}
+                    testId="coord-candidate-currency-detail"
+                  />
+                </>
+              )}
             </div>
           </div>
         }
