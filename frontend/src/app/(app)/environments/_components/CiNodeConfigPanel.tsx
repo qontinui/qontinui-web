@@ -333,6 +333,9 @@ export function savedButUnsent(state: CiNodeConfigState): boolean {
  * model-access outcomes, a transport failure (coord never answered, so
  * `dispatch_status` is null and the copy says to try again shortly), or — read
  * (`dispatched === null`, after a reload) — settings saved but not sent since.
+ * Also for a save coord accepted but did not send for no named reason
+ * (`coord_not_dispatched`): no newer change is known that a re-send could
+ * undo. Never right after a superseded save, which a re-send would undo.
  * Never for a machine with no runner, and never right after a refusal coord
  * answered (an unchanged re-send would be refused again).
  */
@@ -340,7 +343,7 @@ export function canResendUnchanged(state: CiNodeConfigState): boolean {
   if (state.reachability === "unlinked") return false;
   if (dispatchRefusalCopy(state)?.deferred) return true;
   // Accepted but not sent for no named reason: no newer change is known to
-  // exist, so an unchanged re-send cannot undo one.
+  // exist, so an unchanged re-send is not known to undo one.
   if (state.dispatch_error === NOT_DISPATCHED) return true;
   if (
     state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
