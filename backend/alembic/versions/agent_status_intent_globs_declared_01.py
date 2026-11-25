@@ -1,7 +1,7 @@
 """coord.agent_status.intent_globs_declared — how many intent globs a row SHOULD hold
 
 Revision ID: agent_status_intent_globs_declared_01
-Revises: slice_tel_01
+Revises: cfgyaml02_config_yaml_read_sha
 Create Date: 2026-10-30
 
 Phase 2 of plan
@@ -12,7 +12,9 @@ coord authors **zero** ``coord.*`` DDL (``[policy: alembic-sole-authorship]``),
 so the one column coord's Phase 3 reads and writes lands here, and this
 revision must be applied **before** coord touches it. Hand-authored;
 ``alembic revision --autogenerate`` was not run and is never run against
-``coord.*``. Chained off the single head at authoring time.
+``coord.*``. Chained off the single head ``cfgyaml02_config_yaml_read_sha``
+on origin/main at rebase time (re-chained from ``slice_tel_01``, which
+``gatecorr_02_replacement_gate_index`` took first).
 
 Why
 ===
@@ -76,7 +78,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "agent_status_intent_globs_declared_01"
-down_revision: str | Sequence[str] | None = "slice_tel_01"
+down_revision: str | Sequence[str] | None = "cfgyaml02_config_yaml_read_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -85,7 +87,8 @@ def upgrade() -> None:
     """Add the nullable declared-count column and document it in the catalogue."""
     # `IF NOT EXISTS` matches on NAME only; acceptable because no revision in
     # this chain spells `intent_globs_declared` (coord.agent_status is created
-    # by `coord_agent_status` and not altered since).
+    # by `coord_agent_status` and altered by `coord_agent_status_session_01` /
+    # `_02`, neither of which adds this column).
     # coord writes coord.agent_status on every declare and heartbeat; bound the
     # ACCESS EXCLUSIVE wait rather than queue every writer behind it.
     op.execute("SET LOCAL lock_timeout = '3s'")
@@ -114,7 +117,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Exact inverse — drop the column."""
+    """Exact inverse — drop the column.
+
+    Precondition: roll coord back to a build that does not write
+    ``intent_globs_declared`` first (or confirm it degrades on an undefined
+    column) — a Phase 3 coord that has observed the column writes it.
+    """
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.agent_status DROP COLUMN IF EXISTS intent_globs_declared"
