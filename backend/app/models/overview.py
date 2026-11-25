@@ -1296,3 +1296,24 @@ class OverviewFile(Base):
         default=_now,
         server_default=text("now()"),
     )
+
+
+class OverviewScheduleLastKnown(Base):
+    """When a schedule figure was LAST read as known from coord, one row per
+    ``(tenant, figure)`` — plan ``2026-11-25-overview-timeline-and-milestones-
+    derive-from-coord`` D4/D8. It is what lets an unknown figure say "Not
+    available since 21 Nov" instead of guessing.
+
+    Written ONLY by the schedule read path, best-effort and non-blocking (a
+    failed write never fails the read), and never by a person. It holds no coord
+    data and no hand-entered value: a figure name and an instant.
+    """
+
+    __tablename__ = "schedule_last_known"
+    __table_args__ = {"schema": _SCHEMA}
+
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    figure: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_known_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
