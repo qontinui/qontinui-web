@@ -26,7 +26,7 @@ A re-point is two coupled edits: ``down_revision`` and the ``Revises:`` line.
 Hand-authored; ``alembic revision --autogenerate`` was not run.
 
 Revision ID: cfgyaml02_config_yaml_read_sha
-Revises: coord_subprojects_05_note_events
+Revises: agent_registry_02_admin_ceiling
 Create Date: 2026-11-23
 
 """
@@ -37,7 +37,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cfgyaml02_config_yaml_read_sha"
-down_revision: str | None = "coord_subprojects_05_note_events"
+down_revision: str | None = "agent_registry_02_admin_ceiling"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
