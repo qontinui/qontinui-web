@@ -141,6 +141,10 @@ export function missingLabels(
   return states.filter((s) => !(labels[s] ?? "").trim());
 }
 
+/** What a value this build has no label for reads: neutral, never a concrete
+ *  state it might be mistaken for. */
+export const UNRECOGNISED = "Unrecognised";
+
 /** A word that is not in a table (a state a newer server serves) is said
  *  plainly as unrecognised, never passed through as its raw identifier. */
 function word<T extends string>(
@@ -153,17 +157,17 @@ function word<T extends string>(
 }
 
 export const phaseStateWord = (s: SchedulePhaseState) =>
-  word(PHASE_STATE_WORDS, s, "Not confirmed");
+  word(PHASE_STATE_WORDS, s, UNRECOGNISED);
 export const milestoneStatusWord = (s: ScheduleMilestoneStatus) =>
-  word(MILESTONE_STATUS_WORDS, s, "Not confirmed");
+  word(MILESTONE_STATUS_WORDS, s, UNRECOGNISED);
 export const gateVerdictWord = (v: GateVerdict) =>
-  word(GATE_VERDICT_WORDS, v, "Waiting for a decision");
+  word(GATE_VERDICT_WORDS, v, UNRECOGNISED);
 export const unknownReasonWord = (r: UnknownReason | null | undefined) =>
-  r ? word(UNKNOWN_REASON_WORDS, r, "the project record does not say") : "";
+  r ? word(UNKNOWN_REASON_WORDS, r, "the reason is not recognised") : "";
 export const sourceKindWord = (k: SourceKind) =>
-  word(SOURCE_KIND_WORDS, k, "Project record");
+  word(SOURCE_KIND_WORDS, k, UNRECOGNISED);
 export const basisWord = (b: ScheduleBasis) =>
-  word(BASIS_WORDS, b, "the project record");
+  word(BASIS_WORDS, b, "an unrecognised source");
 
 // ---------------------------------------------------------------------------
 // Times
@@ -357,7 +361,9 @@ export type LaneTone =
   | "planned"
   | "in_progress"
   | "at_risk"
-  | "unconfirmed";
+  | "unconfirmed"
+  /** coord gave no status at all, or one this build does not know. */
+  | "unknown";
 
 export interface LaneMilestone {
   /** Stable key for lists. */
@@ -403,13 +409,21 @@ function slugId(text: string): string {
 function coordLane(m: MilestoneView, index: number): LaneMilestone {
   const date = figureDay(m.target_date);
   const status = m.status.value;
+  const recognised = status !== null && status in COORD_TONE;
+  const unknownStatus = describeUnknown(m.status);
   return {
     key: `coord:${m.id ?? slugId(m.name)}:${index}`,
     uiId: `coord-${m.id ?? slugId(m.name) ?? index}`,
     title: m.name,
     date: date.day,
-    statusWord: status ? milestoneStatusWord(status) : "Not confirmed",
-    tone: status ? COORD_TONE[status] : "unconfirmed",
+    statusWord: recognised
+      ? milestoneStatusWord(status)
+      : status !== null
+        ? UNRECOGNISED
+        : [unknownStatus.headline, unknownStatus.reason]
+            .filter(Boolean)
+            .join(" � "),
+    tone: recognised ? COORD_TONE[status] : "unknown",
     sources: ["coord"],
     dateFrom: date.kind,
   };
