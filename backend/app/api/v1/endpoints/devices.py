@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import jwt as pyjwt
 import structlog
 from fastapi import (
     APIRouter,
@@ -107,6 +108,10 @@ from app.services.coord_service_account import (
     coord_service_account,
 )
 from app.services.device_credential_deny import refuse_if_credential_revoked
+from app.services.device_machine_key_automint import (
+    SELF_MINT_RENEWAL_WINDOW,
+    automint_on_pairing,
+)
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
@@ -117,13 +122,6 @@ router = APIRouter()
 # The nil UUID is a "no tenant" placeholder runner UI sign-in sends on first
 # pairing; ``pair_cli`` treats it as absent rather than forwarding it.
 _NIL_UUID = UUID(int=0)
-
-#: ``/self-mint`` renews a key only when it is absent, expired, or expires
-#: within this window; a key usable for longer is refused with a 409 rather
-#: than rotated (see :func:`self_mint_device_machine_credential`). The
-#: ``pair-cli`` auto-mint uses the same window, so a re-pair never rotates a
-#: key the runner can still use (coord finding ``414676cf``).
-SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
 
 #: How long past its ``exp`` a coord-signed device JWT still proves which box
 #: is polling ``/pending-redeem`` (plan
@@ -1211,57 +1209,30 @@ async def pair_cli(
     # Auto-mint a device machine key (``dmk_``) for this device+owner so
     # every paired runner receives one out-of-box (zero extra setup) and can
     # recover a device JWT after a >30-day outage with no user session (4b).
-    # Best-effort: a mint failure must NEVER fail the pairing — the runner
-    # simply won't have the cold-start credential and falls back to the
-    # interactive re-login path. Additive field; existing consumers ignore it.
-    #
-    # It mints ONLY when the device has no key, or its key is expired or
-    # within :data:`SELF_MINT_RENEWAL_WINDOW` of expiry (coord finding
-    # ``414676cf``). ``dmk_crud.mint`` keeps one row per device, so rotating
-    # a still-usable key on every call invalidated the runner's stored key
-    # whenever the runner failed to persist the new one. A usable key is kept
-    # and ``device_machine_key`` is ``None`` — the runner keeps the key it
-    # has. A revoked key, or a device whose credentials an operator revoked,
-    # is never re-armed here: only an operator's ``authorize-redeem`` does.
-    device_machine_key: str | None = None
-    dmk_outcome = "minted"
-    try:
-        if await device_crud.get_credential_revoked_at(db, device_uuid) is not None:
-            dmk_outcome = "device_credential_revoked"
-        else:
-            tenant_raw = coord_body.get("tenant_id")
-            tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
-            device_machine_key, _cred = await dmk_crud.mint(
-                db,
-                device_id=device_uuid,
-                owner_user_id=current_user.id,
-                tenant_id=tenant_id,
-                refuse_if_revoked=True,
-                refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
-            )
-            await db.commit()
-    except dmk_crud.DeviceMachineKeyStillUsableError:
-        device_machine_key = None
-        dmk_outcome = "kept_usable_key"
-    except dmk_crud.DeviceMachineKeyRevokedError:
-        device_machine_key = None
-        dmk_outcome = "machine_key_revoked"
-    except Exception as exc:  # noqa: BLE001 — never break pairing on mint
-        device_machine_key = None
-        dmk_outcome = "failed"
-        logger.warning(
-            "pair_cli_dmk_automint_failed",
-            user_id=str(current_user.id),
-            device_id=str(device_uuid),
-            error=str(exc),
-        )
+    # Best-effort and guarded (a usable key is kept, a revoked one is never
+    # re-armed) — see :func:`automint_on_pairing`, which the pair-code redeem
+    # shares. Additive field; existing consumers ignore it.
+    # The tenant this pairing was made in is the one coord stamped into the
+    # device JWT it just issued. coord's pair-cli response body carries none
+    # (``PairCompleteResponse`` is ``{token, device_id, user_id, jti, exp}``,
+    # qontinui-coord ``crates/coord/src/routes_phase3.rs``).
+    device_machine_key = await automint_on_pairing(
+        db,
+        device_id=device_uuid,
+        owner_user_id=current_user.id,
+        tenant_id=_issued_token_tenant(str(coord_token)),
+        door="pair_cli",
+        # pair-cli holds no pair-code row lock, so it may lock the device row
+        # (FOR SHARE), serializing with a concurrent revoke/authorize-redeem.
+        lock_device_row=True,
+        commit=True,
+    )
 
     logger.info(
         "pair_cli_completed",
         user_id=str(current_user.id),
         device_id=str(device_uuid),
         dmk_minted=device_machine_key is not None,
-        dmk_outcome=dmk_outcome,
     )
     return PairCliResponse(
         device_id=device_uuid,
@@ -1269,6 +1240,24 @@ async def pair_cli(
         user_id=current_user.id,
         device_machine_key=device_machine_key,
     )
+
+
+def _issued_token_tenant(token: str) -> UUID | None:
+    """The ``tenant_id`` claim of a device JWT coord just issued, or ``None``.
+
+    Read WITHOUT signature verification on purpose: the token is not a
+    caller's assertion but coord's own answer on web's server-to-coord call,
+    exactly as trusted as the response body it arrived in, and it is used
+    only to choose whether to mint a machine key, which fails closed on
+    ``None``. Verifying it would make machine-key issuance depend on JWKS
+    reachability for no added trust.
+    """
+    try:
+        claims = pyjwt.decode(token, options={"verify_signature": False})
+        raw = claims.get("tenant_id")
+        return UUID(str(raw)) if raw else None
+    except (pyjwt.PyJWTError, ValueError, TypeError, AttributeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1443,12 +1432,14 @@ async def authorize_redeem(
       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
       when the device WAS under a deny, its key row whatever its state (any
       key predating the re-arm is suspect); otherwise only a REVOKED row. A
-      usable key on a device not under a deny is kept — it is how a runner
+      usable key on a never-revoked device is kept — it is how a runner
       offline past its JWT grace recovers on its own (``/exchange``).
 
-    The bound pair-code redeem this authorizes mints no key; a device whose
-    row was removed re-keys through ``/self-mint`` with the device JWT that
-    redeem returns, or on a later ``pair-cli``.
+    What re-keys a device whose row was removed is its next pairing, which
+    mints a fresh key because no row exists: an operator pair code or
+    ``pair-cli``, or the bound code minted here IF the runner collects it
+    through ``/pending-redeem`` (a runner build without that poller never
+    does). ``/self-mint`` also enrols one, given a live paired device JWT.
 
     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
     the device collects it, through ``/pending-redeem``.
@@ -1694,15 +1685,14 @@ async def revoke_device_credentials(
             },
         )
     # Lock order WITHIN WEB: device row -> pair-code rows -> machine-key row
-    # (D -> P -> K). authorize-redeem takes them in that order, and a door
-    # that locks the machine-key row (K) while holding a pair-code row lock
-    # (P) must too (no such door exists yet; this keeps the order for one). Cancelling the pending codes BEFORE revoking the key keeps
-    # this path in the same order; the other way round, such a door (P held,
-    # waiting on K) and this revoke (K held, waiting on P) form a cycle
-    # Postgres sees and aborts.
+    # (D -> P -> K). authorize-redeem takes them in that order, and the
+    # pair-code redeem holds its pair-code row lock (P) when its auto-mint
+    # locks the machine-key row (K). Cancelling the pending codes BEFORE
+    # revoking the key keeps this path in the same order; the other way round,
+    # a redeem of a code bound to this device (P held, waiting on K) and this
+    # revoke (K held, waiting on P) form a cycle Postgres sees and aborts.
     #
-    # That is NOT the whole picture. A redeem of a BOUND code (the only rows
-    # ``cancel_pending_for_device`` touches) holds P across its call to
+    # That is NOT the whole picture. The redeem holds P across its call to
     # coord's pair-cli, and coord's handler upserts this same coord.devices
     # row (D) on its own connection. So, across processes, the redeem takes
     # P then D, and this path, holding D and waiting on P, stalls behind an
@@ -1724,17 +1714,34 @@ async def revoke_device_credentials(
     #   so coord can mark a just-revoked device paired. No key or JWT reaches
     #   the runner on that path (web answered 504 and rolled back).
     #
-    # ``/mint`` and ``/self-mint`` are serialized with this path: they read
-    # the device row ``FOR SHARE`` in ``_mint_machine_credential``
-    # immediately before writing the key. If that read comes first, this
-    # path waits on the device-row lock above until the mint commits, then
-    # revokes its key; if this path holds the row first, the read waits and
-    # then sees the deny, and the mint door refuses with 403. The same
-    # argument orders them against ``authorize-redeem``, which also holds the
-    # device row. ``pair-cli``'s auto-mint still reads the deny UNLOCKED, so
-    # a deny beside an unrevoked key remains possible through it until it
-    # takes the same lock; ``authorize-redeem`` deletes every key of a denied
-    # device, which clears such a row on re-arm.
+    # Every web door that writes a machine key is serialized with this path,
+    # so none can commit an unrevoked key beside a deny this path commits:
+    # * a redeem of a code BOUND to this device locks that code's row (P,
+    #   ``get_redeemable``) before it reads the deny, and holds it until it
+    #   commits. This path writes the deny in the SAME TRANSACTION as its
+    #   UPDATE of that row (``cancel_pending_for_device``), and that UPDATE
+    #   waits on P, so this path's commit lands after the redeem's commit;
+    #   ``dmk_crud.revoke``, run after that wait, then revokes the redeem's
+    #   key. Statement order inside the transaction does not decide the
+    #   commit order; the shared transaction does. If this path commits first,
+    #   the cancel has set the code's ``expires_at`` and the redeem's locked
+    #   ``get_redeemable`` refuses it. That redeem's deny read stays
+    #   an UNLOCKED read, and it may: it is correct only because of this
+    #   shared transaction.
+    # * pair-cli and a redeem of an UNBOUND code read the device row ``FOR
+    #   SHARE`` in the auto-mint (``lock_device_row=True``); ``/mint`` and
+    #   ``/self-mint`` read it ``FOR SHARE`` in ``_mint_machine_credential``
+    #   immediately before writing the key. If that read comes first, this
+    #   path waits on the device-row lock above until the mint commits, then
+    #   revokes its key; if this path holds the row first, the read waits and
+    #   then sees the deny (the mint doors refuse with 403; the pairing doors
+    #   mint no key).
+    # The same arguments order every key-writing door against
+    # ``authorize-redeem``, which also holds the device row and updates the
+    # bound codes in the transaction that clears the deny. A deny beside an
+    # unrevoked key can therefore exist only as a row written by a build that
+    # predated these locks; ``authorize-redeem`` deletes every key of a
+    # denied device, which also clears such a row on re-arm.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)

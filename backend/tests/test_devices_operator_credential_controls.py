@@ -698,8 +698,9 @@ class TestRevoke:
 
     def test_revoke_takes_the_shared_lock_order(self) -> None:
         """device row -> pair-code rows -> machine-key row, as authorize-redeem
-        does. Revoking the key before cancelling the codes inverts it against
-        any door that locks the key while holding a bound code's row lock."""
+        and the pair-code redeem (pair-code lock held while the auto-mint locks
+        the key) do. Revoking the key before cancelling the codes inverted it
+        against a concurrent redeem of a code bound to this device: deadlock."""
         device_id, tenant = uuid4(), uuid4()
         order: list[str] = []
 
@@ -990,12 +991,22 @@ class TestCredentialOverview:
 
 class TestPairCliKeepsAUsableKey:
     _BODY = {"hostname": "spaceship"}
+    #: The tenant coord's pair-cli stamps into the device JWT it issues.
+    _TENANT = UUID("77777777-7777-7777-7777-777777777777")
 
     @contextmanager
     def _coord_pair_cli(self, device_id: UUID) -> Iterator[None]:
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 201
-        resp.json.return_value = {"device_id": str(device_id), "token": "device-jwt"}
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {"sub": f"device:{device_id}", "tenant_id": str(self._TENANT)},
+            "test-only-signing-key-32-bytes-long!",
+            "HS256",
+        )
+        self.issued_token = token
+        resp.json.return_value = {"device_id": str(device_id), "token": token}
         resp.text = ""
         with (
             patch.object(coord_service_account, "_admin_secret", "test-secret"),
@@ -1021,6 +1032,15 @@ class TestPairCliKeepsAUsableKey:
             self._coord_pair_cli(device_id),
             patch.object(
                 device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                device_crud,
+                "get_credential_anchor",
+                AsyncMock(
+                    return_value=device_crud.DeviceCredentialAnchor(
+                        tenant_id=self._TENANT, credential_revoked_at=None
+                    )
+                ),
             ),
             patch.object(
                 dmk_crud,
@@ -1053,7 +1073,7 @@ class TestPairCliKeepsAUsableKey:
             resp = self._post(device_id)
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
-        assert "device-jwt" not in resp.text
+        assert self.issued_token not in resp.text
         mint.assert_not_called()
 
     def test_coord_refusal_discloses_no_revocation_state(self) -> None:
@@ -1220,6 +1240,11 @@ class TestDatabaseBacked:
                 patch(
                     "app.api.v1.endpoints.pair_codes.coord_service_account"
                 ) as bridge,
+                patch.object(
+                    device_crud,
+                    "get_credential_anchor",
+                    wraps=device_crud.get_credential_anchor,
+                ) as anchor_read,
             ):
                 bridge.enabled = True
                 bridge._headers = AsyncMock(return_value={})
@@ -1229,18 +1254,16 @@ class TestDatabaseBacked:
                 )
         assert resp.status_code == 200, resp.text
         assert resp.json()["device_token_jwt"] == "jwt"
+        # A BOUND code's redeem holds that code's row lock, which the operator
+        # paths wait on while holding the device row: it must not ask for the
+        # device row too (a cycle Postgres would abort).
+        assert anchor_read.call_args.kwargs == {"lock_for_share": False}
 
     @pytest.mark.asyncio
     async def test_revoke_arms_every_refusal_and_authorize_clears_it(
         self, async_db_session: AsyncSession, test_user
     ) -> None:
         device_id = await _device(async_db_session, test_user.id)
-        await dmk_crud.mint(
-            async_db_session,
-            device_id=device_id,
-            owner_user_id=test_user.id,
-            tenant_id=_TENANT,
-        )
         coord = _Coord()
         token = coord.token(device_id, expired_ago_s=_DAY_S)
         live_claims = {
@@ -1256,8 +1279,8 @@ class TestDatabaseBacked:
                 # A pending authorization exists before the revoke...
                 pre = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
                 assert pre.status_code == 202, pre.text
-                # ...and the device holds a usable key (minted after that
-                # authorization, so the revoke below is what revokes it).
+                # ...and the device holds a key (minted after that
+                # authorization, which deletes any key that predates it).
                 await dmk_crud.mint(
                     async_db_session,
                     device_id=device_id,
@@ -1435,6 +1458,91 @@ class TestDatabaseBacked:
         assert kept.revoked_at is None
         assert kept.dmk_hash == dmk_crud.hash_device_machine_key(key)
         assert dmk_crud.is_usable(kept)
+
+    @pytest.mark.asyncio
+    async def test_a_key_left_by_a_redeem_racing_a_revoke_never_survives_re_arm(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A deny beside an UNREVOKED key. No current door can produce it:
+        every key-writing door now reads the deny under a lock that serializes
+        it with the revoke (see ``revoke_device_credentials``). It exists only
+        as a LEGACY row, written by a build that predated those locks, where a
+        redeem or a mint passed its unlocked deny check, the revoke committed
+        against a device with no key row, and the mint then inserted an
+        unrevoked key. The state is built directly. authorize-redeem must
+        remove the key, and the re-pair through the new bound code must mint a
+        fresh one (outcome ``minted``), not keep the suspect key."""
+        from app.services import device_machine_key_automint as automint_mod
+
+        device_id = await _device(async_db_session, test_user.id)
+        await async_db_session.execute(
+            update(Device)
+            .where(Device.device_id == device_id)
+            .values(tenant_id=_TENANT, credential_revoked_at=datetime.now(UTC))
+        )
+        suspect_key, suspect = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=_TENANT,
+        )
+        assert suspect.revoked_at is None
+        suspect_hash = suspect.dmk_hash
+        await async_db_session.commit()
+
+        coord = _Coord()
+        token = coord.token(device_id, expired_ago_s=3 * _DAY_S)
+        coord_resp = MagicMock(spec=httpx.Response)
+        coord_resp.status_code = 201
+        coord_resp.json.return_value = {"device_id": str(device_id), "token": "jwt"}
+        coord_resp.text = ""
+        recorder = MagicMock()
+
+        async with _asgi_client(async_db_session, test_user.id) as client:
+            with _operator(
+                tenants=(_TENANT,), owned_rows={device_id: _row(device_id, _TENANT)}
+            ):
+                auth = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
+            assert auth.status_code == 202, auth.text
+            assert await dmk_crud.get_by_hash(async_db_session, suspect_hash) is None
+
+            with coord.installed():
+                collected = await client.get(
+                    f"{API_PREFIX}/{device_id}/pending-redeem",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            assert collected.status_code == 200, collected.text
+
+            with (
+                patch(
+                    "app.api.v1.endpoints.pair_codes.post_to_coord",
+                    AsyncMock(return_value=coord_resp),
+                ),
+                patch(
+                    "app.api.v1.endpoints.pair_codes.coord_service_account"
+                ) as bridge,
+                patch.object(automint_mod, "logger", recorder),
+            ):
+                bridge.enabled = True
+                bridge._headers = AsyncMock(return_value={})
+                redeemed = await client.post(
+                    f"{API_PREFIX}/pair-codes/{collected.json()['code']}/redeem",
+                    json={"device_id": str(device_id), "hostname": "merytshost"},
+                )
+
+        assert redeemed.status_code == 200, redeemed.text
+        outcomes = [
+            c.kwargs["outcome"]
+            for c in recorder.info.call_args_list + recorder.warning.call_args_list
+            if c.args and c.args[0] == "device_machine_key_automint"
+        ]
+        assert outcomes == ["minted"]
+        fresh = redeemed.json()["device_machine_key"]
+        assert fresh.startswith("dmk_") and fresh != suspect_key
+        keys = await dmk_crud.list_for_devices(async_db_session, [device_id])
+        await async_db_session.refresh(keys[device_id])
+        assert keys[device_id].dmk_hash == dmk_crud.hash_device_machine_key(fresh)
+        assert keys[device_id].revoked_at is None
 
     @pytest.mark.asyncio
     async def test_unbound_code_keeps_the_default_ttl_and_no_binding(
@@ -1771,7 +1879,7 @@ class TestFailClosedEdges:
             resp = helper._post(device_id)
         assert resp.status_code == 503, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_state_unavailable"
-        assert "device-jwt" not in resp.text
+        assert helper.issued_token not in resp.text
         mint.assert_not_called()
 
     @contextmanager

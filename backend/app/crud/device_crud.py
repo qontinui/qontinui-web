@@ -823,7 +823,7 @@ async def get_credential_anchor(
     Only a caller holding NO pair-code row lock may ask for it: the operator
     paths lock the device row and then wait on bound pair-code rows, so a
     caller holding a bound code's lock and requesting the device row would
-    close a cycle Postgres aborts.
+    close a cycle Postgres aborts. See ``automint_on_pairing``.
     """
     stmt = select(Device.tenant_id, Device.credential_revoked_at).where(
         Device.device_id == device_id

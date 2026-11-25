@@ -236,7 +236,7 @@ class Device(Base):
     # pairing of a register-only row (qontinui-coord
     # ``UPSERT_PAIRED_DEVICE_SQL``). NOT NULL in the database
     # since ``coord_tenant_id_not_null``; coord writes it. Mapped so web can
-    # READ it (``device_crud.get_credential_anchor``): web never sets
+    # READ it (the pairing machine-key guard anchors on it): web never sets
     # it. ``FetchedValue`` declares the value as the database's, so an INSERT
     # that leaves it unset OMITS the column; without it SQLAlchemy sends an
     # explicit NULL for an unset nullable column, which the NOT NULL would

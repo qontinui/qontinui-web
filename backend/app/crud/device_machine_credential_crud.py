@@ -91,6 +91,15 @@ class DeviceMachineKeyStillUsableError(Exception):
         self.device_id = device_id
 
 
+class DeviceMachineKeyConcurrentMintError(DeviceMachineKeyStillUsableError):
+    """The guarded first insert lost to a concurrent mint for the same device.
+
+    A :class:`DeviceMachineKeyStillUsableError` (the winner just minted a
+    fresh full-TTL key, so callers that only need "nothing was rotated" keep
+    treating it as one), distinct so a caller can report that the key exists
+    because SOMEONE ELSE minted it, not because it was found usable."""
+
+
 #: One key per device (``devenv.device_machine_credentials``); see
 #: ``app.models.devenv.DeviceMachineCredential``.
 _DEVICE_UNIQUE_CONSTRAINT: Final[str] = "uq_devenv_dmk_device_id"
@@ -154,7 +163,8 @@ async def mint(
       ``now + window``, or no expiry at all) raises
       :class:`DeviceMachineKeyStillUsableError` instead of being rotated.
       The same error is raised when no row existed but a concurrent mint
-      inserted one first (the unique constraint on ``device_id``).
+      inserted one first (the unique constraint on ``device_id``) — as its
+      subclass :class:`DeviceMachineKeyConcurrentMintError`.
 
     Returns ``(plaintext_key, credential)`` — the plaintext is delivered to
     the runner exactly once. The caller commits.
@@ -211,7 +221,7 @@ async def mint(
             except IntegrityError as exc:
                 if _violated_constraint(exc) != _DEVICE_UNIQUE_CONSTRAINT:
                     raise
-                raise DeviceMachineKeyStillUsableError(device_id) from exc
+                raise DeviceMachineKeyConcurrentMintError(device_id) from exc
     else:
         # Rotate the existing row in place — replace the secret and reset
         # the lifecycle stamps so the re-minted key is fresh.
