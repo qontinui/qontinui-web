@@ -16,9 +16,13 @@ table, its comment and two indexes beside its keys, all in ONE transaction::
         ix_resource_pressure_stop_events_observed_at
             (observed_at)
 
-Every name, type, default and key is the one the plan's Phase 1 fixes. The coord
-half (``resource_pressure_stops.rs``) and the runner emitter are built against
-it, so a shape change here is a contract change there.
+Every name, type and default is the one the plan's Phase 1 fixes. Two things
+depart from the plan text on purpose: the unique key is widened from the plan's
+``(device_id, client_event_id)`` to ``(tenant_id, device_id, client_event_id)``
+(see "Column authority" below), and the ``observed_at`` retention index is
+added. The coord half (``resource_pressure_stops.rs``) and the runner emitter
+are built against this table, so a shape change here is a contract change
+there.
 
 Why this table exists
 =====================
