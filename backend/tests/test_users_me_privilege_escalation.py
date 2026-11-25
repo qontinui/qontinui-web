@@ -81,7 +81,8 @@ def _build_app(db, caller, superuser=None):
     # so a DISABLED limiter here replaces the module-global ``user_limiter``
     # for these tests. Deliberate: the global has ``memory://`` storage shared
     # for the whole pytest session and buckets every call under
-    # ``ip:127.0.0.1`` (``get_user_identifier`` finds no ``request.state.user``),
+    # ``peer:127.0.0.1`` (these requests carry no bearer, so
+    # ``get_user_identifier`` keys on the socket peer),
     # so ``PUT /me``'s "30 per minute" would put this file on a 429 cliff as
     # soon as a case is added here or another file exercises the same route.
     app.state.limiter = Limiter(key_func=lambda _request: "test", enabled=False)
