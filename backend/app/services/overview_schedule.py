@@ -876,9 +876,13 @@ def _phase_view(
     else:
         state = _known(outcome.state, src, now)
 
-    def when(value: dt.datetime | None, reason: str | None) -> Resolved[Any]:
+    def when(
+        value: dt.datetime | None,
+        reason: str | None,
+        basis_src: ResolvedSource = units_src,
+    ) -> Resolved[Any]:
         if value is not None:
-            return _known(_date_of(value), units_src, now)
+            return _known(_date_of(value), basis_src, now)
         return _unknown(cast(UnknownReason, reason or "not_recorded"), src, now)
 
     if state.state == "unknown":
@@ -886,7 +890,11 @@ def _phase_view(
         end = _unknown(cast(UnknownReason, state.unknown_reason), src, now)
     else:
         start = when(outcome.actual_start, outcome.start_reason)
-        end = when(outcome.actual_end, outcome.end_reason)
+        end = when(
+            outcome.actual_end,
+            outcome.end_reason,
+            delivery_src if outcome.end_basis == "attested" else units_src,
+        )
 
     planned: Resolved[Any]
     if doc_failure is not None:
@@ -908,6 +916,7 @@ def _phase_view(
         state=state,
         actual_start=start,
         actual_end=end,
+        actual_end_basis=outcome.end_basis if end.state == "known" else None,
         planned_end=planned,
         milestone_id=d.milestone,
     )

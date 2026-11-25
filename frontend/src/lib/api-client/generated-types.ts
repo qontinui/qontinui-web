@@ -47671,6 +47671,8 @@ export interface components {
         /** PhaseView */
         PhaseView: {
             actual_end: components["schemas"]["Resolved_date_"];
+            /** Actual End Basis */
+            actual_end_basis?: ("shipped" | "attested") | null;
             actual_start: components["schemas"]["Resolved_date_"];
             /** Code */
             code: string;
@@ -51178,7 +51180,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             value?: components["schemas"]["ForecastValue"] | null;
@@ -51202,7 +51204,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */
@@ -51227,7 +51229,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */
@@ -51252,7 +51254,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             value?: components["schemas"]["UnitRef"] | null;
@@ -51276,7 +51278,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */
@@ -51301,7 +51303,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */
@@ -51326,7 +51328,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */
@@ -51351,7 +51353,7 @@ export interface components {
              */
             state: "known" | "unknown";
             /** Unknown Reason */
-            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "attestation_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
             /** Unknown Since */
             unknown_since?: string | null;
             /** Value */

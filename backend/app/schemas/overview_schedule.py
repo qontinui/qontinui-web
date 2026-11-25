@@ -27,6 +27,7 @@ UnknownReason = Literal[
     "not_declared",
     "not_recorded",
     "ship_retracted",
+    "attestation_retracted",
     "tenant_mismatch",
     "unparseable",
     "truncated",
@@ -94,6 +95,11 @@ class PhaseView(BaseModel):
     state: Resolved[PhaseState]
     actual_start: Resolved[date]
     actual_end: Resolved[date]
+    #: What ``actual_end`` is the date of. ``attested`` means a person confirmed
+    #: the phase done on that day (shown as "Confirmed done on"), which is not
+    #: when the work finished; ``shipped`` is a linked unit's first shipped
+    #: time. ``None`` when there is no known end.
+    actual_end_basis: Literal["shipped", "attested"] | None = None
     planned_end: Resolved[date]
     milestone_id: str | None = None
 

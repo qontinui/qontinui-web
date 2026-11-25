@@ -337,3 +337,61 @@ describe("unknown figures share one component", () => {
     expect(end?.textContent).toContain("Not available since 24 Nov 2026");
   });
 });
+
+// An attested end is when a person CONFIRMED the phase done, never when the
+// work finished, and a withdrawn confirmation says so.
+describe("an attested phase end", () => {
+  it("reads 'Confirmed done on', never 'Finished'", () => {
+    show(
+      envelope({
+        phases: known([
+          {
+            ...phase(1, "F2", "F2", {
+              state: "done",
+              actual_end: known("2026-11-20"),
+            }),
+            actual_end_basis: "attested" as const,
+          },
+        ]),
+      })
+    );
+    const end = byId("overview.schedule.chart.phase.F2.end");
+    expect(end?.textContent).toMatch(/Confirmed done on 20 Nov 2026/);
+    expect(document.body.textContent).not.toMatch(/Finished 20 Nov/);
+  });
+
+  it("a shipped end keeps the word 'Finished' on the list layout", () => {
+    show(
+      envelope({
+        phases: known([
+          {
+            ...phase(1, "F2", "F2", {
+              state: "done",
+              actual_start: known("2026-11-02"),
+              actual_end: known("2026-11-20"),
+            }),
+            actual_end_basis: "shipped" as const,
+          },
+        ]),
+      })
+    );
+    expect(document.body.textContent).toMatch(/Finished 20 Nov 2026/);
+  });
+
+  it("a withdrawn confirmation is an unknown end naming that reason", () => {
+    show(
+      envelope({
+        phases: known([
+          phase(1, "F2", "F2", {
+            state: "not_confirmed",
+            actual_start: known("2026-11-02"),
+            actual_end: unknown("attestation_retracted", "2026-11-24T00:00:00Z"),
+          }),
+        ]),
+      })
+    );
+    const end = byId("overview.schedule.chart.phase.F2.end");
+    expect(end?.dataset.unknown).toBe("true");
+    expect(end?.dataset.unknownReason).toBe("attestation_retracted");
+  });
+});
