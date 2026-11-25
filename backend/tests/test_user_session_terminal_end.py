@@ -360,3 +360,38 @@ async def test_dead_asker_does_not_break_the_device_router():
         {"type": "terminal_ended", "request_id": "r"}, "dev", "u", dm
     )
     assert user_session_end._pending == {}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_terminal_end_is_refused_with_typed_error_and_not_forwarded(
+    monkeypatch,
+):
+    manager = _patch(monkeypatch, owned=True)
+    device_id = uuid4()
+    other = object()
+    user_session_end.register(device_id, "dup", other)  # another socket's end
+    ws = _WS([{"type": "terminal_end", "session_id": "s", "request_id": "dup"}])
+    await _run(ws, device_id)
+    assert manager.forwarded == []
+    err = ws.sent[-1]
+    assert err["code"] == "end_request_id_in_use" and err["request_id"] == "dup"
+    assert user_session_end.claim(device_id, "dup") is other  # untouched
+
+
+@pytest.mark.asyncio
+async def test_over_cap_terminal_end_is_refused_with_typed_error_and_not_forwarded(
+    monkeypatch,
+):
+    manager = _patch(monkeypatch, owned=True)
+    cap = user_session_end.MAX_PENDING_PER_SOCKET
+    ws = _WS(
+        [
+            {"type": "terminal_end", "session_id": "s", "request_id": f"r{i}"}
+            for i in range(cap + 1)
+        ]
+    )
+    await _run(ws)
+    assert len(manager.forwarded) == cap
+    assert f"r{cap}" not in [f["request_id"] for f in manager.forwarded]
+    assert ws.sent[-1]["code"] == "too_many_pending_ends"
+    assert ws.sent[-1]["request_id"] == f"r{cap}"
