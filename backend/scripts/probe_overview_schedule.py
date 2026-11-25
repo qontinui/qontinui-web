@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import json
 import re
 import sys
@@ -32,6 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
+from collections.abc import Callable
 from typing import Any
 
 DEFAULT_BASE = "https://coord.qontinui.io"
@@ -101,20 +103,33 @@ def parse_flat_frontmatter(text: str) -> tuple[dict[str, str], str]:
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str]]:
+def _valid_date(text: str) -> str | None:
+    m = _DATE.search(text)
+    if not m:
+        return None
+    try:
+        datetime.date.fromisoformat(m.group(0))
+    except ValueError:
+        return None
+    return m.group(0)
+
+
+def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str], bool]:
     """Parse the ``Target date | Milestone | Shown by`` markdown table.
 
-    Returns (rows, unparsed). A row that does not parse is returned in ``unparsed``
-    with its text so it can be shown, never dropped.
+    Returns (rows, unparsed, header_found). A row that does not parse (including a row
+    of empty cells or an impossible date) is returned in ``unparsed`` with its text, never
+    dropped. ``header_found`` is False when no such table exists, which is different from
+    an empty table and must be reported as such.
     """
     rows: list[dict[str, Any]] = []
     unparsed: list[str] = []
+    header_found = False
     in_table = False
     for ln in body.splitlines():
         s = ln.strip()
         if not s.startswith("|"):
-            if in_table and rows + unparsed:  # table ended after at least one row
-                in_table = False
+            in_table = False
             continue
         cells = [c.strip() for c in s.strip("|").split("|")]
         low = [c.lower() for c in cells]
@@ -123,19 +138,19 @@ def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str]]:
             and low[0].startswith("target date")
             and "milestone" in low[1]
         ):
-            in_table = True
+            in_table = header_found = True
             continue
         if not in_table:
             continue
-        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+        if any(cells) and all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
             continue
-        m = _DATE.search(cells[0]) if cells else None
-        if m and len(cells) >= 2 and cells[1]:
+        date = _valid_date(cells[0]) if cells else None
+        if date and len(cells) >= 2 and cells[1]:
             name = re.sub(r"[*_`]", "", cells[1]).strip()
             tok = re.match(r"^([A-Z][A-Z0-9-]*)\b", name)
             rows.append(
                 {
-                    "date": m.group(0),
+                    "date": date,
                     "name": name,
                     "id": tok.group(1) if tok else None,
                     "shown_by": cells[2] if len(cells) > 2 else "",
@@ -143,7 +158,7 @@ def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str]]:
             )
         else:
             unparsed.append(s)
-    return rows, unparsed
+    return rows, unparsed, header_found
 
 
 def declared_phases(unit: dict[str, Any]) -> list[dict[str, Any]]:
@@ -185,11 +200,15 @@ def phase_state_rows(
 def link_census(
     units: list[dict[str, Any]], programme_slug: str | None
 ) -> dict[str, Any]:
-    child_of_programme = [
-        u["slug"]
-        for u in units
-        if (u.get("metadata") or {}).get("parent") == programme_slug
-    ]
+    child_of_programme = (
+        []
+        if programme_slug is None  # no single programme: nothing is its child
+        else [
+            u["slug"]
+            for u in units
+            if (u.get("metadata") or {}).get("parent") == programme_slug
+        ]
+    )
     any_parent = [u["slug"] for u in units if (u.get("metadata") or {}).get("parent")]
     with_parent_phase = [
         u["slug"] for u in units if (u.get("metadata") or {}).get("parent_phase")
@@ -261,7 +280,7 @@ def build_census(
     units_total: int,
     programme_detail: dict[str, Any] | None,
     initiative_text: str | None,
-    gates: list[dict[str, Any]],
+    gates: list[dict[str, Any]] | None,
     gates_total: int | None,
 ) -> dict[str, Any]:
     if len(units) != units_total:
@@ -289,14 +308,21 @@ def build_census(
     census["links"] = link_census(units, prog_slug)
     if initiative_text is not None:
         fm, body = parse_flat_frontmatter(initiative_text)
-        rows, unparsed = parse_milestone_table(body)
+        rows, unparsed, header_found = parse_milestone_table(body)
         census["initiative"] = {
             "starts": fm.get("starts"),
             "ends": fm.get("ends"),
+            "milestone_table_found": header_found,
             "milestone_rows_parsed": rows,
             "milestone_rows_unparsed": unparsed,
         }
-    census["gates"] = gate_census(gates, gates_total)
+    if gates is None:
+        census["gates"] = {
+            "state": "not_read",
+            "reason": "no single programme, so no schedule unit was chosen",
+        }
+    else:
+        census["gates"] = gate_census(gates, gates_total)
     return census
 
 
@@ -310,21 +336,50 @@ def jwt_tenant(auth_header_line: str) -> str | None:
     seg = m.group(1).split(".")[1]
     seg += "=" * (-len(seg) % 4)
     try:
-        return json.loads(base64.urlsafe_b64decode(seg)).get("tenant_id")
-    except Exception:
+        claims = json.loads(base64.urlsafe_b64decode(seg))
+    except (ValueError, TypeError):
+        return None
+    value = claims.get("tenant_id") if isinstance(claims, dict) else None
+    return value if isinstance(value, str) else None
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would forward the Authorization header to wherever it points."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         return None
 
 
-def make_getter(base: str, header_file: str, timeout: float = 45.0):
+_HEADER_LINE = re.compile(r"^Authorization:\s*Bearer\s+\S+$")
+
+
+def check_base(base: str) -> None:
+    u = urllib.parse.urlsplit(base)
+    loopback = u.hostname in ("127.0.0.1", "localhost", "::1")
+    if u.scheme != "https" and not (u.scheme == "http" and loopback):
+        raise ValueError(
+            f"--base must be https (http only for loopback), got {u.scheme!r}"
+        )
+
+
+def make_getter(
+    base: str, header_file: str, timeout: float = 45.0
+) -> tuple[Callable[[str], Any], str]:
+    check_base(base)
     with open(header_file, encoding="utf-8") as f:
         raw = f.read().strip()
+    if not _HEADER_LINE.match(raw):
+        raise ValueError(
+            "header file must hold exactly one 'Authorization: Bearer <token>' line"
+        )
     name, _, value = raw.partition(":")
     headers = {name.strip(): value.strip(), "Accept": "application/json"}
+    opener = urllib.request.build_opener(_NoRedirect)
 
     def get(path: str) -> Any:
-        req = urllib.request.Request(base + path, headers=headers)
+        req = urllib.request.Request(base + path, headers=headers)  # noqa: S310 - scheme checked above
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - fixed https base
+            with opener.open(req, timeout=timeout) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             raise Unknown(f"GET {path.split('?')[0]} -> HTTP {e.code}") from e
@@ -335,42 +390,82 @@ def make_getter(base: str, header_file: str, timeout: float = 45.0):
 
 
 MAX_UNIT_PAGES = 5  # plan D8: a programme scan is bounded; hitting the bound is UNKNOWN
+GATE_PAGE = 100
+MAX_GATE_PAGES = 10
 
 
-def read_all_units(get) -> tuple[list[dict[str, Any]], int]:
+def _as_dict(payload: Any, what: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise Unknown(f"{what}: payload was {type(payload).__name__}, not an object")
+    return payload
+
+
+def read_all_units(get: Callable[[str], Any]) -> tuple[list[dict[str, Any]], int]:
     """Page the work-unit list. coord's ``count`` is the PAGE size, not a total (measured
     2026-11-25: ``count`` 200 at offsets 0, 200 and 400), so the only end-of-list signal is
-    a short page. A full last page at the page bound means the scan was truncated."""
+    a short page measured against the ``limit`` coord echoes back (a server that clamps the
+    limit would otherwise make a first page look like the whole list). A full last page at
+    the page bound means the scan was truncated."""
     units: list[dict[str, Any]] = []
-    for page_no in range(MAX_UNIT_PAGES):
-        page = get(f"/coord/agent-work-units?limit={PAGE}&offset={page_no * PAGE}")
+    offset = 0
+    for _ in range(MAX_UNIT_PAGES):
+        page = _as_dict(
+            get(f"/coord/agent-work-units?limit={PAGE}&offset={offset}"),
+            "work-unit page",
+        )
         batch = page.get("work_units")
-        if not isinstance(batch, list):
-            raise Unknown("work-unit page had no work_units list")
+        limit = page.get("limit")
+        if not isinstance(batch, list) or not isinstance(limit, int) or limit < 1:
+            raise Unknown("work-unit page had no work_units list or no usable limit")
         units.extend(batch)
-        if len(batch) < PAGE:
+        if len(batch) < limit:
             return units, len(units)
+        offset += len(batch)
     raise Unknown(
         f"work-unit scan hit the {MAX_UNIT_PAGES}-page bound ({len(units)} units read): truncated"
     )
 
 
-def read_gates(get, slugs: list[str]) -> tuple[list[dict[str, Any]], int]:
+def read_gates(
+    get: Callable[[str], Any], slugs: list[str]
+) -> tuple[list[dict[str, Any]], int]:
+    """Every gate of each slug, paged. A missing total, or fewer rows than the total after
+    the page bound, is UNKNOWN: a truncated gate list never prints as a census."""
     gates: list[dict[str, Any]] = []
     total = 0
     for slug in slugs:
         q = urllib.parse.quote(slug, safe="")
-        page = get(f"/coord/agent-gates?work_unit_slug={q}&limit=100")
-        rows = page.get("gates")
-        if not isinstance(rows, list):
-            raise Unknown(f"gate page for {slug} had no gates list")
-        gates.extend(rows)
-        total += int(page.get("total", len(rows)))
+        got: list[dict[str, Any]] = []
+        slug_total: int | None = None
+        for page_no in range(MAX_GATE_PAGES):
+            page = _as_dict(
+                get(
+                    f"/coord/agent-gates?work_unit_slug={q}"
+                    f"&limit={GATE_PAGE}&offset={page_no * GATE_PAGE}"
+                ),
+                f"gate page for {slug}",
+            )
+            rows = page.get("gates")
+            t = page.get("total")
+            if not isinstance(rows, list) or not isinstance(t, int):
+                raise Unknown(
+                    f"gate page for {slug} had no gates list or no integer total"
+                )
+            slug_total = t
+            got.extend(rows)
+            if len(got) >= t or not rows:
+                break
+        if slug_total is None or len(got) < slug_total:
+            raise Unknown(
+                f"gates for {slug} truncated: read {len(got)} of {slug_total}"
+            )
+        gates.extend(got)
+        total += slug_total
     return gates, total
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
         "--tenant", required=True, help="tenant uuid the credential must belong to"
     )
@@ -384,35 +479,47 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         get, raw = make_getter(args.base, args.header_file)
-        claimed = jwt_tenant(raw)
-        if claimed != args.tenant:
-            print(
-                f"REFUSED: credential tenant {claimed!r} != --tenant {args.tenant!r}; nothing read",
-                file=sys.stderr,
-            )
-            return 2
+    except (OSError, ValueError) as e:
+        print(f"usage: {e}", file=sys.stderr)
+        return 2
+    claimed = jwt_tenant(raw)
+    if claimed != args.tenant:
+        print(
+            f"REFUSED: credential tenant {claimed!r} != --tenant {args.tenant!r}; nothing read",
+            file=sys.stderr,
+        )
+        return 2
+    try:
         units, total = read_all_units(get)
         programmes = find_programmes(units)
         detail = None
         if len(programmes) == 1:
-            detail = get(
-                f"/coord/agent-work-units/{urllib.parse.quote(programmes[0]['slug'], safe='')}/citations"
+            slug_q = urllib.parse.quote(programmes[0]["slug"], safe="")
+            detail = _as_dict(
+                get(f"/coord/agent-work-units/{slug_q}/citations"),
+                "programme delivery",
             )
-        init_text = None
         kind, _, name = args.initiative.partition("/")
-        try:
-            doc = get(f"/coord/agent-prompt-documents/{kind}/{name}")
-            init_text = doc.get("body") or (doc.get("document") or {}).get("body")
-        except Unknown as e:
-            print(f"initiative document: UNKNOWN ({e})", file=sys.stderr)
-        slugs = [p["slug"] for p in programmes][:SCHEDULE_UNIT_CAP]
-        child_slugs = link_census(
-            units, programmes[0]["slug"] if len(programmes) == 1 else None
-        )["children_of_programme"]
-        slugs += child_slugs[: SCHEDULE_UNIT_CAP - len(slugs)]
-        gates, gates_total = read_gates(get, slugs)
+        doc = _as_dict(
+            get(f"/coord/agent-prompt-documents/{kind}/{name}"), "initiative document"
+        )
+        init_text = doc.get("body") or _as_dict(
+            doc.get("document") or {}, "initiative document"
+        ).get("body")
+        if not isinstance(init_text, str):
+            raise Unknown("initiative document carried no body text")
+        gates: list[dict[str, Any]] | None = None
+        gates_total: int | None = None
+        skipped = 0
+        if len(programmes) == 1:
+            slug = programmes[0]["slug"]
+            children = link_census(units, slug)["children_of_programme"]
+            slugs = [slug] + children[: SCHEDULE_UNIT_CAP - 1]
+            skipped = len(children) - (len(slugs) - 1)
+            gates, gates_total = read_gates(get, slugs)
         census = build_census(units, total, detail, init_text, gates, gates_total)
-        census["initiative_read"] = init_text is not None
+        if skipped:
+            census["gates"]["units_not_read_over_cap"] = skipped
         print(json.dumps(census, indent=2, sort_keys=True))
         return 0
     except Unknown as e:
