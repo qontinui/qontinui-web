@@ -180,7 +180,27 @@ async def websocket_runner_terminal_endpoint(
                     msg_to_runner["force"] = message.force is True
                     # Register BEFORE forwarding: the answer can race back on
                     # the device socket before ``send_terminal`` returns.
-                    user_session_end.register(runner_id, message.request_id, websocket)
+                    #
+                    # Deliberate: a ``terminal_ended`` arriving AFTER the TTL
+                    # expired its entry is no longer claimed here, so it falls
+                    # through to the device router's existing arms (the remote
+                    # relay). The asker already got ``end_reply_timeout`` and
+                    # that outcome is declared unknown; late answers are not
+                    # replayed to it.
+                    refused = user_session_end.register(
+                        runner_id, message.request_id, websocket
+                    )
+                    if refused is not None:
+                        # Nothing is forwarded: the end was not sent.
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "code": refused,
+                                "request_id": message.request_id,
+                                "message": "terminal_end not sent: " + refused,
+                            }
+                        )
+                        continue
                 sent = await manager.send_terminal(runner_id, msg_to_runner)
                 if not sent and message.type == "terminal_end":
                     user_session_end.claim(runner_id, message.request_id, websocket)
