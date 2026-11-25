@@ -532,3 +532,14 @@ def test_real_getter_sends_the_bearer_refuses_redirects_and_never_echoes_it(
             assert "SECRETSIG" not in str(err)
     finally:
         srv.shutdown()
+
+
+def test_gate_rows_of_another_work_unit_are_unknown() -> None:
+    page = {"gates": [{"work_unit_slug": "other"}], "total": 1}
+    with pytest.raises(probe.Unknown, match="another work unit"):
+        probe.read_gates(lambda path: page, ["u"])
+
+
+def test_missing_frontmatter_is_reported_not_null_dates() -> None:
+    c = probe.build_census([_unit("a")], 1, None, "# no frontmatter", None, None)
+    assert c["initiative"]["frontmatter_found"] is False

@@ -18,6 +18,10 @@ shape, never argv). Any failed or truncated read prints ``UNKNOWN`` and exits 3;
 an empty census is never printed in place of a failed read. ``--tenant`` must equal
 the ``tenant_id`` claim of the credential, otherwise it exits 2 without reading.
 
+One deliberate exception: a schedule with more child units than the gate-read cap prints a
+census whose ``gates.truncated`` is true and ``gates.units_not_read_over_cap`` counts the
+units left out (exit 0), because the read itself succeeded and the partial extent is disclosed.
+
 Exit codes: 0 census printed, 2 tenant refusal / usage, 3 UNKNOWN.
 """
 
@@ -316,6 +320,7 @@ def build_census(
         census["initiative"] = {
             "starts": fm.get("starts"),
             "ends": fm.get("ends"),
+            "frontmatter_found": bool(fm),
             "milestone_table_found": header_found,
             "milestone_rows_parsed": rows,
             "milestone_rows_unparsed": unparsed,
@@ -407,9 +412,8 @@ def _as_dict(payload: Any, what: str) -> dict[str, Any]:
 def read_all_units(get: Callable[[str], Any]) -> tuple[list[dict[str, Any]], int]:
     """Page the work-unit list. coord's ``count`` is the PAGE size, not a total (measured
     2026-11-25: ``count`` 200 at offsets 0, 200 and 400), so the only end-of-list signal is
-    a short page measured against the ``limit`` coord echoes back (a server that clamps the
-    limit would otherwise make a first page look like the whole list). A full last page at
-    the page bound means the scan was truncated."""
+    an EMPTY page (a short page may be a server-side clamp). Hitting the page bound without
+    an empty page means the scan was truncated."""
     units: list[dict[str, Any]] = []
     offset = 0
     for _ in range(MAX_UNIT_PAGES):
@@ -455,6 +459,9 @@ def read_gates(
                     f"gate page for {slug} had no gates list or no integer total"
                 )
             slug_total = t
+            foreign = [g for g in rows if g.get("work_unit_slug") not in (None, slug)]
+            if foreign:
+                raise Unknown(f"gate page for {slug} held rows of another work unit")
             got.extend(rows)
             if len(got) >= t or not rows:
                 break
