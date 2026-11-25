@@ -532,7 +532,7 @@ class MemoryClient:
         """Same tenant and provenance, a different ``actor``.
 
         The fixture principal is a DEVICE, which is withheld the ``session``
-        partition (``withheld_scopes``); a test that writes or reads session
+        partition (``scope_visibility``); a test that writes or reads session
         rows to exercise something else runs as ``coord_service``, the
         principal that partition is served to.
         """
