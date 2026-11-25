@@ -482,6 +482,8 @@ class TestRepublishCiNodeConfig:
 
         assert dispatch_role_closes_ci("bench")
         assert dispatch_role_closes_ci("testbed")
+        # Allow-list: any role name not known to open the lane closes it.
+        assert dispatch_role_closes_ci("some_future_role")
         assert not dispatch_role_closes_ci("workhorse")
         assert not dispatch_role_closes_ci("ci_node")
         assert not dispatch_role_closes_ci(None)
@@ -514,11 +516,43 @@ class TestReadCiLaneClosedByRole:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "role,closed",
-        [("bench", True), ("testbed", True), ("workhorse", False), (None, False)],
+        [
+            ("bench", True),
+            ("testbed", True),
+            ("mystery", True),
+            ("workhorse", False),
+            ("ci_node", False),
+            (None, False),
+        ],
     )
     async def test_role_names(self, role, closed):
         body = {"state": "known", "machines": [self._machine(role)]}
         assert await self._read(body) is closed
+
+    @pytest.mark.asyncio
+    async def test_forwards_bearer_and_active_tenant(self):
+        from app.api.v1.endpoints.operations import read_ci_lane_closed_by_role
+
+        body = {"state": "known", "machines": [self._machine("workhorse")]}
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(return_value=_mock_response(200, body))
+            _configure_mock_client(MockClient, mock_instance)
+            await read_ci_lane_closed_by_role(
+                UUID(DEVICE_ID), bearer="b", active_tenant="tenant-x"
+            )
+        headers = mock_instance.get.call_args.kwargs["headers"]
+        assert headers == {
+            "Authorization": "Bearer b",
+            "X-Qontinui-Active-Tenant": "tenant-x",
+        }
+
+    @pytest.mark.asyncio
+    async def test_absent_device_is_the_not_in_roster_kind(self):
+        from app.api.v1.endpoints.operations import DispatchRoleNotInRoster
+
+        with pytest.raises(DispatchRoleNotInRoster):
+            await self._read({"state": "known", "machines": []})
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

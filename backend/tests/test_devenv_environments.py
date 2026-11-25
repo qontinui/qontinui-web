@@ -3575,7 +3575,7 @@ def _stub_role(monkeypatch, *, closed: bool | None) -> None:
     """Stub the dispatch-role read: open (False), closed (True) or unreadable (None)."""
     from app.api.v1.endpoints.operations import DispatchRoleUnreadable
 
-    async def _role(machine, token):
+    async def _role(machine, token, active_tenant=None):
         if closed is None:
             raise DispatchRoleUnreadable("coord down")
         return closed
@@ -5849,6 +5849,71 @@ class TestCiNodeDerivedFromRole:
             # An unreadable role is UNKNOWN on read, never "open".
             g = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
             assert g.json()["role_closes_ci_lane"] is None
+
+    @pytest.mark.asyncio
+    async def test_a_closed_role_keeps_a_stored_true_and_never_publishes_it(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "keep-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "repo_allowlist": ["qontinui/a"]},
+            )
+            assert r.status_code == 200, r.text
+            _stub_role(monkeypatch, closed=True)
+            # The panel edits the allowlist and preserves the stored `true`.
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "repo_allowlist": ["qontinui/a", "qontinui/b"]},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["enabled"] is True
+            assert r.json()["requested"]["repo_allowlist"] == [
+                "qontinui/a",
+                "qontinui/b",
+            ]
+            # ...but what reaches the runner is off.
+            sent = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert sent["enabled"] is False
+            assert sent["repo_allowlist"] == ["qontinui/a", "qontinui/b"]
+
+    @pytest.mark.asyncio
+    async def test_a_device_missing_from_the_roster_says_so(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints.operations import DispatchRoleNotInRoster
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post({})
+        )
+        _stub_ci_node_reachability(monkeypatch)
+
+        async def _missing(machine, token, active_tenant=None):
+            raise DispatchRoleNotInRoster("absent")
+
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv._ci_lane_closed_by_role", _missing
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "absent-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True},
+            )
+        assert r.status_code == 503, r.text
+        d = r.json()["detail"]
+        assert d["code"] == "role_not_in_roster"
+        assert "roster" in d["message"] and "Try again" not in d["message"]
 
     @pytest.mark.asyncio
     async def test_republish_round_trip_never_touches_the_stored_row(

@@ -531,12 +531,12 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
   //
   // When the machine's dispatch role closes the CI lane the role, not this
   // switch, decides whether it runs CI (plan fleet-machine-roles D8): the
-  // draft is sent with `enabled: false` (the server refuses `true` with 422
-  // `role_closes_ci_lane`), and the stored value is compared as off so that
-  // viewing the panel never reads as an unsaved change.
+  // switch is shown off and disabled, but the STORED `enabled` is preserved
+  // by Apply (the server never publishes it as enabled while the role is
+  // closed), so reopening the role restores the owner's choice.
   const roleClosed = state?.role_closes_ci_lane === true;
-  const withBuilds: CiNodeConfig =
-    buildsDraft === null
+  const effectiveDraft: CiNodeConfig = {
+    ...(buildsDraft === null
       ? draft
       : {
           ...draft,
@@ -544,10 +544,9 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             buildsDraft,
             draft.max_concurrent_builds
           ),
-        };
-  const effectiveDraft: CiNodeConfig = roleClosed
-    ? { ...withBuilds, enabled: false }
-    : withBuilds;
+        }),
+    ...(roleClosed && state ? { enabled: state.requested.enabled } : {}),
+  };
 
   const handleApply = async () => {
     setSaving(true);
@@ -616,10 +615,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
 
   const reach = reachabilityCopy(state.reachability);
   const refusal = dispatchRefusalCopy(state);
-  const dirty = !configsEqual(
-    effectiveDraft,
-    roleClosed ? { ...state.requested, enabled: false } : state.requested
-  );
+  const dirty = !configsEqual(effectiveDraft, state.requested);
   const usingSuggestion = effectiveDraft.max_concurrent_builds === null;
 
   return (
@@ -691,7 +687,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Switch
           id={`ci-node-enabled-${machine.id}`}
           data-testid="ci-node-enabled"
-          checked={effectiveDraft.enabled}
+          checked={roleClosed ? false : effectiveDraft.enabled}
           disabled={roleClosed}
           onCheckedChange={(checked) =>
             setDraft((d) => ({ ...d, enabled: checked }))

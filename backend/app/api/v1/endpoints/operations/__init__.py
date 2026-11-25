@@ -6186,12 +6186,13 @@ class DispatchRoleRequestBody(BaseModel):
         return self
 
 
-#: Roles that CLOSE the ``ci`` lane (plan ``2026-10-02-fleet-machine-roles-
+#: Roles that OPEN the ``ci`` lane (plan ``2026-10-02-fleet-machine-roles-
 #: workhorse-bench-ci-node`` §D1, Amendments A2/A6): only ``workhorse`` and
-#: ``ci_node`` open it. ``bench`` is being renamed ``testbed``; both spellings
-#: close it so the rename can land on either side first. An unassigned machine
-#: (no role row) is NOT in this set — it behaves as it did before roles.
-_CI_CLOSING_ROLES = frozenset({"bench", "testbed"})
+#: ``ci_node``. An ALLOW-list on purpose: ``bench`` is being renamed
+#: ``testbed`` and any other role name coord may add closes the lane until it
+#: is listed here. An unassigned machine (no role row) stays open — it
+#: behaves as it did before roles.
+_CI_OPENING_ROLES = frozenset({"workhorse", "ci_node"})
 
 
 class DispatchRoleUnreadable(Exception):
@@ -6200,6 +6201,10 @@ class DispatchRoleUnreadable(Exception):
     Callers deciding whether to ALLOW something (``enabled: true``) fail
     closed on this, never read it as "role open".
     """
+
+
+class DispatchRoleNotInRoster(DispatchRoleUnreadable):
+    """Coord answered, and the device is not in its dispatch-roles roster."""
 
 
 def _device_ids_of(machine: dict[str, Any]) -> set[str]:
@@ -6218,10 +6223,12 @@ def _device_ids_of(machine: dict[str, Any]) -> set[str]:
 
 def dispatch_role_closes_ci(role_name: str | None) -> bool:
     """True when a role NAME closes the ``ci`` lane (``None`` = unassigned)."""
-    return role_name in _CI_CLOSING_ROLES
+    return role_name is not None and role_name not in _CI_OPENING_ROLES
 
 
-async def read_ci_lane_closed_by_role(device_id: UUID, *, bearer: str | None) -> bool:
+async def read_ci_lane_closed_by_role(
+    device_id: UUID, *, bearer: str | None, active_tenant: str | None = None
+) -> bool:
     """Does this device's dispatch role close the ``ci`` lane?
 
     Reads coord's ``GET /coord/fleet/dispatch-roles`` through
@@ -6231,9 +6238,16 @@ async def read_ci_lane_closed_by_role(device_id: UUID, *, bearer: str | None) ->
     the roster). ``bearer`` is the caller's token, passed explicitly because
     the devenv routes do not run ``get_tenant_id``.
     """
-    headers = {"Authorization": f"Bearer {bearer}"} if bearer else None
+    headers: dict[str, str] = {}
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    if active_tenant:
+        # The tenant-switcher selection, as the role write forwards it.
+        headers[ACTIVE_TENANT_HEADER] = active_tenant
     try:
-        body = await _proxy_coord_get("/coord/fleet/dispatch-roles", headers=headers)
+        body = await _proxy_coord_get(
+            "/coord/fleet/dispatch-roles", headers=headers or None
+        )
     except HTTPException as exc:
         raise DispatchRoleUnreadable(
             f"coord answered {exc.status_code} to the dispatch-roles read"
@@ -6256,7 +6270,7 @@ async def read_ci_lane_closed_by_role(device_id: UUID, *, bearer: str | None) ->
         if dispatch_role_closes_ci(name):
             return True
     if not matched:
-        raise DispatchRoleUnreadable("device is not in coord's dispatch-roles roster")
+        raise DispatchRoleNotInRoster("device is not in coord's dispatch-roles roster")
     return False
 
 
