@@ -63,7 +63,7 @@ def _delivery(delivered, remaining, complete=False, scope=False):
 
 
 def test_milestone_table_parses_rows_and_lists_unparseable() -> None:
-    fm, body = probe.split_frontmatter(INITIATIVE)
+    fm, body = probe.parse_flat_frontmatter(INITIATIVE)
     assert fm["starts"] == "2026-10-19" and fm["ends"] == "2027-01-22"
     rows, unparsed = probe.parse_milestone_table(body)
     assert [(r["id"], r["date"]) for r in rows] == [
