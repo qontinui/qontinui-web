@@ -1256,8 +1256,8 @@ class TestDatabaseBacked:
                 # A pending authorization exists before the revoke...
                 pre = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
                 assert pre.status_code == 202, pre.text
-                # ...and the device holds a key (minted after that
-                # authorization, which deletes any key that predates it).
+                # ...and the device holds a usable key (minted after that
+                # authorization, so the revoke below is what revokes it).
                 await dmk_crud.mint(
                     async_db_session,
                     device_id=device_id,
