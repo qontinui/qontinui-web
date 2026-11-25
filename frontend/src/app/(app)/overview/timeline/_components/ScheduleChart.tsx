@@ -41,6 +41,8 @@ const LANE_MARK: Record<LaneTone, string> = {
   // Dated, not confirmed: an outline with a dashed edge, never "done" and
   // never "late".
   unconfirmed: "border-dashed border-muted-foreground bg-background",
+  // Status not available: dotted, distinct from "dated, not confirmed".
+  unknown: "border-dotted border-muted-foreground bg-muted",
 };
 
 const STATE_CHIP: Record<string, string> = {
