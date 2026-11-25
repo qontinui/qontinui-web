@@ -15,6 +15,7 @@ import {
   mergeDeviceStatusRow,
 } from "./deviceStatusRows";
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/services/http-client";
+import { timeoutAbortReason } from "@/lib/abort-reasons";
 
 const log = createLogger("DeviceStatusStream");
 
@@ -58,7 +59,7 @@ async function readJsonWithDeadline(
           // Reject first, so the race settles on the deadline's own error
           // rather than on the body read's abort rejection.
           reject(new Error("device-status response body timed out"));
-          request.controller.abort();
+          request.controller.abort(timeoutAbortReason());
         }, ms);
       }),
     ]);

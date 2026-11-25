@@ -49,6 +49,10 @@ from app.core.refusal import (
     RefusalHTTPException,
     refusal_error,
 )
+from app.middleware.upstream_refusal import (
+    upstream_refusal_headers,
+    valid_retry_after,
+)
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -139,12 +143,30 @@ def _runner_timeout() -> RefusalHTTPException:
 def _runner_answered_error(resp: httpx.Response) -> RefusalHTTPException:
     """The runner answered an error status: say so, in the runner's words.
 
+    A runner 429 is relayed as a 429 the caller waits out: ``rate_limited`` /
+    ``retry_later``, with the runner's lane and its Retry-After when valid.
     A 4xx about the request (an unparseable body, no workspace root) is relayed
     with its own status, as something the caller fixes. Anything else, a 5xx or
     one of :data:`_CALLER_CREDENTIAL_STATUSES`, is a 502 naming the runner's
     status, so it is never read as a fault of the caller's own session.
     """
     said = resp.text.strip() or "(no body)"
+    if resp.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        retry_after = valid_retry_after(resp.headers.get("retry-after"))
+        return refusal_error(
+            resp.status_code,
+            RefusalCode.rate_limited,
+            NextActionKind.retry_later,
+            f"The runner is rate-limiting requests: {said}",
+            discriminator="constraints_runner_rate_limited",
+            retry_after_s=(
+                int(retry_after)
+                if retry_after is not None and retry_after.isdigit()
+                else None
+            ),
+            glossary_terms=[GlossaryTerm.runner],
+            headers=upstream_refusal_headers("runner", resp),
+        )
     if (
         400 <= resp.status_code < 500
         and resp.status_code not in _CALLER_CREDENTIAL_STATUSES
@@ -156,6 +178,9 @@ def _runner_answered_error(resp: httpx.Response) -> RefusalHTTPException:
             f"The runner refused the request ({resp.status_code}): {said}",
             discriminator="constraints_runner_refused",
             glossary_terms=[GlossaryTerm.runner],
+            # The runner's status passes through: the upstream helper keeps
+            # that invariant (it adds nothing on a non-429).
+            headers=upstream_refusal_headers("runner", resp),
         )
     return refusal_error(
         status.HTTP_502_BAD_GATEWAY,

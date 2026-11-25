@@ -146,11 +146,14 @@ export function ReconciliationRow({
           >
             <StatusBadge status={verdict} palette={RECONCILIATION_PALETTE} />
           </span>
-          {/* Dropped below `sm` — §5's density budget. The detail panel below
-              carries all three unconditionally, so a narrow viewport costs a
-              click, never a reading. */}
+          {/* Dropped below a 45rem ROW, like the row's own reason slot — §5's
+              density budget, read from RecordRow's `@container/record-row`,
+              never the viewport. The three cells hide whole rather than
+              shrink: a clipped cell would read as an axis that is not there.
+              The detail panel below carries all three unconditionally, so a
+              narrow row costs a click, never a reading. */}
           <span
-            className="hidden sm:inline-flex items-center gap-1"
+            className="hidden @min-[45rem]/record-row:inline-flex items-center gap-1"
             data-testid="coord-plan-axes"
           >
             <AxisCell axis="A" reading={a} testId="coord-plan-axis-a" />
