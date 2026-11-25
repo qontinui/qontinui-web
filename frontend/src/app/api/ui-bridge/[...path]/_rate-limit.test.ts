@@ -35,6 +35,7 @@ import {
   checkRateLimit,
   kindForMethod,
   laneFor,
+  laneForRunnerDoor,
   logLaneRefused,
   rateLimitedResponse,
   rateLimitHeaders,
@@ -47,6 +48,55 @@ import {
   withRateLimitHeaders,
   WRITE_LIMIT_PER_MIN,
 } from "./_rate-limit";
+
+describe("laneForRunnerDoor", () => {
+  it("classifies GET/HEAD as runner-door:read; everything else as runner-door:write", () => {
+    expect(laneForRunnerDoor("GET")).toBe("runner-door:read");
+    expect(laneForRunnerDoor("HEAD")).toBe("runner-door:read");
+    for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
+      expect(laneForRunnerDoor(method), method).toBe("runner-door:write");
+    }
+  });
+});
+
+describe("runner door lanes", () => {
+  afterEach(() => {
+    __setRedisClientForTest(undefined);
+  });
+
+  it("count on counters of their own, never the command lanes' r / w", async () => {
+    const redis = makeMockRedis();
+    __setRedisClientForTest(redis.client);
+    const now = Date.UTC(2026, 10, 23, 12, 0, 5);
+    await checkRateLimit("u1", "runner-door:read", now);
+    await checkRateLimit("u1", "runner-door:write", now);
+    const keys = redis.commands
+      .filter((c) => c.name === "incr")
+      .map((c) => c.key.split(":").slice(0, 4).join(":"));
+    expect(keys).toEqual(["bridge:rl:rd:r", "bridge:rl:rd:w"]);
+  });
+
+  it("refuse with RUNNER_DOOR_RATE_LIMITED, naming the lane", async () => {
+    const resp = rateLimitedResponse({
+      allowed: false,
+      count: 21,
+      limit: 20,
+      retryAfterSec: 9,
+      redisOffline: false,
+      kind: "runner-door:write",
+    });
+    expect(resp.status).toBe(429);
+    expect(resp.headers.get("X-RateLimit-Lane")).toBe("runner-door:write");
+    const body = await resp.json();
+    expect(body).toMatchObject({
+      success: false,
+      code: "RUNNER_DOOR_RATE_LIMITED",
+      lane: "runner-door:write",
+      retryAfterSec: 9,
+    });
+    expect(body.message).toContain("21");
+  });
+});
 
 describe("kindForMethod", () => {
   it("classifies GET/HEAD as read; everything else as write", () => {

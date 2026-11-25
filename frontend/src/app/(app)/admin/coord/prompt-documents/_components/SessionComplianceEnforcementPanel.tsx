@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,7 @@ export function SessionComplianceEnforcementPanel({
   versionsError,
   onSave,
 }: EnforcementPanelProps) {
+  const pageLocked = usePageLocked();
   const [enabled, setEnabled] = useState(false);
   const [mode, setMode] = useState<SessionComplianceMode>("nudge");
   const [clauseRef, setClauseRef] = useState("");
@@ -301,6 +303,7 @@ export function SessionComplianceEnforcementPanel({
             id="compliance-enabled"
             checked={enabled}
             onCheckedChange={setEnabled}
+            disabled={pageLocked}
             data-testid="compliance-enabled"
           />
         </div>
@@ -313,6 +316,7 @@ export function SessionComplianceEnforcementPanel({
             <Select
               value={mode}
               onValueChange={(v) => setMode(v as SessionComplianceMode)}
+              disabled={pageLocked}
             >
               <SelectTrigger id="compliance-mode" data-testid="compliance-mode">
                 <SelectValue />
@@ -396,7 +400,7 @@ export function SessionComplianceEnforcementPanel({
           <Button
             size="sm"
             onClick={save}
-            disabled={saving || !dirty || !attemptsValid}
+            disabled={saving || pageLocked || !dirty || !attemptsValid}
             data-testid="compliance-save"
           >
             {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}

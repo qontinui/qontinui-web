@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.middleware.upstream_refusal import upstream_http_exception
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -177,7 +178,7 @@ async def _fetch_responsible_context(
                 status_code=504, detail="timeout waiting for coord"
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise upstream_http_exception(resp, upstream="coord", detail=resp.text)
     try:
         payload = resp.json()
     except ValueError as exc:
