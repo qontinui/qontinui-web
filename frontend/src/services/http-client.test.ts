@@ -12,7 +12,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { HttpClient, isRetryableStatus, type HttpOptions } from "./http-client";
+import {
+  HttpClient,
+  isRetryableStatus,
+  REQUEST_TIMEOUT_MESSAGE,
+  type HttpOptions,
+} from "./http-client";
 import { csrfService } from "./csrf-service";
 import type { TokenManager } from "./auth/token-manager";
 import {
@@ -1525,6 +1530,37 @@ describe("HttpClient honours a caller AbortSignal", () => {
     await settled;
     expect(seen?.aborted).toBe(true);
     expect(caller.signal.aborted).toBe(false);
+  });
+
+  it("aborts the header timeout with a TimeoutError reason, and still reads as a timeout", async () => {
+    // Platform behaviour: an aborted fetch rejects with the signal's reason.
+    // The typed reason is what lets the telemetry beacon tell a timeout (an
+    // incident) from a caller or navigation abort (not one).
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            seen = init.signal ?? undefined;
+            seen?.addEventListener("abort", () => reject(seen?.reason));
+          })
+      )
+    );
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/api/v1/x", {
+      timeoutMs: 1_000,
+    });
+    const settled = expect(pending).rejects.toThrow(REQUEST_TIMEOUT_MESSAGE);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settled;
+    expect((seen?.reason as { name?: string } | undefined)?.name).toBe(
+      "TimeoutError"
+    );
   });
 });
 

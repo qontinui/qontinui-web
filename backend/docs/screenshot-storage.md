@@ -4,12 +4,12 @@ This document describes the screenshot storage system for test execution results
 
 ## Overview
 
-The screenshot storage service provides centralized management of test execution screenshots using MinIO (development) or AWS S3 (production). Screenshots are automatically organized by test run and step, with support for presigned URLs and bulk cleanup operations.
+The screenshot storage service provides centralized management of test execution screenshots using the docker-compose S3 object store (versitygw, development) or AWS S3 (production). Screenshots are automatically organized by test run and step, with support for presigned URLs and bulk cleanup operations.
 
 ## Architecture
 
 ```
-Runner → Backend API → screenshot_storage → MinIO/S3
+Runner → Backend API → screenshot_storage → S3 (object store / AWS)
                             ↓
                        Database (metadata)
 ```
@@ -96,13 +96,13 @@ STORAGE_BACKEND=local
 ```
 Screenshots stored in `backend/uploads/test-screenshots/`
 
-**MinIO Development:**
+**Object store (development, docker-compose):**
 ```env
-STORAGE_BACKEND=minio
+STORAGE_BACKEND=s3
 STORAGE_BUCKET_NAME=qontinui
 STORAGE_REGION=us-east-1
-STORAGE_ACCESS_KEY=minioadmin
-STORAGE_SECRET_KEY=minioadmin
+STORAGE_ACCESS_KEY=qontinui_dev_s3
+STORAGE_SECRET_KEY=qontinui_dev_s3_secret
 STORAGE_ENDPOINT_URL=http://localhost:9000
 STORAGE_USE_SSL=false
 ```
@@ -117,28 +117,28 @@ STORAGE_SECRET_KEY=your-aws-secret-key
 STORAGE_USE_SSL=true
 ```
 
-### MinIO Setup (Development)
+### Object store setup (development)
 
-The MinIO service is automatically configured via `docker-compose.yml`:
+`docker-compose.yml` runs `object-store` (versitygw, a digest-pinned image)
+with its S3 API on `localhost:9000`, and the one-shot `object-store-init`
+creates the bucket. It replaced MinIO (plan
+`2026-11-22-fetches-stop-depending-on-upstreams`). There is no web console.
 
-```yaml
-minio:
-  image: minio/minio:latest
-  ports:
-    - "9000:9000"  # API
-    - "9001:9001"  # Console
-  environment:
-    MINIO_ROOT_USER: minioadmin
-    MINIO_ROOT_PASSWORD: minioadmin
-```
+**Credentials:** `S3_ACCESS_KEY` / `S3_SECRET_KEY` from the shell or `.env`
+next to the compose file, defaulting to `qontinui_dev_s3` /
+`qontinui_dev_s3_secret`. The backend's `STORAGE_ACCESS_KEY` /
+`STORAGE_SECRET_KEY` must match.
 
-Access MinIO console at: http://localhost:9001
+**Bucket:** `qontinui` (created on startup, anonymous download)
 
-**Credentials:**
-- Username: `minioadmin`
-- Password: `minioadmin`
+**Moving off MinIO:** remove the retired containers by name, then start as
+usual (`scripts/start-dev.sh` does this):
+`docker rm -fv qontinui-minio qontinui-minio-client && docker compose up -d`.
+Do not use `--remove-orphans`: the dev and staging compose files share one
+compose project, so it would remove the other stack's containers.
 
-**Bucket:** `qontinui` (automatically created on startup)
+Browse it with any S3 client, e.g.
+`aws --endpoint-url http://127.0.0.1:9000 s3 ls s3://qontinui/`.
 
 ## Integration with Test Steps
 
@@ -150,7 +150,7 @@ When a test step is created with a screenshot, the system:
 
 1. Decodes base64 screenshot data
 2. Validates image format and extracts dimensions
-3. Uploads to MinIO/S3 via `screenshot_storage.upload_screenshot()`
+3. Uploads to S3 via `screenshot_storage.upload_screenshot()`
 4. Stores metadata in `test_screenshots` table
 5. Returns presigned URL for access
 
@@ -164,7 +164,7 @@ Key fields:
 - `transition_execution_id` (UUID, nullable): Foreign key to transition
 - `deficiency_id` (UUID, nullable): Foreign key to deficiency
 - `screenshot_type` (enum): Type of screenshot
-- `storage_path` (string): S3/MinIO key
+- `storage_path` (string): S3 object key
 - `width`, `height` (int): Image dimensions
 - `screenshot_metadata` (JSONB): Additional metadata
 - `captured_at` (timestamp): When screenshot was taken
@@ -239,7 +239,7 @@ screenshot_storage.upload_screenshot(
 )
 ```
 
-Metadata is stored in S3/MinIO object metadata and in the database `screenshot_metadata` JSONB field.
+Metadata is stored in S3 object metadata and in the database `screenshot_metadata` JSONB field.
 
 ## Cleanup and Retention
 
@@ -286,9 +286,9 @@ This will:
 ### Issue: Screenshots not uploading
 
 **Check:**
-1. MinIO/S3 credentials are correct
+1. S3 credentials are correct
 2. Bucket exists and is accessible
-3. Network connectivity to MinIO/S3 endpoint
+3. Network connectivity to the S3 endpoint
 
 **Logs:**
 ```bash
@@ -300,18 +300,19 @@ grep "screenshot_upload" backend/logs/app.log
 **Check:**
 1. URL expiration time is valid
 2. Storage backend is correctly configured
-3. For MinIO, ensure `STORAGE_USE_SSL=false` in development
+3. For the docker-compose object store, ensure `STORAGE_USE_SSL=false` in development
 
 ### Issue: Bucket not found
 
 **Solution:**
-Start MinIO and create bucket:
+Start the object store and create the bucket:
 ```bash
-docker compose up -d minio
-docker compose up minio-client  # Creates bucket
+docker compose up -d object-store
+docker compose up object-store-init  # Creates the bucket
 ```
 
-Or create manually via MinIO console (http://localhost:9001).
+Or create it by hand:
+`aws --endpoint-url http://127.0.0.1:9000 s3api create-bucket --bucket qontinui`.
 
 ## Production Deployment
 
@@ -354,7 +355,7 @@ poetry run python scripts/setup_cloudfront.py --bucket qontinui-production
 3. **Clean up old screenshots** regularly to reduce storage costs
 4. **Use metadata** to store context (state, transition, confidence)
 5. **Generate thumbnails** for UI previews
-6. **Monitor storage usage** via MinIO console or CloudWatch
+6. **Monitor storage usage** via an S3 listing (development) or CloudWatch
 
 ## API Reference
 

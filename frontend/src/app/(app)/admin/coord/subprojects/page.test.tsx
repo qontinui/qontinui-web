@@ -144,8 +144,12 @@ function route(
     facet?: boolean;
     cursors?: Partial<Record<string, string>>;
     refuseExclude?: "flat" | "nested";
+    /** The rows reads' `topics_status`; absent (an older coord) when unset. */
+    topicsStatus?: string;
   } = {}
 ) {
+  const topics =
+    opts.topicsStatus === undefined ? {} : { topics_status: opts.topicsStatus };
   fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
     const headline = query.get("headline");
     const excludesDone = query.get("exclude_headline") === "done";
@@ -179,10 +183,15 @@ function route(
     }
     const view = headline ?? (excludesDone ? "open" : "all");
     const cursor = query.get("cursor");
-    if (cursor) return page(rows[`${view}@${cursor}`] ?? [], totals[view] ?? 0);
+    if (cursor)
+      return {
+        ...page(rows[`${view}@${cursor}`] ?? [], totals[view] ?? 0),
+        ...topics,
+      };
     return {
       ...page(rows[view] ?? [], totals[view] ?? 0),
       next_cursor: opts.cursors?.[view] ?? null,
+      ...topics,
     };
   });
 }
@@ -699,18 +708,121 @@ describe("/admin/coord/subprojects", () => {
     );
   });
 
-  it("names each row's topic as unknown and keeps group-by-topic off until coord serves topics", async () => {
-    route(CALM, { open: [summary()] });
+  const TOPIC_A = {
+    id: "0b7e5c1a-2d3f-4e5a-8b6c-7d8e9f0a1b2c",
+    slug: "subproject-topics",
+    title: "Subproject topics",
+  };
+  const TOPIC_B = {
+    id: "1c8f6d2b-3e4a-4f5b-9c7d-8e9f0a1b2c3d",
+    slug: "dashboards",
+    title: "Dashboards",
+  };
+
+  it("names a row's topic from the list when coord says topics are ok, and groups by it", async () => {
+    route(
+      CALM,
+      {
+        open: [
+          summary({ id: "a", title: "row-a", topic: TOPIC_A }),
+          summary({ id: "b", title: "row-b", topic: TOPIC_B }),
+          summary({ id: "c", title: "row-c", topic: TOPIC_A }),
+        ],
+      },
+      { topicsStatus: "ok" }
+    );
     render(<CoordSubprojectsPage />);
-    const topicCell = await screen.findByTestId("coord-subproject-row-topic");
-    expect(topicCell).toHaveTextContent("topic –");
-    expect(topicCell).toHaveAttribute("title", "topic data not yet served");
+    await screen.findByText("row-a");
+    const cells = screen.getAllByTestId("coord-subproject-row-topic");
+    expect(cells[0]).toHaveTextContent("topic Subproject topics");
+    expect(cells[0]).toHaveAttribute("data-topic-kind", "topic");
     const toggle = screen.getByTestId("coord-subprojects-group-by-topic");
-    expect(toggle).toBeDisabled();
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    const groups = screen.getAllByTestId("coord-subprojects-topic-group");
     expect(
-      screen.getByTestId("coord-subprojects-group-by-topic-wrap")
-    ).toHaveAttribute("title", "topic data not yet served");
+      groups.map(
+        (g) =>
+          within(g).getByTestId("coord-subprojects-topic-group-label")
+            .textContent
+      )
+    ).toEqual(["Dashboards", "Subproject topics"]);
+    expect(
+      within(groups[1]!).getAllByTestId("coord-subproject-row")
+    ).toHaveLength(2);
+    // One row is open at a time across groups (R5).
+    const rowsShown = screen.getAllByTestId("coord-subproject-row");
+    const lineOf = (r: HTMLElement) =>
+      r.querySelector("[data-console-row]") as HTMLElement;
+    fireEvent.click(lineOf(rowsShown[0]!));
+    fireEvent.click(lineOf(rowsShown[1]!));
+    expect(screen.getAllByTestId("coord-subproject-open")).toHaveLength(1);
+    // Grouping is built from the rows already read: no per-topic read.
+    expect(queries().every((q) => !q.includes("topic"))).toBe(true);
   });
+
+  it("calls topic: null under ok 'no topic', and groups those rows last under No topic", async () => {
+    route(
+      CALM,
+      {
+        open: [
+          summary({ id: "a", title: "row-a", topic: null }),
+          summary({ id: "b", title: "row-b", topic: TOPIC_B }),
+        ],
+      },
+      { topicsStatus: "ok" }
+    );
+    render(<CoordSubprojectsPage />);
+    await screen.findByText("row-a");
+    const cells = screen.getAllByTestId("coord-subproject-row-topic");
+    expect(cells[0]).toHaveTextContent("no topic");
+    expect(cells[0]).toHaveAttribute("data-topic-kind", "none");
+    fireEvent.click(screen.getByTestId("coord-subprojects-group-by-topic"));
+    const labels = screen
+      .getAllByTestId("coord-subprojects-topic-group-label")
+      .map((l) => l.textContent);
+    expect(labels).toEqual(["Dashboards", "No topic"]);
+  });
+
+  it.each([
+    [
+      "coord could not read topics",
+      { topicsStatus: "unavailable:schema_migration_pending" },
+      /coord could not read topics \(schema_migration_pending\)/,
+    ],
+    [
+      "an older coord sends no topics_status",
+      {},
+      /this coord does not serve topic data/,
+    ],
+  ])(
+    "renders topic: null as unknown, never 'no topic', and keeps grouping off when %s",
+    async (_label, opts, reason) => {
+      route(
+        CALM,
+        { open: [summary({ topic: null })] },
+        opts as { topicsStatus?: string }
+      );
+      render(<CoordSubprojectsPage />);
+      const topicCell = await screen.findByTestId("coord-subproject-row-topic");
+      expect(topicCell).toHaveTextContent("topic –");
+      expect(topicCell).not.toHaveTextContent("no topic");
+      expect(topicCell).toHaveAttribute("data-topic-kind", "unknown");
+      expect(topicCell.getAttribute("title")).toMatch(reason);
+      const toggle = screen.getByTestId("coord-subprojects-group-by-topic");
+      expect(toggle).toBeDisabled();
+      expect(
+        screen
+          .getByTestId("coord-subprojects-group-by-topic-wrap")
+          .getAttribute("title")
+      ).toMatch(reason);
+      expect(
+        screen.queryByTestId("coord-subprojects-topic-groups")
+      ).not.toBeInTheDocument();
+    }
+  );
 
   it("dashes every count before any read answers, and never claims an empty list", async () => {
     fetchSubprojects.mockReturnValue(new Promise(() => {}));

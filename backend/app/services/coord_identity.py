@@ -51,6 +51,7 @@ import structlog
 from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
+from app.middleware.upstream_refusal import upstream_http_exception
 
 logger = structlog.get_logger(__name__)
 
@@ -231,7 +232,7 @@ async def _fetch_identity(
         # member — surface the same 403 the old resolver raised.
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise upstream_http_exception(resp, upstream="coord", detail=resp.text)
     try:
         payload = resp.json()
     except ValueError as exc:

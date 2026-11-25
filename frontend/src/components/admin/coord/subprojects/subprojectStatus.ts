@@ -49,6 +49,7 @@ import type {
   SubprojectRef,
   SubprojectSource,
   SubprojectSummary,
+  SubprojectTopicRef,
   SubprojectVerdict,
 } from "@/lib/api/operations/coordSubprojects";
 
@@ -1785,4 +1786,168 @@ export function describeStalledLine(input: StalledLineInput): {
     };
   }
   return { value, note: null };
+}
+
+// ─────────────────────────────── topics (topics plan D9) ─────────────────
+
+/**
+ * Whether a list read's `topic` fields mean anything: `ok` when coord said
+ * `topics_status: "ok"`, otherwise UNKNOWN with the reason — coord's own
+ * (`"unavailable:<reason>"`), a coord that sends no `topics_status` (it
+ * predates topics), or a value this page does not know.
+ */
+export type TopicsAvailability =
+  | { state: "ok" }
+  | { state: "unknown"; reason: string };
+
+export const TOPICS_OK: TopicsAvailability = Object.freeze({ state: "ok" });
+
+export const TOPICS_NOT_READ: TopicsAvailability = {
+  state: "unknown",
+  reason: "the rows have not been read yet",
+};
+
+export function topicsAvailabilityOf(status: unknown): TopicsAvailability {
+  if (status === "ok") return TOPICS_OK;
+  if (typeof status !== "string")
+    return {
+      state: "unknown",
+      reason: "this coord does not serve topic data",
+    };
+  if (status.startsWith("unavailable:")) {
+    const why = status.slice("unavailable:".length).trim();
+    return {
+      state: "unknown",
+      reason: `coord could not read topics (${why || "no reason given"})`,
+    };
+  }
+  return {
+    state: "unknown",
+    reason: `coord sent an unrecognised topics_status "${status}"`,
+  };
+}
+
+/** Several reads' availability as one: ok only when every read said ok —
+ *  the first unknown otherwise, and unknown when nothing was read. */
+export function combineTopicsAvailability(
+  all: readonly TopicsAvailability[]
+): TopicsAvailability {
+  if (all.length === 0) return TOPICS_NOT_READ;
+  return all.find((a) => a.state === "unknown") ?? TOPICS_OK;
+}
+
+/** One row's topic: a topic, coord's "in no topic", or UNKNOWN with why. */
+export type RowTopic =
+  | { kind: "topic"; topic: SubprojectTopicRef }
+  | { kind: "none" }
+  | { kind: "unknown"; reason: string };
+
+function isTopicRef(v: unknown): v is SubprojectTopicRef {
+  if (typeof v !== "object" || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return (
+    typeof t.id === "string" &&
+    typeof t.slug === "string" &&
+    typeof t.title === "string"
+  );
+}
+
+/** A row's topic, read beside its read's availability: `null` is "no
+ *  topic" only under `ok`. */
+export function rowTopicOf(
+  s: Pick<SubprojectSummary, "topic">,
+  availability: TopicsAvailability
+): RowTopic {
+  if (availability.state !== "ok")
+    return { kind: "unknown", reason: availability.reason };
+  if (s.topic === null) return { kind: "none" };
+  if (isTopicRef(s.topic)) return { kind: "topic", topic: s.topic };
+  return {
+    kind: "unknown",
+    reason:
+      s.topic === undefined
+        ? "coord sent no topic field for this subproject"
+        : "coord sent a topic this page cannot read",
+  };
+}
+
+/** The Topic column's text and its hover title. */
+export function rowTopicWords(t: RowTopic): { text: string; title: string } {
+  switch (t.kind) {
+    case "topic":
+      return {
+        text: `topic ${t.topic.title || t.topic.slug}`,
+        title: `Topic: ${t.topic.title || t.topic.slug} (${t.topic.slug})`,
+      };
+    case "none":
+      return {
+        text: "no topic",
+        title: "coord says this subproject is in no topic.",
+      };
+    case "unknown":
+      return { text: "topic –", title: `topic unknown — ${t.reason}` };
+  }
+}
+
+export interface TopicGroup {
+  /** `topic:<id>`, or `none` / `unknown` for the two catch-alls. Keyed by
+   *  id, so two topics sharing a slug (a rename or merge) stay apart. */
+  key: string;
+  label: string;
+  topic: SubprojectTopicRef | null;
+  items: SubprojectSummary[];
+}
+
+export const NO_TOPIC_GROUP_LABEL = "No topic";
+export const UNKNOWN_TOPIC_GROUP_LABEL = "Topic unknown";
+
+/**
+ * Rows grouped by topic, each group keeping the rows' order: named
+ * topics by title, then "No topic", then any row whose topic is unknown (a
+ * row coord sent without a readable topic). The caller groups only under
+ * `ok`; under unknown every row would land in the last group.
+ */
+export function groupByTopic(
+  items: readonly SubprojectSummary[],
+  availability: TopicsAvailability
+): TopicGroup[] {
+  const named = new Map<string, TopicGroup>();
+  const none: SubprojectSummary[] = [];
+  const unknown: SubprojectSummary[] = [];
+  for (const s of items) {
+    const t = rowTopicOf(s, availability);
+    if (t.kind === "none") none.push(s);
+    else if (t.kind === "unknown") unknown.push(s);
+    else {
+      let g = named.get(t.topic.id);
+      if (!g) {
+        g = {
+          key: `topic:${t.topic.id}`,
+          label: t.topic.title || t.topic.slug,
+          topic: t.topic,
+          items: [],
+        };
+        named.set(t.topic.id, g);
+      }
+      g.items.push(s);
+    }
+  }
+  const groups = [...named.values()].sort(
+    (a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key)
+  );
+  if (none.length > 0)
+    groups.push({
+      key: "none",
+      label: NO_TOPIC_GROUP_LABEL,
+      topic: null,
+      items: none,
+    });
+  if (unknown.length > 0)
+    groups.push({
+      key: "unknown",
+      label: UNKNOWN_TOPIC_GROUP_LABEL,
+      topic: null,
+      items: unknown,
+    });
+  return groups;
 }
