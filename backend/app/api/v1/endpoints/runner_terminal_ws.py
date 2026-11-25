@@ -183,7 +183,7 @@ async def websocket_runner_terminal_endpoint(
                     user_session_end.register(runner_id, message.request_id, websocket)
                 sent = await manager.send_terminal(runner_id, msg_to_runner)
                 if not sent and message.type == "terminal_end":
-                    user_session_end.claim(runner_id, message.request_id)
+                    user_session_end.claim(runner_id, message.request_id, websocket)
                 if not sent:
                     await websocket.send_json(
                         {
