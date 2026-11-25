@@ -104,14 +104,15 @@ _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _valid_date(text: str) -> str | None:
-    m = _DATE.search(text)
-    if not m:
+    """The cell must be exactly one ISO date; a range or '~date' goes to ``unparsed``."""
+    cell = re.sub(r"[*_`]", "", text).strip()
+    if not _DATE.fullmatch(cell):
         return None
     try:
-        datetime.date.fromisoformat(m.group(0))
+        datetime.date.fromisoformat(cell)
     except ValueError:
         return None
-    return m.group(0)
+    return cell
 
 
 def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str], bool]:
@@ -129,7 +130,8 @@ def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str], b
     for ln in body.splitlines():
         s = ln.strip()
         if not s.startswith("|"):
-            in_table = False
+            if s.startswith("#"):  # a heading ends the table; blank/prose lines do not
+                in_table = False
             continue
         cells = [c.strip() for c in s.strip("|").split("|")]
         low = [c.lower() for c in cells]
@@ -141,6 +143,8 @@ def parse_milestone_table(body: str) -> tuple[list[dict[str, Any]], list[str], b
             in_table = header_found = True
             continue
         if not in_table:
+            if header_found and cells and _DATE.search(cells[0]):
+                unparsed.append(s)  # a dated row after the table ended: shown, not lost
             continue
         if any(cells) and all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
             continue
@@ -414,12 +418,11 @@ def read_all_units(get: Callable[[str], Any]) -> tuple[list[dict[str, Any]], int
             "work-unit page",
         )
         batch = page.get("work_units")
-        limit = page.get("limit")
-        if not isinstance(batch, list) or not isinstance(limit, int) or limit < 1:
-            raise Unknown("work-unit page had no work_units list or no usable limit")
-        units.extend(batch)
-        if len(batch) < limit:
+        if not isinstance(batch, list):
+            raise Unknown("work-unit page had no work_units list")
+        if not batch:  # only an empty page ends the list: a short one may be a clamp
             return units, len(units)
+        units.extend(batch)
         offset += len(batch)
     raise Unknown(
         f"work-unit scan hit the {MAX_UNIT_PAGES}-page bound ({len(units)} units read): truncated"
@@ -437,11 +440,11 @@ def read_gates(
         q = urllib.parse.quote(slug, safe="")
         got: list[dict[str, Any]] = []
         slug_total: int | None = None
-        for page_no in range(MAX_GATE_PAGES):
+        for _ in range(MAX_GATE_PAGES):
             page = _as_dict(
                 get(
                     f"/coord/agent-gates?work_unit_slug={q}"
-                    f"&limit={GATE_PAGE}&offset={page_no * GATE_PAGE}"
+                    f"&limit={GATE_PAGE}&offset={len(got)}"
                 ),
                 f"gate page for {slug}",
             )
@@ -483,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"usage: {e}", file=sys.stderr)
         return 2
     claimed = jwt_tenant(raw)
-    if claimed != args.tenant:
+    if claimed is None or claimed.lower() != args.tenant.lower():
         print(
             f"REFUSED: credential tenant {claimed!r} != --tenant {args.tenant!r}; nothing read",
             file=sys.stderr,
@@ -501,7 +504,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         kind, _, name = args.initiative.partition("/")
         doc = _as_dict(
-            get(f"/coord/agent-prompt-documents/{kind}/{name}"), "initiative document"
+            get(
+                f"/coord/agent-prompt-documents/"
+                f"{urllib.parse.quote(kind, safe='')}/{urllib.parse.quote(name, safe='')}"
+            ),
+            "initiative document",
         )
         init_text = doc.get("body") or _as_dict(
             doc.get("document") or {}, "initiative document"
@@ -520,10 +527,21 @@ def main(argv: list[str] | None = None) -> int:
         census = build_census(units, total, detail, init_text, gates, gates_total)
         if skipped:
             census["gates"]["units_not_read_over_cap"] = skipped
+            census["gates"]["truncated"] = True  # the census is partial, say so
         print(json.dumps(census, indent=2, sort_keys=True))
         return 0
     except Unknown as e:
         print(f"UNKNOWN: {e}", file=sys.stderr)
+        print("UNKNOWN")
+        return 3
+    except (
+        KeyError,
+        AttributeError,
+        TypeError,
+    ) as e:  # a payload of an unexpected shape
+        print(
+            f"UNKNOWN: unexpected payload shape ({type(e).__name__})", file=sys.stderr
+        )
         print("UNKNOWN")
         return 3
 

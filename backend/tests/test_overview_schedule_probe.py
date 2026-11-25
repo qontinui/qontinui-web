@@ -171,28 +171,39 @@ def test_truncated_unit_list_is_unknown_never_an_empty_census() -> None:
         probe.build_census([_unit("a")], 5, None, None, [], 0)
 
 
-def test_unit_scan_stops_on_short_page_and_is_unknown_at_the_page_bound() -> None:
-    def short(path):  # one short page: complete
-        return {
-            "count": 3,
-            "limit": probe.PAGE,
-            "work_units": [_unit(f"u{i}") for i in range(3)],
-        }
+def _offset(path: str) -> int:
+    return int(path.split("offset=")[1])
 
-    units, total = probe.read_all_units(short)
+
+def test_unit_scan_ends_only_on_an_empty_page_and_is_unknown_at_the_bound() -> None:
+    def pages(path):  # one short page, then the empty page that ends the list
+        rows = [_unit(f"u{i}") for i in range(3)] if _offset(path) == 0 else []
+        return {"count": len(rows), "limit": probe.PAGE, "work_units": rows}
+
+    units, total = probe.read_all_units(pages)
     assert total == 3 and len(units) == 3
 
-    def endless(
-        path,
-    ):  # coord's `count` is the page size, so full pages never end the list
-        return {
-            "count": probe.PAGE,
-            "limit": probe.PAGE,
-            "work_units": [_unit("x")] * probe.PAGE,
-        }
+    def endless(path):  # `count` is the page size, so full pages never end the list
+        return {"count": probe.PAGE, "work_units": [_unit("x")] * probe.PAGE}
 
     with pytest.raises(probe.Unknown, match="truncated"):
         probe.read_all_units(endless)
+
+
+def test_clamped_page_that_echoes_the_requested_limit_is_still_read_in_full() -> None:
+    data = [_unit("a"), _unit("b"), _unit("c")]
+
+    def clamped(path):  # the server serves 2 rows a page but echoes limit=200
+        o = _offset(path)
+        return {"limit": probe.PAGE, "work_units": data[o : o + 2]}
+
+    units, _ = probe.read_all_units(clamped)
+    assert [u["slug"] for u in units] == ["a", "b", "c"]
+
+
+def test_page_without_a_work_units_list_is_unknown() -> None:
+    with pytest.raises(probe.Unknown):
+        probe.read_all_units(lambda path: {"limit": 200})
 
 
 def test_tenant_refusal_exits_2_without_reading(tmp_path, capsys) -> None:
@@ -253,25 +264,6 @@ def test_link_census_with_no_single_programme_claims_no_children() -> None:
     links = probe.link_census([_unit("a"), _unit("b", parent="x")], None)
     assert links["children_of_programme"] == []
     assert links["units_with_parent"] == 1
-
-
-def test_clamped_server_limit_is_not_read_as_end_of_list() -> None:
-    pages = {
-        0: {"limit": 2, "work_units": [_unit("a"), _unit("b")]},
-        2: {"limit": 2, "work_units": [_unit("c")]},
-    }
-
-    def clamped(path):
-        offset = int(path.split("offset=")[1])
-        return pages[offset]
-
-    units, total = probe.read_all_units(clamped)
-    assert [u["slug"] for u in units] == ["a", "b", "c"] and total == 3
-
-
-def test_page_without_limit_is_unknown() -> None:
-    with pytest.raises(probe.Unknown):
-        probe.read_all_units(lambda path: {"work_units": [_unit("a")]})
 
 
 def test_gate_reads_page_through_and_fail_closed_on_truncation() -> None:
@@ -342,10 +334,8 @@ def test_happy_path_prints_census_and_never_the_credential(
 
     def fake_get(path):
         if path.startswith("/coord/agent-work-units?"):
-            return {
-                "limit": probe.PAGE,
-                "work_units": [prog, _unit("c1", parent="prog")],
-            }
+            rows = [prog, _unit("c1", parent="prog")] if _offset(path) == 0 else []
+            return {"limit": probe.PAGE, "work_units": rows}
         if path.endswith("/citations"):
             return _delivery([1], [2])
         if path.startswith("/coord/agent-prompt-documents/"):
@@ -377,7 +367,8 @@ def test_failed_initiative_read_is_unknown_not_a_partial_census(
 
     def fake_get(path):
         if path.startswith("/coord/agent-work-units?"):
-            return {"limit": probe.PAGE, "work_units": [_unit("a")]}
+            rows = [_unit("a")] if _offset(path) == 0 else []
+            return {"limit": probe.PAGE, "work_units": rows}
         raise probe.Unknown("GET document -> HTTP 404")
 
     monkeypatch.setattr(
@@ -392,7 +383,8 @@ def test_no_programme_reads_no_gates_and_says_so(tmp_path, capsys, monkeypatch) 
 
     def fake_get(path):
         if path.startswith("/coord/agent-work-units?"):
-            return {"limit": probe.PAGE, "work_units": [_unit("a"), _unit("b")]}
+            rows = [_unit("a"), _unit("b")] if _offset(path) == 0 else []
+            return {"limit": probe.PAGE, "work_units": rows}
         if path.startswith("/coord/agent-prompt-documents/"):
             return {"body": INITIATIVE}
         raise AssertionError(path)  # no gate read may happen
@@ -403,3 +395,140 @@ def test_no_programme_reads_no_gates_and_says_so(tmp_path, capsys, monkeypatch) 
     assert probe.main(["--tenant", "t", "--header-file", str(hdr)]) == 0
     census = json.loads(capsys.readouterr().out)
     assert census["gates"]["state"] == "not_read"
+
+
+def test_milestone_rows_after_a_blank_line_or_comment_are_still_read() -> None:
+    body = (
+        "| Target date | Milestone | Shown by |"
+        + chr(10)
+        + "|---|---|---|"
+        + chr(10)
+        + "| 2026-12-01 | V1 first | a |"
+        + chr(10)
+        + chr(10)
+        + "<!-- note -->"
+        + chr(10)
+        + "| 2026-12-18 | V2 second | b |"
+        + chr(10)
+        + "| 2026-03-01 to 2026-04-01 | V3 range | c |"
+        + chr(10)
+        + "## Next section"
+        + chr(10)
+        + "| 2027-01-01 | stray | d |"
+        + chr(10)
+    )
+    rows, unparsed, found = probe.parse_milestone_table(body)
+    assert found and [r["id"] for r in rows] == ["V1", "V2"]
+    assert any("V3 range" in u for u in unparsed)  # a range is listed, not truncated
+    assert any("stray" in u for u in unparsed)  # a dated row after the table is listed
+
+
+def test_jwt_decode_failure_paths() -> None:
+    import base64
+
+    def tok(payload: bytes) -> str:
+        seg = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        return f"Authorization: Bearer a.{seg}.c"
+
+    assert probe.jwt_tenant(tok(b"\xff\xfe")) is None  # not UTF-8
+    assert probe.jwt_tenant(tok(b'{"tenant_id": 5}')) is None  # non-string claim
+    assert probe.jwt_tenant(tok(b"{not json")) is None
+    assert probe.jwt_tenant(tok(b'{"tenant_id": "x"}')) == "x"  # unpadded segment
+
+
+def test_over_cap_children_mark_the_gate_census_truncated(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    hdr = _hdr(tmp_path)
+    children = [
+        _unit(f"c{i}", parent="prog") for i in range(probe.SCHEDULE_UNIT_CAP + 3)
+    ]
+    units = [_prog("prog", phases=2), *children]
+
+    def fake_get(path):
+        if path.startswith("/coord/agent-work-units?"):
+            rows = units if _offset(path) == 0 else []
+            return {"limit": probe.PAGE, "work_units": rows}
+        if path.endswith("/citations"):
+            return _delivery([1], [2])
+        if path.startswith("/coord/agent-prompt-documents/"):
+            return {"body": INITIATIVE}
+        return {"gates": [], "total": 0}
+
+    monkeypatch.setattr(
+        probe, "make_getter", lambda b, h: (fake_get, hdr.read_text().strip())
+    )
+    assert probe.main(["--tenant", "t", "--header-file", str(hdr)]) == 0
+    gates = json.loads(capsys.readouterr().out)["gates"]
+    assert gates["truncated"] is True and gates["units_not_read_over_cap"] == 4
+
+
+def test_malformed_unit_payload_is_unknown_exit_3(
+    tmp_path, capsys, monkeypatch
+) -> None:
+    hdr = _hdr(tmp_path)
+    monkeypatch.setattr(
+        probe,
+        "make_getter",
+        lambda b, h: (
+            lambda path: {"limit": 200, "work_units": [{"metadata": None}, "x"]},
+            hdr.read_text().strip(),
+        ),
+    )
+    assert probe.main(["--tenant", "t", "--header-file", str(hdr)]) == 3
+    assert capsys.readouterr().out.strip() == "UNKNOWN"
+
+
+def _serve(handler_cls):
+    import http.server
+    import threading
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_real_getter_sends_the_bearer_refuses_redirects_and_never_echoes_it(
+    tmp_path,
+) -> None:
+    import http.server
+
+    seen: list[tuple[str, str | None]] = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append((self.path, self.headers.get("Authorization")))
+            if self.path == "/redirect":
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+                return
+            body = b"not json" if self.path == "/bad" else b'{"ok": true}'
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = _serve(H)
+    try:
+        hdr = _hdr(tmp_path, secret="SECRETSIG")
+        get, _ = probe.make_getter(f"http://127.0.0.1:{srv.server_port}", str(hdr))
+        assert get("/fine") == {"ok": True}
+        assert (
+            seen[0][1]
+            and seen[0][1].startswith("Bearer aaa.")
+            and "SECRETSIG" in seen[0][1]
+        )
+        with pytest.raises(probe.Unknown) as redirect:
+            get("/redirect")
+        assert all(
+            path != "/elsewhere" for path, _ in seen
+        )  # the redirect was not followed
+        with pytest.raises(probe.Unknown) as bad_json:
+            get("/bad")
+        for err in (redirect.value, bad_json.value):
+            assert "SECRETSIG" not in str(err)
+    finally:
+        srv.shutdown()
