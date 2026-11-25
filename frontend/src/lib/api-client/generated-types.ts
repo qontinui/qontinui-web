@@ -6583,8 +6583,16 @@ export interface paths {
          *       device (the newest authorization supersedes);
          *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
          *       explicit act, never a side effect;
-         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
-         *       enrol a fresh key (a usable key is left alone).
+         *     * removes machine-key rows that must not outlive the authorization
+         *       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
+         *       when the device WAS under a deny, its key row whatever its state (any
+         *       key predating the re-arm is suspect); otherwise only a REVOKED row. A
+         *       usable key on a never-revoked device is kept — it is how a runner
+         *       offline past its JWT grace recovers on its own (``/exchange``).
+         *
+         *     What re-keys a device whose row was removed is its next pairing, which
+         *     mints a fresh key because no row exists: ``pair-cli``. ``/self-mint``
+         *     also enrols one, given a live paired device JWT.
          *
          *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
          *     the device collects it, through ``/pending-redeem``.
