@@ -573,6 +573,35 @@ export const DRAIN_PRESETS: ReadonlyArray<{
 ];
 
 /**
+ * How long a drain has left, or how long ago it lapsed.
+ *
+ * `relativeTime` cannot serve this: it renders every future stamp as
+ * `"just now"` (a deliberate choice for clock skew on PAST events), and
+ * "Drained until just now" is the opposite of what a deadline four hours out
+ * means. This one is signed and says which side of `now` the deadline is on.
+ */
+export function formatDrainRemaining(untilIso: string, now: number): string {
+  const untilMs = parseTimestamp(untilIso);
+  if (untilMs === null) return "an unknown time";
+  const deltaMs = untilMs - now;
+  const past = deltaMs < 0;
+  const minutes = Math.floor(Math.abs(deltaMs) / 60_000);
+  let magnitude: string;
+  if (minutes < 1) magnitude = "under a minute";
+  else if (minutes < 60) magnitude = `${minutes}m`;
+  else if (minutes < 60 * 24) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    magnitude = m === 0 ? `${h}h` : `${h}h ${m}m`;
+  } else {
+    const d = Math.floor(minutes / (60 * 24));
+    const h = Math.floor((minutes % (60 * 24)) / 60);
+    magnitude = h === 0 ? `${d}d` : `${d}d ${h}h`;
+  }
+  return past ? `${magnitude} ago` : `in ${magnitude}`;
+}
+
+/**
  * Render an epoch as the `YYYY-MM-DDTHH:mm` a `datetime-local` input takes, in
  * the viewer's own timezone — which is the timezone an operator reasons about
  * a rebuild window in.

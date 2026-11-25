@@ -45,6 +45,7 @@ function Host(): ReactElement {
       }}
       ciMachines={{ state: "loading" }}
       drain={{ read: { state: "loading" }, asOfMs: null, refresh: noop }}
+      machines={{ state: "loading" }}
       deviceStatus={{
         byHostname: new Map(),
         connected: false,

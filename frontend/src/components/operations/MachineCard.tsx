@@ -1021,7 +1021,11 @@ export function MachineCard({
             the link to the one page that changes it. Deliberately ABOVE the
             CI-capacity disclosure: a paused machine is the fact that explains
             an idle-looking row. The badge wraps rather than truncates — the
-            deadline is identifying text. */}
+            deadline is identifying text. Presenting, the badge keeps its
+            fixed-wording label but drops its title (the window's reason, its
+            opener, or a failed read's raw text naming a route), the link (it
+            carries the device id and leads to an operator lever), and the CI
+            host names, which read as a count (style guide §3.11). */}
         {maintenance && (
           <div className="space-y-1" data-testid="machine-maintenance">
             <div className="flex flex-wrap items-center gap-2">
@@ -1029,14 +1033,14 @@ export function MachineCard({
                 <Badge
                   variant="outline"
                   className={`text-[11px] whitespace-normal break-words ${MAINTENANCE_BADGE_TONE[maintenance.badge.state]}`}
-                  title={maintenance.badge.title}
+                  title={presenting ? undefined : maintenance.badge.title}
                   data-testid="machine-maintenance-badge"
                   data-maintenance-state={maintenance.badge.state}
                 >
                   {maintenance.badge.label}
                 </Badge>
               )}
-              {maintenance.href && (
+              {!presenting && maintenance.href && (
                 <Link
                   href={maintenance.href}
                   className="text-[11px] underline underline-offset-2 text-muted-foreground hover:text-foreground"
@@ -1055,7 +1059,9 @@ export function MachineCard({
               >
                 {maintenance.linkedCiHosts.length === 0
                   ? "No CI host linked to this machine."
-                  : maintenance.linkedCiHosts
+                  : presenting
+                    ? `${maintenance.linkedCiHosts.length} CI host${maintenance.linkedCiHosts.length === 1 ? "" : "s"} linked to this machine.`
+                    : maintenance.linkedCiHosts
                       .map(
                         (h) =>
                           `CI host ${h.host}: ${h.registrations} registration${h.registrations === 1 ? "" : "s"}` +
