@@ -6583,8 +6583,18 @@ export interface paths {
          *       device (the newest authorization supersedes);
          *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
          *       explicit act, never a side effect;
-         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
-         *       enrol a fresh key (a usable key is left alone).
+         *     * removes machine-key rows that must not outlive the authorization
+         *       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
+         *       when the device WAS under a deny, its key row whatever its state (any
+         *       key predating the re-arm is suspect); otherwise only a REVOKED row. A
+         *       usable key on a never-revoked device is kept — it is how a runner
+         *       offline past its JWT grace recovers on its own (``/exchange``).
+         *
+         *     What re-keys a device whose row was removed is its next pairing, which
+         *     mints a fresh key because no row exists: an operator pair code or
+         *     ``pair-cli``, or the bound code minted here IF the runner collects it
+         *     through ``/pending-redeem`` (a runner build without that poller never
+         *     does). ``/self-mint`` also enrols one, given a live paired device JWT.
          *
          *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
          *     the device collects it, through ``/pending-redeem``.
@@ -46849,7 +46859,8 @@ export interface components {
          *
          *     Mirrors the canonical ``PairCompleteResponse`` shape that the
          *     runner's ``pair.rs::PairCompleteResponse`` decoder consumes:
-         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.
+         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,
+         *     plus ``device_machine_key`` (the same additive field pair-cli returns).
          *     The runner uses the same decoder for both the paste-pair and the
          *     headless ``pair-cli`` paths.
          */
@@ -46860,6 +46871,11 @@ export interface components {
              * @description The runner's device UUID.
              */
             device_id: string;
+            /**
+             * Device Machine Key
+             * @description Device machine key (``dmk_``) minted for this device at redeem, returned exactly once — the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.
+             */
+            device_machine_key?: string | null;
             /**
              * Device Token Jwt
              * @description Coord-issued device-token JWT.

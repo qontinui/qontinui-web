@@ -24,7 +24,9 @@ defaults — so the drift can't reappear silently.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import BigInteger, Integer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
 
@@ -121,3 +123,47 @@ def test_sibling_int_columns_stay_int() -> None:
             f"If you're widening to BigInteger, update both the migration "
             f"AND this test."
         )
+
+
+# ---------------------------------------------------------------------------
+# tenant_id — mapped for READING only (the pairing machine-key anchor)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_an_insert_that_leaves_tenant_id_unset_omits_the_column(
+    async_db_session: AsyncSession,
+) -> None:
+    """``coord.devices.tenant_id`` is NOT NULL in the database and coord
+    writes it; web maps it only to read it. An INSERT that does not set it
+    must leave the column out of the statement entirely — an explicit NULL
+    would fail every web-side device insert with NotNullViolationError, the
+    exact drift this file exists to catch."""
+    from uuid import uuid4
+
+    from sqlalchemy import event
+
+    from app.models.device import Device
+
+    statements: list[str] = []
+
+    def _record(_conn, _cursor, statement, *_args) -> None:
+        if statement.lstrip().upper().startswith("INSERT INTO COORD.DEVICES"):
+            statements.append(statement)
+
+    engine = async_db_session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", _record)
+    try:
+        async_db_session.add(
+            Device(device_id=uuid4(), name="n", hostname="h", state="healthy")
+        )
+        await async_db_session.flush()
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+
+    assert len(statements) == 1, statements
+    # The column list, i.e. what is WRITTEN. The ORM may name the column in
+    # a RETURNING clause to read back the database's value; that is a read.
+    inserted_columns = statements[0].split(")", 1)[0]
+    assert "device_id" in inserted_columns
+    assert "tenant_id" not in inserted_columns
