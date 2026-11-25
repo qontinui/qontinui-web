@@ -1,25 +1,25 @@
 /**
- * Every page-owned selector in the COMMITTED Spec-CI spec for `/runners`, run
- * against the real page with the spec's own route stubs as its data.
+ * Every page-owned selector in the COMMITTED Spec-CI spec for
+ * `/admin/coord/machine-maintenance`, run against the real page with the
+ * spec's own route stubs as its data.
  *
- * Same shape as `admin/coord/trees/page.specSelectors.test.tsx`: it READS
- * `specs/pages/coord-runners/state-machine.derived.json` at test time and has
- * no copy of it, so it cannot drift from the spec. Each stub's `urlPattern`
- * fulfils the matching `httpClient` call, and every `id` criterion in a
- * page-owned state must resolve against the render.
+ * Same shape as the `coord-runners` spec test it replaced: it READS
+ * `specs/pages/coord-machine-maintenance/state-machine.derived.json` at test
+ * time and has no copy of it, so it cannot drift from the spec. Each stub's
+ * `urlPattern` fulfils the matching `httpClient` call, and every `id`
+ * criterion in a page-owned state must resolve against the render.
  *
  * ## What it deliberately does NOT cover
  *
- * `coord-runners-shell` asserts the layout's `h1` and `CoordNav`, which are
- * not mounted by rendering the page in isolation; it is filtered out by name
- * rather than silently missed. (`CoordNav.test.tsx` pins the Runners crumb.)
+ * `coord-maintenance-shell` asserts the layout's `h1` and `CoordNav`, which
+ * are not mounted by rendering the page in isolation; it is filtered out by
+ * name rather than silently missed.
  *
  * ## What it does not replace
  *
  * A jsdom render is not a browser and not the Spec-CI executor. The spec was
  * authored from source, not derived from a live authed UI Bridge snapshot —
- * its own description says so — and the authoritative check is still a live
- * run.
+ * its own description says so — and the authoritative check is a live run.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -55,7 +55,7 @@ const SPEC: DerivedSpec = JSON.parse(
   readFileSync(
     resolve(
       __dirname,
-      "../../../../../../specs/pages/coord-runners/state-machine.derived.json"
+      "../../../../../../specs/pages/coord-machine-maintenance/state-machine.derived.json"
     ),
     "utf-8"
   )
@@ -63,12 +63,12 @@ const SPEC: DerivedSpec = JSON.parse(
 
 const STUBS = SPEC.metadata?.routeStubs ?? [];
 
-/** The device the spec's own stubs describe — what run-spec-ci seeds in `?device=`. */
+/** The machine the spec's own stubs describe — what run-spec-ci seeds in `?machine=`. */
 const DEVICE = (
-  STUBS.find((s) => s.urlPattern.includes("/fleet/health"))?.body as {
-    devices: { device_id: string }[];
+  STUBS.find((s) => s.urlPattern.endsWith("/fleet/machines"))?.body as {
+    machines: { device_id: string }[];
   }
-).devices[0].device_id;
+).machines[0].device_id;
 
 /** `**\/api/v1/operations/sessions/fleet**` → `/api/v1/operations/sessions/fleet`. */
 function stubFor(url: string): RouteStub | undefined {
@@ -76,7 +76,7 @@ function stubFor(url: string): RouteStub | undefined {
 }
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(`device=${DEVICE}`),
+  useSearchParams: () => new URLSearchParams(`machine=${DEVICE}`),
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
@@ -90,19 +90,19 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: true }),
+  useAuth: () => ({ isCoordAdmin: true, loading: false, user: { id: "u" } }),
 }));
 
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
-/** States this page owns. `coord-runners-shell` is the layout's, not ours. */
+/** States this page owns. The shell is the layout's, not ours. */
 const PAGE_OWNED_STATES = SPEC.states.filter(
-  (s) => s.id !== "coord-runners-shell"
+  (s) => s.id !== "coord-maintenance-shell"
 );
 
-import CoordRunnersPage from "./page";
+import MachineMaintenancePage from "./page";
 
 beforeEach(() => {
   httpGet.mockReset();
@@ -124,34 +124,41 @@ beforeEach(() => {
   });
 });
 
-describe("coord-runners Spec-CI selectors resolve against the page", () => {
+describe("coord-machine-maintenance Spec-CI selectors resolve against the page", () => {
   it("covers the states the page owns, and says which it does not", () => {
     expect(SPEC.states.map((s) => s.id)).toEqual([
-      "coord-runners-shell",
-      "coord-runners-controls",
-      "coord-runners-populated",
+      "coord-maintenance-shell",
+      "coord-maintenance-controls",
+      "coord-maintenance-populated",
     ]);
     expect(PAGE_OWNED_STATES).toHaveLength(2);
   });
 
   it("stubs every read the page makes", () => {
     for (const fragment of [
-      "/fleet/health",
+      "/fleet/machines",
       "/fleet/drain",
+      "/fleet/ci-runners",
       "/fleet/resource-samples",
       "/sessions/fleet",
+      "/coord/audit/recent",
     ]) {
-      expect(stubFor(`https://x/api/v1/operations${fragment}?q=1`)).toBeDefined();
+      expect(
+        stubFor(`https://x/api/v1/operations${fragment}?q=1`)
+      ).toBeDefined();
     }
   });
 
   it("resolves every page-owned `id` criterion against the rendered page", async () => {
-    render(<CoordRunnersPage />);
+    render(<MachineMaintenancePage />);
 
     await waitFor(() => {
       expect(
-        screen.getAllByTestId("coord-runners-session-row").length
+        screen.getAllByTestId("coord-maintenance-session-row").length
       ).toBeGreaterThan(0);
+      expect(
+        screen.getByTestId("coord-maintenance-lever-ci")
+      ).toBeInTheDocument();
     });
 
     const missing: string[] = [];
@@ -167,21 +174,24 @@ describe("coord-runners Spec-CI selectors resolve against the page", () => {
       }
     }
 
-    // Every page-owned assertion is an `id` criterion; a new shape would move
-    // this count rather than be skipped by the loop.
     expect(checked).toHaveLength(
       PAGE_OWNED_STATES.reduce((n, s) => n + s.assertions.length, 0)
     );
     expect(missing).toEqual([]);
   });
 
-  it("renders the two stubbed sessions and the unsafe verdict the stub engineered", async () => {
-    render(<CoordRunnersPage />);
+  it("renders the verdict and the no-host lever the stubs engineered", async () => {
+    render(<MachineMaintenancePage />);
     await waitFor(() => {
-      expect(screen.getAllByTestId("coord-runners-session-row")).toHaveLength(2);
+      expect(
+        screen.getAllByTestId("coord-maintenance-session-row")
+      ).toHaveLength(2);
     });
-    expect(screen.getByTestId("coord-runners-health")).toHaveTextContent(
-      "Not safe to restart"
+    expect(screen.getByTestId("coord-maintenance-verdict")).toHaveTextContent(
+      "Not yet safe to restart"
+    );
+    expect(screen.getByTestId("coord-maintenance-lever-ci")).toHaveTextContent(
+      "No CI host linked — link one"
     );
   });
 });

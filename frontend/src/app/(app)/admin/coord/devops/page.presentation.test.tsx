@@ -259,13 +259,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     // `getAllByTestId` throws on none, so the first row exists.
     fireEvent.click(toggleOf(screen.getAllByTestId("fleet-roles-row")[0]!));
 
-    // The lever, its dialog and its target line — gone, not hidden.
+    // The link to the maintenance lever — gone, not hidden: it carries the
+    // device id and leads to an operator page.
     for (const testId of [
-      "device-drain",
-      "device-drain-open",
-      "device-drain-undrain",
-      "device-drain-dialog",
-      "device-drain-target",
+      "machine-maintenance-link",
       "ci-capacity-disclosure",
       "ci-runner-drain-scope",
       "fleet-roles-set-workhorse",
@@ -299,16 +296,16 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       "Every operator write coord stamped"
     );
 
-    // What remains is the drain STATE, read-only: the drained machine says
-    // so, with no actor and no reason.
-    const states = screen.getAllByTestId("device-drain-status");
+    // What remains is the maintenance STATE, read-only: the drained machine
+    // says so, with no actor and no reason — not even in a title.
+    const states = screen.getAllByTestId("machine-maintenance-badge");
     expect(states.length).toBeGreaterThan(0);
     const drained = states.filter(
-      (s) => s.getAttribute("data-device-drain") === "drained"
+      (s) => s.getAttribute("data-maintenance-state") === "drained_outside"
     );
     expect(drained).toHaveLength(1);
-    expect(drained[0]).toHaveTextContent(/out of service/i);
-    expect(drained[0]).toHaveTextContent(/drained until/i);
+    expect(drained[0]).toHaveTextContent(/drained \(outside a window\)/i);
+    expect(drained[0]!.getAttribute("title")).toBeNull();
   });
 
   it("renders no hostname, device id, display name, repository, person or free text — in text or attributes", async () => {
@@ -518,8 +515,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
 
     // Machine card: the one carrying the drained state.
     const drainedCard = screen
-      .getAllByTestId("device-drain-status")
-      .find((s) => s.getAttribute("data-device-drain") === "drained")!
+      .getAllByTestId("machine-maintenance-badge")
+      .find(
+        (s) => s.getAttribute("data-maintenance-state") === "drained_outside"
+      )!
       .closest("[data-operations-machine-card]") as HTMLElement;
     expect(within(drainedCard).getByText(aliasA)).toBeTruthy();
     // Its disk: the figure, named by its position — never by its mount.
@@ -721,9 +720,18 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
         );
       });
       const drainedBefore = screen
-        .getAllByTestId("device-drain-status")
-        .filter((s) => s.getAttribute("data-device-drain") === "drained");
+        .getAllByTestId("machine-maintenance-badge")
+        .filter(
+          (s) => s.getAttribute("data-maintenance-state") === "drained_outside"
+        );
       expect(drainedBefore).toHaveLength(1);
+      // Cards the machines stub does not list already read UNKNOWN, so the
+      // check below counts: the drained card must be the one that joins them.
+      const unknownBefore = screen
+        .getAllByTestId("machine-maintenance-badge")
+        .filter(
+          (s) => s.getAttribute("data-maintenance-state") === "unknown"
+        ).length;
 
       failingRoutes.push("/fleet/drain", "dispatch-roles", "coord/audit");
       // The drain and role polls run every 30 s; the audit feed is re-read
@@ -737,15 +745,18 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       // cards stay, each drain UNKNOWN rather than the last state read, and
       // the roles and the feed say their reads failed...
       await waitFor(() => {
-        const drains = screen.getAllByTestId("device-drain-status");
+        const drains = screen.getAllByTestId("machine-maintenance-badge");
         expect(
           drains.filter(
-            (s) => s.getAttribute("data-device-drain") === "drained"
+            (s) =>
+              s.getAttribute("data-maintenance-state") === "drained_outside"
           )
         ).toHaveLength(0);
         expect(
-          drains.some((s) => s.getAttribute("data-device-drain") === "unknown")
-        ).toBe(true);
+          drains.filter(
+            (s) => s.getAttribute("data-maintenance-state") === "unknown"
+          )
+        ).toHaveLength(unknownBefore + 1);
         expect(screen.getByTestId("fleet-roles-unknown")).toBeTruthy();
         expect(screen.getByTestId("operator-audit-error")).toBeTruthy();
       });
@@ -947,13 +958,14 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         .getByTestId("coord-devops-credential-unknown-badge")
         .getAttribute("title")
     ).toContain(FAILURE_REASON_WITHHELD);
-    // Every machine's drain is UNKNOWN — said, not guessed.
-    const drains = screen.getAllByTestId("device-drain-status");
+    // Every machine's maintenance state is UNKNOWN — said, not guessed, and
+    // the failed read's own text is not carried in a title.
+    const drains = screen.getAllByTestId("machine-maintenance-badge");
     expect(drains.length).toBeGreaterThan(0);
     for (const d of drains) {
-      if (d.getAttribute("data-device-drain") === "no_device") continue;
-      expect(d.getAttribute("data-device-drain")).toBe("unknown");
-      expect(d).toHaveTextContent(/drain state has not been read/i);
+      expect(d.getAttribute("data-maintenance-state")).toBe("unknown");
+      expect(d).toHaveTextContent(/maintenance unknown/i);
+      expect(d.getAttribute("title")).toBeNull();
     }
     // The runner inventory did not answer, so its counts are UNKNOWN — never
     // "Runners 0 · Healthy 0".
@@ -1087,7 +1099,7 @@ describe("/admin/coord/devops?present=1 — the console's page gate renders it",
 describe("/admin/coord/devops for the operator — the console is unchanged", () => {
   beforeEach(resetEnvironment);
 
-  it("still shows the drain lever, the rename, the CI capacity and the real names; no headline, no captions", async () => {
+  it("still shows the maintenance link, the rename, the CI capacity and the real names; no headline, no captions", async () => {
     mockRoutes();
     seedDeviceStatus();
     render(
@@ -1097,18 +1109,21 @@ describe("/admin/coord/devops for the operator — the console is unchanged", ()
     );
 
     await waitFor(() =>
-      expect(screen.getAllByTestId("device-drain").length).toBeGreaterThan(0)
+      expect(
+        screen.getAllByTestId("machine-maintenance-link").length
+      ).toBeGreaterThan(0)
     );
-    // Machine A is drained, so its lever offers Undrain; the others Drain.
-    await waitFor(() =>
-      expect(screen.getAllByTestId("device-drain-undrain")).toHaveLength(1)
-    );
-    expect(screen.getAllByTestId("device-drain-open").length).toBeGreaterThan(
-      0
-    );
-    expect(screen.getAllByTestId("device-drain-target").length).toBeGreaterThan(
-      0
-    );
+    // Machine A is drained outside any window; the operator sees its badge
+    // with the reason in its title, and the CI host by name.
+    const drainedBadges = screen
+      .getAllByTestId("machine-maintenance-badge")
+      .filter(
+        (s) => s.getAttribute("data-maintenance-state") === "drained_outside"
+      );
+    expect(drainedBadges).toHaveLength(1);
+    expect(
+      screen.getAllByTestId("machine-maintenance-ci-hosts")[0]
+    ).toHaveTextContent(`${HOST_A}-wsl`);
     expect(screen.getAllByTestId("ci-capacity-disclosure")).toHaveLength(1);
     expect(
       screen.getAllByRole("button", { name: /rename/i }).length

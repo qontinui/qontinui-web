@@ -144,7 +144,7 @@ describe("coordNavModel", () => {
       "Session load",
       "Trees",
       "Launch session",
-      "Runner Drain",
+      "Maintenance",
       "Test Targets",
       "Migrations",
       "Deploys",

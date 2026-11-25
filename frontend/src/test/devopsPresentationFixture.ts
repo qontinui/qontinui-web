@@ -588,6 +588,25 @@ export function mockDevOpsRoutes(
         },
       });
     }
+    if (u.includes("/fleet/machines")) {
+      // Coord's machines read (plan
+      // `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place`):
+      // HOST_A's device has no open window, so its raw drain above reads as
+      // "Drained (outside a window)" on the card. The CI host carries the
+      // identifying hostname so a presented card that named it would fail.
+      return ok({
+        machines: [
+          {
+            device_id: DEV_A,
+            hostname: HOST_A,
+            state: "online",
+            ci_hosts: [`${HOST_A}-wsl`],
+            open_window: null,
+          },
+        ],
+        unlinked_ci_hosts: [],
+      });
+    }
     if (u.includes("/devenv/machines")) {
       return ok([
         {
