@@ -1,7 +1,7 @@
 """coord.repo_identities, and canonical_repos.bare_dir -- following a repo rename
 
 Revision ID: coord_repo_identities_01
-Revises: coord_test_result_runs_01
+Revises: cfgyaml02_config_yaml_read_sha
 Create Date: 2026-11-08
 
 Phases 3 and 4a (qontinui-web half) of plan
@@ -144,7 +144,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "coord_repo_identities_01"
-down_revision: str | Sequence[str] | None = "coord_test_result_runs_01"
+down_revision: str | Sequence[str] | None = "cfgyaml02_config_yaml_read_sha"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
