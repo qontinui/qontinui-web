@@ -431,3 +431,4 @@ def test_downgrade_removes_the_table_and_re_upgrade_restores_it() -> None:
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _INDEX)
+        assert index_exists(engine, _RETENTION_INDEX)

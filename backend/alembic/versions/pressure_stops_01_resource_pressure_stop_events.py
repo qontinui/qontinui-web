@@ -2,7 +2,7 @@
 
 Phase 1 (the qontinui-web half, which lands and applies FIRST) of plan
 ``2026-11-24-pressure-stops-record-box-stats-in-coord``. Creates one new, empty
-table, its comment and one index beside its keys, all in ONE transaction::
+table, its comment and two indexes beside its keys, all in ONE transaction::
 
     coord.resource_pressure_stop_events
         (event_id, tenant_id, device_id, client_event_id, observed_at,
@@ -12,8 +12,9 @@ table, its comment and one index beside its keys, all in ONE transaction::
          calibration, fleet_calibration, suppressed_count, dropped_before,
          box_stats)
         ix_resource_pressure_stop_events_tenant_device_observed
-        ix_resource_pressure_stop_events_observed_at
             (tenant_id, device_id, observed_at DESC)
+        ix_resource_pressure_stop_events_observed_at
+            (observed_at)
 
 Every name, type, default and key is the one the plan's Phase 1 fixes. The coord
 half (``resource_pressure_stops.rs``) and the runner emitter are built against
@@ -57,8 +58,8 @@ Retention
 
 None here. coord's leader-gated pruner deletes rows older than
 ``COORD_RESOURCE_PRESSURE_STOP_RETENTION_DAYS`` (default 90), next to the
-``device_resource_samples`` prune. The index below serves the per-device read;
-the prune is a bounded ``observed_at`` range delete on a table of this size.
+``device_resource_samples`` prune. The composite index serves the per-device
+read; the ``observed_at`` index serves the prune's range delete.
 
 Lock posture
 ============
@@ -72,15 +73,16 @@ Idempotency / authorship posture
 * ``CREATE TABLE IF NOT EXISTS`` / ``COMMENT ON`` / ``CREATE INDEX IF NOT
   EXISTS``, all in one transaction (a plain ``CREATE INDEX``, never
   ``CONCURRENTLY``, which coord's migration classifier admits as a new-table
-  claim); a symmetric ``downgrade()`` drops the index and then the table.
+  claim); a symmetric ``downgrade()`` drops both indexes and then the table.
 * **alembic is the SOLE author of the ``coord.*`` schema** (served policy
   ``production-and-cost`` ``alembic-sole-authorship``). This revision must be
   APPLIED in production before the coord PR that reads or writes the table
   deploys; coord's read degrades on a missing relation.
 * ``coord_tenant`` / ``coord_tenant_preflight`` get their privileges from
   ``coordrls_01``'s ``ALTER DEFAULT PRIVILEGES``.
-* Every SQL string is a static literal, carries no ``:word`` sequence and no
-  ``%``.
+* Every SQL string is a static literal and carries no ``%`` and no ``:name``
+  bind parameter (the ``'{}'::jsonb`` casts are ``::``, which SQLAlchemy's
+  ``text()`` does not treat as a parameter).
 
 Chaining
 ========
@@ -111,7 +113,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create the table, its comment and its index in ONE transaction."""
+    """Create the table, its comment and its two indexes in ONE transaction."""
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.resource_pressure_stop_events (
@@ -186,7 +188,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the index, then the table. The recorded events do not return."""
+    """Drop both indexes, then the table. The recorded events do not return."""
     op.execute(
         "DROP INDEX IF EXISTS coord.ix_resource_pressure_stop_events_observed_at"
     )
