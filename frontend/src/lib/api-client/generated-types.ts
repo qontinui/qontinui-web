@@ -14112,6 +14112,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/machines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Machines
+         * @description Return coord's machines and the CI hosts no machine has claimed.
+         *
+         *     Coord answers ``{"machines": [...], "unlinked_ci_hosts": [...]}``: each
+         *     machine is a workstation runner device (``device_id``, coord's own
+         *     ``hostname`` — never the display alias — ``state``, its declared
+         *     ``ci_hosts`` and its ``open_window``), and each un-linked host is a GitHub
+         *     runner name with ``ci_runner`` rows in this tenant and no declared join,
+         *     listed as a machine of its own so it can still be paused (§D2).
+         *
+         *     Passed through untouched. An empty ``ci_hosts`` means "no CI host linked",
+         *     which the page renders as exactly that and never as "CI not paused".
+         */
+        get: operations["api_v1_operations_fleet_machines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/machines/{device_id}/ci-hosts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Machine Ci Hosts
+         * @description Return the GitHub runner names declared to be this machine.
+         */
+        get: operations["api_v1_operations_fleet_machines_device_id_ci_hosts_get"];
+        put?: never;
+        /**
+         * Post Machine Ci Host
+         * @description Declare that a GitHub runner name is this machine.
+         *
+         *     Coord's status is echoed: ``201`` for a new link, ``200`` when it was
+         *     already linked (the write is idempotent), and a structured ``409
+         *     ci_host_linked_elsewhere`` when another machine holds the host — which the
+         *     page must show by name, because the fix is to unlink it THERE.
+         */
+        post: operations["api_v1_operations_fleet_machines_device_id_ci_hosts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/machines/{device_id}/ci-hosts/{ci_host}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Machine Ci Host
+         * @description Remove one declared machine ↔ host join.
+         *
+         *     ``ci_host`` is validated like the link body and percent-encoded onto
+         *     coord's path, so a runner name can never be read as a second path segment.
+         */
+        delete: operations["api_v1_operations_fleet_machines_device_id_ci_hosts_ci_host_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/machines/{hostname}": {
         parameters: {
             query?: never;
@@ -14141,6 +14223,115 @@ export interface paths {
          *     is ``null`` after a clear).
          */
         patch: operations["api_v1_operations_fleet_machines_hostname_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/maintenance-window": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Maintenance Windows
+         * @description List maintenance windows, open ones only unless ``include_closed``.
+         *
+         *     Coord answers ``{"windows": [MaintenanceWindow]}``, passed through. Only
+         *     the filters the caller set go on the wire, so coord's defaults stay
+         *     coord's.
+         */
+        get: operations["api_v1_operations_fleet_maintenance_window_get"];
+        put?: never;
+        /**
+         * Post Maintenance Window
+         * @description Open a maintenance window: hold the named levers until ``until``.
+         *
+         *     Coord's ``201`` is echoed with the created ``MaintenanceWindow``, whose
+         *     per-lever and per-``(label, repo)`` outcomes are the truth about what was
+         *     held — a window can open with the CI lever ``partial`` or ``failed``, and
+         *     the page renders each outcome rather than one "opened".
+         *
+         *     Two refusals the page branches on, passed through structured:
+         *     ``window_already_open`` (409 — the machine already has one; act on that
+         *     window), and ``last_matching_host`` (409 — resend with
+         *     ``accept_ci_queueing: true`` only after the operator confirms CI will queue
+         *     at GitHub until ``until``).
+         */
+        post: operations["api_v1_operations_fleet_maintenance_window_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/maintenance-window/{window_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Maintenance Window
+         * @description Hold or release ONE lever of an open window; returns the window.
+         */
+        patch: operations["api_v1_operations_fleet_maintenance_window_window_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/maintenance-window/{window_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Maintenance Window Close
+         * @description Return the machine to service: release every held lever of the window.
+         *
+         *     The returned window carries the per-lever release outcome. A release that
+         *     could not restore a label reads ``restore_failed`` on that ``(label,
+         *     repo)`` and coord's reconciler keeps retrying — the page shows it rather
+         *     than reporting the machine back in service.
+         */
+        post: operations["api_v1_operations_fleet_maintenance_window_window_id_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/fleet/maintenance-window/{window_id}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Maintenance Window Readiness
+         * @description Return the window's restart verdict: ``safe | not_yet | unknown``.
+         *
+         *     Built by coord from three planes (agent, GitHub CI, coord CI-node), each
+         *     with its own age (§D6). Passed through untouched — the verdict is coord's,
+         *     and a 404 or transport failure here is UNKNOWN for the caller, never a
+         *     verdict of its own.
+         */
+        get: operations["api_v1_operations_fleet_maintenance_window_window_id_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/operations/fleet/resource-samples": {
@@ -14303,8 +14494,8 @@ export interface paths {
          *       ``readiness_state`` (``fresh | stale | absent``). This is the device's
          *       restart-readiness verdict, pushed by the runner on the same 30 s sample
          *       rather than read through a relay into the runner. There is deliberately
-         *       no separate readiness route: ``/admin/coord/runners`` reads it here with
-         *       ``device_id`` and ``history=false``. Passed through untouched, with the
+         *       no separate readiness route: ``/admin/coord/machine-maintenance`` reads
+         *       it here with ``device_id`` and ``history=false``. Passed through untouched, with the
          *       NULL rule once more doing real work — ``readiness_safe: null`` is "the
          *       runner could not decide", and ``readiness_state`` is coord's freshness
          *       verdict so no browser subtracts its own clock from ``sampled_at``. A
@@ -37223,6 +37414,8 @@ export interface components {
              * Format: uuid
              */
             device_id: string;
+            /** Lanes */
+            lanes?: ("agent" | "ci")[] | null;
             /** Reason */
             reason: string;
             /**
@@ -43573,6 +43766,18 @@ export interface components {
             username?: string | null;
         };
         /**
+         * MachineCiHostLinkBody
+         * @description Closed body for ``POST /operations/fleet/machines/{device_id}/ci-hosts``.
+         *
+         *     The link is a DECLARATION that a GitHub runner name is this machine
+         *     (§D2) — never inferred from names, because a wrong guess pauses the wrong
+         *     box.
+         */
+        MachineCiHostLinkBody: {
+            /** Ci Host */
+            ci_host: string;
+        };
+        /**
          * MachineCreate
          * @description Register a machine. Creation also mints a one-time enrollment code.
          */
@@ -43836,6 +44041,71 @@ export interface components {
             steps?: components["schemas"]["MacroStepSchema"][] | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /**
+         * MaintenanceWindowCloseBody
+         * @description Closed body for ``POST /operations/fleet/maintenance-window/{id}/close``.
+         *
+         *     Returning a machine to service early is as much an operator decision as
+         *     taking it out, and coord records both.
+         */
+        MaintenanceWindowCloseBody: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * MaintenanceWindowLeverBody
+         * @description Closed body for ``PATCH /operations/fleet/maintenance-window/{id}``.
+         *
+         *     One lever, held or released. ``accept_ci_queueing`` is sent only when the
+         *     caller set it: it answers a ``last_matching_host`` refusal on re-holding
+         *     the ``ci`` lever, and an absent answer must stay absent rather than become
+         *     an explicit "no".
+         */
+        MaintenanceWindowLeverBody: {
+            /** Accept Ci Queueing */
+            accept_ci_queueing?: boolean | null;
+            /** Held */
+            held: boolean;
+            /**
+             * Lever
+             * @enum {string}
+             */
+            lever: "agent_work" | "ci";
+        };
+        /**
+         * MaintenanceWindowOpenBody
+         * @description Closed body for ``POST /operations/fleet/maintenance-window``.
+         *
+         *     ``until`` and ``reason`` are REQUIRED for the same reason a drain's are: a
+         *     window is a fleet hold, and a hold with no deadline is how a machine — or,
+         *     here, a GitHub label — silently leaves the fleet forever (§D5).
+         *
+         *     ``accept_ci_queueing`` is always sent. It is the operator's explicit
+         *     answer to coord's ``last_matching_host`` refusal (§D4): pausing CI on the
+         *     last host that matches ``[self-hosted, qontinui]`` makes CI jobs queue at
+         *     GitHub until the window ends. It defaults to ``False`` so that question is
+         *     only ever answered by a deliberate second request.
+         */
+        MaintenanceWindowOpenBody: {
+            /**
+             * Accept Ci Queueing
+             * @default false
+             */
+            accept_ci_queueing: boolean;
+            /** Ci Host */
+            ci_host?: string | null;
+            /** Levers */
+            levers: ("agent_work" | "ci")[];
+            /** Machine Device Id */
+            machine_device_id?: string | null;
+            /** Reason */
+            reason: string;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
         };
         /**
          * MarkAllReadResponse
@@ -58400,6 +58670,8 @@ export interface components {
              * Format: uuid
              */
             device_id: string;
+            /** Lanes */
+            lanes?: ("agent" | "ci")[] | null;
             /** Reason */
             reason: string;
         };
@@ -82435,6 +82707,124 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_fleet_machines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_machines_device_id_ci_hosts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_machines_device_id_ci_hosts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MachineCiHostLinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_machines_device_id_ci_hosts_ci_host_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+                ci_host: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_fleet_machines_hostname_patch: {
         parameters: {
             query?: never;
@@ -82459,6 +82849,177 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_maintenance_window_get: {
+        parameters: {
+            query?: {
+                /** @description Only windows on this workstation device. */
+                machine?: string | null;
+                /** @description Only windows on this bare GitHub runner name. */
+                ci_host?: string | null;
+                /** @description Include closed and expired windows (newest first). */
+                include_closed?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_maintenance_window_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceWindowOpenBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_maintenance_window_window_id_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceWindowLeverBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_maintenance_window_window_id_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceWindowCloseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_maintenance_window_window_id_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
