@@ -63,6 +63,7 @@ from app.middleware.private_uploads import (
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.upstream_refusal import RouteScopeMiddleware
 from app.overview import files as overview_files
 from app.overview.router import (
     CONTRACT_RESPONSE_HEADERS as OVERVIEW_CONTRACT_HEADERS,
@@ -144,10 +145,15 @@ app.add_middleware(
     },
 )
 
-# Add rate limiting
+# Add rate limiting. The 429 handler is registered whatever RATE_LIMIT_ENABLED
+# says: `user_limiter` has no `enabled=` and limits regardless, and every 429
+# must name its lane (`rate_limit_exceeded_handler`).
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
+# Lets a coord/runner 429 passed through deep inside a route name the route it
+# refused (`app.middleware.upstream_refusal`). Pure ASGI; changes no traffic.
+app.add_middleware(RouteScopeMiddleware)
 if settings.RATE_LIMIT_ENABLED:
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
 
 # Add trusted host middleware for production
 # Custom implementation that exempts health check endpoints from host validation
@@ -291,6 +297,15 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # withholding it leaves a client able to see THAT it was limited and not
             # for how long.
             "Retry-After",
+            # Also emitted by `rate_limit_exceeded_handler` on every 429: WHICH
+            # limiter and limit refused (`<limiter>:<scope or route
+            # template>`) and WHAT its bucket is keyed on
+            # (`user|bearer|peer|ip`). A browser that cannot
+            # read them sees a 429 it cannot attribute — the defect they exist
+            # to close (plan 2026-11-23-an-exec-mode-pass-draws-an-unattributed-
+            # load-time-429, Phase 2).
+            "X-RateLimit-Lane",
+            "X-RateLimit-Key-Kind",
             # The session-repository export's provenance set.
             *EXPORT_PROVENANCE_HEADERS,
             # The plan-library exports' provenance sets. `X-Content-Sha256` overlaps

@@ -28,6 +28,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Runner } from "@qontinui/shared-types";
 import { isRunnerReachable } from "./origin";
+import { timeoutAbortReason } from "@/lib/abort-reasons";
 
 export type RunnerLocality = "local" | "not_local" | "unknown";
 
@@ -63,7 +64,10 @@ export async function isRunnerLocal(
   if (!isRunnerReachable()) return "unknown";
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(
+    () => controller.abort(timeoutAbortReason()),
+    timeoutMs
+  );
   let response: Response;
   try {
     response = await fetch(

@@ -37,9 +37,6 @@ import {
   isParseableRedisUrl,
   REDIS_URL_UNPARSEABLE_MESSAGE,
 } from "@/lib/ui-bridge/redis-url";
-
-// Re-exported so existing importers of the host-only helper keep working.
-export { redisHostOnly };
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 import {
   resolveEndpoint,

@@ -545,7 +545,10 @@ export default function CoordAgentRegistryPage() {
             <div key={row.agent_name}>
               {/* R2 — one record, one line. R4 — accent on the edge only. */}
               <div
-                className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md border bg-card/30 ${rowAccentClass(
+                // `@container/agent-row`: the line is its own NAMED query
+                // container, so its optional badge answers to the ROW's width
+                // (as RecordRow's slots do), not the viewport's.
+                className={`@container/agent-row flex items-center gap-2 px-3 py-2 text-sm rounded-md border bg-card/30 ${rowAccentClass(
                   row
                 )} ${isOpen ? "rounded-b-none" : ""}`}
                 data-testid={`agent-registry-row-${row.agent_name}`}
@@ -591,10 +594,13 @@ export default function CoordAgentRegistryPage() {
                 >
                   {def.label}
                 </Badge>
+                {/* From a 45rem ROW, like RecordRow's reason, never by the
+                    viewport; at every width the expanded panel's policy toggle
+                    ("Stop requiring a disposition") implies the state. */}
                 {row.policy_required && (
                   <Badge
                     variant="outline"
-                    className={`text-[11px] whitespace-nowrap hidden sm:inline-flex ${WAITING_AMBER}`}
+                    className={`text-[11px] whitespace-nowrap hidden @min-[45rem]/agent-row:inline-flex ${WAITING_AMBER}`}
                     title="Disabling this agent forces the member to choose a disposition."
                   >
                     policy required

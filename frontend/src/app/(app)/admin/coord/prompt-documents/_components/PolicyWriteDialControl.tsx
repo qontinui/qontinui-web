@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageLocked } from "../_hooks/usePageWriteGuardContext";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -19,7 +20,6 @@ import { usePolicyWritePolicy } from "../_hooks/usePolicyWritePolicy";
 import { WaitingForProject } from "./WaitingForProject";
 import {
   POLICY_WRITE_CONFIRMED_LEVELS,
-  POLICY_WRITE_DEFAULT_LEVEL,
   POLICY_WRITE_LEVEL_HELP,
   POLICY_WRITE_SELECTABLE_LEVELS,
   type PolicyWriteLevel,
@@ -56,14 +56,15 @@ import {
  * correctly cannot be changed safely — the [policy: ux-priorities]
  * predictability rule `AgentWriteAccessControl` states for its own setting.
  *
- * - **"No row" is a named default, never `off`.** Coord answers
- *   `effective_level: "off"` for two different facts — nobody ever wrote a row,
- *   and an operator turned it off — and for this domain they resolve in
- *   OPPOSITE directions. Rendering the raw value would tell every tenant that
- *   has never touched this dial that agent policy writes are disabled, when they
- *   are working normally.
- * - **A level coord cannot parse resolves to `off`, and says so.** The dial
- *   shows what the fleet enforces, and names the row that needs fixing.
+ * - **"No row" is a named default, never an operator's choice.** With no row
+ *   coord serves its typed default (`tightening_only`) as `effective_level`
+ *   and `resolved_scope: "none"` (qontinui-coord#4239), and the control labels
+ *   it as coord's built-in default so nobody reads it as a decision someone
+ *   made.
+ * - **A row coord cannot parse resolves to `off`, and says so.** The dial
+ *   shows what the fleet enforces, and names the row that needs fixing. A
+ *   no-row default this console cannot parse (vocabulary skew) is shown as
+ *   UNKNOWN, because coord enforces a level the console cannot name.
  * - **Which scope band answered.** This control only ever writes the *tenant*
  *   band, so a narrower `repo` row winning means a write here changes a row that
  *   stays overridden — the operator has to be told before they conclude the dial
@@ -84,6 +85,7 @@ export function PolicyWriteDialControl() {
     error,
     displayLevel,
     isDefaulted,
+    defaultUnreadable,
     unrecognizedLevel,
     readbackError,
     lastWrite,
@@ -99,6 +101,7 @@ export function PolicyWriteDialControl() {
   );
 
   const canEdit = policy?.can_edit ?? false;
+  const pageLocked = usePageLocked();
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing the
@@ -191,6 +194,10 @@ export function PolicyWriteDialControl() {
         domain-agnostic GET keeps handing back the raw string, so this is the one
         case where the stored value and the enforced value differ outright. Name
         both, and name the row, because nothing else on this page can.
+
+        A NO-ROW answer whose served default is unparseable is vocabulary skew:
+        coord enforces a level this console does not know, so it is UNKNOWN
+        here — named, never shown as `off`.
       */}
       {unrecognizedLevel !== null ? (
         <div
@@ -199,16 +206,28 @@ export function PolicyWriteDialControl() {
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
           <p className="text-muted-foreground">
-            The <span className="font-mono">{policy?.resolved_scope}</span>-band
-            row stores the level{" "}
-            <code className="font-mono">{unrecognizedLevel}</code>, which coord
-            does not recognise. Coord refuses <strong>every</strong> agent
-            policy write while that row is unreadable — an authority setting it
-            cannot read is not permission — so the level in force is{" "}
-            <span className="font-mono">off</span>.{" "}
-            {policy?.resolved_scope === "tenant"
-              ? "Setting a level below rewrites that row and clears this."
-              : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+            {isDefaulted ? (
+              <>
+                No row is set, and coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here. Setting a level below writes a tenant row
+                this console can read.
+              </>
+            ) : (
+              <>
+                The <span className="font-mono">{policy?.resolved_scope}</span>
+                -band row stores the level{" "}
+                <code className="font-mono">{unrecognizedLevel}</code>, which
+                coord does not recognise. Coord refuses <strong>every</strong>{" "}
+                agent policy write while that row is unreadable — an authority
+                setting it cannot read is not permission — so the level in force
+                is <span className="font-mono">off</span>.{" "}
+                {policy?.resolved_scope === "tenant"
+                  ? "Setting a level below rewrites that row and clears this."
+                  : "This control writes the tenant band, so it cannot rewrite that row — the broken row has to be fixed at its own band."}
+              </>
+            )}
           </p>
         </div>
       ) : null}
@@ -220,18 +239,27 @@ export function PolicyWriteDialControl() {
         >
           <span className="text-muted-foreground">In force:</span>
           <Badge variant="secondary" className="font-mono">
-            {displayLevel}
+            {defaultUnreadable ? "unknown" : displayLevel}
           </Badge>
-          {isDefaulted ? (
+          {unrecognizedLevel !== null ? (
+            isDefaulted ? (
+              <span className="text-muted-foreground">
+                — coord&apos;s served default{" "}
+                <code className="font-mono">{unrecognizedLevel}</code> is a
+                level this console does not recognise, so what coord enforces
+                cannot be shown here
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                — coord&apos;s fail-closed reading of an unrecognised{" "}
+                <span className="font-mono">{policy.resolved_scope}</span>-band
+                row
+              </span>
+            )
+          ) : isDefaulted ? (
             <span className="text-muted-foreground">
-              — coord&apos;s built-in default ({POLICY_WRITE_DEFAULT_LEVEL}); no
-              one has set this tenant&apos;s dial
-            </span>
-          ) : unrecognizedLevel !== null ? (
-            <span className="text-muted-foreground">
-              — coord&apos;s fail-closed reading of an unrecognised{" "}
-              <span className="font-mono">{policy.resolved_scope}</span>-band
-              row
+              — coord&apos;s built-in default ({displayLevel}); no one has set
+              this tenant&apos;s dial
             </span>
           ) : (
             <span className="text-muted-foreground">
@@ -272,9 +300,12 @@ export function PolicyWriteDialControl() {
       ) : null}
 
       <RadioGroup
-        value={displayLevel ?? undefined}
+        // `""` rather than `undefined`: the group stays CONTROLLED with nothing
+        // selected while the level is unknown, so a cancelled confirmation
+        // cannot leave a radio checked that the fleet is not on.
+        value={displayLevel ?? ""}
         onValueChange={(v) => onSelect(v as PolicyWriteLevel)}
-        disabled={!canEdit || saving || loading}
+        disabled={!canEdit || saving || loading || pageLocked}
         className="gap-3"
       >
         {POLICY_WRITE_SELECTABLE_LEVELS.map((level) => (
@@ -372,6 +403,7 @@ export function PolicyWriteDialControl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={pageLocked}
               onClick={() => {
                 if (pendingLevel) void setLevel(pendingLevel);
                 setPendingLevel(null);

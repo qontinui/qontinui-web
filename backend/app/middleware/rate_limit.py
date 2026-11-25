@@ -1,8 +1,12 @@
 import functools
 import hashlib
+import inspect
 import logging
+import math
 import time
+from typing import Any
 
+import structlog
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -11,7 +15,29 @@ from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+#: slowapi's own refusal line (``Limiter.__evaluate_limits``). It names the
+#: bucket KEY (a bearer digest or an address) and the concrete path.
+_SLOWAPI_REFUSAL_MSG = "ratelimit %s (%s) exceeded at endpoint: %s"
+
+
+class _DropSlowapiRefusalLine(logging.Filter):
+    """Drops slowapi's per-refusal line and nothing else.
+
+    ``rate_limit_exceeded_handler`` logs every refusal without the key or the
+    path (``rate_limit_refused``), so slowapi's line only leaks them. Its
+    other records — storage unreachable / recovered, a skipped limit — pass.
+    Matched on the unformatted ``record.msg``, which carries no caller data.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.msg != _SLOWAPI_REFUSAL_MSG
+
+
+_slowapi_logger = logging.getLogger("slowapi")
+if not any(isinstance(f, _DropSlowapiRefusalLine) for f in _slowapi_logger.filters):
+    _slowapi_logger.addFilter(_DropSlowapiRefusalLine())
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -120,22 +146,253 @@ user_limiter = Limiter(
 )
 
 
-# Custom rate limit exceeded handler
+#: What a rate-limit key's prefix says it is keyed on. Every key function in
+#: this module prefixes its key (``bearer:<digest>``, ``peer:<addr>``,
+#: ``user:<id>``, ``refresh-user:<sub>``, ``ip:<addr>``) except slowapi's own
+#: ``get_remote_address``, which answers a bare address.
+_KEY_KIND_BY_PREFIX: tuple[tuple[str, str], ...] = (
+    ("bearer:", "bearer"),
+    ("peer:", "peer"),
+    ("user:", "user"),
+    ("refresh-user:", "user"),
+    ("ip:", "ip"),
+)
+
+
+def _refusal_key_kind(request: Request, key_func: Any) -> str:
+    """``user`` | ``bearer`` | ``peer`` | ``ip`` — what the refusing bucket is
+    keyed on — or ``unknown`` when that cannot be said.
+
+    Derived from the limit's own key function, by re-deriving the key it
+    computed for this request and reading the key's KIND off its prefix. The
+    function's name is not enough: ``get_user_identifier`` keys on the socket
+    address whenever ``request.state.user`` is unset (which, before the limiter
+    runs, it always is), and a header naming it ``user`` would point a reader at
+    a per-user bucket that does not exist. The key itself never leaves this
+    function — it is a bearer digest, an address or a user id.
+    """
+    if key_func is get_remote_address:
+        return "ip"
+    try:
+        # slowapi's own dispatch: the request only to a function that declares
+        # a parameter named ``request``, else no arguments.
+        if "request" in inspect.signature(key_func).parameters:
+            key = str(key_func(request))
+        else:
+            key = str(key_func())
+    except Exception:
+        return "unknown"
+    for prefix, kind in _KEY_KIND_BY_PREFIX:
+        if key.startswith(prefix):
+            return kind
+    return "unknown"
+
+
+def _refusal_lane(request: Request, limit: Any) -> str:
+    """``<limiter>:<scope or route template>``.
+
+    ``<limiter>`` is the name of the module limiter that registered the limit
+    (``_module_limiters``), ``unknown`` when none did. Then the limit's scope
+    when it has one, else the ROUTE TEMPLATE (``/api/v1/users/me``,
+    ``/items/{item_id}``) — never the concrete path, which can carry an id —
+    and ``unknown`` when neither is readable.
+    """
+    holder = _limiter_holding(limit) if limit is not None else None
+    return f"{holder[0] if holder is not None else 'unknown'}:{_scope_or_template(request, limit)}"
+
+
+#: Every kind a refusal's ``X-RateLimit-Key-Kind`` may name: the slowapi
+#: key prefixes (``_KEY_KIND_BY_PREFIX``), plus ``tenant`` (a tenant-wide
+#: quota) and ``upstream`` (a service behind this backend refused us), and
+#: ``unknown`` when it cannot be said.
+REFUSAL_KEY_KINDS = frozenset(
+    {"user", "bearer", "peer", "ip", "tenant", "upstream", "unknown"}
+)
+
+
+def refusal_headers(
+    lane: str, key_kind: str, *, retry_after: str | None = None
+) -> dict[str, str]:
+    """The headers every 429 this backend answers carries.
+
+    ``X-RateLimit-Lane`` names the limiter and its scope
+    (``<limiter>:<scope or route template>``) and ``X-RateLimit-Key-Kind``
+    what its bucket is keyed on — never a key, a token, an address or an id.
+    ``Retry-After`` only when the refusing side knows it. Every 429 emitted in
+    ``app`` passes ``headers=refusal_headers(...)``
+    (``test_every_429_emitted_in_app_carries_the_refusal_headers``).
+    """
+    if key_kind not in REFUSAL_KEY_KINDS:
+        raise ValueError(f"unknown refusal key kind {key_kind!r}")
+    headers = {"X-RateLimit-Lane": lane, "X-RateLimit-Key-Kind": key_kind}
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return headers
+
+
+def route_template(request: Request) -> str:
+    """The matched route's TEMPLATE (``/items/{item_id}``), never the concrete
+    path, which can carry an id. ``unknown`` when no route matched."""
+    template = getattr(request.scope.get("route"), "path", None)
+    return template if isinstance(template, str) and template else "unknown"
+
+
+def _scope_or_template(request: Request, limit: Any) -> str:
+    try:
+        scope = limit.scope
+    except Exception:
+        # slowapi evaluates a callable scope against a global it never
+        # defines; no limit here declares one, and a refusal must still answer.
+        scope = ""
+    if isinstance(scope, str) and scope:
+        return scope
+    return route_template(request)
+
+
+#: The lane name of each module limiter, by the variable that holds it. A
+#: ``Limiter`` assigned in this module without an entry here is reported by
+#: ``_module_limiters`` under its variable name, and
+#: ``test_every_limiter_in_the_module_is_enumerated_and_named`` fails on it.
+_LIMITER_NAMES: dict[str, str] = {
+    "limiter": "default",
+    "user_limiter": "user",
+    "auth_limiter": "auth",
+    "api_limiter": "api",
+    "refresh_limiter": "refresh",
+}
+
+
+def _module_limiters() -> list[tuple[str, str, Limiter]]:
+    """``(variable, lane name, limiter)`` for every ``Limiter`` this module
+    holds, read from the module's own namespace rather than a hand list."""
+    return [
+        (variable, _LIMITER_NAMES.get(variable, variable), value)
+        for variable, value in list(globals().items())
+        if isinstance(value, Limiter)
+    ]
+
+
+def _group_yields(group: Any, limit: Any) -> bool:
+    """Whether a ``LimitGroup`` (a dynamic, callable limit) built ``limit``:
+    slowapi makes a fresh ``Limit`` from the group per request, so identity
+    cannot match it; the fields the group copies into each ``Limit`` can."""
+    return (
+        group.key_function is limit.key_func
+        and getattr(group, "_LimitGroup__scope", None)
+        == getattr(limit, "_Limit__scope", None)
+        and group.per_method == limit.per_method
+        and group.methods == limit.methods
+        and group.cost == limit.cost
+    )
+
+
+def _limiter_holding(limit: Any) -> tuple[str, Limiter] | None:
+    """``(lane name, limiter)`` of the module limiter that registered
+    ``limit`` — slowapi's exception names the limit, not the limiter whose
+    storage counted it. Static limits match by identity, dynamic ones by
+    ``_group_yields``."""
+    for _variable, name, candidate in _module_limiters():
+        for registered in candidate._route_limits.values():
+            if any(entry is limit for entry in registered):
+                return name, candidate
+        for groups in candidate._dynamic_route_limits.values():
+            if any(_group_yields(group, limit) for group in groups):
+                return name, candidate
+    return None
+
+
+def _refusal_retry_after(request: Request, limit: Any) -> str:
+    """Seconds until the refusing bucket admits again.
+
+    Read from the limiter's own storage when it can say: slowapi leaves the
+    refused bucket's identifiers on ``request.state.view_rate_limit``, and
+    ``get_window_stats`` answers that bucket's reset time. Otherwise the
+    window's length (``3600`` for ``N per hour``) — the longest a caller can
+    have to wait. ``60`` only when the limit cannot say either. A storage
+    error never fails the refusal; it only falls back.
+    """
+    try:
+        window = int(limit.limit.get_expiry())
+    except Exception:
+        return "60"
+    if window <= 0:
+        return "60"
+    try:
+        holder = _limiter_holding(limit)
+        item, identifiers = request.state.view_rate_limit
+        if holder is not None:
+            stats = holder[1].limiter.get_window_stats(item, *identifiers)
+            until_reset = math.ceil(stats.reset_time - time.time())
+            if 0 < until_reset <= window:
+                return str(until_reset)
+    except Exception:
+        pass
+    return str(window)
+
+
+def _log_refusal(**fields: str) -> None:
+    """Log one ``rate_limit_refused`` line carrying ONLY ``fields``.
+
+    The app's logging chain merges structlog's context into every line, and
+    ``RequestIDMiddleware`` binds the caller's ``client_host`` and the concrete
+    ``path`` (which can carry an id) there. This line names a lane and a bucket
+    kind, never a caller, so the context is set aside for this one call and
+    restored after it — the request's later lines keep their correlation.
+    ``request_id`` alone is kept: it identifies the request, not the caller,
+    and joins this line to the request's own started/completed lines.
+
+    The bucket kind is logged as ``bucket_kind``: the log sanitizer redacts
+    every field whose name contains ``key``.
+    """
+    saved = structlog.contextvars.get_contextvars()
+    structlog.contextvars.clear_contextvars()
+    if "request_id" in saved:
+        structlog.contextvars.bind_contextvars(request_id=saved["request_id"])
+    try:
+        logger.warning("rate_limit_refused", **fields)
+    finally:
+        structlog.contextvars.bind_contextvars(**saved)
+
+
 async def rate_limit_exceeded_handler(
     request: Request, exc: RateLimitExceeded
 ) -> Response:
-    response = JSONResponse(
+    """Answer a refusal with the lane it was refused on.
+
+    Every 429 carries ``X-RateLimit-Lane`` (which limiter and which limit
+    refused, ``_refusal_lane``) and ``X-RateLimit-Key-Kind`` (what its bucket
+    is keyed on), and logs one ``rate_limit_refused`` line with those fields,
+    plus the request id, and nothing else (``_log_refusal``) — never the key,
+    the token, the address, the user id or the concrete path.
+    ``Retry-After`` is the seconds until the refused bucket's window resets,
+    else the window's length (``_refusal_retry_after``). Plan
+    ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429``,
+    Phase 2: a refusal that named nothing could not be attributed.
+    """
+    limit = exc.limit
+    lane = _refusal_lane(request, limit)
+    key_kind = (
+        _refusal_key_kind(request, limit.key_func) if limit is not None else "unknown"
+    )
+    retry_after = _refusal_retry_after(request, limit)
+    _log_refusal(
+        lane=lane,
+        bucket_kind=key_kind,
+        limit=str(limit.limit) if limit is not None else "unknown",
+        method=request.method,
+        retry_after=retry_after,
+    )
+    return JSONResponse(
         content={
             "error": "RATE_LIMIT_EXCEEDED",
             "message": f"Rate limit exceeded: {exc.detail}",
+            "lane": lane,
+            "key_kind": key_kind,
             "timestamp": time.time(),
         },
         status_code=429,
+        headers=refusal_headers(lane, key_kind, retry_after=retry_after),
     )
-    response.headers["Retry-After"] = (
-        str(exc.retry_after) if hasattr(exc, "retry_after") else "60"
-    )
-    return response
 
 
 # Specific limits for different operations

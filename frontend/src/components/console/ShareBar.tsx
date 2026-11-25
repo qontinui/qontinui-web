@@ -116,7 +116,12 @@ export interface ShareListItem {
   count: number | null;
   /** Full-text tooltip for the label (the wire token belongs here, not on screen). */
   title?: string;
-  /** Short secondary text, shown from `sm` up (e.g. a per-line split). */
+  /**
+   * Short secondary text (e.g. a per-line split), shown once the LINE's
+   * content box is 39rem wide; below that it is not displayed and the line
+   * carries its text (`detailTitle`, else the detail itself when a string) as
+   * the `<li>`'s `title`.
+   */
   detail?: ReactNode;
   /**
    * Tooltip for the detail, which truncates at 28ch — so what the ellipsis
@@ -183,40 +188,59 @@ export function ShareList({
       className={["space-y-1", className ?? ""].filter(Boolean).join(" ")}
       data-testid={testId}
     >
-      {rankShares(items).map((item) => (
-        <li
-          key={item.key}
-          data-share-key={item.key}
-          data-testid={item["data-testid"]}
-          className="flex items-center gap-3 rounded-md border border-border bg-card/30 px-3 py-1.5 text-sm"
-        >
-          <span className="min-w-0 flex-1 truncate" title={item.title}>
-            {item.label}
-          </span>
-          {item.detail != null && (
-            <span
-              className="hidden sm:inline shrink-0 truncate max-w-[28ch] text-xs text-muted-foreground"
-              title={
-                item.detailTitle ??
-                (typeof item.detail === "string" ? item.detail : undefined)
-              }
-            >
-              {item.detail}
-            </span>
-          )}
-          <span
-            className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
-            data-share-count={item.count === null ? "unknown" : item.count}
+      {rankShares(items).map((item) => {
+        const detailTitle =
+          item.detail == null
+            ? undefined
+            : (item.detailTitle ??
+              (typeof item.detail === "string" ? item.detail : undefined));
+        return (
+          // `@container/share-row`: the line is its own NAMED query container,
+          // so the detail answers to the LINE's width, never the viewport's.
+          // The query reads the `<li>`'s CONTENT box (inside `px-3` and the
+          // border): its fixed parts — three gaps, the count, the ShareBar —
+          // are ~221 px, so with the label's 12rem floor and the detail at
+          // 28ch the detail fits from a 39rem (650 px) line. Below that it is
+          // not displayed, and a hidden element's title cannot be hovered and
+          // lines have no expansion, so the `<li>` carries the detail's text
+          // as its own `title` at every width.
+          <li
+            key={item.key}
+            data-share-key={item.key}
+            data-testid={item["data-testid"]}
+            title={detailTitle}
+            className="@container/share-row flex items-center gap-3 rounded-md border border-border bg-card/30 px-3 py-1.5 text-sm"
           >
-            {item.count === null
-              ? "unknown"
-              : unit
-                ? `${item.count} ${unit}`
-                : item.count}
-          </span>
-          <ShareBar numerator={item.count} denominator={total} />
-        </li>
-      ))}
+            <span className="min-w-0 grow basis-48 truncate" title={item.title}>
+              {item.label}
+            </span>
+            {item.detail != null && (
+              // `shrink-[999]`, not `shrink-0`: the detail is the item that
+              // gives up width first, so the label (the line's identifying
+              // text) keeps its 12rem basis.
+              // It keeps its own `title` too (the same text as the `<li>`'s), so
+              // a hover on the visible detail names it directly.
+              <span
+                className="hidden @min-[39rem]/share-row:inline shrink-[999] truncate max-w-[28ch] text-xs text-muted-foreground"
+                title={detailTitle}
+              >
+                {item.detail}
+              </span>
+            )}
+            <span
+              className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
+              data-share-count={item.count === null ? "unknown" : item.count}
+            >
+              {item.count === null
+                ? "unknown"
+                : unit
+                  ? `${item.count} ${unit}`
+                  : item.count}
+            </span>
+            <ShareBar numerator={item.count} denominator={total} />
+          </li>
+        );
+      })}
     </ol>
   );
 }

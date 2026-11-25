@@ -78,13 +78,16 @@ import {
   FACET_VIEWS,
   NO_COUNTS,
   OPEN_HEADLINES,
+  TOPICS_NOT_READ,
   UNREAD_COUNT,
   classifySubprojectReadFailure,
+  combineTopicsAvailability,
   countsFromFacet,
   facetQuery,
   mergeStreamRows,
   openFromParts,
   readCountsFacet,
+  topicsAvailabilityOf,
   viewQuery,
   viewStreams,
   type CountReading,
@@ -94,6 +97,7 @@ import {
   type SubprojectCounts,
   type SubprojectReadFailure,
   type SubprojectTab,
+  type TopicsAvailability,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
 import { useStampedFailure } from "@/components/admin/coord/subprojects/useStampedFailure";
 
@@ -112,6 +116,10 @@ interface RowsValue {
   /** How many pages are loaded; a poll refreshes only a single page. */
   pages: number;
   asOf: string | null;
+  /** Each answered read's `topics_status`. They are combined, so a row's
+   *  `topic: null` reads as "no topic" only when every read behind the rows
+   *  said `ok`. */
+  topics: TopicsAvailability[];
 }
 
 export interface SubprojectsRows {
@@ -129,6 +137,9 @@ export interface SubprojectsRows {
   /** How many pages are loaded (more than one pauses the row refresh). */
   pages: number;
   asOf: string | null;
+  /** Whether these rows' topics are known: `ok` only when every read behind
+   *  them said `topics_status: "ok"` (topics plan D9). */
+  topics: TopicsAvailability;
 }
 
 export interface SubprojectsList {
@@ -475,6 +486,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
           truncated: false,
           pages: 1,
           asOf: null,
+          topics: [],
         };
         answers.forEach((a, i) => {
           const view = streams[i];
@@ -482,6 +494,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
           value.perStream[view] = streamItems(a.value);
           value.cursors[view] = a.value.next_cursor ?? null;
           value.truncated ||= a.value.truncated === true;
+          value.topics.push(topicsAvailabilityOf(a.value.topics_status));
           value.asOf = latest(
             value.asOf,
             typeof a.value.generated_at === "string"
@@ -579,6 +592,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
       cursors: { ...current.cursors },
       truncated: false,
       pages: current.pages + 1,
+      topics: [...current.topics],
     };
     answers.forEach((a, i) => {
       const view = streams[i];
@@ -590,6 +604,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
       ];
       next.cursors[view] = a.value.next_cursor ?? null;
       next.truncated ||= a.value.truncated === true;
+      next.topics.push(topicsAvailabilityOf(a.value.topics_status));
     });
     settleRows(seq, { value: next });
   }, [issueRows, settleRows, readRows]);
@@ -618,6 +633,10 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
     truncated: sameTab && rowsValue !== null ? rowsValue.truncated : false,
     pages: sameTab && rowsValue !== null ? rowsValue.pages : 0,
     asOf: sameTab && rowsValue !== null ? rowsValue.asOf : null,
+    topics:
+      sameTab && rowsValue !== null
+        ? combineTopicsAvailability(rowsValue.topics)
+        : TOPICS_NOT_READ,
   };
 
   const shownCounts = useMemo<SubprojectCounts>(

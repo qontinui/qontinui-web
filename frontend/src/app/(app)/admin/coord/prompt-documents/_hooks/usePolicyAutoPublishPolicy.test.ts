@@ -286,3 +286,82 @@ describe("usePolicyAutoPublishPolicy", () => {
     expect(result.current.policy?.effective_level).toBe("on");
   });
 });
+
+/**
+ * The level vocabulary. Since qontinui-coord#4239, coord serves the typed
+ * default as `effective_level` when no row matches (before it, that answer
+ * read `"off"`):
+ *
+ * | Row | `effective_level` | `resolved_scope` | In force |
+ * |---|---|---|---|
+ * | none | `"on"` — coord's typed default | `"none"` | `on`, flagged defaulted |
+ * | present, master off | `"off"` | the band | `off` — an operator's choice |
+ * | present, unparseable level | the raw string | the band | `off` — fail-closed |
+ * | none, unparseable level | the raw string | `"none"` | UNKNOWN — vocabulary skew |
+ */
+describe("usePolicyAutoPublishPolicy — the level in force", () => {
+  async function render(v: object) {
+    fetchFleetPolicy.mockResolvedValue(v);
+    const { result } = renderHook(() => usePolicyAutoPublishPolicy(), {
+      wrapper: withPageGuard(PINNED_PAGE),
+    });
+    await waitFor(() => expect(result.current.policy).not.toBeNull());
+    return result;
+  }
+
+  it("shows coord's served default for a missing row and flags it as defaulted", async () => {
+    const result = await render({
+      ...view("on"),
+      master_enabled: false,
+      resolved_scope: "none",
+    });
+
+    expect(result.current.displayLevel).toBe("on");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.unrecognizedLevel).toBeNull();
+  });
+
+  it("honours a master-disabled row as off", async () => {
+    const result = await render({ ...view("off"), master_enabled: false });
+
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(false);
+  });
+
+  it("resolves an unparseable row fail-closed and keeps the raw string", async () => {
+    const result = await render(view("sometimes"));
+
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(false);
+    expect(result.current.unrecognizedLevel).toBe("sometimes");
+  });
+
+  it("shows a no-row answer whose served level is unparseable as UNKNOWN", async () => {
+    // Vocabulary skew: coord serving, with no row, a default this console does
+    // not know. Coord enforces that default, so `off` would be false; the
+    // console used to substitute its own copy of `on` here, which masked this.
+    const result = await render({
+      ...view("sometimes"),
+      master_enabled: false,
+      resolved_scope: "none",
+    });
+
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.defaultUnreadable).toBe(true);
+    expect(result.current.displayLevel).toBeNull();
+    expect(result.current.unrecognizedLevel).toBe("sometimes");
+  });
+
+  it("reads the served default rather than a console copy of it", async () => {
+    // Not the old console constant `on`: a revert to it fails this.
+    const result = await render({
+      ...view("off"),
+      master_enabled: false,
+      resolved_scope: "none",
+    });
+
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.unrecognizedLevel).toBeNull();
+  });
+});
