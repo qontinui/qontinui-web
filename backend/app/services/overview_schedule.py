@@ -184,8 +184,9 @@ class _Reads:
     degraded: bool = False
 
     def fail(self, exc: CoordReadError) -> UnknownReason:
-        if exc.reason == "coord_unreachable":
-            self.degraded = True
+        # Any failed read (outage OR denial) means this is not a real coord
+        # answer, so the cache keeps the last good envelope instead of replacing it.
+        self.degraded = True
         return exc.reason
 
 
@@ -400,7 +401,7 @@ async def build_coord_schedule(
         logger.warning(
             "overview_schedule_unparseable", tenant_id=str(tenant_id), error=repr(exc)
         )
-        return _unknown_envelope(tenant_id, source.door, "unparseable", now), False
+        return _unknown_envelope(tenant_id, source.door, "unparseable", now), True
     except TenantMismatch as exc:
         metrics.tenant_mismatch += 1
         logger.warning(
@@ -522,17 +523,26 @@ async def _build(source: CoordScheduleSource, reads: _Reads) -> ScheduleEnvelope
     )
 
 
+def _document_of(payload: dict[str, Any]) -> dict[str, Any]:
+    """A prompt-document read answers flat or wrapped as ``{"document": {...}}``.
+    A ``document`` key that is not an object is a payload of a shape this reader
+    does not know: ``ValueError``, which the build maps to an ``unparseable``
+    envelope (never an assertion, which would 500 the route)."""
+    if "document" in payload:
+        inner = payload["document"]
+        if not isinstance(inner, dict):
+            raise ValueError("document payload was not an object")
+        return inner
+    return payload
+
+
 async def _read_initiative(
     source: CoordScheduleSource, reads: _Reads, kind: str, name: str
 ) -> tuple[InitiativeFacts, int | None]:
-    payload = await source.document(kind, name)
-    doc = (
-        payload.get("document")
-        if isinstance(payload.get("document"), dict)
-        else payload
-    )
-    assert isinstance(doc, dict)
-    assert_rows_in_tenant([doc], reads.tenant_id, what="initiative", require=False)
+    doc = _document_of(await source.document(kind, name))
+    # A document must prove its tenant on either door (coord's document row
+    # carries a non-null tenant_id), or it is refused (plan D7).
+    assert_rows_in_tenant([doc], reads.tenant_id, what="initiative")
     body = doc.get("body")
     if not isinstance(body, str):
         raise CoordReadError("coord_unreachable", "initiative document carried no body")
@@ -721,12 +731,8 @@ async def _assemble(
         if not r_name:
             continue
         try:
-            payload = await source.document(r_kind, r_name)
-            inner = payload.get("document")
-            doc: dict[str, Any] = inner if isinstance(inner, dict) else payload
-            assert_rows_in_tenant(
-                [doc], reads.tenant_id, what="decision record", require=False
-            )
+            doc = _document_of(await source.document(r_kind, r_name))
+            assert_rows_in_tenant([doc], reads.tenant_id, what="decision record")
             v = doc.get("current_version")
             record_versions[cited] = v if isinstance(v, int) else None
         except (CoordNotFound, CoordReadError) as exc:
@@ -1011,7 +1017,11 @@ class ScheduleService:
         good, good_at = (
             (prior.good, prior.good_at) if prior is not None else (None, None)
         )
-        if not degraded:
+        if envelope.programme.unknown_reason == "tenant_mismatch":
+            # A tenant mismatch is a refusal, never papered over: forget the last
+            # good copy so no stale envelope can be served across it.
+            good, good_at = None, None
+        elif not degraded:
             good, good_at = envelope, started
         entry = _Entry(
             attempt_at=started,
@@ -1404,6 +1414,9 @@ def apply_entered(
         )
     env.milestones = _overlay_milestones(env.milestones, typed.milestones, now)
     forecast, basis = compute_schedule_forecast(env, typed, today, now)
+    if env.stale and forecast.state == "known":
+        # Computed from a stale read: served, not current.
+        forecast = forecast.model_copy(update={"stale": True})
     env.forecast = forecast
     env.basis = basis
     env.disagreement_count = _count_disagreements(env)
@@ -1416,9 +1429,6 @@ def apply_entered(
 
 #: The figures stamped, one row per ``(tenant, figure)``.
 FIGURES = ("programme", "phases", "milestones", "gates", "forecast")
-
-#: In-process fallback for "the first read that failed" when no stamp exists.
-_first_failed: dict[tuple[UUID, str], dt.datetime] = {}
 
 
 def _figure_resolved(env: ScheduleEnvelope) -> dict[str, Resolved[Any]]:
@@ -1462,29 +1472,38 @@ def fill_unknown_since(
     stamps: dict[str, dt.datetime],
     now: dt.datetime,
 ) -> list[str]:
-    """Set ``unknown_since`` on each unknown figure (the last time that figure
-    WAS known, else the first read that failed) and return the figures known now.
-    A stale envelope is left alone: its figures are served, not unknown."""
+    """Set ``unknown_since`` on each unknown figure to the last time that figure
+    WAS known (the stored stamp), and return the figures coord answered for.
+
+    With no stamp ``unknown_since`` stays null: there is no durable record of when
+    it was last known, and a process-local guess would read as a fact after a
+    restart. Only coord's own, current answer counts as known: a stale or
+    hand-entered figure is not coord having answered, and a forecast counts only
+    when every progress input was coord's (``basis == "coord"``)."""
     known: list[str] = []
     for figure, res in _figure_resolved(env).items():
-        key = (tenant_id, figure)
         if res.state == "unknown":
-            first = _first_failed.setdefault(key, now)
-            res.unknown_since = stamps.get(figure) or first
-        else:
-            _first_failed.pop(key, None)
-            # Only coord's own answer counts as "known": a stale or hand-entered
-            # figure is not coord having answered now.
-            if res.state == "known" and not res.stale:
-                known.append(figure)
+            res.unknown_since = stamps.get(figure)
+        elif res.state == "known" and not res.stale:
+            if figure == "forecast" and env.basis != "coord":
+                continue
+            known.append(figure)
     return known
 
 
 async def stamp_figures(
-    db: AsyncSession, tenant_id: UUID, figures: list[str], now: dt.datetime
+    db: AsyncSession,
+    tenant_id: UUID,
+    figures: list[str],
+    now: dt.datetime,
+    stamps: dict[str, dt.datetime],
 ) -> None:
-    """Upsert ``last_known_at`` for each figure known on this read. Best-effort and
-    non-blocking: any failure is logged and rolled back, never raised."""
+    """Upsert ``last_known_at = now`` for each figure whose stored stamp is older
+    than ``now`` (the coord read's own ``observed_at``, never the request time).
+    A cache hit carries the same ``observed_at`` as the stored stamp and so writes
+    nothing. Best-effort and non-blocking: any failure is logged and rolled back,
+    never raised."""
+    figures = [f for f in figures if stamps.get(f) is None or stamps[f] < now]
     if not figures:
         return
     try:
@@ -1528,5 +1547,5 @@ async def resolve_schedule(
     env = apply_entered(base, typed, today=now.date(), now=now)
     stamps = await load_stamps(db, tenant_id)
     known = fill_unknown_since(env, tenant_id, stamps, now)
-    await stamp_figures(db, tenant_id, known, now)
+    await stamp_figures(db, tenant_id, known, base.observed_at, stamps)
     return env

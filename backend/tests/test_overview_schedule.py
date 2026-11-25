@@ -186,6 +186,7 @@ def make_coord_data(
         "gates": gates,
         "documents": {
             ("initiative", "current-initiative"): {
+                "tenant_id": str(tenant),
                 "kind": "initiative",
                 "name": "current-initiative",
                 "current_version": 4,
@@ -277,9 +278,7 @@ class Clock:
 @pytest.fixture(autouse=True)
 def _reset_state():
     svc.metrics.reset()
-    svc._first_failed.clear()
     yield
-    svc._first_failed.clear()
 
 
 async def build(source: Any = None, now: dt.datetime = NOW):
@@ -833,11 +832,11 @@ class TestUnknown:
         assert env.forecast.state == "unknown"
 
     @pytest.mark.asyncio
-    async def test_a_denied_read_is_coord_denied_and_does_not_degrade(self, coord):
+    async def test_a_denied_read_is_coord_denied_and_is_not_a_real_answer(self, coord):
         coord.fail = HTTPException(403, "no")
         env, degraded = await build()
         assert env.phases.unknown_reason == "coord_denied"
-        assert degraded is False  # a denial is not an outage a stale copy should hide
+        assert degraded is True  # the cache must not adopt it as the good copy
 
     @pytest.mark.asyncio
     async def test_a_missing_initiative_leaves_the_phases_and_marks_the_milestones(
@@ -863,7 +862,7 @@ class TestUnknown:
     ):
         coord.data["units"][0]["title"] = {"not": "a title"}
         env, degraded = await build()
-        assert degraded is False
+        assert degraded is True
         assert env.phases.unknown_reason == "unparseable"
         assert env.phases.value is None
 
@@ -1784,3 +1783,249 @@ def _scrub_http(body: dict[str, Any]) -> dict[str, Any]:
     out = scrub(body)
     out.pop("door")
     return out
+
+
+# ===========================================================================
+# Review fixes A1-A9
+# ===========================================================================
+
+
+class TestReviewFixes:
+    @pytest.mark.asyncio
+    async def test_a1_a_denied_read_does_not_replace_the_good_copy(self, coord):
+        clock = Clock()
+        service = ScheduleService(clock=clock)
+        key = (TENANT, "operator")
+
+        async def loader():
+            return await build_coord_schedule(_operator(), TENANT, clock())
+
+        good = await service.get(key, loader)
+        t0 = good.observed_at
+        coord.fail = HTTPException(403, "denied")
+        clock.advance(seconds=61)
+        served = await service.get(key, loader)
+        # the denial is not stored as "good": the last good copy is still served
+        assert served.stale is True and served.observed_at == t0
+        assert served.phases.value is not None and len(served.phases.value) == 14
+        # and still within the 10-minute window several views later
+        clock.advance(minutes=8)
+        again = await service.get(key, loader)
+        assert again.stale is True and again.phases.value is not None
+        clock.advance(minutes=2)
+        gone = await service.get(key, loader)
+        assert gone.phases.unknown_reason == "coord_denied"
+
+    @pytest.mark.asyncio
+    async def test_a1_an_unparseable_read_keeps_the_good_copy_too(self, coord):
+        clock = Clock()
+        service = ScheduleService(clock=clock)
+        key = (TENANT, "operator")
+
+        async def loader():
+            return await build_coord_schedule(_operator(), TENANT, clock())
+
+        await service.get(key, loader)
+        coord.data["units"][0]["title"] = {"not": "a title"}
+        clock.advance(seconds=61)
+        served = await service.get(key, loader)
+        assert served.stale is True and served.phases.value is not None
+
+    @pytest.mark.asyncio
+    async def test_a1_stale_is_never_served_across_a_tenant_mismatch(self, coord):
+        clock = Clock()
+        service = ScheduleService(clock=clock)
+        key = (TENANT, "operator")
+
+        async def loader():
+            return await build_coord_schedule(_operator(), TENANT, clock())
+
+        await service.get(key, loader)
+        coord.data["units"].append(_unit("intruder", tenant=OTHER_TENANT))
+        clock.advance(seconds=61)
+        refused = await service.get(key, loader)
+        assert refused.stale is False
+        assert refused.phases.unknown_reason == "tenant_mismatch"
+        # coord now fails outright: the pre-mismatch copy must not come back
+        coord.data["units"].pop()
+        coord.fail = HTTPException(504, "down")
+        clock.advance(seconds=61)
+        after = await service.get(key, loader)
+        assert after.stale is False and after.phases.value is None
+
+    @pytest.mark.asyncio
+    async def test_a2_a_forecast_from_a_stale_read_is_stale_and_never_stamped(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
+        )
+        base, _ = await build()
+        typed = _typed(
+            _typed_phase("P1", 1, actual_start=dt.date(2026, 10, 20)),
+            _typed_phase("P2", 2),
+            _typed_phase("P3", 3),
+        )
+        fresh = apply_entered(base, typed, today=TODAY, now=NOW)
+        assert fresh.forecast.state == "known" and fresh.basis == "coord"
+        assert "forecast" in svc.fill_unknown_since(fresh, TENANT, {}, NOW)
+
+        stale = apply_entered(mark_stale(base), typed, today=TODAY, now=NOW)
+        assert stale.forecast.state == "known"
+        assert stale.forecast.stale is True
+        assert svc.fill_unknown_since(stale, TENANT, {}, NOW) == []
+
+        # a forecast fed by entered values is not coord having answered
+        entered = apply_entered(
+            base,
+            _typed(
+                _typed_phase("P1", 1),
+                _typed_phase("P2", 2),
+                _typed_phase("P3", 3, actual_start=dt.date(2026, 11, 20)),
+            ),
+            today=TODAY,
+            now=NOW,
+        )
+        assert entered.basis == "mixed"
+        assert "forecast" not in svc.fill_unknown_since(entered, TENANT, {}, NOW)
+
+    @pytest.mark.asyncio
+    async def test_a4_unknown_since_is_null_without_a_stamp(self, coord):
+        coord.fail = HTTPException(504, "down")
+        base, _ = await build()
+        env = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        svc.fill_unknown_since(env, TENANT, {}, NOW)
+        assert env.phases.state == "unknown"
+        assert env.phases.unknown_since is None
+        env2 = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        stamp = NOW - dt.timedelta(days=4)
+        svc.fill_unknown_since(env2, TENANT, {"phases": stamp}, NOW)
+        assert env2.phases.unknown_since == stamp
+
+    def test_a7_a_device_principal_without_a_bearer_raises_explicitly(self):
+        from app.overview.permissions import OverviewPrincipal
+        from app.overview.schedule_routes import schedule_source
+
+        principal = OverviewPrincipal(kind="device", user=None, token=None)  # type: ignore[arg-type]
+        with pytest.raises(RuntimeError, match="no bearer"):
+            schedule_source(access=None, principal=principal)  # type: ignore[arg-type]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("door", ["operator", "device"])
+    async def test_a8_a_document_with_no_provable_tenant_is_refused(
+        self, monkeypatch, door
+    ):
+        data = make_coord_data()
+        del data["documents"][("initiative", "current-initiative")]["tenant_id"]
+        data["units"] = []  # a tenant with zero units: nothing else could refuse
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        env, _ = await build(_operator() if door == "operator" else _device())
+        assert env.initiative.starts.unknown_reason == "tenant_mismatch"
+        assert env.milestones.items.value is None
+        assert svc.metrics.tenant_mismatch == 1
+
+    @pytest.mark.asyncio
+    async def test_a8_another_tenants_document_is_refused(self, monkeypatch):
+        data = make_coord_data()
+        data["documents"][("initiative", "current-initiative")]["tenant_id"] = str(
+            OTHER_TENANT
+        )
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        env, _ = await build(_device())
+        assert env.initiative.starts.unknown_reason == "tenant_mismatch"
+
+    @pytest.mark.asyncio
+    async def test_a9_a_malformed_document_payload_is_unparseable_not_a_500(
+        self, coord
+    ):
+        coord.data["documents"][("initiative", "current-initiative")] = None
+        orig = coord._answer
+
+        def answer(path, params):
+            if "prompt-documents" in path:
+                return {"document": ["not", "an", "object"]}
+            return orig(path, params)
+
+        coord._answer = answer  # type: ignore[method-assign]
+        env, degraded = await build()
+        assert env.phases.unknown_reason == "unparseable"
+        assert env.phases.value is None
+        assert degraded is True
+
+
+@pytest.mark.asyncio
+class TestReviewFixesRoute:
+    async def _get(self, db, user, coord, service):
+        app = _app(db, user, TENANT, kind="user", service=service)
+        async with _client(app) as c:
+            return await c.get(f"{API}/schedule")
+
+    async def test_a3_a_cache_hit_writes_nothing_and_stamps_the_read_time(
+        self, async_db_session, api_user, coord, monkeypatch
+    ):
+        clock = Clock(NOW)
+        service = ScheduleService(clock=clock)
+        inserts = 0
+        real = svc.pg_insert
+
+        def counting(*a: Any, **k: Any):
+            nonlocal inserts
+            inserts += 1
+            return real(*a, **k)
+
+        monkeypatch.setattr(svc, "pg_insert", counting)
+        assert (
+            await self._get(async_db_session, api_user, coord, service)
+        ).status_code == 200
+        first = inserts
+        assert first == 4  # programme, phases, milestones, gates (forecast unknown)
+        clock.advance(seconds=30)  # a cache hit: same coord read, later request
+        assert (
+            await self._get(async_db_session, api_user, coord, service)
+        ).status_code == 200
+        assert inserts == first
+        rows = (
+            (
+                await async_db_session.execute(
+                    select(OverviewScheduleLastKnown).where(
+                        OverviewScheduleLastKnown.tenant_id == TENANT
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # stamped at the coord read's own time, not at either request
+        assert {r.last_known_at for r in rows} == {NOW}
+
+        # a fresh coord read is newer than the stored stamp, so it IS written
+        clock.advance(seconds=40)
+        await self._get(async_db_session, api_user, coord, service)
+        assert inserts == first + 4
+        rows = (
+            (
+                await async_db_session.execute(
+                    select(OverviewScheduleLastKnown)
+                    .where(OverviewScheduleLastKnown.tenant_id == TENANT)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert {r.last_known_at for r in rows} == {NOW + dt.timedelta(seconds=70)}
+
+    async def test_a9_a_malformed_document_is_a_200_through_the_router(
+        self, async_db_session, api_user, coord
+    ):
+        orig = coord._answer
+
+        def answer(path, params):
+            if "prompt-documents" in path:
+                return {"document": 5}
+            return orig(path, params)
+
+        coord._answer = answer  # type: ignore[method-assign]
+        resp = await self._get(async_db_session, api_user, coord, ScheduleService())
+        assert resp.status_code == 200
+        assert resp.json()["phases"]["unknown_reason"] == "unparseable"
