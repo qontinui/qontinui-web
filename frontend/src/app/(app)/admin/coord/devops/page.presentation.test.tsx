@@ -725,6 +725,13 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
           (s) => s.getAttribute("data-maintenance-state") === "drained_outside"
         );
       expect(drainedBefore).toHaveLength(1);
+      // Cards the machines stub does not list already read UNKNOWN, so the
+      // check below counts: the drained card must be the one that joins them.
+      const unknownBefore = screen
+        .getAllByTestId("machine-maintenance-badge")
+        .filter(
+          (s) => s.getAttribute("data-maintenance-state") === "unknown"
+        ).length;
 
       failingRoutes.push("/fleet/drain", "dispatch-roles", "coord/audit");
       // The drain and role polls run every 30 s; the audit feed is re-read
@@ -746,10 +753,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
           )
         ).toHaveLength(0);
         expect(
-          drains.some(
+          drains.filter(
             (s) => s.getAttribute("data-maintenance-state") === "unknown"
           )
-        ).toBe(true);
+        ).toHaveLength(unknownBefore + 1);
         expect(screen.getByTestId("fleet-roles-unknown")).toBeTruthy();
         expect(screen.getByTestId("operator-audit-error")).toBeTruthy();
       });
