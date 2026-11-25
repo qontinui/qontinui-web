@@ -4,6 +4,8 @@ import {
   PHASE_STATE_WORDS,
   countPhases,
   describeUnknown,
+  gateVerdictWord,
+  milestoneStatusWord,
   figureDay,
   mergeMilestones,
   missingLabels,
@@ -50,7 +52,9 @@ describe("plain-language labels are total", () => {
     expect(phaseStateWord("not_confirmed")).toBe("Not confirmed");
     expect(phaseStateWord("not_confirmed")).not.toBe(phaseStateWord("planned"));
     // A state a newer server serves: said plainly, not echoed as an identifier.
-    expect(phaseStateWord("paused" as never)).toBe("Not confirmed");
+    expect(phaseStateWord("paused" as never)).toBe("Unrecognised");
+    expect(gateVerdictWord("paused" as never)).toBe("Unrecognised");
+    expect(milestoneStatusWord("paused" as never)).toBe("Unrecognised");
   });
 
   it("gives every unknown reason a sentence without an identifier", () => {
@@ -251,6 +255,31 @@ describe("mergeMilestones", () => {
     const [m] = mergeMilestones([], [milestone("Review", "2026-12-01")]);
     expect(m!.statusWord).toBe("Not confirmed");
     expect(m!.tone).toBe("unconfirmed");
+  });
+
+  it("a coord milestone whose status is unknown keeps its reason and a distinct tone", () => {
+    const [m] = mergeMilestones(
+      [],
+      [
+        milestone("Review", "2026-12-01", "met", {
+          status: unknown("coord_unreachable", "2026-11-21T10:00:00Z"),
+        }),
+      ]
+    );
+    expect(m!.statusWord).toBe(
+      "Not available since 21 Nov 2026 � the project record could not be reached"
+    );
+    expect(m!.tone).toBe("unknown");
+    expect(m!.tone).not.toBe("unconfirmed");
+  });
+
+  it("an unrecognised coord milestone status reads Unrecognised, not a concrete one", () => {
+    const [m] = mergeMilestones(
+      [],
+      [milestone("Review", "2026-12-01", "paused" as never)]
+    );
+    expect(m!.statusWord).toBe("Unrecognised");
+    expect(m!.tone).toBe("unknown");
   });
 
   it("sorts by date with undated last, and works with coord unknown", () => {
