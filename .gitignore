@@ -44,6 +44,7 @@ backend/scripts/*
 !backend/scripts/migrate_files_to_object_storage.py
 !backend/scripts/migrate_to_structlog.py
 !backend/scripts/migrate_users_to_uuid.py
+!backend/scripts/probe_overview_schedule.py
 !backend/scripts/seed_claude_accounts.py
 !backend/scripts/setup-elasticache.sh
 !backend/scripts/spec_ci_local_idp.py
@@ -68,7 +69,7 @@ yarn-error.log*
 package-lock.json
 !/frontend/package-lock.json
 # frontend/design/kit/package-lock.json pins the design-kit CLI (and the exact
-# ui-bridge peers it drives) that frontend-ci.yml installs with `npm ci`.
+# ui-bridge peers it drives) that design-guide.yml installs with `npm ci`.
 !/frontend/design/kit/package-lock.json
 next.config.js
 frontend/scripts/*

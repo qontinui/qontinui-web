@@ -35,6 +35,7 @@ import {
   useSessionCoordination,
 } from "./SessionRowExpansion";
 import { foldRevalidation } from "./sessionKeyResolution";
+import { deriveAccountCell } from "./sessionAccount";
 import type { SessionEventRow } from "./types";
 import type { ConsolidatedSessionRow } from "./sessionConsoleStatus";
 import type { TranscriptStoresState } from "./TranscriptStoresPanel";
@@ -242,6 +243,9 @@ const NO_STORES: TranscriptStoresState = {
   archived: { state: "unprobed" },
 };
 
+/** The device id as its own label — the identity list is not under test here. */
+const machineLabel = (deviceId: string | null | undefined) => deviceId ?? null;
+
 function CoordinationHarness({
   subscribe,
   readers,
@@ -253,7 +257,13 @@ function CoordinationHarness({
     subscribe,
   });
   return (
-    <SessionRowExpansion row={ROW} coordination={coordination} stores={NO_STORES} />
+    <SessionRowExpansion
+      row={ROW}
+      account={deriveAccountCell(ROW, { machineLabel })}
+      machineLabel={machineLabel}
+      coordination={coordination}
+      stores={NO_STORES}
+    />
   );
 }
 

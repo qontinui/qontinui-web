@@ -6583,8 +6583,18 @@ export interface paths {
          *       device (the newest authorization supersedes);
          *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
          *       explicit act, never a side effect;
-         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
-         *       enrol a fresh key (a usable key is left alone).
+         *     * removes machine-key rows that must not outlive the authorization
+         *       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
+         *       when the device WAS under a deny, its key row whatever its state (any
+         *       key predating the re-arm is suspect); otherwise only a REVOKED row. A
+         *       usable key on a never-revoked device is kept — it is how a runner
+         *       offline past its JWT grace recovers on its own (``/exchange``).
+         *
+         *     What re-keys a device whose row was removed is its next pairing, which
+         *     mints a fresh key because no row exists: an operator pair code or
+         *     ``pair-cli``, or the bound code minted here IF the runner collects it
+         *     through ``/pending-redeem`` (a runner build without that poller never
+         *     does). ``/self-mint`` also enrols one, given a live paired device JWT.
          *
          *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
          *     the device collects it, through ``/pending-redeem``.
@@ -14355,6 +14365,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/resource-stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Resource Stops
+         * @description Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched::
+         *
+         *         {"table_present": <bool>, "count": <int>, "stops": [StopRow, ...],
+         *          "bounded": <bool>, "limit": <int>, "limit_clamped": <bool>,
+         *          "summary": <object | null>}
+         *
+         *     ``table_present: false`` means the coord table does not exist yet — an
+         *     empty ``stops`` list is then UNKNOWN, never "no stops". ``bounded`` is
+         *     true when ``limit`` truncated the page. A ``StopRow`` carries
+         *     ``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that
+         *     refused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,
+         *     the nullable stats ``session_count_terminal``,
+         *     ``session_count_live_claude``, ``active_ci_runners`` and
+         *     ``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /
+         *     ``fleet_calibration`` objects as the runner recorded them.
+         *
+         *     Query params are forwarded verbatim WITHOUT local validation: coord
+         *     refuses a value outside its vocabulary (422) and clamps ``limit``, and a
+         *     local rewrite here would turn a refusal into a different, wider read.
+         */
+        get: operations["api_v1_operations_fleet_resource_stops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/runners/{runner_id}": {
         parameters: {
             query?: never;
@@ -17525,7 +17575,7 @@ export interface paths {
          *
          *     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
          *
-         *     With ``shape=consolidated`` the envelope gains four fields and every
+         *     With ``shape=consolidated`` the envelope gains five fields and every
          *     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
          *
          *         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -17535,7 +17585,39 @@ export interface paths {
          *           "row_class_counts": {"linked": n, "lifecycle_only": n,
          *                                "agent_only": n, "unknown": n},
          *           "withheld_by_filter": n,
-         *           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+         *           "lifecycle_half": {"read": "ok", "bound": BoundedReadMeta},
+         *           "agent_half": {"read": "ok", "bound": BoundedReadMeta}
+         *                         | {"read": "failed", "detail": "..."} }
+         *
+         *     ``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every
+         *     key always present, ``null`` a value) describing the coord READ behind
+         *     that half — plan
+         *     `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+         *     Phase 3. Both reads stop at 500 rows: the lifecycle half at coord's own
+         *     ``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the
+         *     agent half at the 500 it asks ``/coord/agent-sessions`` for (the most
+         *     recently seen). ``bound`` comes in three arms:
+         *
+         *     * below its ceiling — ``bound_kind: "complete"`` with ``truncated:
+         *       false``: the half holds every row the read matched;
+         *     * a FULL half, ``shown >= limit`` — ``"unknown"`` with ``truncated`` and
+         *       ``total`` null: more rows may exist, and nothing coord sent says
+         *       whether they do, so a count over it is a floor;
+         *     * a 200 whose body carries no ``sessions`` list — ``"unknown"`` over
+         *       ``shown: 0``: nothing countable was served, so the half's SIZE is
+         *       unknown. ``shown < limit`` is what tells it from a full half, and no
+         *       count over it is a total or a floor — not even a floor of zero.
+         *
+         *     ``shown`` counts the rows coord SERVED, before this route's own
+         *     ``device`` / ``status`` / ``q`` narrowing, so it need not equal
+         *     ``count``. A failed agent read carries no ``bound`` — there is no page to
+         *     bound.
+         *
+         *     ``agent_only`` is a set difference against the lifecycle rows coord
+         *     served, so it is established only while ``lifecycle_half.bound.truncated``
+         *     is ``false``. Beyond the ceiling it means "no ``coord.sessions`` row among
+         *     the ones served" — one may exist past it — and the row keeps its real
+         *     agent half either way.
          *
          *     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
          *     hid although their agent half matched it — the two halves disagree (e.g.
@@ -46777,7 +46859,8 @@ export interface components {
          *
          *     Mirrors the canonical ``PairCompleteResponse`` shape that the
          *     runner's ``pair.rs::PairCompleteResponse`` decoder consumes:
-         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.
+         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,
+         *     plus ``device_machine_key`` (the same additive field pair-cli returns).
          *     The runner uses the same decoder for both the paste-pair and the
          *     headless ``pair-cli`` paths.
          */
@@ -46788,6 +46871,11 @@ export interface components {
              * @description The runner's device UUID.
              */
             device_id: string;
+            /**
+             * Device Machine Key
+             * @description Device machine key (``dmk_``) minted for this device at redeem, returned exactly once — the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.
+             */
+            device_machine_key?: string | null;
             /**
              * Device Token Jwt
              * @description Coord-issued device-token JWT.
@@ -82453,6 +82541,48 @@ export interface operations {
                 history_points?: number | null;
                 /** @description false skips the history query entirely (strip-only render). */
                 history?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_resource_stops_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow to one device. Tenant scoping still applies on top. */
+                device_id?: string | null;
+                /** @description Narrow to one metric lane: memory_free_commit | thread_pressure. */
+                lane?: string | null;
+                /** @description Narrow to the pool that refused: host | wsl | threads. */
+                guard_lane?: string | null;
+                /** @description RFC 3339 instant or UTC date; inclusive lower bound. */
+                since?: string | null;
+                /** @description Page size. Coord clamps it and echoes `limit_clamped`. */
+                limit?: number | null;
+                /** @description true adds coord's per-device roll-up. */
+                summary?: boolean | null;
             };
             header?: never;
             path?: never;

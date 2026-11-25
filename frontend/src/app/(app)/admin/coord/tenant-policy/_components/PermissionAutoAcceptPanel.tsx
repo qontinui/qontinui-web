@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlertTriangle,
   Loader2,
@@ -84,19 +84,7 @@ function levelBlurb(
  * "(default)" instead.
  *
  * Registered with the UI Bridge (`coord-tenant-permission-auto-accept`) so
- * the switch and its read-back are addressable without positional ids. The
- * state getter is a stable function reading a ref that a layout effect
- * refreshes on every commit, so a bridge state read agrees with what is on
- * screen. Since `@qontinui/ui-bridge` 0.37 (qontinui/ui-bridge#273) the SDK
- * also keeps an inline getter current, but it refreshes it in a passive
- * effect: after an update that does not come from a discrete input event (a
- * click, keypress, input and the like), such as a write's read-back or a
- * reload's result landing, that effect runs in a later task, and a read in
- * that gap returns the previous render's level. The action handler has the
- * same one-task gap (the SDK refreshes handlers passively too), which this ref
- * does not cover. Keep the ref until web pins a ui-bridge that refreshes both
- * in a layout effect (plan
- * `2026-11-08-ui-bridge-useuicomponent-state-lags-the-dom-by-one-task`).
+ * the switch and its read-back are addressable without positional ids.
  */
 export function PermissionAutoAcceptPanel() {
   /** Which level's write is in flight, so only that button spins. */
@@ -145,18 +133,13 @@ export function PermissionAutoAcceptPanel() {
     readbackError,
     error,
   };
-  const bridgeStateRef = useRef(bridgeState);
-  useLayoutEffect(() => {
-    bridgeStateRef.current = bridgeState;
-  });
-  const getBridgeState = useCallback(() => bridgeStateRef.current, []);
 
   useUIComponent({
     id: "coord-tenant-permission-auto-accept",
     name: "Permission auto-accept",
     description:
       "Per-tenant switch deciding whether runners accept the tool permission prompts Claude Code asks in runner sessions. State carries the last level read from coord (resolvedLevel is null only until a read has landed); a non-null error or readbackError means that level may be stale.",
-    state: getBridgeState,
+    state: () => bridgeState,
     actions: [
       {
         id: "set-permission-auto-accept",
