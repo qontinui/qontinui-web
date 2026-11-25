@@ -54,9 +54,11 @@ export function RegisterDecisionGateDialog({
     slug.trim() !== "" && phase.trim() !== "" && prompt.trim() !== "";
 
   function handleOpenChange(o: boolean) {
+    // A request in flight owns the dialog: closing mid-flight would drop its
+    // outcome onto a closed form.
+    if (!o && submitting) return;
     if (!o) {
       setError(null);
-      setSubmitting(false);
     }
     onOpenChange(o);
   }

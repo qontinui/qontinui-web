@@ -91,7 +91,7 @@ describe("RegisterDecisionGateDialog", () => {
     fillAll();
     fireEvent.click(screen.getByTestId("gates-register-decision-submit"));
     const err = await screen.findByTestId("gates-register-decision-error");
-    expect(err.textContent ?? "").not.toBe("");
+    expect(err.textContent ?? "").toContain("another tenant");
     expect(onRegistered).not.toHaveBeenCalled();
   });
 
