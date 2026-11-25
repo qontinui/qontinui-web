@@ -367,6 +367,7 @@ describe("per-lane entries this build could not read", () => {
     expect(unknownDrainLanes(parseDrainEntry(wireEntry())!)).toEqual([]);
   });
 });
+
 describe("formatDrainRemaining", () => {
   it("renders a FUTURE deadline as a remaining duration", () => {
     // `relativeTime` renders every future stamp as "just now"; "Drained until
@@ -386,4 +387,3 @@ describe("formatDrainRemaining", () => {
     expect(formatDrainRemaining("whenever", NOW)).toBe("an unknown time");
   });
 });
-
