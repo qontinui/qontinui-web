@@ -59,6 +59,14 @@ def _build_test_app() -> FastAPI:
         operations_module._caller_bearer.set(TEST_BEARER)
         return TEST_TENANT_ID
 
+    from app.api.deps import get_async_db
+
+    async def _db_override():
+        db = MagicMock()
+        db.scalar = AsyncMock(return_value=getattr(test_app, "fake_machine", None))
+        yield db
+
+    test_app.dependency_overrides[get_async_db] = _db_override
     test_app.dependency_overrides[get_tenant_id] = _tenant_override
     test_app.dependency_overrides[require_coord_tenant_admin] = _tenant_override
     test_app.include_router(operations_router, prefix="/api/v1/operations")
@@ -321,7 +329,11 @@ class TestWriteAnswerPassesThrough:
             coord_resp=_mock_response(200, answer),
         )
         assert resp.status_code == 200
-        assert resp.json() == answer
+        # Coord's body is untouched; the only addition is the web-side
+        # `ci_node_republish` outcome (a CI-host role has nothing to republish).
+        extra = resp.json()
+        assert extra.pop("ci_node_republish")["status"] == "skipped"
+        assert extra == answer
         assert resp.json()["live_sessions_on_machine"] is None
 
 
@@ -396,3 +408,129 @@ def test_the_write_is_admin_gated_before_any_coord_call() -> None:
     assert mock_instance.put.await_count == 0
     assert resp.status_code == 403
     assert "not_coord_tenant_admin" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# CI-node switch derived from the role (plan fleet-machine-roles D8, Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestRepublishCiNodeConfig:
+    """After coord's PUT succeeds the STORED ci_node_config is re-published:
+    ``enabled`` forced false when the role closes ci, unchanged when it opens
+    it. Failures ride the response as a typed field, never a 5xx."""
+
+    def _write(self, role: str, republish):
+        app = _build_app_with_machine()
+        client = TestClient(app)
+        with patch(
+            "app.api.v1.endpoints.devenv.republish_stored_ci_node_config",
+            republish,
+        ):
+            return _put(
+                client,
+                {"device_id": DEVICE_ID, "dispatch_role": role, "reason": "r"},
+            )
+
+    @pytest.mark.parametrize(
+        "role,force_disabled",
+        [
+            ("bench", True),
+            ("workhorse", False),
+            ("ci_node", False),
+        ],
+    )
+    def test_force_disabled_follows_the_role(self, role, force_disabled):
+        calls = []
+
+        async def _republish(machine, *, token, force_disabled):
+            calls.append((machine, token, force_disabled))
+            return {"status": "published", "enabled_published": not force_disabled}
+
+        resp, _ = self._write(role, _republish)
+        assert resp.status_code == 200, resp.text
+        assert len(calls) == 1
+        assert calls[0][1] == TEST_BEARER
+        assert calls[0][2] is force_disabled
+        assert resp.json()["ci_node_republish"]["status"] == "published"
+
+    def test_a_failed_republish_is_a_typed_warning_not_a_failed_write(self):
+        async def _republish(machine, *, token, force_disabled):
+            raise RuntimeError("boom")
+
+        resp, _ = self._write("bench", _republish)
+        assert resp.status_code == 200
+        assert resp.json()["dispatch_role"] == "bench"
+        assert resp.json()["ci_node_republish"] == {
+            "status": "failed",
+            "reason": "republish_error",
+        }
+
+    def test_a_ci_host_keyed_write_says_it_did_not_republish(self):
+        resp, _ = _put(
+            TestClient(_build_app_with_machine()),
+            {"ci_host_name": "dell-2020", "dispatch_role": "bench", "reason": "r"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ci_node_republish"] == {
+            "status": "skipped",
+            "reason": "ci_host_role_not_device_keyed",
+        }
+
+    def test_testbed_closes_ci_like_bench(self):
+        from app.api.v1.endpoints.operations import dispatch_role_closes_ci
+
+        assert dispatch_role_closes_ci("bench")
+        assert dispatch_role_closes_ci("testbed")
+        assert not dispatch_role_closes_ci("workhorse")
+        assert not dispatch_role_closes_ci("ci_node")
+        assert not dispatch_role_closes_ci(None)
+
+
+def _build_app_with_machine() -> FastAPI:
+    app = _build_test_app()
+    app.fake_machine = MagicMock(name="machine")  # type: ignore[attr-defined]
+    return app
+
+
+class TestReadCiLaneClosedByRole:
+    async def _read(self, body, status=200):
+        from app.api.v1.endpoints.operations import read_ci_lane_closed_by_role
+
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(return_value=_mock_response(status, body))
+            _configure_mock_client(MockClient, mock_instance)
+            return await read_ci_lane_closed_by_role(UUID(DEVICE_ID), bearer="b")
+
+    @staticmethod
+    def _machine(role):
+        return {
+            "kind": "workstation",
+            "device_id": DEVICE_ID,
+            "role": None if role is None else {"dispatch_role": role},
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "role,closed",
+        [("bench", True), ("testbed", True), ("workhorse", False), (None, False)],
+    )
+    async def test_role_names(self, role, closed):
+        body = {"state": "known", "machines": [self._machine(role)]}
+        assert await self._read(body) is closed
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "body,status",
+        [
+            ({"state": "unknown", "machines": []}, 200),
+            ({"state": "known", "machines": []}, 200),
+            (None, 500),
+        ],
+    )
+    async def test_everything_else_is_unreadable(self, body, status):
+        from app.api.v1.endpoints.operations import DispatchRoleUnreadable
+
+        with pytest.raises(DispatchRoleUnreadable):
+            await self._read(body, status)

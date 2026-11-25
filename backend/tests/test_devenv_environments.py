@@ -3568,6 +3568,19 @@ def _stub_ci_node_reachability(monkeypatch) -> None:
         return None
 
     monkeypatch.setattr("app.services.coord_device.get_device_routing", _no_routing)
+    _stub_role(monkeypatch, closed=False)
+
+
+def _stub_role(monkeypatch, *, closed: bool | None) -> None:
+    """Stub the dispatch-role read: open (False), closed (True) or unreadable (None)."""
+    from app.api.v1.endpoints.operations import DispatchRoleUnreadable
+
+    async def _role(machine, token):
+        if closed is None:
+            raise DispatchRoleUnreadable("coord down")
+        return closed
+
+    monkeypatch.setattr("app.api.v1.endpoints.devenv._ci_lane_closed_by_role", _role)
 
 
 class TestCallerTokenForwarding:
@@ -5768,3 +5781,149 @@ class TestAutoEnrollPolicyApi:
             assert r.status_code == 200, r.text
             assert r.json()["enabled"] is True
             assert r.json()["configured"] is False
+
+
+class TestCiNodeDerivedFromRole:
+    """Plan fleet-machine-roles D8: the dispatch role decides whether a machine
+    runs CI; ``ci_node_config`` keeps the per-machine consent (allowlist...)."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_true_is_refused_422_when_the_role_closes_ci(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        _stub_role(monkeypatch, closed=True)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "closed-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "repo_allowlist": ["qontinui/a"]},
+            )
+            assert r.status_code == 422, r.text
+            assert r.json()["detail"]["code"] == "role_closes_ci_lane"
+            # Nothing stored, nothing sent.
+            assert "/devenv/ci-node-dispatch" not in captured
+            g = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert g.json()["configured"] is False
+            assert g.json()["role_closes_ci_lane"] is True
+            # Allowlist curation with the switch OFF is still allowed.
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": False, "repo_allowlist": ["qontinui/a"]},
+            )
+            assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_enabled_true_fails_closed_when_the_role_is_unreadable(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post({})
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        _stub_role(monkeypatch, closed=None)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "unread-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True},
+            )
+            assert r.status_code == 503, r.text
+            assert r.json()["detail"]["code"] == "role_unreadable"
+            # An unreadable role is UNKNOWN on read, never "open".
+            g = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert g.json()["role_closes_ci_lane"] is None
+
+    @pytest.mark.asyncio
+    async def test_republish_round_trip_never_touches_the_stored_row(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints.devenv import republish_stored_ci_node_config
+        from app.models.devenv import Machine
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "rt-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={
+                    "enabled": True,
+                    "max_concurrent_builds": 3,
+                    "repo_allowlist": ["qontinui/qontinui-web", "qontinui/coord"],
+                    "min_free_disk_gb": 25,
+                },
+            )
+            assert r.status_code == 200, r.text
+
+        machine = await async_db_session.get(Machine, UUID(machine_id))
+        await async_db_session.refresh(machine)
+
+        def snapshot() -> tuple:
+            return (
+                repr(machine.ci_node_config),
+                machine.ci_node_requested_at,
+                machine.ci_node_dispatched_at,
+            )
+
+        before = snapshot()
+        sent: list[dict] = []
+
+        async def _post(path, *, headers, json_body, log_event, **kw):
+            assert path == "/devenv/ci-node-dispatch"
+            sent.append(json_body)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _post)
+
+        # testbed -> workhorse -> testbed
+        for force_disabled in (True, False, True):
+            out = await republish_stored_ci_node_config(
+                machine, token="tok", force_disabled=force_disabled
+            )
+            assert out["status"] == "published"
+            await async_db_session.refresh(machine)
+            assert snapshot() == before  # byte-identical stored row
+
+        assert [b["ci_node"]["enabled"] for b in sent] == [False, True, False]
+        for b in sent:
+            assert b["ci_node"]["repo_allowlist"] == [
+                "qontinui/qontinui-web",
+                "qontinui/coord",
+            ]
+            assert b["ci_node"]["max_concurrent_builds"] == 3
+            assert b["target_device_id"] == device_id
+
+    @pytest.mark.asyncio
+    async def test_republish_with_no_stored_config_is_skipped_not_invented(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        from app.api.v1.endpoints.devenv import republish_stored_ci_node_config
+        from app.models.devenv import Machine
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "fresh-box")
+        machine = await async_db_session.get(Machine, UUID(machine_id))
+        out = await republish_stored_ci_node_config(
+            machine, token="tok", force_disabled=True
+        )
+        assert out == {"status": "skipped", "reason": "no_stored_config"}

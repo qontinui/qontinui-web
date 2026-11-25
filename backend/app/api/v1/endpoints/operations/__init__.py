@@ -6186,6 +6186,80 @@ class DispatchRoleRequestBody(BaseModel):
         return self
 
 
+#: Roles that CLOSE the ``ci`` lane (plan ``2026-10-02-fleet-machine-roles-
+#: workhorse-bench-ci-node`` §D1, Amendments A2/A6): only ``workhorse`` and
+#: ``ci_node`` open it. ``bench`` is being renamed ``testbed``; both spellings
+#: close it so the rename can land on either side first. An unassigned machine
+#: (no role row) is NOT in this set — it behaves as it did before roles.
+_CI_CLOSING_ROLES = frozenset({"bench", "testbed"})
+
+
+class DispatchRoleUnreadable(Exception):
+    """The machine's dispatch role could not be established.
+
+    Callers deciding whether to ALLOW something (``enabled: true``) fail
+    closed on this, never read it as "role open".
+    """
+
+
+def _device_ids_of(machine: dict[str, Any]) -> set[str]:
+    out: set[str] = set()
+    if isinstance(machine.get("device_id"), str):
+        out.add(machine["device_id"].lower())
+    listed = machine.get("device_ids")
+    if isinstance(listed, list):
+        for item in listed:
+            if isinstance(item, str):
+                out.add(item.lower())
+            elif isinstance(item, dict) and isinstance(item.get("device_id"), str):
+                out.add(item["device_id"].lower())
+    return out
+
+
+def dispatch_role_closes_ci(role_name: str | None) -> bool:
+    """True when a role NAME closes the ``ci`` lane (``None`` = unassigned)."""
+    return role_name in _CI_CLOSING_ROLES
+
+
+async def read_ci_lane_closed_by_role(device_id: UUID, *, bearer: str | None) -> bool:
+    """Does this device's dispatch role close the ``ci`` lane?
+
+    Reads coord's ``GET /coord/fleet/dispatch-roles`` through
+    :func:`_proxy_coord_get` — the same read the console's Roles panel uses —
+    and raises :class:`DispatchRoleUnreadable` for every shape that does not
+    prove an answer (coord down, a non-``known`` body, the device absent from
+    the roster). ``bearer`` is the caller's token, passed explicitly because
+    the devenv routes do not run ``get_tenant_id``.
+    """
+    headers = {"Authorization": f"Bearer {bearer}"} if bearer else None
+    try:
+        body = await _proxy_coord_get("/coord/fleet/dispatch-roles", headers=headers)
+    except HTTPException as exc:
+        raise DispatchRoleUnreadable(
+            f"coord answered {exc.status_code} to the dispatch-roles read"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - any failure is UNKNOWN, not "open"
+        raise DispatchRoleUnreadable(f"dispatch-roles read failed: {exc}") from exc
+    if not isinstance(body, dict) or body.get("state") != "known":
+        raise DispatchRoleUnreadable("coord did not serve a known dispatch-roles read")
+    machines = body.get("machines")
+    if not isinstance(machines, list):
+        raise DispatchRoleUnreadable("dispatch-roles read carried no machine roster")
+    wanted = str(device_id).lower()
+    matched = False
+    for m in machines:
+        if not isinstance(m, dict) or wanted not in _device_ids_of(m):
+            continue
+        matched = True
+        role = m.get("role")
+        name = role.get("dispatch_role") if isinstance(role, dict) else None
+        if dispatch_role_closes_ci(name):
+            return True
+    if not matched:
+        raise DispatchRoleUnreadable("device is not in coord's dispatch-roles roster")
+    return False
+
+
 @router.get("/fleet/dispatch-roles")
 async def get_fleet_dispatch_roles(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -6209,13 +6283,21 @@ async def get_fleet_dispatch_roles(
 async def put_fleet_dispatch_role(
     body: DispatchRoleRequestBody,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """Set one machine's dispatch role (operator-only).
 
     Affects NEW dispatch only: sessions and CI jobs already placed on the
-    machine run to their end (§D9). The GitHub-label (Phase 4) and CI-node
-    switch (Phase 5) effects are coord's and web's later phases — nothing on
-    this path claims them.
+    machine run to their end (§D9). The GitHub-label effect is coord's.
+
+    The CI-node switch is derived from the role (§D8): coord holds no copy of
+    the desired CI-node config, so after coord's PUT succeeds THIS hop
+    re-publishes the STORED ``ci_node_config`` through the existing
+    ``/devenv/ci-node-dispatch`` path — ``enabled`` forced false when the new
+    role closes ``ci``, unchanged when it opens it. The stored row is never
+    modified, so the operator's allowlist survives any number of role changes.
+    A failed re-publish never hides the successful role write: it is returned
+    as ``ci_node_republish`` on the (200) response.
     """
     wire: dict[str, Any] = {
         "dispatch_role": body.dispatch_role,
@@ -6226,12 +6308,52 @@ async def put_fleet_dispatch_role(
         wire["device_id"] = str(body.device_id)
     else:
         wire["ci_host_name"] = body.ci_host_name
-    return await _proxy_coord_put(
+    result = await _proxy_coord_put(
         "/coord/fleet/dispatch-role",
         wire,
         tenant_id=tenant_id,
         structured_errors=True,
     )
+    republish = await _republish_ci_node_config_for_role(body, db)
+    if isinstance(result, dict):
+        return {**result, "ci_node_republish": republish}
+    return {"coord": result, "ci_node_republish": republish}
+
+
+async def _republish_ci_node_config_for_role(
+    body: DispatchRoleRequestBody, db: AsyncSession
+) -> dict[str, Any]:
+    """Re-publish the stored CI-node config after a role write; never raises."""
+    # Lazy: ``devenv`` is a sibling endpoint module and must not be imported at
+    # this module's load.
+    from app.api.v1.endpoints import devenv as devenv_endpoint
+
+    if body.device_id is None:
+        # A CI-host role is keyed on a runner host name, not a device; the
+        # devenv machine row is keyed on the device, so there is no stored
+        # config to find from here. Said, not silently skipped.
+        return {"status": "skipped", "reason": "ci_host_role_not_device_keyed"}
+    try:
+        machine = await db.scalar(
+            select(devenv_endpoint.Machine).where(
+                devenv_endpoint.Machine.coord_device_id == body.device_id,
+                devenv_endpoint.Machine.revoked_at.is_(None),
+            )
+        )
+        if machine is None:
+            return {"status": "skipped", "reason": "no_machine_for_device"}
+        return await devenv_endpoint.republish_stored_ci_node_config(
+            machine,
+            token=_caller_bearer.get(),
+            force_disabled=dispatch_role_closes_ci(body.dispatch_role),
+        )
+    except Exception as exc:  # noqa: BLE001 - must not mask the role write
+        logger.warning(
+            "ci_node_republish_failed",
+            device_id=str(body.device_id),
+            exc_type=type(exc).__name__,
+        )
+        return {"status": "failed", "reason": "republish_error"}
 
 
 # ---- Per-device worktree cap (plan 2026-09-18 amendment A3) ---------------
