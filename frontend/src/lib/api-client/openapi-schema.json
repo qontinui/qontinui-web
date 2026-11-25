@@ -117882,6 +117882,70 @@
         ]
       }
     },
+    "/api/v1/operations/plans/{slug}/schedule-metadata": {
+      "patch": {
+        "description": "Write a work-unit's SCHEDULE metadata (tenant-scoped, admin-gated).\n\nPlan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``\nPhase 5: the Project Overview derives its phases, phase-to-unit links and\nmilestone links from a unit's ``metadata`` and shows nothing a person\ncannot correct in coord, so this is the person's door for exactly those\nkeys. The dashboard sends ``{\"metadata_patch\": {...}, \"from_updated_at\"?}``;\ncoord's ``POST /coord/work-units/{slug}/operator-schedule-metadata`` owns\nthe closed key set (``phases``, ``phase_units``, ``parent``,\n``parent_phase``, ``intent_initiative``) and every validation, and its typed\n422 (``{\"error\": \"metadata_key_not_allowed\", \"key\": ...}``) is forwarded\nverbatim. ``by_actor`` is the authenticated operator, never the browser's.",
+        "operationId": "api_v1_operations_plans_slug_schedule_metadata_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^\\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Patch Coord Plan Schedule Metadata Api V1 Operations Plans  Slug  Schedule Metadata Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Coord Plan Schedule Metadata",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/plans/{slug}/transition": {
       "post": {
         "description": "Transition a work-unit to a new status (tenant-scoped, admin-gated).\n\nThe dashboard sends ``{\"status\": \"<new>\", \"note\": \"<optional>\"}``. The\ncoord ``POST /coord/work-units/{slug}/operator-transition`` route expects\n``{\"to_status\": \"<new>\", \"by_actor\": \"<who>\", \"reason\": \"<optional>\"}``\n(``to_status`` + ``by_actor`` both required, non-empty) \u2014 the SAME wire\nshape the retired ``/coord/plans/{slug}/transition`` used. Remap the\noperator-friendly body onto that contract here so the dashboard control\nstays unchanged. ``by_actor`` is stamped with the operator marker (this\nsurface is an admin lever audited via the history ``by_actor`` column).",

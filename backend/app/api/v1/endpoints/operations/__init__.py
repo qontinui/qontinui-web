@@ -30,6 +30,7 @@ import websockets
 import websockets.exceptions
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     HTTPException,
     Path,
@@ -4434,6 +4435,7 @@ async def get_dev_action_detail(
 # - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
+# - PATCH  /operations/plans/{slug}/schedule-metadata    — set phases / phase links
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
@@ -4922,6 +4924,63 @@ async def post_coord_plan_transition(
         f"/coord/work-units/{slug}/operator-transition",
         transition_body,
         tenant_id=tenant_id,
+    )
+
+
+# A work-unit slug as it is interpolated into a coord path: constrained so a
+# decoded `?` or `#` cannot redirect a write to a different coord route, and a
+# dot-only slug (`.`, `..`) cannot be normalized away as a path segment.
+PlanSlug = Annotated[str, Path(pattern=r"^\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$")]
+
+
+def _operator_actor_label(actor: UserModel | None) -> str:
+    """The audit label an operator write carries to coord: ``operator:<email>``.
+
+    Coord's operator doors take the actor as a body field (an operator bearer
+    carries no device identity), so the web names the authenticated operator
+    here rather than stamping the same literal for everyone. Falls back to the
+    generic marker only when no authenticated user resolved.
+    """
+    email = getattr(actor, "email", None) if actor is not None else None
+    return f"operator:{email}" if email else "operator:web-admin"
+
+
+@router.patch("/plans/{slug}/schedule-metadata")
+async def patch_coord_plan_schedule_metadata(
+    slug: PlanSlug,
+    body: dict[str, Any] = Body(...),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
+) -> Any:
+    """Write a work-unit's SCHEDULE metadata (tenant-scoped, admin-gated).
+
+    Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``
+    Phase 5: the Project Overview derives its phases, phase-to-unit links and
+    milestone links from a unit's ``metadata`` and shows nothing a person
+    cannot correct in coord, so this is the person's door for exactly those
+    keys. The dashboard sends ``{"metadata_patch": {...}, "from_updated_at"?}``;
+    coord's ``POST /coord/work-units/{slug}/operator-schedule-metadata`` owns
+    the closed key set (``phases``, ``phase_units``, ``parent``,
+    ``parent_phase``, ``intent_initiative``) and every validation, and its typed
+    422 (``{"error": "metadata_key_not_allowed", "key": ...}``) is forwarded
+    verbatim. ``by_actor`` is the authenticated operator, never the browser's.
+    """
+    patch = body.get("metadata_patch")
+    if not isinstance(patch, dict):
+        raise HTTPException(
+            status_code=422, detail="metadata_patch must be a JSON object"
+        )
+    coord_body: dict[str, Any] = {
+        "metadata_patch": patch,
+        "by_actor": _operator_actor_label(actor),
+    }
+    if body.get("from_updated_at") is not None:
+        coord_body["from_updated_at"] = body["from_updated_at"]
+    return await _proxy_coord_post(
+        f"/coord/work-units/{slug}/operator-schedule-metadata",
+        coord_body,
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 

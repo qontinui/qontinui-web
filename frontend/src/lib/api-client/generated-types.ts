@@ -15918,6 +15918,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/plans/{slug}/schedule-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Coord Plan Schedule Metadata
+         * @description Write a work-unit's SCHEDULE metadata (tenant-scoped, admin-gated).
+         *
+         *     Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``
+         *     Phase 5: the Project Overview derives its phases, phase-to-unit links and
+         *     milestone links from a unit's ``metadata`` and shows nothing a person
+         *     cannot correct in coord, so this is the person's door for exactly those
+         *     keys. The dashboard sends ``{"metadata_patch": {...}, "from_updated_at"?}``;
+         *     coord's ``POST /coord/work-units/{slug}/operator-schedule-metadata`` owns
+         *     the closed key set (``phases``, ``phase_units``, ``parent``,
+         *     ``parent_phase``, ``intent_initiative``) and every validation, and its typed
+         *     422 (``{"error": "metadata_key_not_allowed", "key": ...}``) is forwarded
+         *     verbatim. ``by_actor`` is the authenticated operator, never the browser's.
+         */
+        patch: operations["api_v1_operations_plans_slug_schedule_metadata_patch"];
+        trace?: never;
+    };
     "/api/v1/operations/plans/{slug}/transition": {
         parameters: {
             query?: never;
@@ -84914,6 +84945,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_plans_slug_schedule_metadata_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

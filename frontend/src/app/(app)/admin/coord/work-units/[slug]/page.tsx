@@ -21,6 +21,10 @@
  *   - Status history timeline from `coord.work_unit_status_history`
  *     (rows: `{from_status?, to_status, transitioned_at, by_actor?, reason?}`)
  *   - Transition button — POST /api/v1/operations/plans/{slug}/transition
+ *   - Schedule panel — PATCH /api/v1/operations/plans/{slug}/schedule-metadata
+ *     (the phases, phase-to-unit links and milestone link the Project Overview
+ *     derives its Timeline from; plan
+ *     `2026-11-25-overview-timeline-and-milestones-derive-from-coord`)
  *
  * Work-units have no markdown body, so the plan-only body surfaces are
  * dropped. They DO carry `current_phase`, a derived `first_shipped_at` (the
@@ -106,6 +110,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { SchedulePanel } from "./_components/SchedulePanel";
 
 // Work-unit lifecycle statuses. NB `ready`/`shipped` are coord-DERIVED on
 // the device write path, but the operator-transition route is a trusted
@@ -435,6 +440,10 @@ export default function CoordPlanDetailPage() {
             </div>
           </section>
           </CoordAdminOnly>
+
+          {/* Phase 5 of the overview-derives-from-coord plan: the person's door
+              for the phases and links the Project Overview reads. */}
+          <SchedulePanel slug={slug} plan={plan} onSaved={fetchAll} />
 
           {/* R7 — the transition log is supporting material, so it folds; its
               count stays visible in the collapsed header so an empty history

@@ -135,6 +135,13 @@ export interface CoordWorkUnit {
   /** coord `work_units.first_shipped_at` — derived first `shipped` transition. */
   first_shipped_at?: string | null;
   /**
+   * coord `work_units.metadata` — the free-form object the Schedule panel
+   * reads its five keys from (`phases`, `phase_units`, `parent`,
+   * `parent_phase`, `intent_initiative`). Absent on a row projection that
+   * does not carry it.
+   */
+  metadata?: Record<string, unknown> | null;
+  /**
    * Does this work unit have a plan document? Derived server-side by
    * `operations.py` `get_coord_plan` — the SAME helper the list route uses,
    * over a one-row page, so this surface cannot disagree with the row the
@@ -274,4 +281,30 @@ export async function transitionPlan(
     idempotent: false,
   });
   return readJson<unknown>(res, `POST ${url}`);
+}
+
+/**
+ * `PATCH /plans/{slug}/schedule-metadata`
+ * (`patch_coord_plan_schedule_metadata`) — write the unit's schedule keys.
+ * `metadata_patch` is an RFC 7396 patch over coord's closed key set; a `null`
+ * value removes a key. `from_updated_at` is the optimistic lock: the unit's
+ * `updated_at` as last read (a stale value is a 409). `idempotent: false`: a
+ * 5xx is never re-sent, the write may have landed.
+ */
+export interface PlanScheduleMetadataRequest {
+  metadata_patch: Record<string, unknown>;
+  from_updated_at?: string;
+}
+
+export async function patchPlanScheduleMetadata(
+  slug: string,
+  request: PlanScheduleMetadataRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}/schedule-metadata`;
+  const res = await httpClient.fetch(url, {
+    method: "PATCH",
+    body: JSON.stringify(request),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `PATCH ${url}`);
 }
