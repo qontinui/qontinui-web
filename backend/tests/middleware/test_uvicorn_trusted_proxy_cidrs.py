@@ -12,9 +12,12 @@ Phase 1. The plan sets ``FORWARDED_ALLOW_IPS`` (uvicorn) and
 * for a trusted peer it also rewrites ``scope["scheme"]`` from
   ``X-Forwarded-Proto`` (so ``request.url.scheme`` becomes ``https`` behind the
   ALB);
-* with both layers on the same ranges, ``rate_limit.peer_ip`` yields the same
-  key whether or not uvicorn rewrote ``client`` first, and a forged leftmost
-  ``X-Forwarded-For`` entry changes nothing.
+* with both layers on the same ranges and a SINGLE-hop header (the ALB appends
+  exactly one entry), ``rate_limit.peer_ip`` yields the same key whether or not
+  uvicorn rewrote ``client`` first, and a forged leftmost ``X-Forwarded-For``
+  entry changes nothing. A multi-hop header whose trailing entry is itself a
+  trusted proxy is the one shape where the layers differ (uvicorn skips the
+  trusted hop, ``peer_ip`` takes the rightmost entry); one test pins that.
 """
 
 from __future__ import annotations
@@ -189,3 +192,15 @@ def test_untrusted_peer_keys_on_itself_in_both_layers(peer: str) -> None:
         _request(_through_uvicorn(_scope(peer, list(header))))
     )
     assert raw == rewritten == peer
+
+
+def test_trailing_trusted_hop_is_where_the_layers_diverge() -> None:
+    """Pinned, not endorsed: with ``FORGED, REAL, <trusted proxy>`` uvicorn skips
+    the trailing trusted hop and yields REAL, while ``peer_ip`` on the raw header
+    takes the rightmost entry. Behind a single ALB the header has one hop, so the
+    app sees the rewritten client; this records the multi-hop difference."""
+    header = _xff(f"{FORGED}, {REAL_CLIENT}, {ALB_NODE_B}")
+    raw = rate_limit.peer_ip(_request(_scope(ALB_NODE, list(header))))
+    rewritten_scope = _through_uvicorn(_scope(ALB_NODE, list(header)))
+    assert rewritten_scope["client"][0] == REAL_CLIENT
+    assert raw == ALB_NODE_B
