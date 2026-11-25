@@ -28,6 +28,7 @@ import {
 import type { RunnerTarget } from "@/lib/runner/target";
 import { buildPageCatalog } from "./pageCatalog";
 import { copilotPages } from "./pageMap";
+import { isAbortOrTimeout, timeoutAbortReason } from "@/lib/abort-reasons";
 
 /**
  * One planned step. Mirrors the runner's `PlanStep` (prompt_home.rs):
@@ -261,7 +262,7 @@ export async function requestPlan(
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<typeof PLAN_TIMEOUT_SENTINEL>((resolve) => {
     timeoutHandle = setTimeout(() => {
-      clientAbort.abort();
+      clientAbort.abort(timeoutAbortReason());
       resolve(PLAN_TIMEOUT_SENTINEL);
     }, PLAN_CLIENT_TIMEOUT_MS);
   });
@@ -295,11 +296,11 @@ export async function requestPlan(
     if (err instanceof RunnerApiError && err.code !== undefined) {
       throw planErrorForRunnerRefusal(err);
     }
-    // An AbortError (our client deadline, or the httpClient's internal 60s
-    // timeout) is a planning timeout, not a generic network failure.
-    const name = err instanceof Error ? err.name : "";
+    // An abort (our client deadline's TimeoutError, a bare AbortError, or the
+    // httpClient's internal 60s timeout) is a planning timeout, not a generic
+    // network failure.
     const msg = err instanceof Error ? err.message : "Network error";
-    if (name === "AbortError" || /timeout/i.test(msg)) {
+    if (isAbortOrTimeout(err) || /timeout/i.test(msg)) {
       throw new PlanError(
         "runner-unreachable",
         "Planning timed out — the runner took too long. Try again or a simpler prompt.",
