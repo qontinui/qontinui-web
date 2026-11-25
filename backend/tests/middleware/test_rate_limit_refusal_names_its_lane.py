@@ -44,6 +44,8 @@ import ast
 import hashlib
 import logging
 import pathlib
+from collections import Counter
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -793,39 +795,56 @@ UPSTREAM_HELPERS = frozenset({"upstream_http_exception", "upstream_json_response
 #: ``<path under app/>:<enclosing function>``; the bool says the re-render
 #: must forward the original's ``headers=`` (a coord refusal re-worded, whose
 #: lane would otherwise be dropped).
-RERENDERS: dict[str, tuple[str, bool]] = {
+#:
+#: The tuple names EACH exempted call site by its status expression's source
+#: text (``ast.unparse``), one entry per site. The walk compares it with the
+#: sites it finds in that function as a multiset, so the exemption covers the
+#: listed status expressions, each by count, and nothing else: a coord or
+#: runner pass-through ADDED later to an exempted function — under a new
+#: expression, or under the same one again — fails the walk instead of
+#: inheriting the exemption. (A site REPLACED by another with the same
+#: expression text is indistinguishable by text and still passes.)
+RERENDERS: dict[str, tuple[str, bool, tuple[str, ...]]] = {
     "app/api/deps.py:_as_sign_in_refusal": (
         "re-words this app's own auth refusal; never a 429",
         False,
+        ("exc.status_code",),
     ),
     "app/api/v1/endpoints/fleet_targets.py:_reraise_coord_refusal": (
         "re-words an HTTPException the coord proxy helper already built",
         True,
+        ("exc.status_code", "exc.status_code"),
     ),
     "app/api/v1/endpoints/operations/__init__.py:_readable_coord_refusal": (
         "re-words an HTTPException the coord proxy helper already built",
         True,
+        ("exc.status_code",),
     ),
     "app/api/v1/endpoints/workflow_dispatch.py:dispatch_workflow": (
         "DispatchError carries this app's own literal statuses; never a 429",
         False,
+        ("err.status_code",),
     ),
     "app/middleware/error_handler.py:app_exception_handler": (
         "renders this app's own AppException",
         False,
+        ("exc.status_code",),
     ),
     "app/middleware/error_handler.py:http_exception_handler": (
         "renders an HTTPException, forwarding its headers",
         True,
+        ("exc.status_code", "exc.status_code"),
     ),
     "app/overview/http.py:refused": (
         "renders this app's own StoreRefused",
         False,
+        ("exc.status_code",),
     ),
     "app/api/v1/endpoints/device_bridge_ws.py:runner_proxy": (
         "transparent runner proxy: builds raw_headers itself (a repeated "
         "Set-Cookie must survive) and appends upstream_refusal_headers",
         False,
+        ("resp.status_code",),
     ),
 }
 
@@ -888,22 +907,23 @@ def _forwards_headers(call: ast.Call) -> bool:
     return any(k.arg == "headers" for k in call.keywords)
 
 
-def test_every_upstream_status_pass_through_goes_through_the_helper() -> None:
-    """Every builder whose status is ``<expr>.status_code`` — an upstream's
-    answer passed through, which a coord or runner 429 would leave unnamed —
-    is an ``upstream_http_exception`` / ``upstream_json_response`` call, or
-    passes ``headers=upstream_refusal_headers(...)``. The only exceptions
-    are re-renders of this app's own errors, each listed with its reason in
-    ``RERENDERS``; one that re-words a coord refusal must forward
-    ``headers=``. Fails with the file and line of each site that does not.
+def _upstream_pass_through_walk(
+    app_root: pathlib.Path,
+    rerenders: Mapping[str, tuple[str, bool, tuple[str, ...]]],
+) -> tuple[list[str], list[str]]:
+    """``(pass_throughs, violations)`` for every builder under ``app_root``
+    whose status is ``<expr>.status_code``.
 
-    Scope: a status spelled ``<expr>.status_code``. A status held in a plain
-    variable is the helpers' own internals, and is not traced.
+    A builder inside a ``rerenders`` function is exempt only as one of the
+    sites that entry lists: per function, the status expressions found must
+    equal the listed ones as a multiset. An unlisted site, or a listed site
+    that is gone, is a violation naming the function and the difference.
     """
-    app_root = pathlib.Path(__file__).resolve().parents[2] / "app"
     pass_throughs: list[str] = []
-    missing: list[str] = []
-    rerenders_seen: set[str] = set()
+    violations: list[str] = []
+    rerender_sites: dict[str, list[tuple[str, str, ast.Call]]] = {
+        function: [] for function in rerenders
+    }
     for where, function, node in _builders_with_location(app_root):
         name = _call_name(node)
         if name in UPSTREAM_HELPERS:
@@ -911,11 +931,15 @@ def test_every_upstream_status_pass_through_goes_through_the_helper() -> None:
             # status (and, on a 429 only, its headers).
             pass_throughs.append(where)
             continue
-        upstream_status = any(
-            isinstance(v, ast.Attribute) and v.attr == "status_code"
-            for v in _status_values(node)
+        status = next(
+            (
+                v
+                for v in _status_values(node)
+                if isinstance(v, ast.Attribute) and v.attr == "status_code"
+            ),
+            None,
         )
-        if not upstream_status or not _is_builder(node):
+        if status is None or not _is_builder(node):
             continue
         headers = next((k.value for k in node.keywords if k.arg == "headers"), None)
         if (
@@ -924,21 +948,119 @@ def test_every_upstream_status_pass_through_goes_through_the_helper() -> None:
         ):
             pass_throughs.append(where)
             continue
-        if function in RERENDERS:
-            rerenders_seen.add(function)
-            reason, must_forward = RERENDERS[function]
-            if must_forward and not _forwards_headers(node):
-                missing.append(f"{where} (re-render drops headers: {reason})")
+        if function in rerenders:
+            rerender_sites[function].append((where, ast.unparse(status), node))
             continue
-        missing.append(where)
-    assert not missing, (
+        violations.append(where)
+    for function, (reason, must_forward, expected) in rerenders.items():
+        found = rerender_sites[function]
+        if Counter(text for _, text, _ in found) != Counter(expected):
+            violations.append(
+                f"{function}: exempted sites {sorted(expected)} but found "
+                f"{sorted(f'{text} at {where}' for where, text, _ in found)} "
+                f"({reason}) — a new <expr>.status_code builder in an "
+                "exempted function is not exempt; route it through the "
+                "upstream refusal helper, or list it here with its reason"
+            )
+        if must_forward:
+            violations.extend(
+                f"{where} (re-render drops headers: {reason})"
+                for where, _, node in found
+                if not _forwards_headers(node)
+            )
+    return pass_throughs, violations
+
+
+def test_every_upstream_status_pass_through_goes_through_the_helper() -> None:
+    """Every builder whose status is ``<expr>.status_code`` — an upstream's
+    answer passed through, which a coord or runner 429 would leave unnamed —
+    is an ``upstream_http_exception`` / ``upstream_json_response`` call, or
+    passes ``headers=upstream_refusal_headers(...)``. The only exceptions
+    are re-renders of this app's own errors, each SITE listed with its
+    function's reason in ``RERENDERS``; one that re-words a coord refusal
+    must forward ``headers=``. Fails with the file and line of each site
+    that does not, and with the function of each exemption whose sites
+    differ from the listed ones.
+
+    Scope: a status spelled ``<expr>.status_code``. A status held in a plain
+    variable is the helpers' own internals, and is not traced.
+    """
+    app_root = pathlib.Path(__file__).resolve().parents[2] / "app"
+    pass_throughs, violations = _upstream_pass_through_walk(app_root, RERENDERS)
+    assert not violations, (
         "upstream status passed through without the upstream refusal helper: "
-        + ", ".join(missing)
+        + ", ".join(violations)
     )
     # Positive control: the coord and runner proxies are found.
     assert len(pass_throughs) >= 20, pass_throughs
-    stale = set(RERENDERS) - rerenders_seen
-    assert not stale, f"RERENDERS entries that match no site: {sorted(stale)}"
+
+
+_EXEMPTED_FUNCTION = """\
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+
+
+def handler(exc, resp):
+    rendered = JSONResponse({"detail": "x"}, status_code=exc.status_code)
+{mutant}    return rendered
+"""
+
+
+@pytest.mark.parametrize(
+    ("mutant", "must_fail"),
+    [
+        ("", False),
+        # A runner pass-through under a NEW status expression.
+        ("    HTTPException(status_code=resp.status_code)\n", True),
+        # A second site under the SAME expression as the exempted one.
+        ("    JSONResponse({}, status_code=exc.status_code)\n", True),
+        # A pass-through through the helper stays fine in an exempted function.
+        (
+            "    JSONResponse({}, status_code=resp.status_code,"
+            " headers=upstream_refusal_headers(resp))\n",
+            False,
+        ),
+    ],
+    ids=["control", "new-expression", "same-expression", "via-helper"],
+)
+def test_an_exemption_covers_its_listed_sites_only(
+    tmp_path: pathlib.Path, mutant: str, must_fail: bool
+) -> None:
+    """The RERENDERS exemption is keyed to each call site, not to the
+    enclosing function: a bare pass-through added to an exempted function
+    fails the walk (plan 2026-11-23-an-exec-mode-pass-draws-an-unattributed-
+    load-time-429, residual of Phase 2)."""
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "proxy.py").write_text(
+        _EXEMPTED_FUNCTION.replace("{mutant}", mutant), encoding="utf-8"
+    )
+    table = {
+        "app/proxy.py:handler": (
+            "re-renders this app's own error",
+            False,
+            ("exc.status_code",),
+        )
+    }
+    _, violations = _upstream_pass_through_walk(app_root, table)
+    assert bool(violations) is must_fail, violations
+    if must_fail:
+        assert any("app/proxy.py:handler" in v for v in violations), violations
+
+
+def test_a_listed_site_that_is_gone_fails_the_walk(tmp_path: pathlib.Path) -> None:
+    """An exemption listing more sites than the function holds is stale."""
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "proxy.py").write_text(
+        _EXEMPTED_FUNCTION.replace("{mutant}", ""), encoding="utf-8"
+    )
+    table = {
+        "app/proxy.py:handler": ("r", False, ("exc.status_code", "exc.status_code")),
+        "app/proxy.py:gone": ("r", False, ("exc.status_code",)),
+    }
+    _, violations = _upstream_pass_through_walk(app_root, table)
+    assert len(violations) == 2, violations
 
 
 def test_refusal_headers_name_the_lane_and_key_kind() -> None:
