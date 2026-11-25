@@ -267,10 +267,27 @@ describe("mergeMilestones", () => {
       ]
     );
     expect(m!.statusWord).toBe(
-      "Not available since 21 Nov 2026 � the project record could not be reached"
+      "Not available since 21 Nov 2026 — the project record could not be reached"
     );
     expect(m!.tone).toBe("unknown");
     expect(m!.tone).not.toBe("unconfirmed");
+  });
+
+  it("table lookups ignore inherited names like constructor and toString", () => {
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      expect(phaseStateWord(name as never)).toBe("Unrecognised");
+      expect(gateVerdictWord(name as never)).toBe("Unrecognised");
+      expect(milestoneStatusWord(name as never)).toBe("Unrecognised");
+      const [m] = mergeMilestones(
+        [],
+        [milestone("Review", "2026-12-01", name as never)]
+      );
+      expect(m!.statusWord).toBe("Unrecognised");
+      expect(m!.tone).toBe("unknown");
+    }
+    expect(missingLabels(["constructor"], PHASE_STATE_WORDS)).toEqual([
+      "constructor",
+    ]);
   });
 
   it("an unrecognised coord milestone status reads Unrecognised, not a concrete one", () => {
