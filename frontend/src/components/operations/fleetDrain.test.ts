@@ -17,6 +17,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activeDrainLanes,
+  formatDrainRemaining,
   laneHold,
   unknownDrainLanes,
   parseDrainEntry,
@@ -366,3 +367,23 @@ describe("per-lane entries this build could not read", () => {
     expect(unknownDrainLanes(parseDrainEntry(wireEntry())!)).toEqual([]);
   });
 });
+describe("formatDrainRemaining", () => {
+  it("renders a FUTURE deadline as a remaining duration", () => {
+    // `relativeTime` renders every future stamp as "just now"; "Drained until
+    // just now" is the opposite of what a six-hour deadline means.
+    expect(formatDrainRemaining("2026-09-01T18:00:00Z", NOW)).toBe("in 6h");
+  });
+
+  it("renders a lapsed deadline as elapsed", () => {
+    expect(formatDrainRemaining("2026-09-01T11:30:00Z", NOW)).toBe("30m ago");
+  });
+
+  it("renders days for a long drain", () => {
+    expect(formatDrainRemaining("2026-09-04T13:00:00Z", NOW)).toBe("in 3d 1h");
+  });
+
+  it("says so rather than guessing when the stamp will not parse", () => {
+    expect(formatDrainRemaining("whenever", NOW)).toBe("an unknown time");
+  });
+});
+
