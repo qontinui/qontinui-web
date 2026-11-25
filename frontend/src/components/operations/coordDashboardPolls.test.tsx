@@ -43,6 +43,7 @@ import { useFleetResourceSamples } from "./useFleetResourceSamples";
 import { useFleetVolumes } from "./useFleetVolumes";
 import { useFleetHealth } from "./useFleetHealth";
 import { useFleetDrain } from "./useFleetDrain";
+import { useFleetMachines, useWindowReadiness } from "./useMaintenanceWindow";
 import { useCiRunnerMirror } from "./useCiRunnerMirror";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { useCiStatusStream } from "./useCiStatusStream";
@@ -180,6 +181,7 @@ function FleetOverviewHost(): ReactElement {
       }}
       ciMachines={{ state: "loading" }}
       drain={{ read: { state: "loading" }, asOfMs: null, refresh: noop }}
+      machines={{ state: "loading" }}
       deviceStatus={{
         byHostname: new Map(),
         connected: false,
@@ -280,6 +282,18 @@ const POLLS: PollCase[] = [
   {
     name: "useDeviceReadiness",
     mount: hook(() => useDeviceReadiness(DEVICE)),
+    intervalMs: 15_000,
+  },
+  {
+    name: "useFleetMachines",
+    mount: hook(() => useFleetMachines()),
+    intervalMs: 15_000,
+  },
+  {
+    name: "useWindowReadiness",
+    mount: hook(() =>
+      useWindowReadiness("7d7d7d7d-0000-4000-8000-000000000001")
+    ),
     intervalMs: 15_000,
   },
   {
