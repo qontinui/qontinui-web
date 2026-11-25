@@ -50,6 +50,7 @@ vi.mock("./_components/RepoFollowupDialsPanel", () => ({
 
 import { AgentPrefError } from "@/lib/api/agent-registry";
 import CoordAgentRegistryPage from "./page";
+import { expectRowKeyedReveal } from "@/test/recordRowSlot";
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
@@ -84,6 +85,19 @@ describe("/admin/coord/agent-registry", () => {
     expect(within(rowEl).getByText("Off by default")).toBeInTheDocument();
     // `policy_required` is a claim about policy and must be visible.
     expect(within(rowEl).getByText("policy required")).toBeInTheDocument();
+  });
+
+  it("reveals the policy-required badge by the ROW's width, never the viewport's", async () => {
+    render(<CoordAgentRegistryPage />);
+    const rowEl = await screen.findByTestId("agent-registry-row-code-reviewer");
+    // The line is its own named container, so a narrowed column drops the
+    // badge as RecordRow's slots do; the expanded panel's policy button
+    // states the same fact at every width.
+    expect(rowEl.className.split(/\s+/)).toContain("@container/agent-row");
+    expectRowKeyedReveal(
+      within(rowEl).getByText("policy required"),
+      "@min-[45rem]/agent-row:inline-flex"
+    );
   });
 
   it("links to the per-spawn-type model & effort panel", async () => {

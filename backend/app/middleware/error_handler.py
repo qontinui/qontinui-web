@@ -534,33 +534,6 @@ def conflict_error(
     )
 
 
-def rate_limit_error(
-    message: str = "Too many requests, please try again later",
-    retry_after: int | None = None,
-) -> HTTPException:
-    """
-    Create a standardized 429 rate limit error.
-
-    Args:
-        message: Error message
-        retry_after: Optional seconds until retry is allowed
-
-    Returns:
-        HTTPException with standardized error format
-
-    Example:
-        raise rate_limit_error("Rate limit exceeded", retry_after=60)
-    """
-    detail: dict[str, Any] = {
-        "error": ErrorCode.RATE_LIMIT_EXCEEDED.value,
-        "message": message,
-    }
-    if retry_after:
-        detail["retry_after"] = retry_after
-
-    return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
-
-
 def quota_exceeded_error(
     resource: str,
     current: int | None = None,

@@ -11,8 +11,17 @@
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1. The
  * slot ORDER is the rule and it is fixed here rather than left to each caller:
  *
- *   identity badge (mono) → label (truncating, `flex-1`) → status badge →
- *   reason (`hidden sm:inline`, truncating) → time → chevron
+ *   identity badge (mono) → label (truncating, `grow basis-48`) → status
+ *   badge → reason (shown from a 45rem ROW, truncating) → time → chevron
+ *
+ * The root is an inline-size query container named `record-row`, so the
+ * reason answers to the row's own width, never the viewport's: a console in a
+ * narrowed column (beside the sidebar, a split pane, a dialog) keeps its label
+ * rather than handing that width to the reason. The label holds a 12rem floor
+ * beside the reason (its flex basis, with the reason the item that shrinks
+ * first). Containment also means a content-sized parent collapses the row —
+ * give it `w-full` or `flex-1 min-w-0` there — and an unnamed container query
+ * in any slot binds to the row.
  *
  * Overflow is truncation with a `title`, never wrapping — a wrapped row is
  * what makes a list unscannable, and it is the single easiest thing to get
@@ -52,9 +61,11 @@ export interface RecordRowProps {
   /** The status badge element, e.g. `<StatusBadge status palette />`. */
   status?: ReactNode;
   /**
-   * Brief "why", shown inline from `sm` up and hidden while expanded (the
-   * detail panel carries it in full). The status badge's own `title` is what
-   * answers "why?" on the viewports where this is dropped.
+   * Brief "why", shown inline once the ROW is 45rem wide (capped at 22ch, and
+   * at 40ch from a 53rem row) and hidden while expanded (the detail panel
+   * carries it in full). It gives up width before the label goes under its
+   * 12rem floor. The status badge's own `title` is what answers "why?" on the
+   * rows where this is dropped.
    */
   reason?: string;
   /** The timestamp element, e.g. `<RowTime at verb />`. */
@@ -158,7 +169,9 @@ export function RecordRow({
     <div
       data-testid={testId}
       data-row-key={resolvedRowKey}
-      className={className}
+      // `@container/record-row`: the row is its own NAMED query container, so
+      // the reason's thresholds below read the row's width, not the viewport's.
+      className={["@container/record-row", className].filter(Boolean).join(" ")}
     >
       <button
         type="button"
@@ -185,15 +198,19 @@ export function RecordRow({
         <Badge variant="outline" className="font-mono text-xs shrink-0">
           {identity}
         </Badge>
-        <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+        <span className="min-w-0 grow basis-48 truncate text-sm">{label}</span>
         {status}
         {reason && !expanded && (
-          // The reason rides beside the badge from `sm` up (it used to appear
-          // only at `lg`, which hid the answer to "why?" on most laptops).
-          // Below that, and whenever it truncates, the badge's title carries
-          // the full text.
+          // The reason answers to the ROW (`@container/record-row`), not the
+          // viewport: shown from a 45rem row at 22ch, widened to 40ch from a
+          // 53rem row — where a typical row's fixed slots plus the label's
+          // 12rem floor leave room for it at that cap. `shrink-[999]` makes
+          // it the item that gives up width first, so the label (the row's
+          // identifying text) keeps its 12rem basis even on a row whose
+          // fixed slots are wider than typical. Below 45rem, and whenever it
+          // truncates, the badge's title carries the full text.
           <span
-            className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[22ch] lg:max-w-[40ch]"
+            className="hidden @min-[45rem]/record-row:inline shrink-[999] text-xs text-muted-foreground truncate max-w-[22ch] @min-[53rem]/record-row:max-w-[40ch]"
             title={reason}
             data-testid={reasonTestId}
           >
