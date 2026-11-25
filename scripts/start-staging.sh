@@ -15,6 +15,14 @@ fi
 # Start staging services (all-in-one)
 echo ""
 echo "Starting staging services..."
+# Retired MinIO containers (see docker-compose.staging.yml) hold port 9004.
+# Removed by name; no --remove-orphans (the dev compose file shares this
+# project, so it would remove the dev containers).
+for retired in qontinui-minio-staging qontinui-minio-client-staging; do
+    if [ "$(docker ps -aq --filter "name=^${retired}$")" ]; then
+        docker rm -fv "$retired" >/dev/null && echo "Removed retired container $retired"
+    fi
+done
 docker compose -f docker-compose.staging.yml up -d --build
 
 # Wait for services to be healthy
@@ -34,8 +42,7 @@ echo ""
 echo "Services running:"
 echo "  - PostgreSQL: localhost:5434"
 echo "  - Redis: localhost:6381"
-echo "  - MinIO API: localhost:9004"
-echo "  - MinIO Console: http://localhost:9005 (minioadmin/minioadmin_staging)"
+echo "  - Object store (S3 API, versitygw): localhost:9004 (qontinui_staging_s3 / qontinui_staging_s3_secret unless S3_STAGING_ACCESS_KEY / S3_STAGING_SECRET_KEY are set)"
 echo "  - Backend API: http://localhost:8002"
 echo ""
 echo "Frontend staging mode:"
