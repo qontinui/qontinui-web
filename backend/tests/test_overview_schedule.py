@@ -18,6 +18,7 @@ import asyncio
 import datetime as dt
 import importlib.util
 import re
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -1234,6 +1235,31 @@ class TestForecast:
         assert env.forecast.unknown_reason == "no_calendar"
 
     @pytest.mark.asyncio
+    async def test_a_declared_calendar_changes_the_reason_not_the_honesty(
+        self, monkeypatch
+    ):
+        """Phase 7: coord declares the calendar, so ``no_calendar`` would be false.
+        The phases still carry no planned start, so the forecast stays unknown and
+        names the input that is actually missing."""
+        data = make_coord_data(
+            phases=2,
+            initiative=INITIATIVE_BODY.replace(
+                "---\n# Initiative",
+                "calendar:\n  working_day_factor: 0.8\n---\n# Initiative",
+                1,
+            ),
+        )
+        data["units"][0]["metadata"]["phases"] = [
+            {"index": 1, "name": "P1 One", "milestone": "V1"},
+            {"index": 2, "name": "P2 Two", "milestone": "V2"},
+        ]
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        base, _ = await build()
+        env = svc.with_forecast(base, now=NOW)
+        assert env.forecast.state == "unknown"
+        assert env.forecast.unknown_reason == "phase_dates_missing"
+
+    @pytest.mark.asyncio
     async def test_a_coord_outage_gives_the_phases_reason_not_a_forecast(self, coord):
         coord.fail = HTTPException(504, "down")
         base, _ = await build()
@@ -2018,3 +2044,108 @@ class TestNoOverlayVocabulary:
         assert set(get_args(ResolvedState)) == {"known", "unknown"}
         assert "entered" not in get_args(SourceKind)
         assert {"basis", "disagreement_count"}.isdisjoint(ScheduleEnvelope.model_fields)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: milestones, dates and calendar declared in the initiative document
+# ---------------------------------------------------------------------------
+
+_SCHEDULE_CASES = (
+    Path(__file__).resolve().parents[2]
+    / "frontend"
+    / "src"
+    / "app"
+    / "(app)"
+    / "admin"
+    / "coord"
+    / "prompt-documents"
+    / "_lib"
+    / "__fixtures__"
+    / "initiative-schedule.cases.json"
+)
+
+
+def _schedule_cases() -> list[dict[str, Any]]:
+    import json
+
+    return json.loads(_SCHEDULE_CASES.read_text(encoding="utf-8"))["cases"]
+
+
+class TestInitiativeScheduleFrontmatter:
+    """The panel on /admin/coord/prompt-documents writes these blocks; the
+    overview reads them. The fixture file is shared with the panel's own
+    TypeScript parser (its preview), so a drift between the two fails here or
+    there, not in production."""
+
+    def test_the_shared_fixture_file_is_collected(self):
+        # a-green-run-must-prove-it-ran: a moved file would otherwise pass vacuously.
+        assert len(_schedule_cases()) >= 6
+
+    @pytest.mark.parametrize("case", _schedule_cases(), ids=lambda c: c["name"])
+    def test_python_parser_reads_every_shared_case(self, case):
+        facts = parse_initiative(case["text"])
+        want = case["expect"]
+        assert facts.scalars.get("programme") == want["programme"]
+        rows, unreadable = parse_milestones(facts)
+        assert [
+            {
+                "id": r.id,
+                "name": r.name,
+                "date": r.target_date,
+                "shown_by": r.shown_by,
+                "work_unit": r.work_unit,
+                "gate": r.gate,
+            }
+            for r in rows
+        ] == want["milestones"]
+        assert unreadable == want["milestones_unreadable"]
+        calendar, cal_bad = cs.parse_calendar(facts)
+        if want["calendar"] is None:
+            assert calendar is None
+        else:
+            assert calendar is not None
+            assert calendar.working_day_factor == Decimal(
+                want["calendar"]["working_day_factor"]
+            )
+            assert [
+                {"start": b.start, "end": b.end, "label": b.label}
+                for b in calendar.breaks
+            ] == want["calendar"]["breaks"]
+        assert cal_bad == want["calendar_unreadable"]
+
+    def test_milestone_v4_added_by_the_panel_is_read(self):
+        """The derived-only case: V4 dated 2027-02-01 entered in the panel."""
+        text = (
+            "---\nmilestones:\n"
+            "  - {id: V3, name: V3 pilot, date: 2027-01-22}\n"
+            "  - {id: V4, name: V4 handover, date: 2027-02-01, shown_by: the board}\n"
+            "---\nprose\n"
+        )
+        rows, unreadable = parse_milestones(parse_initiative(text))
+        assert unreadable == []
+        assert [(r.id, r.target_date, r.shown_by) for r in rows][-1] == (
+            "V4",
+            "2027-02-01",
+            "the board",
+        )
+
+    def test_a_missing_calendar_is_none_and_never_a_default(self):
+        calendar, bad = cs.parse_calendar(
+            parse_initiative("---\nstarts: 2026-10-19\n---\nx")
+        )
+        assert (calendar, bad) == (None, [])
+
+    def test_an_inline_calendar_is_listed_not_guessed(self):
+        calendar, bad = cs.parse_calendar(
+            parse_initiative("---\ncalendar: {working_day_factor: 0.8}\n---\nx")
+        )
+        assert calendar is None
+        assert bad == ["calendar: {working_day_factor: 0.8}"]
+
+    def test_the_calendar_block_does_not_swallow_following_keys(self):
+        facts = parse_initiative(
+            "---\ncalendar:\n  working_day_factor: 0.9\nstarts: 2026-10-19\n---\nx"
+        )
+        assert facts.scalars == {"starts": "2026-10-19"}
+        calendar, _ = cs.parse_calendar(facts)
+        assert calendar is not None and calendar.working_day_factor == Decimal("0.9")

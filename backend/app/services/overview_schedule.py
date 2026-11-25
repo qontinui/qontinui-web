@@ -62,6 +62,7 @@ from app.overview.coord_schedule import (
     declared_phases,
     find_programmes,
     metadata_of,
+    parse_calendar,
     parse_initiative,
     parse_instant,
     parse_milestones,
@@ -816,7 +817,7 @@ async def _assemble(
             read=gates_extent,
         )
 
-    return ScheduleEnvelope(
+    envelope = ScheduleEnvelope(
         tenant_id=reads.tenant_id,
         door=reads.door,
         observed_at=now,
@@ -832,6 +833,8 @@ async def _assemble(
         work_units=extent,
         sources=_sources(now, doc_src if doc_failure is None else None, prog_src),
     )
+    envelope._calendar_declared = parse_calendar(facts)[0] is not None
+    return envelope
 
 
 def _phase_view(
@@ -1103,6 +1106,13 @@ def compute_schedule_forecast(env: ScheduleEnvelope, now: dt.datetime) -> Resolv
     if not coord_phases:
         return _unknown("no_phases", src, now)
     if any(p.planned_end.state == "unknown" for p in coord_phases):
+        return _unknown("phase_dates_missing", src, now)
+    if env._calendar_declared:
+        # A calendar IS declared (the initiative document's ``calendar:``), so
+        # ``no_calendar`` would be false. Every planned end is known, but coord's
+        # phases carry a planned END only, so there is no planned START to
+        # forecast from: the missing input is still a phase date (the closed
+        # reason set has no narrower name for it), not the calendar.
         return _unknown("phase_dates_missing", src, now)
     return _unknown("no_calendar", src, now)
 
