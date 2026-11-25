@@ -6,6 +6,7 @@
  */
 
 import type { PhaseTaskRead } from "../../_lib/estimate-api";
+import type { OverlayPhase } from "../../_lib/schedule";
 import type { PhaseForecast, PhaseProgress } from "../../_lib/timeline-api";
 
 export interface TimelinePhase {
@@ -13,17 +14,22 @@ export interface TimelinePhase {
   tasks: PhaseTaskRead[];
   /** `null` when the forecast could not be read. */
   forecast: PhaseForecast | null;
+  /** The same phase as coord holds it (matched by equal code only), or null
+   *  when coord has no phase with this code or the schedule is not read. */
+  coord: OverlayPhase | null;
 }
 
 export function assemblePhases(
   progress: PhaseProgress[],
   tasks: Map<string, PhaseTaskRead[]>,
-  forecast: PhaseForecast[] | null
+  forecast: PhaseForecast[] | null,
+  overlay: ReadonlyMap<string, OverlayPhase> | null = null
 ): TimelinePhase[] {
   return progress.map((p) => ({
     progress: p,
     tasks: tasks.get(p.id) ?? [],
     forecast: forecast?.find((f) => f.id === p.id) ?? null,
+    coord: overlay?.get(p.id) ?? null,
   }));
 }
 
