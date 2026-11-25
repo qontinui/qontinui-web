@@ -6587,12 +6587,12 @@ export interface paths {
          *       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
          *       when the device WAS under a deny, its key row whatever its state (any
          *       key predating the re-arm is suspect); otherwise only a REVOKED row. A
-         *       usable key on a never-revoked device is kept — it is how a runner
+         *       usable key on a device not under a deny is kept — it is how a runner
          *       offline past its JWT grace recovers on its own (``/exchange``).
          *
-         *     What re-keys a device whose row was removed is its next pairing, which
-         *     mints a fresh key because no row exists: ``pair-cli``. ``/self-mint``
-         *     also enrols one, given a live paired device JWT.
+         *     The bound pair-code redeem this authorizes mints no key; a device whose
+         *     row was removed re-keys through ``/self-mint`` with the device JWT that
+         *     redeem returns, or on a later ``pair-cli``.
          *
          *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
          *     the device collects it, through ``/pending-redeem``.

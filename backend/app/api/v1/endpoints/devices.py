@@ -1443,12 +1443,12 @@ async def authorize_redeem(
       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
       when the device WAS under a deny, its key row whatever its state (any
       key predating the re-arm is suspect); otherwise only a REVOKED row. A
-      usable key on a never-revoked device is kept — it is how a runner
+      usable key on a device not under a deny is kept — it is how a runner
       offline past its JWT grace recovers on its own (``/exchange``).
 
-    What re-keys a device whose row was removed is its next pairing, which
-    mints a fresh key because no row exists: ``pair-cli``. ``/self-mint``
-    also enrols one, given a live paired device JWT.
+    The bound pair-code redeem this authorizes mints no key; a device whose
+    row was removed re-keys through ``/self-mint`` with the device JWT that
+    redeem returns, or on a later ``pair-cli``.
 
     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
     the device collects it, through ``/pending-redeem``.
@@ -1696,12 +1696,13 @@ async def revoke_device_credentials(
     # Lock order WITHIN WEB: device row -> pair-code rows -> machine-key row
     # (D -> P -> K). authorize-redeem takes them in that order, and a door
     # that locks the machine-key row (K) while holding a pair-code row lock
-    # (P) must too. Cancelling the pending codes BEFORE revoking the key keeps
+    # (P) must too (no such door exists yet; this keeps the order for one). Cancelling the pending codes BEFORE revoking the key keeps
     # this path in the same order; the other way round, such a door (P held,
     # waiting on K) and this revoke (K held, waiting on P) form a cycle
     # Postgres sees and aborts.
     #
-    # That is NOT the whole picture. The redeem holds P across its call to
+    # That is NOT the whole picture. A redeem of a BOUND code (the only rows
+    # ``cancel_pending_for_device`` touches) holds P across its call to
     # coord's pair-cli, and coord's handler upserts this same coord.devices
     # row (D) on its own connection. So, across processes, the redeem takes
     # P then D, and this path, holding D and waiting on P, stalls behind an
