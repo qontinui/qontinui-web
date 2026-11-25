@@ -9963,12 +9963,14 @@ class DecisionGateRequest(BaseModel):
         stripped = v.strip()
         if not stripped:
             raise ValueError("must not be blank")
+        if len(stripped) > 500:
+            raise ValueError("must be at most 500 characters")
         return stripped
 
     @field_validator("work_unit_slug")
     @classmethod
     def _slug_shape(cls, v: str) -> str:
-        if not _DECISION_SLUG_RE.match(v):
+        if not _DECISION_SLUG_RE.fullmatch(v):
             raise ValueError("work_unit_slug is not a valid work unit slug")
         return v
 
