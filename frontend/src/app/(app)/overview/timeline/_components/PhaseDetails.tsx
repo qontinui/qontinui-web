@@ -34,7 +34,9 @@ import {
   describeSlip,
   formatDay,
 } from "../../_lib/timeline";
+import { enteredBy, phaseStateWord } from "../../_lib/schedule";
 import type { TimelinePhase } from "./model";
+import { UnknownFigure } from "./UnknownFigure";
 
 interface Form {
   actual_start: string;
@@ -107,6 +109,95 @@ function Line({
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-foreground">{children}</dd>
     </div>
+  );
+}
+
+/** One date of the overlay in words, with a contradicting entered value
+ *  beside it and never in its place. */
+function OverlayDay({
+  label,
+  date,
+  enteredNote,
+  uiBridgeId,
+}: {
+  label: string;
+  date: NonNullable<TimelinePhase["coord"]>["start"];
+  enteredNote: string;
+  uiBridgeId: string;
+}) {
+  if (date.from === "coord") {
+    return (
+      <span data-ui-bridge-id={uiBridgeId}>
+        {label} {formatDay(date.day)}
+        {date.entered_disagrees && (
+          <span
+            className="ml-1 text-amber-700 dark:text-amber-400"
+            data-ui-bridge-id={`${uiBridgeId}.disagreement`}
+          >
+            ({enteredNote}: {formatDay(date.entered_disagrees)})
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (date.from === "entered") {
+    return (
+      <span data-ui-bridge-id={uiBridgeId}>
+        {label} {formatDay(date.day)}{" "}
+        <span className="text-muted-foreground">
+          ({enteredNote}, not confirmed by the project record)
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span data-ui-bridge-id={uiBridgeId}>
+      {label}{" "}
+      {date.resolved ? (
+        <UnknownFigure
+          figure={date.resolved}
+          uiBridgeId={`${uiBridgeId}.unknown`}
+        />
+      ) : (
+        "not available"
+      )}
+    </span>
+  );
+}
+
+/** The phase as the project record holds it, beside the entered progress. */
+function CoordLines({
+  phase,
+  uiBridgeId,
+}: {
+  phase: TimelinePhase;
+  uiBridgeId: string;
+}) {
+  const c = phase.coord!;
+  const note = enteredBy({
+    entered: { by: phase.progress.updated_by, at: phase.progress.updated_at },
+  });
+  const state = c.coord.state.value;
+  return (
+    <Line label="Project record">
+      <span data-ui-bridge-id={`${uiBridgeId}.coord`}>
+        {state ? phaseStateWord(state) : "State not available"}
+        {" · "}
+        <OverlayDay
+          label="started"
+          date={c.start}
+          enteredNote={note}
+          uiBridgeId={`${uiBridgeId}.coord.start`}
+        />
+        {" · "}
+        <OverlayDay
+          label="finished"
+          date={c.end}
+          enteredNote={note}
+          uiBridgeId={`${uiBridgeId}.coord.end`}
+        />
+      </span>
+    </Line>
   );
 }
 
@@ -197,6 +288,7 @@ export function PhaseDetails({
               : "Not started"}
           </span>
         </Line>
+        {phase.coord && <CoordLines phase={phase} uiBridgeId={uiBridgeId} />}
         {phase.forecast && (
           <Line label="State">
             {PHASE_STATE_LABEL[phase.forecast.state]}
