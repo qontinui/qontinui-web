@@ -33,6 +33,11 @@ const mocks = vi.hoisted(() => ({
   deleteMilestone: vi.fn(),
   fetchChangeLog: vi.fn(),
   fetchForecast: vi.fn(),
+  schedule: { data: null, loading: false, error: null } as {
+    data: unknown;
+    loading: boolean;
+    error: string | null;
+  },
 }));
 
 vi.mock("../_hooks/useOverviewProject", () => ({
@@ -68,12 +73,26 @@ vi.mock("@/components/overview/editing/api", async (importOriginal) => ({
   deleteMilestone: mocks.deleteMilestone,
   fetchChangeLog: mocks.fetchChangeLog,
 }));
+vi.mock("../_hooks/useSchedule", () => ({
+  useSchedule: () => ({ ...mocks.schedule, refresh: async () => {} }),
+}));
 vi.mock("../_lib/timeline-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   fetchForecast: mocks.fetchForecast,
 }));
 
 import { VersionConflictError } from "@/components/overview/editing/api";
+import {
+  entered,
+  envelope,
+  known,
+  noProgrammeEnvelope,
+  phase as coordPhase,
+  unknown,
+  unreachableEnvelope,
+} from "../_lib/schedule-fixtures";
+import { bodyText, plainLanguageViolations } from "../_lib/plain-language";
+import type { ScheduleEnvelope } from "../_lib/schedule-api";
 import TimelinePage from "./page";
 
 const PHASE_PLAN = [
@@ -244,6 +263,7 @@ const list = (items: unknown[]) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.canEdit = true;
+  mocks.schedule = { data: null, loading: false, error: null };
   mocks.estimates = [{ ...ESTIMATE, content: null }];
   mocks.listResource.mockImplementation(async (path: string) => {
     if (path === "estimates") return list(mocks.estimates);
@@ -508,6 +528,11 @@ describe("milestones", () => {
 describe("with no estimate", () => {
   it("says so, and still offers the milestones", async () => {
     mocks.estimates = [];
+    mocks.schedule = {
+      data: noProgrammeEnvelope(),
+      loading: false,
+      error: null,
+    };
     render(<TimelinePage />);
     await screen.findByText("This project has no schedule yet");
     expect(byId("overview.timeline.chart")).toBeNull();
@@ -530,5 +555,194 @@ describe("copy as mermaid gantt", () => {
     expect(text).toContain("section A1 Discovery");
     expect(text).toMatch(/Interview the sponsors :crit, /);
     expect(text).toMatch(/Pilot live :milestone, /);
+  });
+});
+
+function setSchedule(env: ScheduleEnvelope | null, over: object = {}) {
+  mocks.schedule = { data: env, loading: false, error: null, ...over };
+}
+
+describe("with no estimate and a schedule from the project record", () => {
+  beforeEach(() => {
+    mocks.estimates = [];
+  });
+
+  it("shows the phases and milestones instead of the no-estimate notice", async () => {
+    setSchedule(envelope());
+    render(<TimelinePage />);
+    await waitFor(() => expect(byId("overview.schedule")).not.toBeNull());
+    expect(byId("overview.timeline.no-estimate")).toBeNull();
+    for (const code of ["F1", "F2", "F3"])
+      expect(byId(`overview.schedule.chart.phase.${code}`)).not.toBeNull();
+    expect(
+      byId("overview.schedule.chart.milestone.coord-launch-review")
+    ).not.toBeNull();
+    expect(mocks.fetchForecast).not.toHaveBeenCalled();
+  });
+
+  it("shows 14 phase rows when the programme declares 14", async () => {
+    const phases = Array.from({ length: 14 }, (_, i) =>
+      coordPhase(i + 1, `F${i + 1}`, `F${i + 1} Step ${i + 1}`)
+    );
+    setSchedule(envelope({ phases: known(phases, "coord_delivery") }));
+    render(<TimelinePage />);
+    await waitFor(() => expect(byId("overview.schedule")).not.toBeNull());
+    expect(
+      document.querySelectorAll(
+        "li[data-ui-bridge-id^='overview.schedule.list.phase.F']"
+      )
+    ).toHaveLength(14);
+    expect(
+      document.querySelectorAll(
+        "[data-ui-bridge-id^='overview.schedule.chart.phase.F'][data-phase-state]"
+      )
+    ).toHaveLength(14);
+  });
+
+  it("when coord is unreachable every figure says Not available since, with no bars and no default", async () => {
+    setSchedule(unreachableEnvelope());
+    const { container } = render(<TimelinePage />);
+    await waitFor(() => expect(byId("overview.schedule")).not.toBeNull());
+    const text = bodyText(container);
+    expect(text).toContain("Not available since 21 Nov 2026");
+    expect(byId("overview.schedule.chart")).toBeNull();
+    expect(text).not.toMatch(/\b0 days?\b|On track/i);
+    // A failed read is not "this project has no schedule".
+    expect(byId("overview.timeline.no-estimate")).toBeNull();
+  });
+
+  it("a programme-less project still gets the plain no-schedule notice", async () => {
+    setSchedule(noProgrammeEnvelope());
+    render(<TimelinePage />);
+    await screen.findByText("This project has no schedule yet");
+    expect(byId("overview.schedule.phases.unknown")?.textContent).toContain(
+      "no delivery programme"
+    );
+  });
+
+  it("a schedule that could not be read at all says so rather than drawing nothing", async () => {
+    setSchedule(null, {
+      error: "GET /api/v1/overview/schedule failed: 502 - x",
+    });
+    render(<TimelinePage />);
+    await waitFor(() => expect(byId("overview.schedule.error")).not.toBeNull());
+    expect(byId("overview.timeline.no-estimate")).toBeNull();
+  });
+
+  it("holds no identifier outside the disclosure", async () => {
+    setSchedule(envelope());
+    const { container } = render(<TimelinePage />);
+    await waitFor(() => expect(byId("overview.schedule")).not.toBeNull());
+    const section = byId("overview.schedule")!;
+    expect(plainLanguageViolations(section)).toEqual([]);
+    expect(container).toBeTruthy();
+  });
+});
+
+describe("an estimate with coord's phases laid over it", () => {
+  /** Coord holds A0 with an end that differs from the typed 2026-02-09, and a
+   *  phase (Z9) no estimate phase shares a code with. */
+  function overlayEnv(): ScheduleEnvelope {
+    return envelope({
+      phases: known([
+        coordPhase(1, "A0", "A0 Mobilisation", {
+          state: "done",
+          actual_start: known("2026-01-05"),
+          actual_end: known("2026-02-12"),
+        }),
+        coordPhase(2, "A1", "A1 Discovery", {
+          state: "in_progress",
+          actual_start: known("2026-02-10"),
+          actual_end: unknown("not_recorded"),
+        }),
+        coordPhase(9, "Z9", "Z9 Handover"),
+      ]),
+      milestones: {
+        items: known([
+          {
+            ...envelope().milestones.items.value![0]!,
+            name: "Pilot live",
+            target_date: known("2026-03-20", "coord_document"),
+          },
+        ]),
+        unreadable_rows: [],
+        entered_only: [],
+      },
+      sources: [
+        {
+          kind: "coord_document",
+          label: "The initiative document",
+          version: 2,
+          observed_at: "2026-11-25T12:00:00Z",
+        },
+      ],
+    });
+  }
+
+  it("draws coord's date, shows the entered one beside it, and counts the disagreement", async () => {
+    setSchedule(overlayEnv());
+    await shown();
+    expect(byId("overview.timeline.overlay.disagreements")?.dataset.count).toBe(
+      "1"
+    );
+    expect(byId("overview.timeline.chart.phase.A0.origin")?.textContent).toBe(
+      "Differs from entered"
+    );
+    const coord = byId("overview.timeline.list.phase.A0.details.coord.end")!;
+    expect(coord.textContent).toContain("12 Feb 2026");
+    expect(
+      byId("overview.timeline.list.phase.A0.details.coord.end.disagreement")
+        ?.textContent
+    ).toContain("9 Feb 2026");
+    // The entered value is not edited by the overlay.
+    expect(
+      byId("overview.timeline.list.phase.A0.details.actual")?.textContent
+    ).toContain("9 Feb 2026");
+  });
+
+  it("lists a coord-only phase after the estimate's, and keeps an estimate-only one as entered", async () => {
+    setSchedule(overlayEnv());
+    await shown();
+    const only = byId("overview.timeline.coord-only")!;
+    expect(only.textContent).toContain("Z9 Handover");
+    expect(byId("overview.timeline.chart.phase.A2.origin")).toBeNull();
+    expect(
+      byId("overview.timeline.overlay.provenance.line")?.textContent
+    ).toMatch(/^From the project record, as of /);
+  });
+
+  it("the milestone lane merges a typed and a coord milestone of the same name and date, and lists others apart", async () => {
+    setSchedule(overlayEnv());
+    await shown();
+    // MILESTONE is typed "Pilot live" on 2026-03-20: one marker, both sources.
+    const markers = document.querySelectorAll<HTMLElement>(
+      "[data-ui-bridge-id^='overview.timeline.chart.milestone.']"
+    );
+    expect(markers).toHaveLength(1);
+    expect(markers[0]!.dataset.sources).toBe("coord+entered");
+  });
+
+  it("coord unknown with an entered value: the entered date shows, labelled not confirmed", async () => {
+    const env = overlayEnv();
+    env.phases = known([
+      coordPhase(1, "A0", "A0 Mobilisation", {
+        state: "done",
+        actual_start: entered("2026-01-05"),
+        actual_end: unknown("coord_unreachable", "2026-11-20T08:00:00Z"),
+      }),
+    ]);
+    setSchedule(env);
+    await shown();
+    const end = byId("overview.timeline.list.phase.A0.details.coord.end")!;
+    expect(end.textContent).toContain("9 Feb 2026");
+    expect(end.textContent).toContain("not confirmed by the project record");
+    expect(byId("overview.timeline.overlay.disagreements")).toBeNull();
+  });
+
+  it("a schedule that has not been read leaves the estimate exactly as it was", async () => {
+    setSchedule(null);
+    await shown();
+    expect(byId("overview.timeline.overlay")).toBeNull();
+    expect(byId("overview.timeline.chart.phase.A0.origin")).toBeNull();
   });
 });

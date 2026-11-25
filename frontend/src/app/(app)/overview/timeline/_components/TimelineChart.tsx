@@ -20,10 +20,9 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { CalendarBreakRead } from "../../_lib/estimate-api";
-import type { Milestone } from "../../_lib/timeline-api";
+import type { LaneMilestone } from "../../_lib/schedule";
 import {
   GATE,
-  MILESTONE_STATUS_LABEL,
   axisMonths,
   barSpan,
   dayOffset,
@@ -33,8 +32,7 @@ import {
   type AxisWindow,
 } from "../../_lib/timeline";
 import { phaseKey, type TimelinePhase } from "./model";
-
-const LABEL_COLUMN = "grid grid-cols-[minmax(7rem,11rem)_1fr]";
+import { LABEL_COLUMN, MilestoneLane } from "./ScheduleChart";
 
 function Bar({
   start,
@@ -130,7 +128,12 @@ function PhaseLane({
   const todayIso = isoDay(today);
   // What happened, solid (an open phase up to today); what is still to come,
   // dashed.
-  const actualEnd = p.actual_end ?? (p.actual_start ? todayIso : null);
+  // Where coord holds this phase (matched by equal code), its dates are the
+  // ones drawn; a hand-entered date that differs is shown in the phase's
+  // details, beside coord's, and never drawn over it.
+  const shownStart = phase.coord ? phase.coord.start.day : p.actual_start;
+  const shownEnd = phase.coord ? phase.coord.end.day : p.actual_end;
+  const actualEnd = shownEnd ?? (shownStart ? todayIso : null);
   const ahead =
     f && f.state !== "done" && f.forecast_start && f.forecast_end
       ? {
@@ -138,7 +141,7 @@ function PhaseLane({
           end: f.forecast_end,
         }
       : null;
-  const gateDay = toDay(p.actual_end ?? p.planned_end);
+  const gateDay = toDay(shownEnd ?? p.planned_end);
   const gateAt = gateDay ? dayOffset(gateDay, window) : null;
   const gate = GATE[p.gate_status];
 
@@ -155,6 +158,20 @@ function PhaseLane({
             </span>{" "}
             {p.name}
           </span>
+          {phase.coord && (
+            <span
+              className="w-fit text-xs text-muted-foreground"
+              data-ui-bridge-id={`overview.timeline.chart.phase.${key}.origin`}
+              data-disagreements={phase.coord.disagreements}
+            >
+              {phase.coord.disagreements > 0
+                ? "Differs from entered"
+                : phase.coord.start.from === "entered" &&
+                    phase.coord.end.from !== "coord"
+                  ? "Entered"
+                  : "From the project record"}
+            </span>
+          )}
           {phase.tasks.length > 0 && (
             <button
               type="button"
@@ -172,10 +189,10 @@ function PhaseLane({
           <span className="sr-only">
             Planned {formatDay(p.planned_start) ?? "with no start"} to{" "}
             {formatDay(p.planned_end) ?? "no end"}.
-            {p.actual_start
-              ? ` Started ${formatDay(p.actual_start)}.`
+            {shownStart
+              ? ` Started ${formatDay(shownStart)}.`
               : " Not started."}
-            {p.actual_end ? ` Ended ${formatDay(p.actual_end)}.` : ""}
+            {shownEnd ? ` Ended ${formatDay(shownEnd)}.` : ""}
           </span>
           <div className="absolute inset-x-0 top-2.5">
             <Bar
@@ -188,12 +205,12 @@ function PhaseLane({
           </div>
           <div className="absolute inset-x-0 top-6">
             <Bar
-              start={p.actual_start ?? p.planned_start}
+              start={shownStart ?? p.planned_start}
               end={actualEnd}
               window={window}
               className="bg-foreground/70"
-              title={`Actual: ${formatDay(p.actual_start)} – ${
-                p.actual_end ? formatDay(p.actual_end) : "still running"
+              title={`Actual: ${formatDay(shownStart)} – ${
+                shownEnd ? formatDay(shownEnd) : "still running"
               }`}
             />
             {ahead && (
@@ -269,16 +286,9 @@ function PhaseLane({
   );
 }
 
-const MILESTONE_MARK: Record<Milestone["status"], string> = {
-  planned: "border-foreground/70 bg-background",
-  in_progress: "border-primary bg-primary/40",
-  done: "border-emerald-600 bg-emerald-600",
-  at_risk: "border-amber-500 bg-amber-500",
-};
-
 export function TimelineChart({
   phases,
-  milestones,
+  lane,
   breaks,
   window,
   today,
@@ -286,7 +296,7 @@ export function TimelineChart({
   onSelect,
 }: {
   phases: TimelinePhase[];
-  milestones: Milestone[];
+  lane: LaneMilestone[];
   breaks: CalendarBreakRead[];
   window: AxisWindow;
   today: Date;
@@ -339,39 +349,13 @@ export function TimelineChart({
           }
         />
       ))}
-      <div
-        className={LABEL_COLUMN}
-        data-ui-bridge-id="overview.timeline.chart.milestones"
-      >
-        <div className="flex min-h-10 items-center pr-2 text-sm text-foreground">
-          Milestones
-        </div>
-        <div className="relative min-h-10 overflow-hidden">
-          <Backdrop window={window} breaks={breaks} today={today} />
-          {milestones.map((m) => {
-            const day = toDay(m.target_date);
-            const at = day ? dayOffset(day, window) : null;
-            if (at === null) return null;
-            return (
-              <span
-                key={m.id}
-                title={`${m.title} — ${formatDay(m.target_date)}, ${MILESTONE_STATUS_LABEL[m.status].toLowerCase()}`}
-                className={cn(
-                  "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2",
-                  MILESTONE_MARK[m.status]
-                )}
-                style={{ left: `${at}%` }}
-                data-ui-bridge-id={`overview.timeline.chart.milestone.${m.id}`}
-              >
-                <span className="sr-only">
-                  {m.title}, {formatDay(m.target_date)},{" "}
-                  {MILESTONE_STATUS_LABEL[m.status]}
-                </span>
-              </span>
-            );
-          })}
-        </div>
-      </div>
+      <MilestoneLane
+        lane={lane}
+        window={window}
+        today={today}
+        uiPrefix="overview.timeline.chart"
+        backdrop={<Backdrop window={window} breaks={breaks} today={today} />}
+      />
       <Legend />
     </div>
   );

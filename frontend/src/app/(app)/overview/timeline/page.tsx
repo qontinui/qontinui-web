@@ -38,6 +38,7 @@ import {
 } from "@/components/overview/editing/useResource";
 import { cn } from "@/lib/utils";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
+import { useSchedule } from "../_hooks/useSchedule";
 import {
   ESTIMATES,
   pickBaseline,
@@ -45,6 +46,8 @@ import {
   type PhaseTaskRead,
 } from "../_lib/estimate-api";
 import type { PhaseChoice } from "../_lib/milestones";
+import { mergeMilestones, overlayPhases } from "../_lib/schedule";
+import type { ScheduleEnvelope } from "../_lib/schedule-api";
 import {
   MILESTONES,
   MILESTONES_PATH,
@@ -68,6 +71,11 @@ import { MilestonesSection } from "./_components/MilestonesSection";
 import { assemblePhases, phaseKey } from "./_components/model";
 import { PhaseDetails } from "./_components/PhaseDetails";
 import { PhaseList } from "./_components/PhaseList";
+import { ProvenanceLine } from "./_components/ProvenanceLine";
+import {
+  ScheduleSection,
+  SchedulePhaseList,
+} from "./_components/ScheduleSection";
 import { TimelineChart } from "./_components/TimelineChart";
 import { TimelineHeader } from "./_components/TimelineHeader";
 
@@ -97,6 +105,18 @@ function useForecast(estimateId: string | null, hold: boolean, token: number) {
     };
   }, [estimateId, hold, token]);
   return value;
+}
+
+/** True when the schedule was READ and says there is nothing to draw: no
+ *  programme, or a programme with no phases. A failed or truncated read is not
+ *  that - it is unknown, and the schedule section says so itself. */
+function scheduleIsEmpty(env: ScheduleEnvelope): boolean {
+  const phases = env.phases;
+  if (phases.value !== null) return phases.value.length === 0;
+  return (
+    phases.unknown_reason === "no_programme" ||
+    phases.unknown_reason === "no_phases"
+  );
 }
 
 function Section({
@@ -262,6 +282,7 @@ export default function TimelinePage() {
     hold,
     reloadKey: projectId,
   });
+  const schedule = useSchedule(projectId, hold);
   const [forecastToken, setForecastToken] = useState(0);
   const forecast = useForecast(estimateId, hold, forecastToken);
 
@@ -289,16 +310,27 @@ export default function TimelinePage() {
     return byPhase;
   }, [content]);
   const breaks = content?.calendar_breaks ?? [];
+  // Coord's phases laid over the estimate's, matched by equal code only.
+  const coordPhases = schedule.data?.phases.value ?? null;
+  const overlay = useMemo(
+    () =>
+      overlayPhases(
+        progress.list.state === "ready" ? progress.list.items : [],
+        coordPhases
+      ),
+    [progress.list, coordPhases]
+  );
   const phases = useMemo(
     () =>
       progress.list.state === "ready"
         ? assemblePhases(
             progress.list.items,
             tasks,
-            forecast.state === "ready" ? forecast.forecast.phases : null
+            forecast.state === "ready" ? forecast.forecast.phases : null,
+            overlay.matched
           )
         : [],
-    [progress.list, tasks, forecast]
+    [progress.list, tasks, forecast, overlay]
   );
   const phaseChoices: PhaseChoice[] = useMemo(
     () =>
@@ -309,8 +341,18 @@ export default function TimelinePage() {
       })),
     [phases]
   );
-  const milestoneItems =
-    milestones.list.state === "ready" ? milestones.list.items : [];
+  const milestoneItems = useMemo(
+    () => (milestones.list.state === "ready" ? milestones.list.items : []),
+    [milestones.list]
+  );
+  const lane = useMemo(
+    () =>
+      mergeMilestones(
+        milestoneItems,
+        schedule.data?.milestones.items.value ?? null
+      ),
+    [milestoneItems, schedule.data]
+  );
 
   const today =
     toDay(forecast.state === "ready" ? forecast.forecast.today : null) ??
@@ -319,11 +361,11 @@ export default function TimelinePage() {
     ...phases.flatMap((p) => [
       p.progress.planned_start,
       p.progress.planned_end,
-      p.progress.actual_start,
-      p.progress.actual_end,
+      p.coord ? p.coord.start.day : p.progress.actual_start,
+      p.coord ? p.coord.end.day : p.progress.actual_end,
       p.forecast?.forecast_end,
     ]),
-    ...milestoneItems.map((m) => m.target_date),
+    ...lane.map((m) => m.date),
     ...breaks.flatMap((b) => [b.start_date, b.end_date]),
   ]);
   const axis = projectSpan ? zoomWindow(projectSpan, zoom, today) : null;
@@ -384,7 +426,30 @@ export default function TimelinePage() {
   if (!estimate) {
     return (
       <div className="space-y-14" data-ui-bridge-id="overview.timeline">
-        <NoEstimate canEdit={canEditEstimate} />
+        {schedule.loading && !schedule.data && (
+          <Loading uiBridgeId="overview.schedule.loading" />
+        )}
+        {schedule.data && (
+          <ScheduleSection
+            env={schedule.data}
+            typedMilestones={milestoneItems}
+          />
+        )}
+        {schedule.error && (
+          <LoadFailure
+            what={
+              schedule.data
+                ? "the latest update of the schedule"
+                : "the schedule from the project record"
+            }
+            message={schedule.error}
+            uiBridgeId="overview.schedule.error"
+            announce={false}
+          />
+        )}
+        {schedule.data && scheduleIsEmpty(schedule.data) && (
+          <NoEstimate canEdit={canEditEstimate} />
+        )}
         {milestonesSection}
       </div>
     );
@@ -411,6 +476,43 @@ export default function TimelinePage() {
         )}
         {forecast.state === "ready" && (
           <TimelineHeader forecast={forecast.forecast} />
+        )}
+        {schedule.data && coordPhases && (
+          <div
+            className="mt-6 space-y-2"
+            data-ui-bridge-id="overview.timeline.overlay"
+          >
+            {overlay.disagreements > 0 && (
+              <p
+                role="note"
+                className="max-w-[46rem] rounded-md border border-amber-500/40 px-3 py-2 text-sm text-foreground"
+                data-ui-bridge-id="overview.timeline.overlay.disagreements"
+                data-count={overlay.disagreements}
+              >
+                {overlay.disagreements === 1
+                  ? "1 date differs from the project record."
+                  : `${overlay.disagreements} dates differ from the project record.`}{" "}
+                The project record&rsquo;s date is drawn; the entered one is
+                shown beside it in the phase&rsquo;s details and is not changed.
+              </p>
+            )}
+            <ProvenanceLine
+              observedAt={schedule.data.observed_at}
+              stale={schedule.data.stale}
+              sources={schedule.data.sources}
+              uiBridgeId="overview.timeline.overlay.provenance"
+            />
+          </div>
+        )}
+        {schedule.error && !schedule.data && (
+          <div className="mt-6">
+            <LoadFailure
+              what="the schedule from the project record"
+              message={schedule.error}
+              uiBridgeId="overview.timeline.overlay.error"
+              announce={false}
+            />
+          </div>
         )}
       </div>
 
@@ -511,7 +613,7 @@ export default function TimelinePage() {
                   <div className="min-w-[40rem]">
                     <TimelineChart
                       phases={phases}
-                      milestones={milestoneItems}
+                      lane={lane}
                       breaks={breaks}
                       window={axis}
                       today={today}
@@ -548,6 +650,21 @@ export default function TimelinePage() {
               />
             </div>
           </>
+        )}
+        {overlay.coordOnly.length > 0 && (
+          <div
+            className="mt-8"
+            data-ui-bridge-id="overview.timeline.coord-only"
+          >
+            <h3 className="mb-2 font-[family-name:var(--font-overview-serif)] text-lg text-foreground">
+              Also in the project record
+            </h3>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Phases the project record holds that no phase of the estimate
+              shares a code with.
+            </p>
+            <SchedulePhaseList phases={overlay.coordOnly} />
+          </div>
         )}
       </Section>
 
