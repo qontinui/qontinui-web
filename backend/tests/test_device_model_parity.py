@@ -126,7 +126,7 @@ def test_sibling_int_columns_stay_int() -> None:
 
 
 # ---------------------------------------------------------------------------
-# tenant_id — mapped for READING only (device_crud.get_credential_anchor)
+# tenant_id — mapped for READING only (the pairing machine-key anchor)
 # ---------------------------------------------------------------------------
 
 
