@@ -110,6 +110,11 @@ ALLOWED_SCHEMAS = {
     # over them (plan ``2026-11-13-design-reference-library-stores-described-
     # web-examples-for-any-project-to-query``, revision ``design_refs_01``).
     "design_refs",
+    # ``devenv`` holds the development-environment tables (``devenv.machines``
+    # and friends), created by ``devenv_01`` onward. Raw-SQL DDL against it
+    # (e.g. ``devenv_11_ci_node_dispatch_verdict``, which needs a static
+    # literal for coord's migration classifier) must pass this gate.
+    "devenv",
 }
 
 # Schemas accepted by the raw-SQL audit. ``public`` is included here
