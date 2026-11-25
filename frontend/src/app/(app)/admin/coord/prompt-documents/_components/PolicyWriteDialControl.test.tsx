@@ -98,8 +98,9 @@ beforeEach(() => {
 describe("PolicyWriteDialControl — names every state it can be in", () => {
   it("labels a missing row as coord's built-in default, not as off", async () => {
     getMock.mockResolvedValue(
+      // With no row coord serves its typed default (qontinui-coord#4239).
       view({
-        effective_level: "off",
+        effective_level: "tightening_only",
         master_enabled: false,
         resolved_scope: "none",
       })
@@ -107,15 +108,55 @@ describe("PolicyWriteDialControl — names every state it can be in", () => {
 
     renderSection(<PolicyWriteDialControl />);
 
-    // The wire says `off`; the fleet is on `tightening_only`. The readout must
-    // show the second and say where it came from — scoped to the readout,
-    // because the level list describes the default too and an assertion that
-    // matched either would pass on a badge still rendering `off`.
+    // The readout must show the served default and say where it came from —
+    // scoped to the readout, because the level list describes the default too.
     const inForce = await screen.findByTestId("policy-write-in-force");
-    expect(inForce).toHaveTextContent("tightening_only");
-    expect(inForce).not.toHaveTextContent(/^In force:\s*off/);
-    expect(inForce).toHaveTextContent(/built-in default/i);
+    expect(inForce).toHaveTextContent(/^In force:\s*tightening_only/);
+    expect(inForce).toHaveTextContent(/built-in default \(tightening_only\)/i);
     expect(inForce).toHaveTextContent(/no one has set this tenant/i);
+  });
+
+  it("labels whatever default coord serves, not a console copy of it", async () => {
+    // Not the old console constant: a revert to a hardcoded default fails this.
+    getMock.mockResolvedValue(
+      view({
+        effective_level: "full",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
+    );
+
+    renderSection(<PolicyWriteDialControl />);
+
+    const inForce = await screen.findByTestId("policy-write-in-force");
+    expect(inForce).toHaveTextContent(/^In force:\s*full/);
+    expect(inForce).toHaveTextContent(/built-in default \(full\)/i);
+  });
+
+  it("shows a no-row default it cannot parse as unknown, never as off", async () => {
+    getMock.mockResolvedValue(
+      view({
+        effective_level: "tighten",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
+    );
+
+    renderSection(<PolicyWriteDialControl />);
+
+    const banner = await screen.findByTestId("policy-write-unrecognized-level");
+    expect(banner).toHaveTextContent("tighten");
+    expect(banner).toHaveTextContent(/no row is set/i);
+    // With no row coord enforces its own default; the console just cannot
+    // name it, so it must not claim `off`.
+    const inForce = screen.getByTestId("policy-write-in-force");
+    expect(inForce).toHaveTextContent(/^In force:\s*unknown/);
+    expect(inForce).toHaveTextContent(/cannot be shown here/i);
+    expect(inForce).not.toHaveTextContent(/fail-closed/i);
+    expect(inForce).not.toHaveTextContent(/no one has set/i);
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).not.toBeChecked();
+    }
   });
 
   it("names an unparseable row, and shows the level coord actually enforces", async () => {

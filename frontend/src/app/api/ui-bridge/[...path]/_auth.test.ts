@@ -616,6 +616,31 @@ describe("authenticateBridgeRequest — upstream errors are NOT auth verdicts", 
 });
 
 describe("upstreamErrorResponse", () => {
+  it("an upstream 429 says the backend refused, with the backend's own lane and key kind", () => {
+    const r = upstreamErrorResponse({
+      status: 429,
+      retryAfter: "30",
+      rateLimitLane: "user:/api/v1/devices",
+      rateLimitKeyKind: "bearer",
+    });
+    expect(r.status).toBe(429);
+    expect(r.headers.get("X-RateLimit-Refused-By")).toBe("backend");
+    expect(r.headers.get("X-RateLimit-Lane")).toBe("user:/api/v1/devices");
+    expect(r.headers.get("X-RateLimit-Key-Kind")).toBe("bearer");
+    expect(r.headers.get("Retry-After")).toBe("30");
+  });
+
+  it("a 5xx is not a refusal: no Refused-By and no lane", () => {
+    const r = upstreamErrorResponse({
+      status: 502,
+      retryAfter: null,
+      rateLimitLane: "user:/x",
+      rateLimitKeyKind: "ip",
+    });
+    expect(r.headers.get("X-RateLimit-Refused-By")).toBeNull();
+    expect(r.headers.get("X-RateLimit-Lane")).toBeNull();
+  });
+
   it("returns 429 with Retry-After preserved and a non-UNAUTHENTICATED code", async () => {
     const r = upstreamErrorResponse({ status: 429, retryAfter: "42" });
     expect(r.status).toBe(429);

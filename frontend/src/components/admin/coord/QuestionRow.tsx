@@ -114,12 +114,20 @@ export function QuestionRow({
               inside it would be nested interactive content. The expanded
               detail's actions carry the link. */}
           <QuestionEffectChip effect={effect} />
+          {/* From a 53rem ROW (RecordRow's `@container/record-row`, where the
+              reason widens), never by the viewport, so a narrowed column drops
+              it too; the detail below (`coord-question-plan-phase`) names the
+              phase at every width. The phase is free text in a group that
+              does not shrink, so it is capped and truncates, whole in its
+              `title`. */}
           {question.plan_phase && (
             <Badge
               variant="outline"
-              className="text-[10px] hidden md:inline-flex"
+              className="text-[10px] hidden @min-[53rem]/record-row:inline-flex max-w-[24ch]"
+              title={question.plan_phase}
+              data-testid="coord-question-plan-phase-badge"
             >
-              {question.plan_phase}
+              <span className="min-w-0 truncate">{question.plan_phase}</span>
             </Badge>
           )}
         </span>
@@ -153,6 +161,16 @@ export function QuestionRow({
                     {o}
                   </Badge>
                 ))}
+              </div>
+            )}
+            {/* The row's phase badge drops out below a 53rem row, so the
+                detail is where the phase stays readable at every width. */}
+            {question.plan_phase && (
+              <div className="text-xs" data-testid="coord-question-plan-phase">
+                <span className="text-muted-foreground">Plan phase: </span>
+                <span className="text-foreground/90">
+                  {question.plan_phase}
+                </span>
               </div>
             )}
             {question.context && (

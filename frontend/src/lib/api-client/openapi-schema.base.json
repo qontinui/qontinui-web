@@ -111325,6 +111325,149 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/resource-stops": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched::\n\n    {\"table_present\": <bool>, \"count\": <int>, \"stops\": [StopRow, ...],\n     \"bounded\": <bool>, \"limit\": <int>, \"limit_clamped\": <bool>,\n     \"summary\": <object | null>}\n\n``table_present: false`` means the coord table does not exist yet \u2014 an\nempty ``stops`` list is then UNKNOWN, never \"no stops\". ``bounded`` is\ntrue when ``limit`` truncated the page. A ``StopRow`` carries\n``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that\nrefused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,\nthe nullable stats ``session_count_terminal``,\n``session_count_live_claude``, ``active_ci_runners`` and\n``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /\n``fleet_calibration`` objects as the runner recorded them.\n\nQuery params are forwarded verbatim WITHOUT local validation: coord\nrefuses a value outside its vocabulary (422) and clamps ``limit``, and a\nlocal rewrite here would turn a refusal into a different, wider read.",
+        "operationId": "api_v1_operations_fleet_resource_stops_get",
+        "parameters": [
+          {
+            "description": "Narrow to one device. Tenant scoping still applies on top.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one device. Tenant scoping still applies on top.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+              "title": "Lane"
+            }
+          },
+          {
+            "description": "Narrow to the pool that refused: host | wsl | threads.",
+            "in": "query",
+            "name": "guard_lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to the pool that refused: host | wsl | threads.",
+              "title": "Guard Lane"
+            }
+          },
+          {
+            "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "true adds coord's per-device roll-up.",
+            "in": "query",
+            "name": "summary",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true adds coord's per-device roll-up.",
+              "title": "Summary"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Resource Stops Api V1 Operations Fleet Resource Stops Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fleet Resource Stops",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/runners/{runner_id}": {
       "delete": {
         "description": "Manually remove a runner from the cross-machine beacon registry.",
@@ -116818,7 +116961,7 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains four fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains five fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"lifecycle_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta},\n      \"agent_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta}\n                    | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every\nkey always present, ``null`` a value) describing the coord READ behind\nthat half \u2014 plan\n`2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`\nPhase 3. Both reads stop at 500 rows: the lifecycle half at coord's own\n``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the\nagent half at the 500 it asks ``/coord/agent-sessions`` for (the most\nrecently seen). ``bound`` comes in three arms:\n\n* below its ceiling \u2014 ``bound_kind: \"complete\"`` with ``truncated:\n  false``: the half holds every row the read matched;\n* a FULL half, ``shown >= limit`` \u2014 ``\"unknown\"`` with ``truncated`` and\n  ``total`` null: more rows may exist, and nothing coord sent says\n  whether they do, so a count over it is a floor;\n* a 200 whose body carries no ``sessions`` list \u2014 ``\"unknown\"`` over\n  ``shown: 0``: nothing countable was served, so the half's SIZE is\n  unknown. ``shown < limit`` is what tells it from a full half, and no\n  count over it is a total or a floor \u2014 not even a floor of zero.\n\n``shown`` counts the rows coord SERVED, before this route's own\n``device`` / ``status`` / ``q`` narrowing, so it need not equal\n``count``. A failed agent read carries no ``bound`` \u2014 there is no page to\nbound.\n\n``agent_only`` is a set difference against the lifecycle rows coord\nserved, so it is established only while ``lifecycle_half.bound.truncated``\nis ``false``. Beyond the ceiling it means \"no ``coord.sessions`` row among\nthe ones served\" \u2014 one may exist past it \u2014 and the row keeps its real\nagent half either way.\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {
