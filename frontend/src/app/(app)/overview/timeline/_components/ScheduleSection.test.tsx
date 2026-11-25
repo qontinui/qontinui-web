@@ -2,7 +2,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { bodyText, plainLanguageViolations } from "../../_lib/plain-language";
 import {
-  entered,
   envelope,
   known,
   milestone,
@@ -60,13 +59,12 @@ describe("a derived schedule", () => {
     expect(byId("overview.schedule.chart.phase.F2.bar")).not.toBeNull();
   });
 
-  it("shows the milestone dates and their source chips, 'not confirmed' for an unlinked one", () => {
+  it("shows the milestone dates, 'not confirmed' for an unlinked one", () => {
     show();
     const list = byId("overview.schedule.milestones.list")!;
     expect(list.textContent).toContain("Launch review");
     expect(list.textContent).toContain("1 Dec 2026");
     expect(list.textContent).toContain("Not confirmed");
-    expect(list.textContent).toContain("From the project record");
   });
 
   it("with no decision gate recorded says so", () => {
@@ -120,38 +118,6 @@ describe("a derived schedule", () => {
       byId("overview.schedule.milestones.list.unreadable")?.textContent
     ).toContain("| ?? | ?? |");
   });
-
-  it("a milestone and a hand-entered one with the same name and date show both sources", () => {
-    render(
-      <ScheduleSection
-        env={envelope()}
-        today={TODAY}
-        typedMilestones={[
-          {
-            id: "m1",
-            title: "pilot GO-LIVE",
-            description: "",
-            kind: "pilot",
-            phase_id: null,
-            phase_code: null,
-            target_date: "2026-12-18",
-            completed_date: null,
-            status: "planned",
-            version: 1,
-            created_at: "2026-11-01T00:00:00Z",
-            updated_at: "2026-11-01T00:00:00Z",
-            created_by: null,
-            updated_by: null,
-          },
-        ]}
-      />
-    );
-    const items = document.querySelectorAll(
-      "[data-ui-bridge-id^='overview.schedule.milestones.list.item.'][data-ui-bridge-id$='.sources']"
-    );
-    expect(items).toHaveLength(2);
-    expect(document.querySelectorAll("[data-source='both']")).toHaveLength(1);
-  });
 });
 
 describe("an unknown schedule", () => {
@@ -199,23 +165,6 @@ describe("an unknown schedule", () => {
       /Last read from the project record at .*may be out of date/
     );
   });
-
-  it("an entered value standing in is attributed and marked unconfirmed", () => {
-    const base = envelope();
-    show({
-      ...base,
-      phases: known([
-        phase(1, "F1", "F1 Foundation", {
-          state: "in_progress",
-          actual_start: entered("2026-11-02"),
-        }),
-      ]),
-    });
-    const row = byId("overview.schedule.list.phase.F1")!;
-    expect(row.textContent).toContain("Started 2 Nov 2026");
-    expect(row.textContent).toContain("Entered by Maria on 3 Nov 2026");
-    expect(row.textContent).toContain("not confirmed by the project record");
-  });
 });
 
 describe("the header", () => {
@@ -242,24 +191,21 @@ describe("the header", () => {
     expect(container.textContent).not.toContain(String.fromCharCode(0xfffd));
   });
 
-  it("names the phase under way, the next date and how many figures disagree", () => {
-    show(envelope({ disagreement_count: 2 }));
+  it("names the phase under way, and the next date", () => {
+    show(envelope());
     expect(byId("overview.schedule.header.now")?.textContent).toContain(
       "F2 First release"
     );
     expect(byId("overview.schedule.header.next")?.textContent).toContain(
       "1 Dec 2026"
     );
-    expect(
-      byId("overview.schedule.header.disagreements")?.textContent
-    ).toContain("2 figures differ");
+    expect(byId("overview.schedule.header.disagreements")).toBeNull();
   });
 
   it("with a forecast, words the slip", () => {
     const base = envelope();
     show({
       ...base,
-      basis: "coord",
       forecast: known({
         planned_finish: "2027-01-22",
         forecast_finish: "2027-02-12",
@@ -355,7 +301,6 @@ describe("as a report block would place it", () => {
           milestones: {
             items: known([milestone("Pilot go-live", "2026-12-18")]),
             unreadable_rows: [],
-            entered_only: [],
           },
           observed_at: "2026-11-25T14:03:00Z",
         })}

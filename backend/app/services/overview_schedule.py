@@ -6,18 +6,18 @@ Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord`` Phase 2
 1. :func:`build_coord_schedule` reads coord through a
    :class:`~app.overview.coord_schedule.CoordScheduleSource` and returns the
    envelope coord ALONE supports, plus whether a coord failure degraded it. It
-   issues no write to coord and consults no hand-entered row (the device
+   issues no write to coord and consults no typed row (the device
    document door may record a policy read in coord as a side effect of serving it).
 2. :class:`ScheduleService` caches that envelope per ``(tenant, door)`` for
    :data:`TTL_SECONDS` with single-flight, and serves the last good one,
    marked stale, for up to :data:`STALE_LIMIT_SECONDS` after a coord failure (D8).
-3. :func:`apply_entered` lays the project's hand-entered progress and milestones
-   over it (D5: coord wins, a differing entered value is shown beside it, an
-   entered value stands in only where coord is unknown) and computes the forecast
-   through :func:`~app.services.overview_forecast.compute_forecast` unchanged.
+3. :func:`with_forecast` sets the forecast: unknown (``no_calendar`` and kin)
+   until coord declares a calendar, since a calendar never comes from a typed
+   estimate (D5).
 
-A coord value never becomes a typed row and a typed row never becomes a coord
-value: nothing here writes either. The only write is the best-effort,
+The schedule is DERIVED ONLY from coord (plan D5): there is no entered value,
+overlay, pin or disagreement display, and no typed ``phase_progress`` /
+``milestones`` / estimate row is ever read here. Nothing here writes coord. The only write is the best-effort,
 non-blocking last-known stamp (:func:`stamp_figures`), written by this read path
 alone and never able to fail a read.
 """
@@ -28,7 +28,6 @@ import asyncio
 import datetime as dt
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -38,7 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.overview import OverviewScheduleLastKnown, Phase
+from app.models.overview import OverviewScheduleLastKnown
 from app.overview.coord_schedule import (
     DECISION_RECORD_CAP,
     DEFAULT_INITIATIVE,
@@ -72,10 +71,6 @@ from app.overview.coord_schedule import (
     valid_date,
 )
 from app.schemas.overview_schedule import (
-    Disagrees,
-    Entered,
-    ForecastBasis,
-    ForecastValue,
     GatesSection,
     GateView,
     InitiativeView,
@@ -87,13 +82,11 @@ from app.schemas.overview_schedule import (
     Resolved,
     ResolvedSource,
     ScheduleEnvelope,
-    SchedulePhaseRef,
     SourceKind,
     SourceStamp,
     UnitRef,
     UnknownReason,
 )
-from app.services.overview_forecast import compute_forecast
 
 logger = structlog.get_logger(__name__)
 
@@ -609,7 +602,6 @@ def _milestone_section(
                 target_date=_known(dt.date.fromisoformat(row.target_date), src, now),
                 status=status,
                 met_at=met_at,
-                sources=["coord"],
                 decision_record=row.decision_record,
                 decision_record_version=records.get(row.decision_record or ""),
             )
@@ -1086,393 +1078,40 @@ class ScheduleService:
 
 
 # ---------------------------------------------------------------------------
-# Layer 3 — the hand-entered overlay and the forecast (D5)
+# Layer 3 — the forecast (D5: derived only, no typed input of any kind)
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TypedPhase:
-    id: str
-    code: str
-    name: str
-    sort_order: int
-    planned_start: dt.date | None
-    planned_end: dt.date | None
-    actual_start: dt.date | None
-    actual_end: dt.date | None
-    gate_status: str
-    gate_criteria: str | None
-    updated_by: str | None
-    updated_at: dt.datetime | None
-
-
-@dataclass(frozen=True)
-class TypedMilestone:
-    id: str
-    title: str
-    target_date: dt.date
-    status: str
-    completed_date: dt.date | None
-    updated_by: str | None
-    updated_at: dt.datetime | None
-
-
-@dataclass(frozen=True)
-class TypedInputs:
-    """The project's hand-entered rows (``phase_progress`` / ``milestones``)."""
-
-    phases: list[TypedPhase] = field(default_factory=list)
-    breaks: list[Any] = field(default_factory=list)
-    working_day_factor: Decimal = Decimal("1")
-    milestones: list[TypedMilestone] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class _ForecastPhase:
-    """The attributes :func:`compute_forecast` reads off a ``Phase`` row."""
-
-    id: str
-    code: str
-    name: str
-    sort_order: int
-    planned_start: dt.date | None
-    planned_end: dt.date | None
-    actual_start: dt.date | None
-    actual_end: dt.date | None
-    gate_status: str
-    gate_criteria: str | None
-
-
-def _entered(by: str | None, at: dt.datetime | None) -> Entered:
-    return Entered(by=by, at=at)
-
-
-def _entered_label(by: str | None, at: dt.datetime | None) -> str:
-    who = f"Entered by {by}" if by else "Entered by a team member"
-    return (
-        f"{who}{f' on {at.date().isoformat()}' if at else ''}, not confirmed by coord"
-    )
-
-
-def overlay_value(
-    res: Resolved[Any],
-    entered: Any,
-    by: str | None,
-    at: dt.datetime | None,
-) -> Resolved[Any]:
-    """D5 for one figure. Coord known: coord's value stays and a differing
-    entered value rides beside it as ``disagrees``. Coord unknown: the entered
-    value stands in, labelled ``entered``, keeping why coord could not answer.
-    No entered value: unchanged."""
-    if entered is None:
-        return res
-    if res.state == "known":
-        if res.value == entered:
-            return res
-        return res.model_copy(
-            update={
-                "disagrees": Disagrees(coord_value=res.value, entered_value=entered),
-                "entered": _entered(by, at),
-            }
-        )
-    return res.model_copy(
-        update={
-            "value": entered,
-            "state": "entered",
-            "source": _src("entered", _entered_label(by, at)),
-            "entered": _entered(by, at),
-            "stale": False,
-        }
-    )
-
-
-def _implied_state(t: TypedPhase) -> str | None:
-    if t.actual_end is not None:
-        return "done"
-    if t.actual_start is not None:
-        return "in_progress"
-    return None
-
-
-def _overlay_phase(p: PhaseView, t: TypedPhase) -> PhaseView:
-    start = overlay_value(p.actual_start, t.actual_start, t.updated_by, t.updated_at)
-    end = overlay_value(p.actual_end, t.actual_end, t.updated_by, t.updated_at)
-    implied = _implied_state(t)
-    state = p.state
-    if implied is not None:
-        # "Not confirmed" is coord declining to say, so an entered state fills it.
-        coord_silent = state.state == "unknown" or state.value == "not_confirmed"
-        if coord_silent:
-            state = state.model_copy(
-                update={
-                    "value": implied,
-                    "state": "entered",
-                    "source": _src(
-                        "entered", _entered_label(t.updated_by, t.updated_at)
-                    ),
-                    "entered": _entered(t.updated_by, t.updated_at),
-                }
-            )
-        elif state.value != implied:
-            state = state.model_copy(
-                update={
-                    "disagrees": Disagrees(
-                        coord_value=state.value, entered_value=implied
-                    ),
-                    "entered": _entered(t.updated_by, t.updated_at),
-                }
-            )
-    return p.model_copy(
-        update={"actual_start": start, "actual_end": end, "state": state}
-    )
-
-
-def _typed_milestone_view(m: TypedMilestone, now: dt.datetime) -> MilestoneView:
-    src = _src("entered", _entered_label(m.updated_by, m.updated_at))
-    ent = _entered(m.updated_by, m.updated_at)
-    done = m.status == "done" and m.completed_date is not None
-    return MilestoneView(
-        id=None,
-        name=m.title,
-        target_date=Resolved(
-            value=m.target_date,
-            state="entered",
-            source=src,
-            observed_at=now,
-            entered=ent,
-        ),
-        status=Resolved(
-            value="met" if done else "not_met",
-            state="entered",
-            source=src,
-            observed_at=now,
-            entered=ent,
-        ),
-        met_at=(
-            Resolved(
-                value=m.completed_date,
-                state="entered",
-                source=src,
-                observed_at=now,
-                entered=ent,
-            )
-            if done
-            else _unknown("not_recorded", src, now)
-        ),
-        sources=["entered"],
-    )
-
-
-def _overlay_milestones(
-    section: MilestonesSection, typed: list[TypedMilestone], now: dt.datetime
-) -> MilestonesSection:
-    coord_items = section.items.value
-    if coord_items is None:
-        # Coord could not answer: every entered milestone stands in (D5.2).
-        return section.model_copy(
-            update={"entered_only": [_typed_milestone_view(m, now) for m in typed]}
-        )
-    by_name = {_norm(m.title): m for m in typed}
-    matched: set[str] = set()
-    out: list[MilestoneView] = []
-    for item in coord_items:
-        t = by_name.get(_norm(item.name))
-        if t is None:
-            out.append(item)
-            continue
-        matched.add(_norm(t.title))
-        target = overlay_value(
-            item.target_date, t.target_date, t.updated_by, t.updated_at
-        )
-        status, met_at = item.status, item.met_at
-        if (
-            t.status == "done"
-            and t.completed_date is not None
-            and (status.value == "not_confirmed" or status.state == "unknown")
-        ):
-            ent = _entered(t.updated_by, t.updated_at)
-            src = _src("entered", _entered_label(t.updated_by, t.updated_at))
-            status = status.model_copy(
-                update={
-                    "value": "met",
-                    "state": "entered",
-                    "source": src,
-                    "entered": ent,
-                }
-            )
-            met_at = met_at.model_copy(
-                update={
-                    "value": t.completed_date,
-                    "state": "entered",
-                    "source": src,
-                    "entered": ent,
-                }
-            )
-        out.append(
-            item.model_copy(
-                update={
-                    "target_date": target,
-                    "status": status,
-                    "met_at": met_at,
-                    "sources": ["coord", "entered"],
-                }
-            )
-        )
-    leftovers = [
-        _typed_milestone_view(m, now) for m in typed if _norm(m.title) not in matched
-    ]
-    return section.model_copy(
-        update={
-            "items": section.items.model_copy(update={"value": out}),
-            "entered_only": leftovers,
-        }
-    )
-
-
-def _count_disagreements(env: ScheduleEnvelope) -> int:
-    total = 0
-
-    def walk(node: object) -> None:
-        nonlocal total
-        if isinstance(node, Resolved):
-            if node.disagrees is not None:
-                total += 1
-            walk(node.value)
-        elif isinstance(node, BaseModel):
-            for name in type(node).model_fields:
-                walk(getattr(node, name))
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-
-    walk(env.phases)
-    walk(env.milestones)
-    return total
 
 
 def _forecast_source() -> ResolvedSource:
     return _src("derived", "Computed from the schedule")
 
 
-def compute_schedule_forecast(
-    env: ScheduleEnvelope, typed: TypedInputs, today: dt.date, now: dt.datetime
-) -> tuple[Resolved[Any], ForecastBasis | None]:
-    """The forecast for an overlaid envelope, through the unchanged
-    :func:`compute_forecast`.
+def compute_schedule_forecast(env: ScheduleEnvelope, now: dt.datetime) -> Resolved[Any]:
+    """The forecast of a coord envelope.
 
-    With an estimate its phases are the plan; each takes coord's actual dates when
-    coord knows them, else the entered ones (D5), and the basis says which. With
-    no estimate the plan is coord's own phases, which carry only a planned END, so
-    there is nothing for the function to run on: the figure is unknown, saying
-    why (``no_phases``, ``phase_dates_missing``, then ``no_calendar``, never a
-    guessed calendar)."""
+    :func:`~app.services.overview_forecast.compute_forecast` needs a calendar
+    (breaks, working-day factor). A calendar is declared in coord (the initiative
+    document's ``calendar:`` frontmatter, a later phase) and never taken from a
+    typed estimate, so until coord declares one the forecast is unknown and says
+    why: the phases' own reason, ``no_phases``, ``phase_dates_missing``, then
+    ``no_calendar``. A calendar is never guessed."""
     src = _forecast_source()
     coord_phases = env.phases.value
-    if not typed.phases:
-        if coord_phases is None:
-            reason = cast(
-                UnknownReason, env.phases.unknown_reason or "coord_unreachable"
-            )
-            return _unknown(reason, src, now), None
-        if not coord_phases:
-            return _unknown("no_phases", src, now), None
-        if any(p.planned_end.state == "unknown" for p in coord_phases):
-            return _unknown("phase_dates_missing", src, now), None
-        return _unknown("no_calendar", src, now), None
-
-    by_code = {p.code: p for p in coord_phases or []}
-    used: set[str] = set()
-    rows: list[_ForecastPhase] = []
-    for t in sorted(typed.phases, key=lambda x: (x.sort_order, x.code)):
-        counterpart = by_code.get(t.code)
-        values: dict[str, dt.date | None] = {}
-        for attr in ("actual_start", "actual_end"):
-            res = getattr(counterpart, attr) if counterpart is not None else None
-            if res is not None and res.state in ("known", "entered") and res.value:
-                values[attr] = res.value
-                used.add("coord" if res.state == "known" else "entered")
-            else:
-                typed_value = getattr(t, attr)
-                values[attr] = typed_value
-                if typed_value is not None:
-                    used.add("entered")
-        rows.append(
-            _ForecastPhase(
-                id=t.id,
-                code=t.code,
-                name=t.name,
-                sort_order=t.sort_order,
-                planned_start=t.planned_start,
-                planned_end=t.planned_end,
-                actual_start=values["actual_start"],
-                actual_end=values["actual_end"],
-                gate_status=t.gate_status,
-                gate_criteria=t.gate_criteria,
-            )
-        )
-    basis: ForecastBasis = (
-        "mixed"
-        if used == {"coord", "entered"}
-        else "coord"
-        if used == {"coord"}
-        else "entered"
-    )
-    figures = compute_forecast(
-        # compute_forecast reads attributes only; _ForecastPhase carries exactly those.
-        cast(list[Phase], rows),
-        typed.breaks,
-        working_day_factor=typed.working_day_factor,
-        today=today,
-    )
-    if figures["forecast_finish"] is None:
-        reason = (
-            figures["unavailable"][0]["reason"]
-            if figures["unavailable"]
-            else "no_phases"
-        )
-        return _unknown(cast(UnknownReason, reason), src, now), basis
-
-    def ref(raw: dict[str, Any] | None) -> SchedulePhaseRef | None:
-        return SchedulePhaseRef(code=raw["code"], name=raw["name"]) if raw else None
-
-    value = ForecastValue(
-        planned_finish=figures["planned_finish"],
-        forecast_finish=figures["forecast_finish"],
-        slip_days=figures["slip_days"],
-        position=figures["position"],
-        current_phase=ref(figures["current_phase"]),
-        next_phase=ref(figures["next_phase"]),
-    )
-    return _known(value, src, now), basis
+    if coord_phases is None:
+        reason = cast(UnknownReason, env.phases.unknown_reason or "coord_unreachable")
+        return _unknown(reason, src, now)
+    if not coord_phases:
+        return _unknown("no_phases", src, now)
+    if any(p.planned_end.state == "unknown" for p in coord_phases):
+        return _unknown("phase_dates_missing", src, now)
+    return _unknown("no_calendar", src, now)
 
 
-def apply_entered(
-    envelope: ScheduleEnvelope, typed: TypedInputs, *, today: dt.date, now: dt.datetime
-) -> ScheduleEnvelope:
-    """Lay the project's hand-entered rows over the coord envelope (D5). Pure:
-    the cached ``envelope`` is copied, never mutated."""
+def with_forecast(envelope: ScheduleEnvelope, *, now: dt.datetime) -> ScheduleEnvelope:
+    """Copy the cached coord ``envelope`` and set its forecast. Pure: the cached
+    envelope is never mutated."""
     env = envelope.model_copy(deep=True)
-    phases = env.phases.value
-    if phases is not None and typed.phases:
-        by_code = {t.code: t for t in typed.phases}
-        env.phases = env.phases.model_copy(
-            update={
-                "value": [
-                    _overlay_phase(p, by_code[p.code]) if p.code in by_code else p
-                    for p in phases
-                ]
-            }
-        )
-    env.milestones = _overlay_milestones(env.milestones, typed.milestones, now)
-    forecast, basis = compute_schedule_forecast(env, typed, today, now)
-    if env.stale and forecast.state == "known" and basis != "entered":
-        # Computed (at least partly) from a stale read: served, not current. A
-        # forecast built only from hand-entered phases does not depend on coord's
-        # envelope, so staleness of that envelope is not its own.
-        forecast = forecast.model_copy(update={"stale": True})
-    env.forecast = forecast
-    env.basis = basis
-    env.disagreement_count = _count_disagreements(env)
+    env.forecast = compute_schedule_forecast(env, now)
     return env
 
 
@@ -1530,16 +1169,13 @@ def fill_unknown_since(
 
     With no stamp ``unknown_since`` stays null: there is no durable record of when
     it was last known, and a process-local guess would read as a fact after a
-    restart. Only coord's own, current answer counts as known: a stale or
-    hand-entered figure is not coord having answered, and a forecast counts only
-    when every progress input was coord's (``basis == "coord"``)."""
+    restart. Only coord's own, current answer counts as known: a stale figure
+    is not coord having answered."""
     known: list[str] = []
     for figure, res in _figure_resolved(env).items():
         if res.state == "unknown":
             res.unknown_since = stamps.get(figure)
         elif res.state == "known" and not res.stale:
-            if figure == "forecast" and env.basis != "coord":
-                continue
             known.append(figure)
     return known
 
@@ -1588,11 +1224,10 @@ async def resolve_schedule(
     service: ScheduleService,
     source: CoordScheduleSource,
     tenant_id: UUID,
-    typed: TypedInputs,
     db: AsyncSession,
 ) -> ScheduleEnvelope:
-    """One schedule read: the cached coord envelope, the hand-entered overlay,
-    the forecast, and the last-known stamps (D1-D8)."""
+    """One schedule read: the cached coord envelope, the forecast, and the
+    last-known stamps (D1-D8). Nothing but coord feeds it (D5)."""
     key = (tenant_id, source.door)
 
     async def loader() -> tuple[ScheduleEnvelope, bool]:
@@ -1600,7 +1235,7 @@ async def resolve_schedule(
 
     base = await service.get(key, loader)
     now = service.now()
-    env = apply_entered(base, typed, today=now.date(), now=now)
+    env = with_forecast(base, now=now)
     stamps = await load_stamps(db, tenant_id)
     known = fill_unknown_since(env, tenant_id, stamps, now)
     await stamp_figures(db, tenant_id, known, base.observed_at, stamps)

@@ -2,13 +2,13 @@
 
 /**
  * The schedule coord holds, as one section: header, phases (chart on a wide
- * screen, list on a narrow one), decision gates, the milestone list with its
- * source chips, and the provenance line.
+ * screen, list on a narrow one), decision gates, the milestone list and
+ * the provenance line.
  *
- * This is the whole of what a tenant with no hand-entered estimate sees on the
- * Timeline, and the unit a report block reuses: it takes the envelope and the
- * hand-entered milestones and nothing else, so wherever it is placed it reads
- * the same words and carries the same provenance line.
+ * This is the whole of what every tenant sees on the Timeline, and the unit a
+ * report block reuses: it takes the envelope and nothing else (derived only,
+ * plan D5), so wherever it is placed it reads the same words and carries the
+ * same provenance line.
  *
  * Plain language only in the body (plan
  * `2026-11-25-overview-timeline-and-milestones-derive-from-coord`, D6): no
@@ -19,10 +19,9 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
-  enteredBy,
   figureDay,
   gateVerdictWord,
-  mergeMilestones,
+  milestoneLane,
   phaseStateWord,
   scheduleDays,
   type LaneMilestone,
@@ -32,7 +31,6 @@ import type {
   PhaseView,
   ScheduleEnvelope,
 } from "../../_lib/schedule-api";
-import type { Milestone } from "../../_lib/timeline-api";
 import {
   formatDay,
   isoDay,
@@ -45,36 +43,6 @@ import { ScheduleHeader } from "./ScheduleHeader";
 import { UnknownFigure } from "./UnknownFigure";
 
 const CHIP = "rounded-full border px-2 py-0.5 text-xs";
-
-/** Who holds a milestone: the project record, a person, or both agreeing. */
-export function SourceChips({
-  sources,
-  uiBridgeId,
-}: {
-  sources: LaneMilestone["sources"];
-  uiBridgeId: string;
-}) {
-  const both = sources.length === 2;
-  return (
-    <span className="inline-flex gap-1" data-ui-bridge-id={uiBridgeId}>
-      {both ? (
-        <span
-          className={cn(CHIP, "border-border text-muted-foreground")}
-          data-source="both"
-        >
-          Project record and entered, agree
-        </span>
-      ) : (
-        <span
-          className={cn(CHIP, "border-border text-muted-foreground")}
-          data-source={sources[0]}
-        >
-          {sources[0] === "coord" ? "From the project record" : "Entered"}
-        </span>
-      )}
-    </span>
-  );
-}
 
 /** The milestones as text: every one, dated or not, with its status and where
  *  it is held. The accessible twin of the chart's lane. */
@@ -111,11 +79,7 @@ export function MilestoneList({
               <span className="text-muted-foreground">
                 · {m.date ? formatDay(m.date) : "Date not available"} ·{" "}
                 {m.statusWord}
-              </span>{" "}
-              <SourceChips
-                sources={m.sources}
-                uiBridgeId={`${uiPrefix}.item.${m.uiId}.sources`}
-              />
+              </span>
             </li>
           ))}
         </ul>
@@ -217,8 +181,7 @@ function Gates({ env }: { env: ScheduleEnvelope }) {
   );
 }
 
-/** Coord phases as text: the narrow-screen layout, and the list of phases an
- *  estimate does not carry. */
+/** Coord phases as text: the narrow-screen layout. */
 export function SchedulePhaseList({ phases }: { phases: PhaseView[] }) {
   return (
     <ol className="space-y-3" data-ui-bridge-id="overview.schedule.list">
@@ -259,8 +222,6 @@ export function SchedulePhaseList({ phases }: { phases: PhaseView[] }) {
                   )}
                 </>
               )}
-              {start.kind === "entered" &&
-                ` · ${enteredBy(p.actual_start)}, not confirmed by the project record`}
             </p>
           </li>
         );
@@ -282,18 +243,15 @@ function Heading({ id, children }: { id: string; children: React.ReactNode }) {
 
 export function ScheduleSection({
   env,
-  typedMilestones = [],
   today,
 }: {
   env: ScheduleEnvelope;
-  /** Hand-entered milestones, merged into the lane by name and date. */
-  typedMilestones?: Milestone[];
   today?: Date;
 }) {
   const now = useMemo(() => today ?? new Date(), [today]);
   const lane = useMemo(
-    () => mergeMilestones(typedMilestones, env.milestones.items.value),
-    [typedMilestones, env.milestones.items.value]
+    () => milestoneLane(env.milestones.items.value),
+    [env.milestones.items.value]
   );
   const phases = env.phases.value;
   const axis = useMemo(() => {

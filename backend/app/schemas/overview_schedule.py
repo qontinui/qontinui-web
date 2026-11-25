@@ -2,7 +2,7 @@
 
 Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord`` D1/D4:
 one derived envelope, every figure a :class:`Resolved` that says whether it is
-known, hand-entered or unknown, where it came from, and when it was read.
+known or unknown, where it came from, and when it was read.
 
 ``UnknownReason`` is the closed set D4 names, extended by the three reasons the
 forecast already uses (``phase_dates_missing``, ``no_phases``, ``no_calendar``)
@@ -34,20 +34,18 @@ UnknownReason = Literal[
     "no_phases",
     "no_calendar",
 ]
-ResolvedState = Literal["known", "entered", "unknown"]
+ResolvedState = Literal["known", "unknown"]
 SourceKind = Literal[
     "coord_work_unit",
     "coord_delivery",
     "coord_document",
     "coord_gates",
-    "entered",
     "derived",
 ]
 Door = Literal["operator", "device"]
 PhaseState = Literal["planned", "in_progress", "done", "not_confirmed"]
 MilestoneStatus = Literal["met", "not_met", "not_confirmed"]
 GateVerdict = Literal["pending", "passed", "failed"]
-ForecastBasis = Literal["coord", "entered", "mixed"]
 
 
 class ResolvedSource(BaseModel):
@@ -56,24 +54,12 @@ class ResolvedSource(BaseModel):
     version: int | None = None
 
 
-class Entered(BaseModel):
-    by: str | None = None
-    at: datetime | None = None
-
-
-class Disagrees[T](BaseModel):
-    coord_value: T | None = None
-    entered_value: T | None = None
-
-
 class Resolved[T](BaseModel):
     """One figure with its provenance (plan D1/D4/D5).
 
-    ``state == "known"``: ``value`` is coord's. ``"entered"``: coord could not
-    answer, ``value`` is a person's, attributed in ``entered``. ``"unknown"``:
-    ``value`` is null and ``unknown_reason`` says why. ``disagrees`` is set
-    only when coord answered AND a hand-entered value differs (coord's value
-    is the one shown). ``stale`` is true only on a figure served from the
+    ``state == "known"``: ``value`` is coord's. ``"unknown"``: ``value`` is
+    null and ``unknown_reason`` says why. There is no third state: the overview
+    is derived only from coord (plan D5). ``stale`` is true only on a figure served from the
     last good read after a coord failure; its ``observed_at`` is the old read's.
     """
 
@@ -83,8 +69,6 @@ class Resolved[T](BaseModel):
     observed_at: datetime
     unknown_since: datetime | None = None
     unknown_reason: UnknownReason | None = None
-    entered: Entered | None = None
-    disagrees: Disagrees[T] | None = None
     stale: bool = False
 
 
@@ -121,8 +105,6 @@ class MilestoneView(BaseModel):
     target_date: Resolved[date]
     status: Resolved[MilestoneStatus]
     met_at: Resolved[date]
-    #: Which stores hold it: ``["coord"]``, ``["entered"]`` or both.
-    sources: list[Literal["coord", "entered"]]
     #: ``decision_record/<name>`` the milestone cites, with the version read.
     decision_record: str | None = None
     decision_record_version: int | None = None
@@ -132,8 +114,6 @@ class MilestonesSection(BaseModel):
     items: Resolved[list[MilestoneView]]
     #: Rows coord holds that could not be read, verbatim (never dropped).
     unreadable_rows: list[str] = Field(default_factory=list)
-    #: Hand-entered milestones with no coord counterpart (D5.2).
-    entered_only: list[MilestoneView] = Field(default_factory=list)
 
 
 class GateView(BaseModel):
@@ -201,10 +181,6 @@ class ScheduleEnvelope(BaseModel):
     milestones: MilestonesSection
     gates: GatesSection
     forecast: Resolved[ForecastValue]
-    #: Where the progress inputs of the forecast came from (``None`` while unknown).
-    basis: ForecastBasis | None = None
-    #: How many figures show a hand-entered value that coord contradicts (D5.1).
-    disagreement_count: int = 0
     work_units: ReadExtent
     sources: list[SourceStamp] = Field(default_factory=list)
 

@@ -30,8 +30,6 @@ export function known<T>(
     observed_at: OBSERVED_AT,
     unknown_since: null,
     unknown_reason: null,
-    entered: null,
-    disagrees: null,
     stale: false,
   };
 }
@@ -47,28 +45,7 @@ export function unknown<T>(
     observed_at: OBSERVED_AT,
     unknown_since: since,
     unknown_reason: reason,
-    entered: null,
-    disagrees: null,
     stale: false,
-  };
-}
-
-/** A person's value standing in where coord could not answer. */
-export function entered<T>(
-  value: T,
-  by = "Maria",
-  at = "2026-11-03T09:00:00Z"
-): Resolved<T> {
-  return {
-    ...unknown<T>("coord_unreachable", "2026-11-20T08:00:00Z"),
-    value,
-    state: "entered",
-    source: {
-      kind: "entered",
-      label: `Entered by ${by} on 2026-11-03, not confirmed by coord`,
-      version: null,
-    },
-    entered: { by, at },
   };
 }
 
@@ -106,7 +83,6 @@ export function milestone(
     target_date: date ? known(date, "coord_document") : unknown("not_declared"),
     status: known<ScheduleMilestoneStatus>(status, "coord_document"),
     met_at: unknown("not_recorded"),
-    sources: ["coord"],
     decision_record: null,
     decision_record_version: null,
     ...over,
@@ -160,7 +136,6 @@ export function envelope(
         "coord_document"
       ),
       unreadable_rows: [],
-      entered_only: [],
     },
     gates: {
       items: known<GateView[]>([], "coord_gates"),
@@ -169,8 +144,6 @@ export function envelope(
       read: { read: 2, total: 2, truncated: false },
     },
     forecast: unknown("phase_dates_missing"),
-    basis: null,
-    disagreement_count: 0,
     work_units: { read: 4, total: null, truncated: false },
     sources: [
       {
@@ -193,7 +166,7 @@ export function unreachableEnvelope(
     programme: u(),
     initiative: { name: null, version: null, starts: u(), ends: u() },
     phases: u(),
-    milestones: { items: u(), unreadable_rows: [], entered_only: [] },
+    milestones: { items: u(), unreadable_rows: [] },
     gates: {
       items: u(),
       other_checks_not_shown: { total: 0, truncated: false },
@@ -215,7 +188,6 @@ export function noProgrammeEnvelope(): ScheduleEnvelope {
     milestones: {
       items: unknown("no_programme"),
       unreadable_rows: [],
-      entered_only: [],
     },
     gates: {
       items: unknown("no_programme"),
