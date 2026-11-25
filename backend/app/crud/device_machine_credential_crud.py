@@ -280,15 +280,23 @@ async def revoke(db: AsyncSession, device_id: UUID) -> DeviceMachineCredential |
     return cred
 
 
-async def delete_if_revoked(db: AsyncSession, device_id: UUID) -> bool:
-    """Delete ``device_id``'s credential row when (and only when) it is revoked.
+async def delete_for_device(
+    db: AsyncSession, device_id: UUID, *, only_revoked: bool
+) -> bool:
+    """Delete ``device_id``'s credential row; with ``only_revoked``, only when
+    that row is revoked.
 
-    An operator's ``authorize-redeem`` re-arms a revoked device. The runner's
-    unattended re-enrolment (``/self-mint``) refuses to mint over a REVOKED
-    row, by design — a device must not undo its own revocation — so the
-    operator's explicit act removes the dead row and lets the next self-mint
-    enrol a fresh key. A usable (unrevoked) row is left untouched. Returns
-    whether a row was deleted. Caller commits.
+    Called by an operator's ``authorize-redeem``, which picks the scope:
+
+    * ``only_revoked=True`` — the device was NOT under a credential deny. A
+      usable key is the runner's own recovery path (a runner offline past its
+      JWT grace exchanges it on return), so it is kept; only a dead revoked
+      row is removed, which lets ``/self-mint`` enrol again (it refuses over
+      a REVOKED row, by design).
+    * ``only_revoked=False`` — the device WAS denied. Every key that predates
+      the re-arm is suspect, so the row goes whatever its state.
+
+    Returns whether a row was deleted. Caller commits.
     """
     stmt = (
         select(DeviceMachineCredential)
@@ -297,12 +305,18 @@ async def delete_if_revoked(db: AsyncSession, device_id: UUID) -> bool:
         .execution_options(populate_existing=True)
     )
     cred = (await db.execute(stmt)).scalar_one_or_none()
-    if cred is None or cred.revoked_at is None:
+    if cred is None:
+        return False
+    was_revoked = cred.revoked_at is not None
+    if only_revoked and not was_revoked:
         return False
     await db.delete(cred)
     await db.flush()
     logger.info(
-        "devenv_device_machine_key_revoked_row_deleted", device_id=str(device_id)
+        "devenv_device_machine_key_row_deleted",
+        device_id=str(device_id),
+        was_revoked=was_revoked,
+        only_revoked=only_revoked,
     )
     return True
 
