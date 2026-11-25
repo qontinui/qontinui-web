@@ -82,7 +82,7 @@ class Unknown(Exception):
 # ---------------------------------------------------------------- pure parsers
 
 
-def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
+def parse_flat_frontmatter(text: str) -> tuple[dict[str, str], str]:
     """Return (flat key: value frontmatter, body). No frontmatter -> ({}, text)."""
     if not text.startswith("---"):
         return {}, text
@@ -288,7 +288,7 @@ def build_census(
         }
     census["links"] = link_census(units, prog_slug)
     if initiative_text is not None:
-        fm, body = split_frontmatter(initiative_text)
+        fm, body = parse_flat_frontmatter(initiative_text)
         rows, unparsed = parse_milestone_table(body)
         census["initiative"] = {
             "starts": fm.get("starts"),
