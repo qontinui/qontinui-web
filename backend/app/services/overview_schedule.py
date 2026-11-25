@@ -6,7 +6,8 @@ Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord`` Phase 2
 1. :func:`build_coord_schedule` reads coord through a
    :class:`~app.overview.coord_schedule.CoordScheduleSource` and returns the
    envelope coord ALONE supports, plus whether a coord failure degraded it. It
-   writes nothing and consults no hand-entered row.
+   issues no write to coord and consults no hand-entered row (the device
+   document door may record a policy read in coord as a side effect of serving it).
 2. :class:`ScheduleService` caches that envelope per ``(tenant, door)`` for
    :data:`TTL_SECONDS` with single-flight, and serves the last good one,
    marked stale, for up to :data:`STALE_LIMIT_SECONDS` after a coord failure (D8).
@@ -303,6 +304,7 @@ def _milestone_status(
     gates_by_id: dict[str, dict[str, Any]],
     gates_ok: bool,
     now: dt.datetime,
+    gates_truncated: bool = False,
 ) -> tuple[Resolved[Any], Resolved[Any]]:
     """``(status, met_at)`` per D2 "Milestone met": a linked unit is met iff
     shipped, at its ``first_shipped_at``; a linked gate iff cleared, at
@@ -330,9 +332,9 @@ def _milestone_status(
             )
         gate = gates_by_id.get(m.gate)
         if gate is None:
-            return _unknown("not_recorded", src_g, now), _unknown(
-                "not_recorded", src_g, now
-            )
+            # Absent from a read that was cut short is not absent from coord.
+            gate_why: UnknownReason = "truncated" if gates_truncated else "not_recorded"
+            return _unknown(gate_why, src_g, now), _unknown(gate_why, src_g, now)
         if gate.get("verdict") == "cleared":
             at = _instant(gate.get("cleared_at"))
             return (
@@ -434,6 +436,13 @@ async def _build(source: CoordScheduleSource, reads: _Reads) -> ScheduleEnvelope
     programme_key = facts.scalars.get("programme")
     try:
         await _scan_units(source, reads)
+    except CoordNotFound:
+        # coord answering 404 for the list door is not "no units": it is a scan
+        # that could not be made.
+        reads.scan_failure = reads.fail(
+            CoordReadError("coord_unreachable", "work-unit list answered 404")
+        )
+        reads.rows = []
     except CoordReadError as exc:
         reads.scan_failure = reads.fail(exc)
         reads.rows = []
@@ -742,7 +751,14 @@ async def _assemble(
 
     # -- milestones ---------------------------------------------------------
     statuses = {
-        i: _milestone_status(m, unit_state, gates_by_id, gates_failure is None, now)
+        i: _milestone_status(
+            m,
+            unit_state,
+            gates_by_id,
+            gates_failure is None,
+            now,
+            gates_extent.truncated,
+        )
         for i, m in enumerate(milestone_rows)
     }
     milestones = _milestone_section(
@@ -919,6 +935,29 @@ class _Entry:
     degraded: bool
     good: ScheduleEnvelope | None
     good_at: dt.datetime | None
+    #: This attempt was a denial for the caller: served as is, never cached.
+    denied: bool = False
+
+
+def _is_denied(envelope: ScheduleEnvelope) -> bool:
+    """Any figure coord refused THIS caller (``coord_denied``)."""
+    found = False
+
+    def walk(node: object) -> None:
+        nonlocal found
+        if isinstance(node, Resolved):
+            if node.unknown_reason == "coord_denied":
+                found = True
+            walk(node.value)
+        elif isinstance(node, BaseModel):
+            for name in type(node).model_fields:
+                walk(getattr(node, name))
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(envelope)
+    return found
 
 
 def mark_stale(envelope: ScheduleEnvelope) -> ScheduleEnvelope:
@@ -984,7 +1023,7 @@ class ScheduleService:
         return self._respond(entry, now)
 
     def _respond(self, entry: _Entry, now: dt.datetime) -> ScheduleEnvelope:
-        if not entry.degraded:
+        if entry.denied or not entry.degraded:
             return entry.attempt
         if (
             entry.good is not None
@@ -1014,6 +1053,18 @@ class ScheduleService:
     ) -> _Entry:
         started = self._clock()
         envelope, degraded = await loader()
+        if _is_denied(envelope):
+            # A denial is about THIS caller, not about coord's availability: it is
+            # neither stored nor served from, and the existing good entry (other
+            # callers' view of the tenant) is left exactly as it was.
+            return _Entry(
+                attempt_at=started,
+                attempt=envelope,
+                degraded=False,
+                good=None,
+                good_at=None,
+                denied=True,
+            )
         good, good_at = (
             (prior.good, prior.good_at) if prior is not None else (None, None)
         )
@@ -1237,7 +1288,7 @@ def _overlay_milestones(
         if (
             t.status == "done"
             and t.completed_date is not None
-            and status.value == "not_confirmed"
+            and (status.value == "not_confirmed" or status.state == "unknown")
         ):
             ent = _entered(t.updated_by, t.updated_at)
             src = _src("entered", _entered_label(t.updated_by, t.updated_at))
@@ -1414,8 +1465,10 @@ def apply_entered(
         )
     env.milestones = _overlay_milestones(env.milestones, typed.milestones, now)
     forecast, basis = compute_schedule_forecast(env, typed, today, now)
-    if env.stale and forecast.state == "known":
-        # Computed from a stale read: served, not current.
+    if env.stale and forecast.state == "known" and basis != "entered":
+        # Computed (at least partly) from a stale read: served, not current. A
+        # forecast built only from hand-entered phases does not depend on coord's
+        # envelope, so staleness of that envelope is not its own.
         forecast = forecast.model_copy(update={"stale": True})
     env.forecast = forecast
     env.basis = basis
@@ -1515,6 +1568,9 @@ async def stamp_figures(
                 stmt.on_conflict_do_update(
                     index_elements=["tenant_id", "figure"],
                     set_={"last_known_at": now},
+                    # A stamp never moves backwards (a stale view must not undo
+                    # a newer one written by a concurrent read).
+                    where=OverviewScheduleLastKnown.last_known_at < now,
                 )
             )
         await db.commit()

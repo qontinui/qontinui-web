@@ -1792,7 +1792,9 @@ def _scrub_http(body: dict[str, Any]) -> dict[str, Any]:
 
 class TestReviewFixes:
     @pytest.mark.asyncio
-    async def test_a1_a_denied_read_does_not_replace_the_good_copy(self, coord):
+    async def test_a5_a_denial_is_about_the_caller_never_served_from_or_cached(
+        self, coord
+    ):
         clock = Clock()
         service = ScheduleService(clock=clock)
         key = (TENANT, "operator")
@@ -1804,17 +1806,26 @@ class TestReviewFixes:
         t0 = good.observed_at
         coord.fail = HTTPException(403, "denied")
         clock.advance(seconds=61)
+        denied = await service.get(key, loader)
+        # served as the denial it is, not the last good copy
+        assert denied.stale is False
+        assert denied.phases.unknown_reason == "coord_denied"
+        assert denied.phases.value is None
+        # and not cached: the entry other callers read is untouched
+        entry = service._entries[key]
+        assert entry.attempt_at == t0 and entry.good is not None
+        assert entry.attempt.phases.state == "known"
+        # a later outage still serves that good copy, stale, to everyone
+        coord.fail = HTTPException(504, "down")
+        clock.advance(seconds=10)
         served = await service.get(key, loader)
-        # the denial is not stored as "good": the last good copy is still served
         assert served.stale is True and served.observed_at == t0
-        assert served.phases.value is not None and len(served.phases.value) == 14
-        # and still within the 10-minute window several views later
-        clock.advance(minutes=8)
-        again = await service.get(key, loader)
-        assert again.stale is True and again.phases.value is not None
-        clock.advance(minutes=2)
-        gone = await service.get(key, loader)
-        assert gone.phases.unknown_reason == "coord_denied"
+        # a denial with no prior entry stores nothing either
+        fresh = ScheduleService(clock=clock)
+        coord.fail = HTTPException(403, "denied")
+        again = await fresh.get(key, loader)
+        assert again.phases.unknown_reason == "coord_denied"
+        assert key not in fresh._entries
 
     @pytest.mark.asyncio
     async def test_a1_an_unparseable_read_keeps_the_good_copy_too(self, coord):
@@ -2029,3 +2040,202 @@ class TestReviewFixesRoute:
         resp = await self._get(async_db_session, api_user, coord, ScheduleService())
         assert resp.status_code == 200
         assert resp.json()["phases"]["unknown_reason"] == "unparseable"
+
+
+# ===========================================================================
+# Round-2 review fixes
+# ===========================================================================
+
+
+class TestRound2:
+    @pytest.mark.asyncio
+    async def test_a1_a_404_on_the_unit_list_is_an_unreachable_scan(self, coord):
+        orig = coord._answer
+
+        def answer(path, params):
+            if path.endswith("/work-units"):
+                raise HTTPException(404, "gone")
+            return orig(path, params)
+
+        coord._answer = answer  # type: ignore[method-assign]
+        env, degraded = await build()
+        assert degraded is True
+        assert env.programme.unknown_reason == "coord_unreachable"
+        assert env.phases.value is None
+
+    @pytest.mark.parametrize(
+        "slug", ["..", ".", "a/b", "../../admin", "a b", "a%2fb", "x?y=1", "", "a\\b"]
+    )
+    @pytest.mark.asyncio
+    async def test_a3_an_unsafe_segment_never_reaches_the_wire(self, coord, slug):
+        for source in (_operator(), _device()):
+            for call in (
+                lambda s=source: s.work_unit(slug),
+                lambda s=source: s.delivery(slug),
+                lambda s=source: s.document("initiative", slug),
+                lambda s=source: s.document(slug, "x"),
+            ):
+                with pytest.raises(cs.CoordNotFound):
+                    await call()
+        assert coord.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a3_dotted_slugs_that_are_not_traversal_pass(self, coord):
+        coord.data["units"].append(_unit("v1.2-release_x"))
+        got = await _device().work_unit("v1.2-release_x")
+        assert got["work_unit"]["slug"] == "v1.2-release_x"
+
+    @pytest.mark.asyncio
+    async def test_a3_the_door_check_refuses_a_traversing_path_on_both_doors(
+        self, coord
+    ):
+        with pytest.raises(RuntimeError, match="unsafe coord path"):
+            await _device()._get("/coord/agent-work-units/../agent-gates")
+        with pytest.raises(RuntimeError, match="unsafe coord path"):
+            await _operator()._get("/coord/work-units/%2e%2e")
+        assert coord.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a3_a_hostile_phase_link_degrades_that_unit_not_the_envelope(
+        self, monkeypatch
+    ):
+        data = make_coord_data()
+        data["units"][0]["metadata"]["phase_units"] = {"1": ["../agent-gates"]}
+        fake = FakeCoord(data)
+        monkeypatch.setattr(cs, "_proxy_coord_get", fake)
+        env, _ = await build(_device())
+        assert len(env.phases.value) == 14
+        assert all(".." not in p for p in fake.paths())
+
+    @pytest.mark.asyncio
+    async def test_a4_a_stamp_never_moves_backwards(self, async_db_session):
+        newer = NOW + dt.timedelta(minutes=5)
+        await svc.stamp_figures(async_db_session, TENANT, ["phases"], newer, {})
+        # a stale view holds no stored stamp in its (empty) snapshot
+        await svc.stamp_figures(async_db_session, TENANT, ["phases"], NOW, {})
+        row = (
+            await async_db_session.execute(
+                select(OverviewScheduleLastKnown)
+                .where(
+                    OverviewScheduleLastKnown.tenant_id == TENANT,
+                    OverviewScheduleLastKnown.figure == "phases",
+                )
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert row.last_known_at == newer
+        # forward still works
+        later = newer + dt.timedelta(minutes=1)
+        await svc.stamp_figures(async_db_session, TENANT, ["phases"], later, {})
+        row = (
+            await async_db_session.execute(
+                select(OverviewScheduleLastKnown)
+                .where(
+                    OverviewScheduleLastKnown.tenant_id == TENANT,
+                    OverviewScheduleLastKnown.figure == "phases",
+                )
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert row.last_known_at == later
+
+    @pytest.mark.asyncio
+    async def test_a6_a_gate_link_missing_from_a_truncated_read_is_truncated(
+        self, monkeypatch
+    ):
+        data = make_coord_data(
+            initiative=(
+                "---\nstarts: 2026-10-19\nmilestones:\n"
+                "  - {id: G, name: G approval, date: 2026-11-16, "
+                "gate: 00000000-0000-4000-8000-0000000000aa}\n"
+                "---\nbody"
+            )
+        )
+        meta = data["units"][0]["metadata"]
+        slugs = [f"kid-{i}" for i in range(20)]
+        meta["phase_units"] = {"1": slugs}
+        for slug in slugs:
+            data["units"].append(_unit(slug, "ready", metadata={"parent": "prog-plan"}))
+            data["gates"][slug] = []
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        env, _ = await build()
+        assert env.gates.read.truncated is True
+        (g,) = env.milestones.items.value
+        assert g.status.unknown_reason == "truncated"
+        assert g.met_at.unknown_reason == "truncated"
+
+    @pytest.mark.asyncio
+    async def test_a6_a_missing_gate_in_a_complete_read_stays_not_recorded(
+        self, monkeypatch
+    ):
+        data = make_coord_data(
+            initiative=(
+                "---\nstarts: 2026-10-19\nmilestones:\n"
+                "  - {id: G, name: G approval, date: 2026-11-16, "
+                "gate: 00000000-0000-4000-8000-0000000000aa}\n"
+                "---\nbody"
+            )
+        )
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        env, _ = await build()
+        (g,) = env.milestones.items.value
+        assert g.status.unknown_reason == "not_recorded"
+
+    @pytest.mark.asyncio
+    async def test_a7_an_entered_done_milestone_fills_a_coord_unknown_status(
+        self, monkeypatch
+    ):
+        data = make_coord_data(
+            initiative=(
+                "---\nstarts: 2026-10-19\nmilestones:\n"
+                "  - {id: C, name: C ghost, date: 2026-12-02, work_unit: no-such-unit}\n"
+                "---\nbody"
+            )
+        )
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
+        base, _ = await build()
+        assert base.milestones.items.value[0].status.state == "unknown"
+        typed = _typed(
+            milestones=[
+                TypedMilestone(
+                    "m1",
+                    "c ghost",
+                    dt.date(2026, 12, 2),
+                    "done",
+                    dt.date(2026, 12, 3),
+                    "Maria",
+                    ENTERED_AT,
+                )
+            ]
+        )
+        env = apply_entered(base, typed, today=TODAY, now=NOW)
+        (m,) = env.milestones.items.value
+        assert m.status.state == "entered" and m.status.value == "met"
+        assert m.met_at.state == "entered" and m.met_at.value == dt.date(2026, 12, 3)
+        assert m.status.unknown_reason == "not_recorded"  # why coord could not say
+
+    @pytest.mark.asyncio
+    async def test_a8_an_unreadable_milestones_block_is_an_unparseable_envelope(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(make_coord_data()))
+
+        def broken(text):
+            raise ValueError("milestones list opened without a list")
+
+        monkeypatch.setattr(svc, "parse_initiative", broken)
+        env, degraded = await build()
+        assert env.phases.unknown_reason == "unparseable"
+        assert degraded is True
+
+    @pytest.mark.asyncio
+    async def test_a11_an_entered_only_forecast_is_not_marked_stale(self, coord):
+        base, _ = await build()
+        typed = _typed(
+            _typed_phase("X1", 1, actual_start=dt.date(2026, 10, 20)),
+            _typed_phase("X2", 2),
+        )  # codes coord does not hold: nothing of coord feeds the forecast
+        stale = apply_entered(mark_stale(base), typed, today=TODAY, now=NOW)
+        assert stale.basis == "entered"
+        assert stale.forecast.state == "known"
+        assert stale.forecast.stale is False
