@@ -1,7 +1,7 @@
 /**
  * The schedule's pure pieces: what every state is CALLED, how an unknown
- * figure is worded, how a coord phase is laid over a hand-entered one, and how
- * two milestone lists become one lane.
+ * figure is worded, and how coord's milestones become one lane. Derived only
+ * (plan D5): nothing here knows of a typed or entered value.
  *
  * Plain language is a total function over closed sets (plan
  * `2026-11-25-overview-timeline-and-milestones-derive-from-coord`, D6): every
@@ -16,10 +16,7 @@
 
 import { format, isValid, parseISO } from "date-fns";
 import { formatDay } from "./timeline";
-import { MILESTONE_STATUS_LABEL } from "./timeline";
-import type { Milestone, PhaseProgress } from "./timeline-api";
 import {
-  BASES,
   FORECAST_POSITIONS,
   GATE_VERDICTS,
   MILESTONE_STATUSES,
@@ -30,7 +27,6 @@ import {
   type MilestoneView,
   type PhaseView,
   type Resolved,
-  type ScheduleBasis,
   type ScheduleEnvelope,
   type ScheduleMilestoneStatus,
   type SchedulePhaseState,
@@ -80,7 +76,7 @@ export const UNKNOWN_REASON_WORDS: Readonly<Record<UnknownReason, string>> = {
   truncated: "the record was too large to read completely",
   phase_dates_missing: "the phases have no planned dates to forecast from",
   no_phases: "the project has no phases yet",
-  no_calendar: "no estimate with a working calendar has been entered",
+  no_calendar: "the project record declares no working calendar",
 };
 
 export const SOURCE_KIND_WORDS: Readonly<Record<SourceKind, string>> = {
@@ -88,14 +84,7 @@ export const SOURCE_KIND_WORDS: Readonly<Record<SourceKind, string>> = {
   coord_delivery: "Delivery record",
   coord_document: "Project document",
   coord_gates: "Decision record",
-  entered: "Entered by a person",
   derived: "Worked out from the above",
-};
-
-export const BASIS_WORDS: Readonly<Record<ScheduleBasis, string>> = {
-  coord: "the project record",
-  entered: "figures entered by a person",
-  mixed: "the project record and figures entered by a person",
 };
 
 export const POSITION_WORDS: Readonly<Record<ForecastPosition, string>> = {
@@ -125,7 +114,6 @@ export const LABEL_TABLES: readonly {
     labels: UNKNOWN_REASON_WORDS,
   },
   { name: "source kind", states: SOURCE_KINDS, labels: SOURCE_KIND_WORDS },
-  { name: "basis", states: BASES, labels: BASIS_WORDS },
   {
     name: "forecast position",
     states: FORECAST_POSITIONS,
@@ -175,8 +163,6 @@ export const unknownReasonWord = (r: UnknownReason | null | undefined) =>
   r ? word(UNKNOWN_REASON_WORDS, r, "the reason is not recognised") : "";
 export const sourceKindWord = (k: SourceKind) =>
   word(SOURCE_KIND_WORDS, k, UNRECOGNISED);
-export const basisWord = (b: ScheduleBasis) =>
-  word(BASIS_WORDS, b, "an unrecognised source");
 
 // ---------------------------------------------------------------------------
 // Times
@@ -222,147 +208,19 @@ export function describeUnknown(r: {
   };
 }
 
-/** A figure's day, and whose it is. `kind: "unknown"` carries no day. */
+/** A figure's day. `kind: "unknown"` carries no day. */
 export interface FigureDay {
-  kind: "coord" | "entered" | "unknown";
+  kind: "coord" | "unknown";
   day: string | null;
 }
 
 export function figureDay(r: Resolved<string>): FigureDay {
   if (r.state === "known" && r.value) return { kind: "coord", day: r.value };
-  if (r.state === "entered" && r.value)
-    return { kind: "entered", day: r.value };
   return { kind: "unknown", day: null };
 }
 
-/** "Entered by Maria on 3 Nov 2025" — the attribution of a person's value. */
-export function enteredBy(r: {
-  entered?: { by: string | null; at: string | null } | null;
-}): string {
-  const by = r.entered?.by ?? null;
-  const at = formatInstantDay(r.entered?.at);
-  return `Entered by ${by ?? "a person"}${at ? ` on ${at}` : ""}`;
-}
-
 // ---------------------------------------------------------------------------
-// Overlay: coord phases over an estimate's phases (Phase 4, D5)
-// ---------------------------------------------------------------------------
-
-/** One date as the overlay shows it: coord's value, with a hand-entered value
- *  that differs beside it, or the entered value alone where coord is silent. */
-export interface OverlayDate {
-  /** The day shown. Null when neither coord nor a person gave one. */
-  day: string | null;
-  /** Who the shown day is from. */
-  from: "coord" | "entered" | "unknown";
-  /** A hand-entered day that contradicts coord's (never edited by this view). */
-  entered_disagrees: string | null;
-  /** Set when `from` is `unknown`: why, for the figure's own text. */
-  resolved: Resolved<string> | null;
-}
-
-export interface OverlayPhase {
-  coord: PhaseView;
-  start: OverlayDate;
-  end: OverlayDate;
-  /** Coord's reading of the phase, unless coord holds nothing and the
-   *  estimate's own record says otherwise. */
-  disagreements: number;
-}
-
-function overlayDate(
-  entered: string | null,
-  coord: Resolved<string>
-): OverlayDate {
-  const c = figureDay(coord);
-  if (c.kind === "coord") {
-    const differs = entered !== null && entered !== c.day;
-    return {
-      day: c.day,
-      from: "coord",
-      // Coord's own `disagrees` stands when the typed row it saw differs; a
-      // typed value in THIS tenant's estimate is compared here the same way.
-      entered_disagrees: differs
-        ? entered
-        : (coord.disagrees?.entered_value ?? null),
-      resolved: coord,
-    };
-  }
-  if (c.kind === "entered") {
-    return {
-      day: c.day,
-      from: "entered",
-      entered_disagrees: null,
-      resolved: coord,
-    };
-  }
-  if (entered !== null) {
-    return {
-      day: entered,
-      from: "entered",
-      entered_disagrees: null,
-      resolved: coord,
-    };
-  }
-  return {
-    day: null,
-    from: "unknown",
-    entered_disagrees: null,
-    resolved: coord,
-  };
-}
-
-export interface Overlay {
-  /** Estimate phase id -> its coord counterpart, matched by EQUAL code only. */
-  matched: Map<string, OverlayPhase>;
-  /** Coord phases no estimate phase carries the code of: "From coord". */
-  coordOnly: PhaseView[];
-  /** Estimate phases with no coord counterpart: "Entered". */
-  enteredOnly: string[];
-  /** Figures where a person's value contradicts coord's. */
-  disagreements: number;
-}
-
-/**
- * Lay coord's phases over an estimate's. A coord phase and an estimate phase
- * are the same phase only when their codes are EQUAL (`F1` = `F1`); there is
- * no fuzzy match, so an unmatched phase is listed on its own side rather than
- * guessed onto another.
- */
-export function overlayPhases(
-  estimate: readonly PhaseProgress[],
-  coord: readonly PhaseView[] | null
-): Overlay {
-  const byCode = new Map<string, PhaseView>();
-  for (const p of coord ?? []) if (!byCode.has(p.code)) byCode.set(p.code, p);
-  const matched = new Map<string, OverlayPhase>();
-  const enteredOnly: string[] = [];
-  let disagreements = 0;
-  const used = new Set<string>();
-  for (const e of estimate) {
-    const c = byCode.get(e.code);
-    if (!c) {
-      enteredOnly.push(e.id);
-      continue;
-    }
-    used.add(c.code);
-    const start = overlayDate(e.actual_start, c.actual_start);
-    const end = overlayDate(e.actual_end, c.actual_end);
-    const n =
-      (start.entered_disagrees ? 1 : 0) + (end.entered_disagrees ? 1 : 0);
-    disagreements += n;
-    matched.set(e.id, { coord: c, start, end, disagreements: n });
-  }
-  return {
-    matched,
-    coordOnly: (coord ?? []).filter((p) => !used.has(p.code)),
-    enteredOnly,
-    disagreements,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// The milestone lane: typed and coord milestones as one list (Phase 4)
+// The milestone lane: coord's milestones as one dated list
 // ---------------------------------------------------------------------------
 
 export type LaneTone =
@@ -385,23 +243,12 @@ export interface LaneMilestone {
   /** The status in plain words. */
   statusWord: string;
   tone: LaneTone;
-  /** Where it is held: coord, a person, or both (they agree). */
-  sources: ("coord" | "entered")[];
-  /** The milestone's date was entered by a person, coord having none. */
-  dateFrom: "coord" | "entered" | "unknown";
 }
 
 /** Case-folded, whitespace-collapsed: the milestone name as a key. */
 export function normaliseName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
-
-const TYPED_TONE: Record<Milestone["status"], LaneTone> = {
-  planned: "planned",
-  in_progress: "in_progress",
-  done: "done",
-  at_risk: "at_risk",
-};
 
 const COORD_TONE: Record<ScheduleMilestoneStatus, LaneTone> = {
   met: "done",
@@ -435,51 +282,17 @@ function coordLane(m: MilestoneView, index: number): LaneMilestone {
               .filter(Boolean)
               .join(" — "),
     tone: tone ?? "unknown",
-    sources: ["coord"],
-    dateFrom: date.kind,
   };
 }
 
 /**
- * Typed (hand-entered) and coord milestones as one lane. A typed and a coord
- * milestone collapse into one, showing both sources, ONLY when their
- * normalised name AND date are equal (typed milestones carry no `V1`-style
- * id, so name plus date is the only key); otherwise both are listed. A coord
- * milestone with no available date is listed, undated, never dropped.
+ * Coord's milestones as one lane, dated ones first in date order. A milestone
+ * with no available date is listed, undated, never dropped.
  */
-export function mergeMilestones(
-  typed: readonly Milestone[],
+export function milestoneLane(
   coord: readonly MilestoneView[] | null
 ): LaneMilestone[] {
-  const lane: LaneMilestone[] = (coord ?? []).map(coordLane);
-  const claimed = new Set<number>();
-  const out: LaneMilestone[] = [];
-  for (const m of typed) {
-    const key = normaliseName(m.title);
-    const at = lane.findIndex(
-      (c, i) =>
-        !claimed.has(i) &&
-        c.date !== null &&
-        c.date === m.target_date &&
-        normaliseName(c.title) === key
-    );
-    if (at >= 0) {
-      claimed.add(at);
-      lane[at] = { ...lane[at]!, sources: ["coord", "entered"] };
-      continue;
-    }
-    out.push({
-      key: `entered:${m.id}`,
-      uiId: m.id,
-      title: m.title,
-      date: m.target_date,
-      statusWord: MILESTONE_STATUS_LABEL[m.status],
-      tone: own(TYPED_TONE, m.status) ?? "unknown",
-      sources: ["entered"],
-      dateFrom: "entered",
-    });
-  }
-  return [...lane, ...out].sort((a, b) => {
+  return (coord ?? []).map(coordLane).sort((a, b) => {
     if (a.date === null) return b.date === null ? 0 : 1;
     if (b.date === null) return -1;
     return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;

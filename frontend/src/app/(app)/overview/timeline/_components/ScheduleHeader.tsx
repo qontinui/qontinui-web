@@ -5,13 +5,11 @@
  * project is now, the next date that matters, when it is expected to finish,
  * and the window it runs in. A figure coord could not give reads "Not
  * available since …" with the reason (`UnknownFigure`); it is never a default
- * date, "0 days" or "On track". The header also names how many figures
- * contradict a value somebody entered, and where the forecast's inputs came
- * from.
+ * date, "0 days" or "On track". Derived only from coord (plan D5):
+ * nothing here knows of an entered value.
  */
 
 import {
-  basisWord,
   countPhases,
   currentPhases,
   dayOrNotAvailable,
@@ -139,11 +137,7 @@ function Finish({ env }: { env: ScheduleEnvelope }) {
   }
   const slip = describeSlip(f.value.slip_days);
   return (
-    <Fact
-      label="Expected to finish"
-      uiBridgeId={id}
-      detail={env.basis ? `Worked out from ${basisWord(env.basis)}.` : null}
-    >
+    <Fact label="Expected to finish" uiBridgeId={id}>
       {dayOrNotAvailable(f.value.forecast_finish)}
       {slip && (
         <span
@@ -194,19 +188,6 @@ export function ScheduleHeader({
         <Finish env={env} />
         <Window env={env} />
       </dl>
-      {env.disagreement_count > 0 && (
-        <p
-          className="mt-5 max-w-[46rem] rounded-md border border-amber-500/40 px-3 py-2 text-sm text-foreground"
-          role="note"
-          data-ui-bridge-id="overview.schedule.header.disagreements"
-        >
-          {env.disagreement_count === 1
-            ? "1 figure differs from a value somebody entered."
-            : `${env.disagreement_count} figures differ from values somebody entered.`}{" "}
-          The project record&rsquo;s value is shown, with the entered one beside
-          it.
-        </p>
-      )}
     </section>
   );
 }

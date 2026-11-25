@@ -2,12 +2,11 @@
  * The wire shape of `GET /api/v1/overview/schedule` — the project's phases,
  * milestones and decision gates DERIVED from coord, one `Resolved` per figure
  * (plan `2026-11-25-overview-timeline-and-milestones-derive-from-coord`, D1,
- * D4, D5).
+ * D4, D5: derived only, no entered value, overlay or pin).
  *
  * Mirrors the backend's `app/schemas/overview_schedule.py`. Every figure is a
- * `Resolved<T>`: coord's own value (`known`), a person's value standing in
- * where coord could not answer (`entered`), or no value with the reason
- * (`unknown`). `value` is null exactly when the state is `unknown`, and a
+ * `Resolved<T>`: coord's own value (`known`) or no value with the reason
+ * (`unknown`). There is no third state. `value` is null exactly when the state is `unknown`, and a
  * failed read is never an empty list.
  */
 
@@ -19,7 +18,7 @@ export const SCHEDULE_PATH = `${OVERVIEW_API}/schedule`;
 /** The server caches a schedule for 60 s; polling faster only repeats it. */
 export const SCHEDULE_POLL_MS = 60_000;
 
-export const RESOLVED_STATES = ["known", "entered", "unknown"] as const;
+export const RESOLVED_STATES = ["known", "unknown"] as const;
 export type ResolvedState = (typeof RESOLVED_STATES)[number];
 
 export const SOURCE_KINDS = [
@@ -27,7 +26,6 @@ export const SOURCE_KINDS = [
   "coord_delivery",
   "coord_document",
   "coord_gates",
-  "entered",
   "derived",
 ] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -73,9 +71,6 @@ export const FORECAST_POSITIONS = [
 ] as const;
 export type ForecastPosition = (typeof FORECAST_POSITIONS)[number];
 
-export const BASES = ["coord", "entered", "mixed"] as const;
-export type ScheduleBasis = (typeof BASES)[number];
-
 export interface Source {
   kind: SourceKind;
   /** Plain words, safe to show. */
@@ -90,8 +85,6 @@ export interface Resolved<T> {
   observed_at: string;
   unknown_since?: string | null;
   unknown_reason?: UnknownReason | null;
-  entered?: { by: string | null; at: string | null } | null;
-  disagrees?: { coord_value: T; entered_value: T } | null;
   stale?: boolean;
 }
 
@@ -107,8 +100,6 @@ export interface PhaseView {
   milestone_id: string | null;
 }
 
-export type MilestoneSource = "coord" | "entered";
-
 export interface MilestoneView {
   id: string | null;
   name: string;
@@ -116,7 +107,6 @@ export interface MilestoneView {
   target_date: Resolved<string>;
   status: Resolved<ScheduleMilestoneStatus>;
   met_at: Resolved<string>;
-  sources: MilestoneSource[];
   decision_record: string | null;
   decision_record_version: number | null;
 }
@@ -173,7 +163,6 @@ export interface ScheduleEnvelope {
   milestones: {
     items: Resolved<MilestoneView[]>;
     unreadable_rows: string[];
-    entered_only: MilestoneView[];
   };
   gates: {
     items: Resolved<GateView[]>;
@@ -182,8 +171,6 @@ export interface ScheduleEnvelope {
     read: ReadCount;
   };
   forecast: Resolved<ForecastValue>;
-  basis: ScheduleBasis | null;
-  disagreement_count: number;
   work_units: ReadCount;
   sources: SourceStamp[];
 }

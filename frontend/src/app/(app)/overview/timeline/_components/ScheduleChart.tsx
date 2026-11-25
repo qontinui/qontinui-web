@@ -9,8 +9,7 @@
  * chart holds it). Nothing here invents a date to draw.
  *
  * Reuses the Timeline's placement (`barSpan`, `dayOffset`, `axisMonths`) and
- * its milestone lane; the estimate-backed chart (`TimelineChart`) shares the
- * lane through `MilestoneLane`.
+ * its milestone lane.
  */
 
 import { cn } from "@/lib/utils";
@@ -99,7 +98,6 @@ export function MilestoneLane({
               )}
               style={{ left: `${at}%` }}
               data-ui-bridge-id={`${uiPrefix}.milestone.${m.uiId}`}
-              data-sources={m.sources.join("+")}
             >
               <span className="sr-only">
                 {m.title}, {formatDay(m.date)}, {m.statusWord}
@@ -162,7 +160,6 @@ function PhaseRow({
             title={`${formatDay(start.day)} – ${end.day ? formatDay(end.day) : "still running"}`}
             className={cn(
               "absolute top-4 h-2.5 bg-foreground/70",
-              start.kind === "entered" && "opacity-60",
               span.clippedStart ? "rounded-l-none" : "rounded-l-sm",
               span.clippedEnd ? "rounded-r-none" : "rounded-r-sm"
             )}

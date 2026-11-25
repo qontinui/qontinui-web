@@ -18,7 +18,6 @@ import asyncio
 import datetime as dt
 import importlib.util
 import re
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -48,10 +47,6 @@ from app.overview.coord_schedule import (
 from app.services import overview_schedule as svc
 from app.services.overview_schedule import (
     ScheduleService,
-    TypedInputs,
-    TypedMilestone,
-    TypedPhase,
-    apply_entered,
     build_coord_schedule,
     mark_stale,
 )
@@ -1210,253 +1205,23 @@ class TestCache:
 
 
 # ===========================================================================
-# D5 — precedence of coord over what a person entered
+# D5 — derived only: the forecast has no typed input of any kind
 # ===========================================================================
-
-ENTERED_AT = dt.datetime(2026, 11, 3, 9, 0, tzinfo=dt.UTC)
-
-
-def _typed_phase(code: str, n: int, **kw: Any) -> TypedPhase:
-    base: dict[str, Any] = {
-        "id": str(uuid4()),
-        "code": code,
-        "name": f"Phase {code}",
-        "sort_order": n,
-        "planned_start": dt.date(2026, 10, 19) + dt.timedelta(weeks=4 * (n - 1)),
-        "planned_end": dt.date(2026, 10, 19) + dt.timedelta(weeks=4 * (n - 1), days=25),
-        "actual_start": None,
-        "actual_end": None,
-        "gate_status": "pending",
-        "gate_criteria": None,
-        "updated_by": "Maria",
-        "updated_at": ENTERED_AT,
-    }
-    base.update(kw)
-    return TypedPhase(**base)
-
-
-def _typed(
-    *phases: TypedPhase, milestones: list[TypedMilestone] | None = None
-) -> TypedInputs:
-    return TypedInputs(
-        phases=list(phases),
-        breaks=[],
-        working_day_factor=Decimal("1"),
-        milestones=milestones or [],
-    )
-
 
 TODAY = dt.date(2026, 11, 25)
 
 
-class TestPrecedence:
-    @pytest.mark.asyncio
-    async def test_coord_known_and_entered_differ_coord_is_shown_with_the_disagreement(
-        self, monkeypatch
-    ):
-        monkeypatch.setattr(
-            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
-        )
-        base, _ = await build()
-        typed = _typed(
-            _typed_phase(
-                "P1",
-                1,
-                actual_start=dt.date(2026, 10, 20),
-                actual_end=dt.date(2026, 11, 14),
-            ),
-            _typed_phase("P2", 2),
-            _typed_phase("P3", 3),
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        p1 = env.phases.value[0]
-        assert p1.actual_end.state == "known"
-        assert p1.actual_end.value == dt.date(2026, 11, 10)  # coord's
-        assert p1.actual_end.disagrees.coord_value == dt.date(2026, 11, 10)
-        assert p1.actual_end.disagrees.entered_value == dt.date(2026, 11, 14)
-        assert (p1.actual_end.entered.by, p1.actual_end.entered.at) == (
-            "Maria",
-            ENTERED_AT,
-        )
-        # the start agrees, so no disagreement is invented
-        assert p1.actual_start.disagrees is None
-        assert env.disagreement_count == 1
-
-    @pytest.mark.asyncio
-    async def test_the_entered_value_does_not_feed_the_forecast(self, monkeypatch):
-        monkeypatch.setattr(
-            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
-        )
-        base, _ = await build()
-
-        def forecast_with(entered_end: dt.date):
-            typed = _typed(
-                _typed_phase(
-                    "P1", 1, actual_start=dt.date(2026, 10, 20), actual_end=entered_end
-                ),
-                _typed_phase("P2", 2),
-                _typed_phase("P3", 3),
-            )
-            return apply_entered(base, typed, today=TODAY, now=NOW)
-
-        late = forecast_with(dt.date(2027, 3, 1))  # entered says P1 ended months later
-        agrees = forecast_with(dt.date(2026, 11, 10))  # entered == coord
-        assert late.forecast.state == "known"
-        assert late.forecast.value == agrees.forecast.value
-        assert late.basis == "coord"
-
-    @pytest.mark.asyncio
-    async def test_coord_unknown_the_entered_value_stands_in_labelled(self, coord):
-        coord.fail = HTTPException(504, "down")
-        base, _ = await build()
-        typed = _typed(
-            _typed_phase(
-                "P1",
-                1,
-                actual_start=dt.date(2026, 10, 20),
-                actual_end=dt.date(2026, 11, 14),
-            ),
-            _typed_phase("P2", 2),
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        # coord gave no phases, so nothing to overlay on the phase list ...
-        assert env.phases.value is None
-        # ... but the forecast still runs on the entered rows and says so
-        assert env.forecast.state == "known"
-        assert env.basis == "entered"
-
-    @pytest.mark.asyncio
-    async def test_a_phase_coord_cannot_confirm_takes_the_entered_value_labelled(
-        self, coord
-    ):
-        base, _ = await build()  # unlinked phases: state not_confirmed, dates unknown
-        typed = _typed(
-            _typed_phase("P2", 2, actual_start=dt.date(2026, 11, 2)),
-            _typed_phase("P1", 1),
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        p2 = env.phases.value[1]
-        assert p2.actual_start.state == "entered"
-        assert p2.actual_start.value == dt.date(2026, 11, 2)
-        assert p2.actual_start.entered.by == "Maria"
-        assert "not confirmed by coord" in p2.actual_start.source.label
-        assert (
-            p2.actual_start.unknown_reason == "not_declared"
-        )  # why coord could not say
-        assert p2.state.state == "entered" and p2.state.value == "in_progress"
-        assert p2.actual_end.state == "unknown"
-        # and the figure carries NO disagreement: coord said nothing to disagree with
-        assert p2.actual_start.disagrees is None and env.disagreement_count == 0
-        assert env.basis == "entered"
-
-    @pytest.mark.asyncio
-    async def test_milestones_collapse_on_name_and_date_and_flag_a_date_disagreement(
-        self, coord
-    ):
-        base, _ = await build()
-        typed = _typed(
-            milestones=[
-                TypedMilestone(
-                    "m1",
-                    "v1 account module",
-                    dt.date(2026, 12, 1),
-                    "planned",
-                    None,
-                    "Maria",
-                    ENTERED_AT,
-                ),
-                TypedMilestone(
-                    "m2",
-                    "V2 checkout",
-                    dt.date(2026, 12, 20),
-                    "planned",
-                    None,
-                    "Maria",
-                    ENTERED_AT,
-                ),
-                TypedMilestone(
-                    "m3",
-                    "Entered only",
-                    dt.date(2027, 2, 1),
-                    "planned",
-                    None,
-                    "Maria",
-                    ENTERED_AT,
-                ),
-            ]
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        items = {m.name: m for m in env.milestones.items.value}
-        same = items["V1 account module"]
-        assert (
-            same.sources == ["coord", "entered"] and same.target_date.disagrees is None
-        )
-        differ = items["V2 checkout"]
-        assert differ.target_date.value == dt.date(2026, 12, 18)  # coord's
-        assert differ.target_date.disagrees.entered_value == dt.date(2026, 12, 20)
-        assert items["V0 first slice"].sources == ["coord"]
-        assert [m.name for m in env.milestones.entered_only] == ["Entered only"]
-        assert env.disagreement_count == 1
-
-    @pytest.mark.asyncio
-    async def test_when_coord_cannot_read_milestones_every_entered_one_stands_in(
-        self, coord
-    ):
-        coord.data["documents"].clear()
-        base, _ = await build()
-        typed = _typed(
-            milestones=[
-                TypedMilestone(
-                    "m1",
-                    "Pilot",
-                    dt.date(2026, 12, 1),
-                    "done",
-                    dt.date(2026, 12, 2),
-                    "Maria",
-                    ENTERED_AT,
-                )
-            ]
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        assert env.milestones.items.state == "unknown"
-        (pilot,) = env.milestones.entered_only
-        assert pilot.target_date.state == "entered"
-        assert pilot.status.value == "met" and pilot.met_at.value == dt.date(
-            2026, 12, 2
-        )
-
-    @pytest.mark.asyncio
-    async def test_apply_entered_never_mutates_the_cached_envelope(self, monkeypatch):
-        monkeypatch.setattr(
-            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
-        )
-        base, _ = await build()
-        snapshot = base.model_dump(mode="json")
-        apply_entered(
-            base,
-            _typed(
-                _typed_phase("P1", 1, actual_end=dt.date(2027, 1, 1)),
-                _typed_phase("P2", 2),
-            ),
-            today=TODAY,
-            now=NOW,
-        )
-        assert base.model_dump(mode="json") == snapshot
-
-
 class TestForecast:
     @pytest.mark.asyncio
-    async def test_bauhaus_shape_with_no_typed_rows_is_phase_dates_missing(self, coord):
+    async def test_bauhaus_shape_is_phase_dates_missing(self, coord):
         base, _ = await build()
-        env = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        env = svc.with_forecast(base, now=NOW)
         assert env.forecast.state == "unknown"
         assert env.forecast.unknown_reason == "phase_dates_missing"
-        assert env.forecast.value is None and env.basis is None
+        assert env.forecast.value is None
 
     @pytest.mark.asyncio
-    async def test_fully_dated_coord_phases_without_an_estimate_say_no_calendar(
-        self, monkeypatch
-    ):
+    async def test_fully_dated_coord_phases_say_no_calendar(self, monkeypatch):
         data = make_coord_data(phases=2)
         data["units"][0]["metadata"]["phases"] = [
             {"index": 1, "name": "P1 One", "milestone": "V1"},
@@ -1464,71 +1229,24 @@ class TestForecast:
         ]
         monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
         base, _ = await build()
-        env = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        env = svc.with_forecast(base, now=NOW)
+        assert env.forecast.state == "unknown"
         assert env.forecast.unknown_reason == "no_calendar"
 
     @pytest.mark.asyncio
-    async def test_an_estimate_forecast_matches_compute_forecast_unchanged(self, coord):
-        from app.services.overview_forecast import compute_forecast
-
+    async def test_a_coord_outage_gives_the_phases_reason_not_a_forecast(self, coord):
+        coord.fail = HTTPException(504, "down")
         base, _ = await build()
-        phases = [
-            _typed_phase(
-                "P1",
-                1,
-                actual_start=dt.date(2026, 10, 20),
-                actual_end=dt.date(2026, 11, 14),
-            ),
-            _typed_phase("P2", 2, actual_start=dt.date(2026, 11, 20)),
-            _typed_phase("P3", 3),
-        ]
-        env = apply_entered(base, _typed(*phases), today=TODAY, now=NOW)
-        direct = compute_forecast(
-            [
-                svc._ForecastPhase(
-                    **{
-                        k: getattr(p, k)
-                        for k in svc._ForecastPhase.__dataclass_fields__
-                    }
-                )
-                for p in phases
-            ],  # type: ignore[arg-type]
-            [],
-            working_day_factor=Decimal("1"),
-            today=TODAY,
-        )
-        assert env.forecast.value.forecast_finish == direct["forecast_finish"]
-        assert env.forecast.value.slip_days == direct["slip_days"]
-        assert env.forecast.value.position == direct["position"] == "in_progress"
-        assert env.forecast.value.current_phase.code == "P2"
-
-    @pytest.mark.asyncio
-    async def test_the_basis_is_mixed_when_both_sources_feed_it(self, monkeypatch):
-        monkeypatch.setattr(
-            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
-        )
-        base, _ = await build()
-        typed = _typed(
-            _typed_phase("P1", 1),
-            _typed_phase("P2", 2),
-            _typed_phase(
-                "P3", 3, actual_start=dt.date(2026, 11, 20)
-            ),  # coord has no P3 dates
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        assert env.basis == "mixed"
-
-    @pytest.mark.asyncio
-    async def test_an_undated_estimate_phase_withholds_the_forecast(self, coord):
-        base, _ = await build()
-        env = apply_entered(
-            base,
-            _typed(_typed_phase("P1", 1, planned_end=None), _typed_phase("P2", 2)),
-            today=TODAY,
-            now=NOW,
-        )
+        env = svc.with_forecast(base, now=NOW)
         assert env.forecast.state == "unknown"
-        assert env.forecast.unknown_reason == "phase_dates_missing"
+        assert env.forecast.unknown_reason == "coord_unreachable"
+
+    @pytest.mark.asyncio
+    async def test_with_forecast_never_mutates_the_cached_envelope(self, coord):
+        base, _ = await build()
+        snapshot = base.model_dump(mode="json")
+        svc.with_forecast(base, now=NOW)
+        assert base.model_dump(mode="json") == snapshot
 
 
 # ===========================================================================
@@ -1610,6 +1328,31 @@ def _client(app: FastAPI) -> httpx.AsyncClient:
     )
 
 
+def _all_keys(node: Any) -> set[str]:
+    if isinstance(node, dict):
+        out = set(node)
+        for v in node.values():
+            out |= _all_keys(v)
+        return out
+    if isinstance(node, list):
+        return set().union(*(_all_keys(v) for v in node)) if node else set()
+    return set()
+
+
+def _all_states(node: Any) -> set[str]:
+    """Every ``state`` value of every ``Resolved`` in a JSON body."""
+    if isinstance(node, dict):
+        out: set[str] = set()
+        if {"state", "source", "observed_at"} <= node.keys():
+            out.add(node["state"])
+        for v in node.values():
+            out |= _all_states(v)
+        return out
+    if isinstance(node, list):
+        return set().union(*(_all_states(v) for v in node)) if node else set()
+    return set()
+
+
 @pytest.mark.asyncio
 class TestRoute:
     async def _get(self, db, user, tenant, kind, coord, service=None):
@@ -1670,30 +1413,88 @@ class TestRoute:
         assert body["phases"]["state"] == "unknown"
         assert body["phases"]["value"] is None
 
-    async def test_typed_rows_overlay_over_http_and_stay_in_their_tenant(
-        self, async_db_session, api_user, monkeypatch
-    ):
-        from app.models.overview import Milestone
+    async def _seed_typed(self, db: AsyncSession) -> None:
+        """Typed rows that DIFFER from coord's linked fixture (P1 ended
+        2026-11-10, V2 is 2026-12-18), for the tenant and for another."""
+        from app.models.overview import Estimate, Milestone, Phase
 
-        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(make_coord_data()))
-        for tenant, title in (
-            (TENANT, "Entered here"),
-            (OTHER_TENANT, "Entered elsewhere"),
-        ):
-            async_db_session.add(
+        for tenant, tag in ((TENANT, "here"), (OTHER_TENANT, "elsewhere")):
+            estimate = Estimate(
+                tenant_id=tenant, name=f"Typed {tag}", purpose="budget", version=1
+            )
+            db.add(estimate)
+            await db.flush()
+            db.add(
+                Phase(
+                    tenant_id=tenant,
+                    estimate_id=estimate.id,
+                    code="P1",
+                    name=f"Typed phase {tag}",
+                    sort_order=1,
+                    planned_start=dt.date(2026, 10, 19),
+                    planned_end=dt.date(2026, 11, 1),
+                    actual_start=dt.date(2026, 10, 1),
+                    actual_end=dt.date(2027, 3, 1),
+                )
+            )
+            db.add(
                 Milestone(
                     tenant_id=tenant,
-                    title=title,
-                    target_date=dt.date(2027, 2, 1),
+                    title="V2 checkout",
+                    target_date=dt.date(2027, 3, 5),
+                    status="planned",
                     updated_by="Maria",
                 )
             )
-        await async_db_session.commit()
-        body = (
-            await self._get(async_db_session, api_user, TENANT, "user", None)
-        ).json()
-        names = [m["name"] for m in body["milestones"]["entered_only"]]
-        assert names == ["Entered here"]  # tenant B's row never appears
+            db.add(
+                Milestone(
+                    tenant_id=tenant,
+                    title=f"Typed only {tag}",
+                    target_date=dt.date(2027, 4, 1),
+                    updated_by="Maria",
+                )
+            )
+        await db.commit()
+
+    async def test_typed_rows_never_reach_the_schedule(
+        self, async_db_session, api_user, monkeypatch
+    ):
+        monkeypatch.setattr(
+            cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
+        )
+        await self._seed_typed(async_db_session)
+        resp = await self._get(async_db_session, api_user, TENANT, "user", None)
+        assert resp.status_code == 200
+        body = resp.json()
+        p1 = body["phases"]["value"][0]
+        assert p1["actual_end"]["value"] == "2026-11-10"  # coord's, not 2027-03-01
+        v2 = next(m for m in body["milestones"]["items"]["value"] if "V2" in m["name"])
+        assert v2["target_date"]["value"] == "2026-12-18"  # coord's, not 2027-03-05
+        for typed in ("2027-03-01", "2027-03-05", "2027-04-01", "Typed", "Maria"):
+            assert typed not in resp.text, typed
+        # the envelope has no overlay vocabulary at all
+        assert _all_keys(body).isdisjoint(
+            {"entered", "disagrees", "basis", "disagreement_count", "entered_only"}
+        )
+        assert _all_states(body) <= {"known", "unknown"}
+
+    async def test_coord_unreachable_with_typed_values_is_unknown_never_typed(
+        self, async_db_session, api_user, coord
+    ):
+        coord.fail = HTTPException(504, "down")
+        await self._seed_typed(async_db_session)
+        resp = await self._get(async_db_session, api_user, TENANT, "user", coord)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["phases"]["state"] == "unknown"
+        assert body["phases"]["value"] is None
+        assert body["phases"]["unknown_reason"] == "coord_unreachable"
+        assert body["milestones"]["items"]["state"] == "unknown"
+        assert body["milestones"]["items"]["value"] is None
+        assert body["forecast"]["state"] == "unknown"
+        for typed in ("2027-03-01", "2027-03-05", "2027-04-01", "Typed", "Maria"):
+            assert typed not in resp.text, typed
+        assert _all_states(body) <= {"unknown"}
 
     async def test_the_route_has_no_write_verb(self, async_db_session, api_user, coord):
         app = _app(
@@ -1865,50 +1666,24 @@ class TestReviewFixes:
         assert after.stale is False and after.phases.value is None
 
     @pytest.mark.asyncio
-    async def test_a2_a_forecast_from_a_stale_read_is_stale_and_never_stamped(
-        self, monkeypatch
-    ):
+    async def test_a2_a_forecast_is_never_known_so_never_stamped(self, monkeypatch):
         monkeypatch.setattr(
             cs, "_proxy_coord_get", FakeCoord(make_coord_data(linked=True))
         )
         base, _ = await build()
-        typed = _typed(
-            _typed_phase("P1", 1, actual_start=dt.date(2026, 10, 20)),
-            _typed_phase("P2", 2),
-            _typed_phase("P3", 3),
-        )
-        fresh = apply_entered(base, typed, today=TODAY, now=NOW)
-        assert fresh.forecast.state == "known" and fresh.basis == "coord"
-        assert "forecast" in svc.fill_unknown_since(fresh, TENANT, {}, NOW)
-
-        stale = apply_entered(mark_stale(base), typed, today=TODAY, now=NOW)
-        assert stale.forecast.state == "known"
-        assert stale.forecast.stale is True
-        assert svc.fill_unknown_since(stale, TENANT, {}, NOW) == []
-
-        # a forecast fed by entered values is not coord having answered
-        entered = apply_entered(
-            base,
-            _typed(
-                _typed_phase("P1", 1),
-                _typed_phase("P2", 2),
-                _typed_phase("P3", 3, actual_start=dt.date(2026, 11, 20)),
-            ),
-            today=TODAY,
-            now=NOW,
-        )
-        assert entered.basis == "mixed"
-        assert "forecast" not in svc.fill_unknown_since(entered, TENANT, {}, NOW)
+        env = svc.with_forecast(base, now=NOW)
+        assert env.forecast.state == "unknown"
+        assert "forecast" not in svc.fill_unknown_since(env, TENANT, {}, NOW)
 
     @pytest.mark.asyncio
     async def test_a4_unknown_since_is_null_without_a_stamp(self, coord):
         coord.fail = HTTPException(504, "down")
         base, _ = await build()
-        env = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        env = svc.with_forecast(base, now=NOW)
         svc.fill_unknown_since(env, TENANT, {}, NOW)
         assert env.phases.state == "unknown"
         assert env.phases.unknown_since is None
-        env2 = apply_entered(base, TypedInputs(), today=TODAY, now=NOW)
+        env2 = svc.with_forecast(base, now=NOW)
         stamp = NOW - dt.timedelta(days=4)
         svc.fill_unknown_since(env2, TENANT, {"phases": stamp}, NOW)
         assert env2.phases.unknown_since == stamp
@@ -2182,39 +1957,6 @@ class TestRound2:
         assert g.status.unknown_reason == "not_recorded"
 
     @pytest.mark.asyncio
-    async def test_a7_an_entered_done_milestone_fills_a_coord_unknown_status(
-        self, monkeypatch
-    ):
-        data = make_coord_data(
-            initiative=(
-                "---\nstarts: 2026-10-19\nmilestones:\n"
-                "  - {id: C, name: C ghost, date: 2026-12-02, work_unit: no-such-unit}\n"
-                "---\nbody"
-            )
-        )
-        monkeypatch.setattr(cs, "_proxy_coord_get", FakeCoord(data))
-        base, _ = await build()
-        assert base.milestones.items.value[0].status.state == "unknown"
-        typed = _typed(
-            milestones=[
-                TypedMilestone(
-                    "m1",
-                    "c ghost",
-                    dt.date(2026, 12, 2),
-                    "done",
-                    dt.date(2026, 12, 3),
-                    "Maria",
-                    ENTERED_AT,
-                )
-            ]
-        )
-        env = apply_entered(base, typed, today=TODAY, now=NOW)
-        (m,) = env.milestones.items.value
-        assert m.status.state == "entered" and m.status.value == "met"
-        assert m.met_at.state == "entered" and m.met_at.value == dt.date(2026, 12, 3)
-        assert m.status.unknown_reason == "not_recorded"  # why coord could not say
-
-    @pytest.mark.asyncio
     async def test_a8_an_unreadable_milestones_block_is_an_unparseable_envelope(
         self, monkeypatch
     ):
@@ -2228,14 +1970,50 @@ class TestRound2:
         assert env.phases.unknown_reason == "unparseable"
         assert degraded is True
 
-    @pytest.mark.asyncio
-    async def test_a11_an_entered_only_forecast_is_not_marked_stale(self, coord):
-        base, _ = await build()
-        typed = _typed(
-            _typed_phase("X1", 1, actual_start=dt.date(2026, 10, 20)),
-            _typed_phase("X2", 2),
-        )  # codes coord does not hold: nothing of coord feeds the forecast
-        stale = apply_entered(mark_stale(base), typed, today=TODAY, now=NOW)
-        assert stale.basis == "entered"
-        assert stale.forecast.state == "known"
-        assert stale.forecast.stale is False
+
+# ===========================================================================
+# D5 — the overlay vocabulary must not come back
+# ===========================================================================
+
+_BACKEND = Path(__file__).resolve().parents[1]
+_SCHEDULE_CODE = [
+    _BACKEND / "app" / "services" / "overview_schedule.py",
+    _BACKEND / "app" / "schemas" / "overview_schedule.py",
+    _BACKEND / "app" / "overview" / "schedule_routes.py",
+    _BACKEND / "app" / "overview" / "coord_schedule.py",
+]
+_OVERLAY_VOCABULARY = re.compile(
+    r"entered_by|disagrees|basis:\s*entered|[\"']entered[\"']|apply_entered"
+    r"|disagreement_count|entered_only|TypedInputs|load_typed_inputs"
+)
+
+
+class TestNoOverlayVocabulary:
+    @pytest.mark.parametrize("path", _SCHEDULE_CODE, ids=lambda p: p.name)
+    def test_the_schedule_code_carries_no_entered_value_overlay(self, path: Path):
+        assert path.is_file(), path  # a moved file must not silently pass
+        hits = _OVERLAY_VOCABULARY.findall(path.read_text(encoding="utf-8"))
+        assert hits == []
+
+    def test_the_pattern_can_fail(self):
+        for planted in (
+            "entered_by",
+            "x.disagrees",
+            "basis: entered",
+            'state="entered"',
+            "apply_entered(",
+        ):
+            assert _OVERLAY_VOCABULARY.search(planted), planted
+
+    def test_the_envelope_schema_has_only_known_and_unknown_states(self):
+        from typing import get_args
+
+        from app.schemas.overview_schedule import (
+            ResolvedState,
+            ScheduleEnvelope,
+            SourceKind,
+        )
+
+        assert set(get_args(ResolvedState)) == {"known", "unknown"}
+        assert "entered" not in get_args(SourceKind)
+        assert {"basis", "disagreement_count"}.isdisjoint(ScheduleEnvelope.model_fields)

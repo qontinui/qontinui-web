@@ -19846,268 +19846,6 @@
         "title": "DimensionWrite",
         "type": "object"
       },
-      "Disagrees_ForecastValue_": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ForecastValue"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ForecastValue"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "Disagrees[ForecastValue]",
-        "type": "object"
-      },
-      "Disagrees_Literal__met____not_met____not_confirmed___": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "enum": [
-                  "met",
-                  "not_met",
-                  "not_confirmed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "enum": [
-                  "met",
-                  "not_met",
-                  "not_confirmed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[Literal['met', 'not_met', 'not_confirmed']]",
-        "type": "object"
-      },
-      "Disagrees_Literal__planned____in_progress____done____not_confirmed___": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "enum": [
-                  "planned",
-                  "in_progress",
-                  "done",
-                  "not_confirmed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "enum": [
-                  "planned",
-                  "in_progress",
-                  "done",
-                  "not_confirmed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[Literal['planned', 'in_progress', 'done', 'not_confirmed']]",
-        "type": "object"
-      },
-      "Disagrees_UnitRef_": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UnitRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UnitRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "Disagrees[UnitRef]",
-        "type": "object"
-      },
-      "Disagrees_date_": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[date]",
-        "type": "object"
-      },
-      "Disagrees_list_GateView__": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/GateView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/GateView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[list[GateView]]",
-        "type": "object"
-      },
-      "Disagrees_list_MilestoneView__": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/MilestoneView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/MilestoneView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[list[MilestoneView]]",
-        "type": "object"
-      },
-      "Disagrees_list_PhaseView__": {
-        "properties": {
-          "coord_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PhaseView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Coord Value"
-          },
-          "entered_value": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PhaseView"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entered Value"
-          }
-        },
-        "title": "Disagrees[list[PhaseView]]",
-        "type": "object"
-      },
       "DiscoveredState-Input": {
         "description": "A discovered UI state (collection of co-occurring elements).\n\nStates represent distinct UI screens or views identified by the\nset of images that consistently appear together.",
         "properties": {
@@ -23007,35 +22745,6 @@
           "machine_key"
         ],
         "title": "EnrollResponse",
-        "type": "object"
-      },
-      "Entered": {
-        "properties": {
-          "at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "At"
-          },
-          "by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "By"
-          }
-        },
-        "title": "Entered",
         "type": "object"
       },
       "EnvironmentCreate": {
@@ -37850,17 +37559,6 @@
             "title": "Shown By",
             "type": "string"
           },
-          "sources": {
-            "items": {
-              "enum": [
-                "coord",
-                "entered"
-              ],
-              "type": "string"
-            },
-            "title": "Sources",
-            "type": "array"
-          },
           "status": {
             "$ref": "#/components/schemas/Resolved_Literal__met____not_met____not_confirmed___"
           },
@@ -37872,8 +37570,7 @@
           "name",
           "target_date",
           "status",
-          "met_at",
-          "sources"
+          "met_at"
         ],
         "title": "MilestoneView",
         "type": "object"
@@ -37934,13 +37631,6 @@
       },
       "MilestonesSection": {
         "properties": {
-          "entered_only": {
-            "items": {
-              "$ref": "#/components/schemas/MilestoneView"
-            },
-            "title": "Entered Only",
-            "type": "array"
-          },
           "items": {
             "$ref": "#/components/schemas/Resolved_list_MilestoneView__"
           },
@@ -51464,7 +51154,6 @@
               "coord_delivery",
               "coord_document",
               "coord_gates",
-              "entered",
               "derived"
             ],
             "title": "Kind",
@@ -51495,26 +51184,6 @@
       },
       "Resolved_ForecastValue_": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_ForecastValue_"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -51531,7 +51200,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -51597,26 +51265,6 @@
       },
       "Resolved_Literal__met____not_met____not_confirmed___": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_Literal__met____not_met____not_confirmed___"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -51633,7 +51281,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -51705,26 +51352,6 @@
       },
       "Resolved_Literal__planned____in_progress____done____not_confirmed___": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_Literal__planned____in_progress____done____not_confirmed___"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -51741,7 +51368,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -51814,26 +51440,6 @@
       },
       "Resolved_UnitRef_": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_UnitRef_"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -51850,7 +51456,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -51916,26 +51521,6 @@
       },
       "Resolved_date_": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_date_"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -51952,7 +51537,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -52020,26 +51604,6 @@
       },
       "Resolved_list_GateView__": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_list_GateView__"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -52056,7 +51620,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -52126,26 +51689,6 @@
       },
       "Resolved_list_MilestoneView__": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_list_MilestoneView__"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -52162,7 +51705,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -52232,26 +51774,6 @@
       },
       "Resolved_list_PhaseView__": {
         "properties": {
-          "disagrees": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Disagrees_list_PhaseView__"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "entered": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Entered"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "observed_at": {
             "format": "date-time",
             "title": "Observed At",
@@ -52268,7 +51790,6 @@
           "state": {
             "enum": [
               "known",
-              "entered",
               "unknown"
             ],
             "title": "State",
@@ -54920,27 +54441,6 @@
       },
       "ScheduleEnvelope": {
         "properties": {
-          "basis": {
-            "anyOf": [
-              {
-                "enum": [
-                  "coord",
-                  "entered",
-                  "mixed"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Basis"
-          },
-          "disagreement_count": {
-            "default": 0,
-            "title": "Disagreement Count",
-            "type": "integer"
-          },
           "door": {
             "enum": [
               "operator",
@@ -60247,7 +59747,6 @@
               "coord_delivery",
               "coord_document",
               "coord_gates",
-              "entered",
               "derived"
             ],
             "title": "Kind",
@@ -124833,7 +124332,7 @@
     },
     "/api/v1/overview/schedule": {
       "get": {
-        "description": "The project's phases, milestones, decision gates and forecast, derived\nfrom coord and overlaid with whatever a person has entered.\n\nA figure coord could not give is ``state: unknown`` with a reason, never an\nempty list or a default. Cached per tenant and door for 60 s; after a coord\nfailure the last good read is served ``stale`` for up to 10 minutes.",
+        "description": "The project's phases, milestones, decision gates and forecast, derived\nfrom coord and nothing else: no typed row is read (plan D5).\n\nA figure coord could not give is ``state: unknown`` with a reason, never an\nempty list or a default. Cached per tenant and door for 60 s; after a coord\nfailure the last good read is served ``stale`` for up to 10 minutes.",
         "operationId": "api_v1_overview_schedule_get",
         "responses": {
           "200": {
