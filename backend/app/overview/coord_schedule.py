@@ -29,6 +29,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -356,53 +357,32 @@ class InitiativeFacts:
     milestone_entries: list[dict[str, str]] | None = None
     #: ``milestones:`` items that could not be read, verbatim.
     unparsed_entries: list[str] = field(default_factory=list)
+    #: The ``calendar:`` block's own lines when the key is present, else ``None``.
+    #: Read by :func:`parse_calendar`; kept raw here so the grammar lives once.
+    calendar_lines: list[str] | None = None
+    #: A ``calendar:`` key that carries its value on the same line (unreadable).
+    calendar_inline: str = ""
     body: str = ""
 
 
-def parse_initiative(text: str) -> InitiativeFacts:
-    """Parse the initiative document's frontmatter and keep its prose.
-
-    A deliberately small grammar: flat ``key: value`` lines, plus a
-    ``milestones:`` block list whose items are flow maps (``- {id: V1, ...}``)
+def _parse_items(
+    lines: list[str],
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Parse a block list of flat maps: items are flow maps (``- {id: V1, ...}``)
     or ``- key: value`` followed by indented ``key: value`` lines. Anything else
-    inside the list is returned in ``unparsed_entries``, never dropped."""
-    block, prose = split_frontmatter(text)
-    facts = InitiativeFacts(body=prose)
-    if block is None:
-        return facts
-    facts.frontmatter_found = True
-    lines = block.splitlines()[1:]
-    in_list = False
+    is returned in the second list, verbatim, never dropped."""
+    entries: list[dict[str, str]] = []
+    unparsed: list[str] = []
     current: dict[str, str] | None = None
     current_raw: list[str] = []
 
     def finish() -> None:
         nonlocal current, current_raw
-        if current is not None and facts.milestone_entries is not None:
-            facts.milestone_entries.append(current)
+        if current is not None:
+            entries.append(current)
         current, current_raw = None, []
 
     for raw in lines:
-        if raw.strip() == "---":
-            break
-        if not raw.strip():
-            continue
-        top_level = not raw[0].isspace() and not raw.lstrip().startswith("- ")
-        if top_level:
-            finish()
-            in_list = False
-            kv = _split_kv(raw)
-            if kv is None:
-                continue
-            key, value = kv
-            if key == "milestones" and value == "":
-                in_list = True
-                facts.milestone_entries = []
-            else:
-                facts.scalars[key] = value
-            continue
-        if not in_list:
-            continue
         stripped = raw.strip()
         if stripped.startswith("- "):
             finish()
@@ -418,30 +398,159 @@ def parse_initiative(text: str) -> InitiativeFacts:
                         break
                     parsed[kv[0]] = kv[1]
                 if ok and parsed:
-                    if facts.milestone_entries is None:
-                        raise ValueError("milestones list opened without a list")
-                    facts.milestone_entries.append(parsed)
+                    entries.append(parsed)
                 else:
-                    facts.unparsed_entries.append(stripped)
+                    unparsed.append(stripped)
                 continue
             kv = _split_kv(item)
             if kv is None:
-                facts.unparsed_entries.append(stripped)
+                unparsed.append(stripped)
                 continue
             current = {kv[0]: kv[1]}
             current_raw = [stripped]
         elif current is not None:
             kv = _split_kv(stripped)
             if kv is None:
-                facts.unparsed_entries.append("\n".join([*current_raw, stripped]))
+                unparsed.append("\n".join([*current_raw, stripped]))
                 current = None
             else:
                 current[kv[0]] = kv[1]
                 current_raw.append(stripped)
         else:
-            facts.unparsed_entries.append(stripped)
+            unparsed.append(stripped)
     finish()
+    return entries, unparsed
+
+
+#: Frontmatter keys whose value is a nested block, not a scalar.
+_BLOCK_KEYS = ("milestones", "calendar")
+
+
+def parse_initiative(text: str) -> InitiativeFacts:
+    """Parse the initiative document's frontmatter and keep its prose.
+
+    A deliberately small grammar: flat ``key: value`` lines, a ``milestones:``
+    block list (see :func:`_parse_items`) and a ``calendar:`` block (see
+    :func:`parse_calendar`). Anything unreadable is kept, never dropped."""
+    block, prose = split_frontmatter(text)
+    facts = InitiativeFacts(body=prose)
+    if block is None:
+        return facts
+    facts.frontmatter_found = True
+    open_key: str | None = None
+    milestone_lines: list[str] = []
+    for raw in block.splitlines()[1:]:
+        if raw.strip() == "---":
+            break
+        if not raw.strip():
+            continue
+        top_level = not raw[0].isspace() and not raw.lstrip().startswith("- ")
+        if top_level:
+            open_key = None
+            kv = _split_kv(raw)
+            if kv is None:
+                continue
+            key, value = kv
+            if key in _BLOCK_KEYS and value == "":
+                open_key = key
+                if key == "milestones":
+                    facts.milestone_entries = []
+                else:
+                    facts.calendar_lines = []
+            elif key == "calendar":
+                facts.calendar_inline = value
+            else:
+                facts.scalars[key] = value
+            continue
+        if open_key == "milestones":
+            milestone_lines.append(raw)
+        elif open_key == "calendar" and facts.calendar_lines is not None:
+            facts.calendar_lines.append(raw)
+    if facts.milestone_entries is not None:
+        facts.milestone_entries, facts.unparsed_entries = _parse_items(milestone_lines)
     return facts
+
+
+@dataclass(frozen=True)
+class CalendarBreakFacts:
+    start: str
+    end: str
+    label: str
+
+
+@dataclass(frozen=True)
+class CalendarFacts:
+    """The forecast's calendar, declared in the initiative document."""
+
+    working_day_factor: Decimal
+    breaks: tuple[CalendarBreakFacts, ...]
+
+
+def parse_calendar(
+    facts: InitiativeFacts,
+) -> tuple[CalendarFacts | None, list[str]]:
+    """The ``calendar:`` block as ``(calendar, unreadable)``.
+
+    ``calendar`` is ``None`` when none is declared or it cannot be trusted (no
+    usable ``working_day_factor``): the forecast is then unknown, reason
+    ``no_calendar``, never a guessed calendar. ``unreadable`` lists, verbatim,
+    every line or break that could not be read (an unreadable break is listed,
+    not silently dropped: dropping one would shorten the forecast)."""
+    if facts.calendar_lines is None:
+        if facts.calendar_inline:
+            return None, [f"calendar: {facts.calendar_inline}"]
+        return None, []
+    unreadable: list[str] = []
+    factor_raw: str | None = None
+    break_lines: list[str] = []
+    in_breaks = False
+    breaks_indent = 0
+    for raw in facts.calendar_lines:
+        indent = len(raw) - len(raw.lstrip())
+        stripped = raw.strip()
+        if in_breaks and (stripped.startswith("- ") or indent > breaks_indent):
+            break_lines.append(raw)
+            continue
+        in_breaks = False
+        kv = _split_kv(stripped)
+        if kv is None:
+            unreadable.append(stripped)
+        elif kv[0] == "working_day_factor":
+            factor_raw = kv[1]
+        elif kv[0] == "breaks" and kv[1] == "":
+            in_breaks, breaks_indent = True, indent
+        else:
+            unreadable.append(stripped)
+    entries, bad = _parse_items(break_lines)
+    unreadable.extend(bad)
+    breaks: list[CalendarBreakFacts] = []
+    for entry in entries:
+        start = valid_date(entry.get("start"))
+        end = valid_date(entry.get("end"))
+        if start and end and start <= end:
+            breaks.append(CalendarBreakFacts(start, end, entry.get("label", "")))
+        else:
+            unreadable.append(", ".join(f"{k}: {v}" for k, v in entry.items()))
+    factor: Decimal | None = None
+    if factor_raw is not None and re.fullmatch(r"\d+\.?\d*|\.\d+", factor_raw):
+        try:
+            parsed_factor = Decimal(factor_raw)
+        except InvalidOperation:
+            parsed_factor = None
+        if (
+            parsed_factor is not None
+            and parsed_factor.is_finite()
+            and 0 < parsed_factor <= 1
+        ):
+            factor = parsed_factor
+    if factor is None:
+        unreadable.append(
+            f"working_day_factor: {factor_raw}"
+            if factor_raw is not None
+            else "working_day_factor is missing"
+        )
+        return None, unreadable
+    return CalendarFacts(factor, tuple(breaks)), unreadable
 
 
 @dataclass(frozen=True)

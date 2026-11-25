@@ -16,7 +16,7 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 UnknownReason = Literal[
     "coord_unreachable",
@@ -183,6 +183,10 @@ class ScheduleEnvelope(BaseModel):
     forecast: Resolved[ForecastValue]
     work_units: ReadExtent
     sources: list[SourceStamp] = Field(default_factory=list)
+    #: Whether the initiative document declared a readable ``calendar:`` (plan
+    #: Phase 7). Not part of the wire shape: it only decides which reason the
+    #: forecast gives for being unknown.
+    _calendar_declared: bool = PrivateAttr(default=False)
 
 
 #: Sentinel so a ``Resolved`` JSON dump can be recognised when marking staleness.
