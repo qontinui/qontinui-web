@@ -1,6 +1,5 @@
 /**
- * DevicePicker — the device roster choice shared by `SpawnModal` and
- * `/admin/coord/runners`.
+ * DevicePicker — the device roster choice `SpawnModal` renders.
  *
  * `deviceStateLabel`'s cases moved here verbatim from `SpawnModal.test.ts`
  * when the picker was extracted (plan

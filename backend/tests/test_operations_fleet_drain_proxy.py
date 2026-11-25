@@ -241,6 +241,50 @@ class TestDrainWrite:
         assert sent["device_id"] == DEVICE_ID
         assert sent["reason"] == "rebuilding"
 
+    def test_forwards_an_explicit_lane_set(self, auth_client: TestClient):
+        # Plan 2026-09-28-machine-maintenance… §D3: a drain may hold only the
+        # `agent` or only the `ci` lane. Duplicates collapse, order is kept.
+        resp, mock_instance = self._post(
+            auth_client,
+            {
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "ci only",
+                "lanes": ["ci", "ci"],
+            },
+        )
+        assert resp.status_code == 200
+        sent = mock_instance.post.call_args.kwargs["json"]
+        assert set(sent) == {"device_id", "until", "reason", "lanes"}
+        assert sent["lanes"] == ["ci"]
+
+    def test_an_empty_lane_set_is_refused_not_read_as_both(
+        self, auth_client: TestClient
+    ):
+        # Absent means both lanes; `[]` would be a drain that holds nothing.
+        resp = auth_client.post(
+            DRAIN_ROUTE,
+            json={
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "x",
+                "lanes": [],
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_an_unknown_lane_is_refused(self, auth_client: TestClient):
+        resp = auth_client.post(
+            DRAIN_ROUTE,
+            json={
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "x",
+                "lanes": ["builds"],
+            },
+        )
+        assert resp.status_code == 422
+
     def test_never_forwards_a_client_asserted_author(self, auth_client: TestClient):
         # An audit trail with a client-asserted author is not an audit trail,
         # and coord's own wire has no such field to spoof. The closed model
@@ -375,6 +419,24 @@ class TestUndrainWrite:
     def test_requires_a_reason(self, auth_client: TestClient):
         resp = auth_client.post(UNDRAIN_ROUTE, json={"device_id": DEVICE_ID})
         assert resp.status_code == 422
+
+    def test_forwards_a_lane_scoped_release(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.post = AsyncMock(
+                return_value=_mock_response(
+                    200, {"device_id": DEVICE_ID, "drained": True, "changed": True}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+            resp = auth_client.post(
+                UNDRAIN_ROUTE,
+                json={"device_id": DEVICE_ID, "reason": "resume", "lanes": ["agent"]},
+            )
+
+        assert resp.status_code == 200
+        sent = mock_instance.post.call_args.kwargs["json"]
+        assert sent == {"device_id": DEVICE_ID, "reason": "resume", "lanes": ["agent"]}
 
     def test_passes_a_no_op_release_through_rather_than_claiming_success(
         self, auth_client: TestClient

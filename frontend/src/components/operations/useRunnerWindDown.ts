@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * The two reads and one write behind `/admin/coord/runners`.
+ * The two reads and one write behind the agent-session half of
+ * `/admin/coord/machine-maintenance` (formerly `/admin/coord/runners`).
  *
  * Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8. Everything
  * these return is interpreted in `runnerStatus.ts`; this module only moves

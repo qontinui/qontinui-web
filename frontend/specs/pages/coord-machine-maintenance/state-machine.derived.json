@@ -1,0 +1,571 @@
+{
+  "version": "1.0",
+  "id": "coord-machine-maintenance",
+  "name": "Coord machine maintenance (admin)",
+  "description": "One machine, one restart verdict, two levers (/admin/coord/machine-maintenance), plan 2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place Phase 7 — it replaced the Runner Drain page, and this spec replaces that page's spec. ci-bot is a superuser so the page renders its real content. The page reads its machine from `?machine=` (run-spec-ci.ts seeds the sentinel device below) and makes these reads: GET /api/v1/operations/fleet/machines (the picker and the machine's window — none open here, so no per-window readiness read is made), GET /fleet/drain (the drain badge), GET /fleet/ci-runners (the CI registrations shown while nothing is paused), GET /fleet/resource-samples?device_id=&history=false (the runner's readiness verdict) and GET /sessions/fleet?device_id= (the session census); the audit panel reads GET /coord/audit/recent. metadata.routeStubs fulfills all of them so the populated states render deterministically: a machine with no declared CI host and no open window, one fresh unsafe readiness sample whose wind_down_sessions name two sessions matched to two census rows. AUTHORED FROM SOURCE, NOT DERIVED, like the coord-runners spec it replaces: no dev stack or authed UI Bridge snapshot was available in the authoring session, so every criterion below is an authored data-testid read off the page and verified by page.specSelectors.test.tsx against a jsdom render, not a live capture. Re-derive from a live authed snapshot when one is available (console style guide §6.3). Read-only; structural only.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "admin",
+      "coord",
+      "maintenance",
+      "drain",
+      "ci",
+      "readiness",
+      "wind-down",
+      "route-stub"
+    ],
+    "extraSettleMs": 3500,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/operations/fleet/machines",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "machines": [
+            {
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "hostname": "spec-ci-host",
+              "state": "healthy",
+              "ci_hosts": [],
+              "open_window": null
+            }
+          ],
+          "unlinked_ci_hosts": [
+            {
+              "ci_host": "spec-ci-runner",
+              "open_window": null
+            }
+          ]
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/fleet/drain",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "drained": {}
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/fleet/resource-samples**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "latest": [
+            {
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "lane": "host",
+              "sampled_at": "2026-09-13T10:00:00Z",
+              "age_secs": 20,
+              "readiness_safe": false,
+              "readiness_reason": "2 sessions block a restart",
+              "readiness_blocking": 2,
+              "readiness_finished": 0,
+              "wind_down_candidates": 0,
+              "wind_down_exit_stuck": 0,
+              "wind_down_sessions": [
+                {
+                  "claude_code_session_id": "c1a0de00-0000-4000-8000-000000000001",
+                  "blocks_restart": true,
+                  "idle_state": "idle",
+                  "eligibility": "ineligible",
+                  "close_eligible_at": null,
+                  "exit_stuck": false,
+                  "spawn_origin": "operator_terminal"
+                },
+                {
+                  "claude_code_session_id": "5e5e5e5e-0000-4000-8000-000000000002",
+                  "blocks_restart": true,
+                  "idle_state": "busy",
+                  "eligibility": "ineligible",
+                  "close_eligible_at": null,
+                  "exit_stuck": false,
+                  "spawn_origin": "steward"
+                }
+              ],
+              "readiness_age_secs": 20,
+              "readiness_state": "fresh"
+            }
+          ],
+          "count": 1,
+          "history": [],
+          "schema_pending": false
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/sessions/fleet**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "tenantId": "c1c1c1c1-0000-4000-8000-0000000000aa",
+          "callerDeviceId": null,
+          "sessions": [
+            {
+              "sessionId": "aaaaaaaa-1111-4111-8111-111111111111",
+              "deviceId": "c1c1c1c1-0000-4000-8000-000000000001",
+              "isCallerDevice": false,
+              "claudeCodeSessionId": "c1a0de00-0000-4000-8000-000000000001",
+              "sessionStatus": "working",
+              "state": "active",
+              "repo": "qontinui/spec-ci-alpha",
+              "startedAt": "2026-09-13T09:00:00Z",
+              "spawnOrigin": "operator_terminal",
+              "continuationGateId": null,
+              "dispatchSource": null
+            },
+            {
+              "sessionId": "bbbbbbbb-2222-4222-8222-222222222222",
+              "deviceId": "c1c1c1c1-0000-4000-8000-000000000001",
+              "isCallerDevice": false,
+              "claudeCodeSessionId": "5e5e5e5e-0000-4000-8000-000000000002",
+              "sessionStatus": "working",
+              "state": "active",
+              "repo": "qontinui/spec-ci-beta",
+              "startedAt": "2026-09-13T08:00:00Z",
+              "spawnOrigin": "steward",
+              "continuationGateId": null,
+              "dispatchSource": "coord_dispatch"
+            }
+          ],
+          "count": 2,
+          "limit": 500,
+          "nextCursor": null,
+          "sessionBridgeColumnPresent": true,
+          "workAxisColumnsPresent": true,
+          "deviceIdentityColumnsPresent": true
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/fleet/ci-runners",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "runners": [],
+          "as_of": "2026-09-28T10:00:00Z",
+          "freshness_secs": 180
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/coord/audit/recent**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "rows": []
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "coord-maintenance-shell",
+      "name": "Coord console shell",
+      "description": "The persistent coord operator-console chrome on every /admin/coord/* route once the superuser gate passes: the h1 title, the coord-nav status row, and the Maintenance wayfinding crumb in the console header.",
+      "isInitial": true,
+      "assertions": [
+        {
+          "id": "coord-maintenance-shell-elem-0",
+          "description": "h1 'Coord operator console' — the coord layout mounted (superuser gate passed, not redirected).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "Coord operator console"
+            },
+            "label": "Coord console title"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-shell-elem-1",
+          "description": "Coord navigation container (data-testid coord-nav).",
+          "category": "navigation",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav"
+            },
+            "label": "Coord nav"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-shell-elem-2",
+          "description": "'Maintenance' wayfinding crumb (data-testid coord-nav-machine-maintenance-active) in the console header.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav-machine-maintenance-active"
+            },
+            "label": "Maintenance wayfinding crumb"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-shell-elem-3",
+          "description": "The console header's wayfinding crumb (data-testid coord-nav-crumb) — 'Dev Ops · Maintenance'.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav-crumb"
+            },
+            "label": "Wayfinding crumb"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "coord-maintenance-controls",
+      "name": "Machine selection controls",
+      "description": "The page container, the machine picker and the refresh control. These render whether or not a machine is selected and whatever the reads return, so they are the stable signal that the page mounted.",
+      "assertions": [
+        {
+          "id": "coord-maintenance-controls-elem-0",
+          "description": "Page container (data-testid coord-maintenance-page).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-page"
+            },
+            "label": "Machine Maintenance page"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-controls-elem-1",
+          "description": "Machine picker trigger (data-testid coord-maintenance-machine-picker), over coord's GET /fleet/machines.",
+          "category": "interaction",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-machine-picker"
+            },
+            "label": "Machine picker"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-controls-elem-2",
+          "description": "Refresh control (data-testid coord-maintenance-refresh).",
+          "category": "interaction",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-refresh"
+            },
+            "label": "Refresh"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "coord-maintenance-populated",
+      "name": "Verdict, levers and what is still running for the seeded machine",
+      "description": "With ?machine= set and the reads stubbed: the verdict strip (red 'not yet' — the stubbed machine has no open window), the two lever rows (CI reading 'No CI host linked — link one', because the stub declares no host), the link form, the Still-running section with the CI and agent-session halves, the runner readiness strip with its drain badge and four counts, and one session row per stubbed census session.",
+      "assertions": [
+        {
+          "id": "coord-maintenance-populated-elem-0",
+          "description": "Restart verdict strip (data-testid coord-maintenance-verdict).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-verdict"
+            },
+            "label": "Verdict strip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-1",
+          "description": "Prepare for restart button (data-testid coord-maintenance-prepare).",
+          "category": "interaction",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-prepare"
+            },
+            "label": "Prepare for restart"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-2",
+          "description": "Return to service button (data-testid coord-maintenance-return).",
+          "category": "interaction",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-return"
+            },
+            "label": "Return to service"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-3",
+          "description": "Agent work lever row (data-testid coord-maintenance-lever-agent).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-lever-agent"
+            },
+            "label": "Agent work lever"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-4",
+          "description": "CI lever row (data-testid coord-maintenance-lever-ci).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-lever-ci"
+            },
+            "label": "CI lever"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-5",
+          "description": "Link-a-CI-host form (data-testid coord-maintenance-ci-host-link-form) — the machine declares no host.",
+          "category": "interaction",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-ci-host-link-form"
+            },
+            "label": "Link CI host form"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-6",
+          "description": "Still running section (data-testid coord-maintenance-still-running).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-still-running"
+            },
+            "label": "Still running"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-7",
+          "description": "Runner readiness strip (data-testid coord-maintenance-agent-health).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-agent-health"
+            },
+            "label": "Runner readiness strip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-8",
+          "description": "Drain state badge (data-testid coord-maintenance-drain-badge).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-drain-badge"
+            },
+            "label": "Drain badge"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-9",
+          "description": "Blocking count (data-testid coord-maintenance-count-blocking).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-count-blocking"
+            },
+            "label": "Blocking count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-10",
+          "description": "Finished count (data-testid coord-maintenance-count-finished).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-count-finished"
+            },
+            "label": "Finished count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-11",
+          "description": "Close-eligible count (data-testid coord-maintenance-count-close-eligible).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-count-close-eligible"
+            },
+            "label": "Close-eligible count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-12",
+          "description": "Exit-stuck count (data-testid coord-maintenance-count-exit-stuck).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-count-exit-stuck"
+            },
+            "label": "Exit-stuck count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-13",
+          "description": "Agent sessions section (data-testid coord-maintenance-sessions).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-sessions"
+            },
+            "label": "Sessions section"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-maintenance-populated-elem-14",
+          "description": "At least one session row (data-testid coord-maintenance-session-row) rendered from the stubbed census joined to the sample's wind_down_sessions.",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-maintenance-session-row"
+            },
+            "label": "Session row"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    }
+  ],
+  "transitions": []
+}

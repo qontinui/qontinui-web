@@ -626,6 +626,8 @@ export interface FleetDrainRequest {
 export interface FleetUndrainRequest {
   device_id: string;
   reason: string;
+  /** Release only these drain lanes (`agent`, `ci`); absent releases the whole drain. */
+  lanes?: string[];
 }
 
 /**
