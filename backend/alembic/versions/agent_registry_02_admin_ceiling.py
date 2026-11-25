@@ -128,7 +128,7 @@ coupled edits: ``down_revision``, the ``Revises:`` line below, and
 ``tests/test_agent_registry_02_admin_ceiling_migration.py``.
 
 Revision ID: agent_registry_02_admin_ceiling
-Revises: coord_subprojects_05_note_events
+Revises: coord_test_selection_01
 Create Date: 2026-11-24
 
 """
@@ -139,7 +139,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "agent_registry_02_admin_ceiling"
-down_revision: str | None = "coord_subprojects_05_note_events"
+down_revision: str | None = "coord_test_selection_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

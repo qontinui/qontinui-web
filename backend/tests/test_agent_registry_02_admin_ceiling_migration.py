@@ -77,7 +77,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 import check_coord_column_drops as guard  # noqa: E402
 
 _REVISION_ID = "agent_registry_02_admin_ceiling"
-_PARENT_REVISION_ID = "coord_subprojects_05_note_events"
+_PARENT_REVISION_ID = "coord_test_selection_01"
 _REVISION_FILENAME = "agent_registry_02_admin_ceiling.py"
 
 _SCHEMA = "coord"
