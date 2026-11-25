@@ -150,10 +150,10 @@ def test_a_users_me_refusal_names_its_lane_and_key_kind() -> None:
     assert refused.status_code == 429
     assert refused.json()["error"] == "RATE_LIMIT_EXCEEDED"
     assert refused.headers["X-RateLimit-Lane"] == f"user:{API_PREFIX}/users/me"
-    # `get_user_identifier` keys on `request.state.user`, which nothing sets
-    # before the limiter runs: the bucket this refusal drew on is the socket
-    # address. The header says so rather than what the function is named for.
-    assert refused.headers["X-RateLimit-Key-Kind"] == "ip"
+    # `get_user_identifier` keys on the presented bearer's digest (plan Phase
+    # 4): the bucket this refusal drew on is this caller's token, and the
+    # header says so.
+    assert refused.headers["X-RateLimit-Key-Kind"] == "bearer"
     _assert_leaks_nothing([f"{k}: {v}" for k, v in refused.headers.items()])
 
 
@@ -163,8 +163,8 @@ def test_a_users_me_refusal_names_its_lane_and_key_kind() -> None:
 
 
 class _AttachUser(BaseHTTPMiddleware):
-    """Sets ``request.state.user`` so ``get_user_identifier`` takes its
-    ``user:<id>`` arm — the arm that would put a user id in a key."""
+    """Sets ``request.state.user``, which ``get_user_identifier`` must ignore:
+    a user id must never reach a key (or a header, or a log)."""
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         request.state.user = SimpleNamespace(id=USER_ID)
@@ -211,10 +211,18 @@ def _probe_app(
         (get_authorization_identifier, False, "bearer"),
         (get_peer_ip_identifier, False, "peer"),
         (get_remote_address, False, "ip"),
-        (get_user_identifier, False, "ip"),
-        (get_user_identifier, True, "user"),
+        (get_user_identifier, False, "bearer"),
+        # `request.state.user` is no longer read: a set user changes nothing,
+        # and the user id never reaches the key.
+        (get_user_identifier, True, "bearer"),
     ],
-    ids=["bearer", "peer", "remote-address", "user-fn-no-user", "user-fn-with-user"],
+    ids=[
+        "bearer",
+        "peer",
+        "remote-address",
+        "user-fn-bearer",
+        "user-fn-ignores-state-user",
+    ],
 )
 def test_the_refusal_names_the_key_kind_and_never_the_key(
     key_func: Any, attach_user: bool, kind: str
@@ -222,10 +230,57 @@ def test_the_refusal_names_the_key_kind_and_never_the_key(
     client = TestClient(
         _probe_app(key_func, attach_user=attach_user), client=(CLIENT_HOST, 50000)
     )
+    _assert_refusal_names_kind_and_leaks_nothing(client, _headers(), kind)
+
+
+def test_a_set_state_user_with_no_bearer_keys_on_the_peer() -> None:
+    """With no credential presented, ``get_user_identifier`` keys on the peer
+    even when ``request.state.user`` is set: it never reads that attribute."""
+    client = TestClient(
+        _probe_app(get_user_identifier, attach_user=True), client=(CLIENT_HOST, 50000)
+    )
+    headers = {k: v for k, v in _headers().items() if k != "Authorization"}
+    _assert_refusal_names_kind_and_leaks_nothing(client, headers, "peer")
+
+
+@pytest.mark.parametrize(
+    "key_func", [get_peer_ip_identifier, get_user_identifier], ids=["peer", "user-fn"]
+)
+def test_a_trusted_proxy_peers_forwarded_address_never_leaks(
+    key_func: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Behind a trusted proxy the key is the RIGHTMOST forwarded address;
+    that address must not reach a header, the body or a log either."""
+    from app.middleware import rate_limit as rate_limit_module
+
+    monkeypatch.setattr(
+        rate_limit_module.settings,
+        "RATE_LIMIT_TRUSTED_PROXY_CIDRS",
+        f"{CLIENT_HOST}/32",
+    )
+    headers = {k: v for k, v in _headers().items() if k != "Authorization"}
+    # The trusted path really ran: the key is the rightmost forwarded entry.
+    probe = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": (CLIENT_HOST, 50000),
+        }
+    )
+    assert rate_limit_module.peer_ip(probe) == FORWARDED_RIGHT
+    client = TestClient(_probe_app(key_func), client=(CLIENT_HOST, 50000))
+    _assert_refusal_names_kind_and_leaks_nothing(client, headers, "peer")
+
+
+def _assert_refusal_names_kind_and_leaks_nothing(
+    client: TestClient, headers: dict[str, str], kind: str
+) -> None:
     item = str(uuid4())
     with capture_logs() as logs:
-        assert client.get(f"/probe/{item}", headers=_headers()).status_code == 200
-        refused = client.get(f"/probe/{item}", headers=_headers())
+        assert client.get(f"/probe/{item}", headers=headers).status_code == 200
+        refused = client.get(f"/probe/{item}", headers=headers)
     assert refused.status_code == 429
     assert refused.headers["X-RateLimit-Key-Kind"] == kind
     # The route TEMPLATE: the concrete path carries the item id.
@@ -855,7 +910,7 @@ def _builders_with_location(
     """``(file:line, file:function, call)`` for every builder call in app."""
     found: list[tuple[str, str, ast.Call]] = []
     for path in sorted(app_root.rglob("*.py")):
-        rel = str(path.relative_to(app_root.parent))
+        rel = path.relative_to(app_root.parent).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         def visit(node: ast.AST, function: str, rel: str = rel) -> None:

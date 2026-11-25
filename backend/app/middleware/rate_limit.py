@@ -1,6 +1,7 @@
 import functools
 import hashlib
 import inspect
+import ipaddress
 import logging
 import math
 import time
@@ -9,11 +10,13 @@ from typing import Any
 import structlog
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.security.utils import get_authorization_scheme_param
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.requests import HTTPConnection
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 
 logger = structlog.get_logger(__name__)
 
@@ -54,43 +57,204 @@ else:
     storage_uri = "memory://"
 
 
+@functools.lru_cache(maxsize=8)
+def _trusted_proxy_networks(
+    cidrs: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` parsed (validated at
+    startup by the setting itself), cached per configured value."""
+    return tuple(ipaddress.ip_network(c) for c in cidrs.split(",") if c)
+
+
+def trusted_proxy_ranges_message(config: Settings) -> str:
+    """The startup line naming the effective trusted proxy ranges and where
+    they came from (a per-ENVIRONMENT default, or an explicit setting)."""
+    cidrs = config.RATE_LIMIT_TRUSTED_PROXY_CIDRS or ""
+    source = (
+        f"default for ENVIRONMENT={config.ENVIRONMENT}"
+        if config.rate_limit_trusted_proxy_cidrs_is_default
+        else "explicit RATE_LIMIT_TRUSTED_PROXY_CIDRS"
+    )
+    return f"rate limit: trusted proxy ranges {cidrs or '(none)'} ({source})"
+
+
+@functools.cache
+def log_trusted_proxy_ranges() -> None:
+    """Log :func:`trusted_proxy_ranges_message` once, at INFO, so a deployment
+    can read which peers' X-Forwarded-For it trusts. ``app.main`` calls it
+    right after ``configure_logging``; called at import it would fire while
+    the root logger is still at WARNING and be dropped."""
+    logger.info(trusted_proxy_ranges_message(settings))
+
+
+def _ip(address: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """``address`` as an IP (an IPv4-mapped IPv6 address unwrapped to IPv4),
+    or ``None`` when it does not parse — a hostname, ``"testclient"``, empty."""
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return None
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _is_trusted_proxy(address: str | None) -> bool:
+    ip = _ip(address)
+    if ip is None:
+        return False
+    return any(
+        ip in net
+        for net in _trusted_proxy_networks(
+            settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS or ""
+        )
+    )
+
+
+def peer_ip(connection: HTTPConnection) -> str:
+    """The address a rate limit keys on, for an HTTP request or a WebSocket:
+    :func:`peer_address`, with an IPv6 address widened to its /64.
+
+    When the socket peer (``client.host``) is inside
+    ``settings.RATE_LIMIT_TRUSTED_PROXY_CIDRS`` — the ALB, reaching the tasks
+    from inside the VPC; the default depends on ENVIRONMENT, see the setting
+    in ``app.core.config`` — it is a proxy, and the caller is the RIGHTMOST
+    ``X-Forwarded-For`` entry: the one that proxy appended, which a client
+    cannot forge (:func:`app.middleware.logging_middleware.peer_ip_from`).
+    Every header line is read, so a client-sent line ahead of the proxy's
+    changes nothing. From any other socket peer (self-hosted, a directly
+    exposed task) the socket peer IS the caller and its ``X-Forwarded-For``
+    is its own choice, so the header is ignored. ``"unknown"`` when there is
+    neither.
+
+    This is application-level proxy trust, independent of uvicorn's
+    ``FORWARDED_ALLOW_IPS`` (which decides whether uvicorn rewrites
+    ``client.host`` at all, and is not set in production today).
+
+    Keying on the LEFTMOST entry would let a caller pick a fresh bucket per
+    request, and keying on ``client.host`` behind the ALB would put every
+    caller reaching one ALB node into one bucket. The WebSocket
+    connection-rate limits (``app.websockets.base``, ``automation_ws``) key on
+    this too.
+    """
+    address = peer_address(connection)
+    ip = _ip(address)
+    if isinstance(ip, ipaddress.IPv6Address):
+        # A single host commonly holds a whole /64, so keying on the /128
+        # would let it rotate into a fresh bucket per request.
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip) if ip is not None else address
+
+
+def peer_address(connection: HTTPConnection) -> str:
+    """The caller's own address, as :func:`peer_ip` derives it but before it
+    is widened to a bucket (an IPv6 /64). ``"unknown"`` when there is none."""
+    from app.middleware.logging_middleware import peer_ip_from
+
+    client = getattr(connection, "client", None)
+    host = getattr(client, "host", None) if client else None
+    if not _is_trusted_proxy(host):
+        return host or "unknown"
+    forwarded = ",".join(connection.headers.getlist("x-forwarded-for")) or None
+    entry = peer_ip_from(forwarded, host)
+    # A trusted hop that relays a client's header instead of appending to it
+    # would otherwise hand the client a key of its choosing, IP or not: an
+    # entry that is not an address falls back to the proxy itself.
+    if _ip(entry) is None:
+        # Visible, so a hop sending `addr:port` or `[v6]` (every caller then
+        # shares the hop's bucket) is diagnosable. Never logs the entry.
+        logger.warning("rate_limit_forwarded_entry_not_an_address", proxy=host)
+        return host or "unknown"
+    return entry or "unknown"
+
+
+def _peer_key(request: Request) -> str:
+    """``peer:<address>`` for :func:`peer_ip`."""
+    return f"peer:{peer_ip(request)}"
+
+
+def _presented_token(request: Request) -> str | None:
+    """The token authentication will USE for this request, or ``None``.
+
+    Mirrors ``CookieOrBearerScheme.__call__`` (``app/auth/config.py``), the
+    scheme every fastapi-users dependency (``current_active_user``,
+    ``current_superuser`` and everything built on them) extracts its token
+    with: the ``access_token`` cookie FIRST, then an ``Authorization: Bearer``
+    header parsed exactly as ``OAuth2PasswordBearer`` parses it. Keying on the
+    header alone would let a cookie-authenticated caller send a fresh junk
+    bearer per request — auth ignores it, the limiter would not — and buy a
+    fresh bucket each time. The cookie name is read off the live transport so
+    the two cannot drift; ``test_rate_limit_key_functions`` pins the rest of
+    the agreement against the scheme itself.
+    """
+    from app.auth.config import cookie_or_bearer_transport
+
+    cookie = request.cookies.get(cookie_or_bearer_transport.scheme.cookie_name)
+    if cookie:
+        return cookie
+    return _header_bearer_token(request)
+
+
+def _header_bearer_token(request: Request) -> str | None:
+    """The ``Authorization: Bearer`` token, parsed exactly as
+    ``OAuth2PasswordBearer`` and ``HTTPBearer`` parse it, or ``None``."""
+    scheme, param = get_authorization_scheme_param(request.headers.get("authorization"))
+    if scheme.lower() == "bearer" and param:
+        return param
+    return None
+
+
+def _bearer_key(request: Request) -> str | None:
+    """``bearer:<digest>`` of the token auth uses (see :func:`_presented_token`;
+    a cookie-carried token is the same Cognito bearer), else ``None``.
+
+    The token is HASHED, never decoded: this must not become a second,
+    unverified token parser, and the digest keeps a bearer out of log lines
+    and Redis keys.
+
+    What the limit bounds: each ACCESS TOKEN, not each user. An authenticated
+    caller who deliberately mints fresh Cognito access tokens (a new login or
+    a refresh-token exchange) gets a fresh bucket per token. A per-user
+    (``sub``) ceiling would bound that, but it would also re-merge an agent's
+    own login with the operator's into one bucket — the collapse plan
+    ``2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429`` D2
+    rejects — so the key is the token digest by design. In normal use tokens
+    rotate roughly hourly, far longer than any per-minute window keyed off
+    them.
+    """
+    return _digest_key(_presented_token(request))
+
+
+def _digest_key(token: str | None) -> str | None:
+    """``bearer:<sha256[:32]>`` of ``token``, else ``None``."""
+    if token:
+        return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
+    return None
+
+
 def get_user_identifier(request: Request) -> str:
-    """
-    Get user ID for authenticated requests, IP for anonymous.
+    """Per-CALLER bucket for every route authenticated by fastapi-users:
+    ``user_limiter``'s default key, and the explicit key of the operations
+    admin routes (exported there as ``get_authorization_identifier``).
 
-    This enables per-user rate limiting for authenticated users while
-    falling back to IP-based limiting for anonymous requests.
+    Returns ``bearer:<digest>`` of the token authentication uses (the
+    ``access_token`` cookie, else the ``Authorization`` bearer — see
+    :func:`_presented_token`; on keying the token rather than the user, see
+    :func:`_bearer_key`), and ``peer:<rightmost X-Forwarded-For>`` (see
+    :func:`peer_ip`) for a request carrying neither. Behind Vercel/ALB every
+    request arrives from a handful of source IPs, so an IP-keyed limit would
+    collapse every caller into one bucket.
 
-    Returns:
-        str: "user:{user_id}" for authenticated users, "ip:{ip_address}" for anonymous
-    """
-    user = getattr(request.state, "user", None)
-    if user:
-        return f"user:{user.id}"
-    return f"ip:{request.client.host}"  # type: ignore[union-attr]
+    It deliberately does NOT read ``request.state.user``: nothing in the app
+    sets it, and slowapi calls a key function inside the endpoint wrapper with
+    only the raw request in hand. Reading it was why this used to return
+    ``ip:{client.host}`` for every request — one bucket per ALB node, shared
+    by every user, agent browser and runner.
 
-
-def get_authorization_identifier(request: Request) -> str:
-    """Per-CALLER rate-limit bucket for bearer-authenticated admin routes.
-
-    Same problem ``_get_refresh_token_subject`` (below) solves for the
-    refresh endpoint: behind Vercel/ALB every request arrives from a handful
-    of source IPs, so an IP-keyed limit collapses every operator into one
-    bucket and one person's cleanup run throttles everybody else's. It is
-    also the reason ``get_user_identifier`` is not enough here — it reads
-    ``request.state.user``, which the limiter's key function is called too
-    early to see (slowapi evaluates the limit inside the endpoint wrapper,
-    with only the raw request in hand).
-
-    Superuser-gated routes always carry ``Authorization: Bearer <token>``,
-    so the token identifies the caller. It is HASHED, never decoded: this
-    must not become a second, unverified token parser, and the digest keeps
-    a bearer out of log lines and Redis keys. Tokens rotate roughly hourly,
-    which is far longer than any per-minute window keyed off them.
-
-    Falls back to the client IP when there is no bearer — an unauthenticated
-    caller never reaches these routes, so that arm only covers oddities like
-    a probe.
+    A route authenticated by an ``HTTPBearer`` device token must use
+    :func:`get_device_bearer_identifier` instead, and a route with OPTIONAL
+    auth must key on the peer; ``test_rate_limit_key_functions`` walks every
+    limited route and enforces both.
 
     **Do not rename the ``request`` parameter.** slowapi decides whether to
     call a key function with the request or with no arguments by looking for
@@ -99,43 +263,52 @@ def get_authorization_identifier(request: Request) -> str:
     Renaming it would silently switch slowapi to calling this with zero args
     and raise inside the limiter rather than here.
     """
-    header = request.headers.get("authorization") or ""
-    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
-    if token:
-        return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client else None
-    return f"ip:{host or 'unknown'}"
+    return _bearer_key(request) or _peer_key(request)
+
+
+#: The name the operations admin routes import. One function, two names: the
+#: routes it keys authenticate through the same fastapi-users scheme.
+get_authorization_identifier = get_user_identifier
+
+
+def get_device_bearer_identifier(request: Request) -> str:
+    """Per-DEVICE bucket for routes authenticated by an ``HTTPBearer`` device
+    token (``app.api.deps.get_authenticated_device`` and its siblings).
+
+    ``bearer:<digest>`` of the ``Authorization`` bearer ONLY, else the peer.
+    Such a route never reads the ``access_token`` cookie, so keying on it (as
+    :func:`get_user_identifier` does, cookie first) would let a device send a
+    fresh junk cookie per request and get a fresh bucket each time. Name it as
+    an explicit ``key_func=`` on every such route;
+    ``test_rate_limit_key_functions`` walks every limited route and fails on a
+    key that does not follow the route's own credential.
+
+    **Do not rename the ``request`` parameter** (see
+    :func:`get_user_identifier`).
+    """
+    return _digest_key(_header_bearer_token(request)) or _peer_key(request)
 
 
 def get_peer_ip_identifier(request: Request) -> str:
-    """Per-PEER bucket for unauthenticated public reads.
-
-    The rightmost ``X-Forwarded-For`` entry (the address the ALB saw, which a
-    client cannot forge), else the socket peer — see
-    ``app.middleware.logging_middleware.peer_ip_from``. Keying on the LEFTMOST
-    entry would let a caller pick a fresh bucket per request.
+    """Per-PEER bucket for unauthenticated public reads (see :func:`_peer_key`).
 
     **Do not rename the ``request`` parameter** (see
-    :func:`get_authorization_identifier`).
+    :func:`get_user_identifier`).
     """
-    from app.middleware.logging_middleware import peer_ip_from
-
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client else None
-    peer = peer_ip_from(request.headers.get("x-forwarded-for"), host)
-    return f"peer:{peer or 'unknown'}"
+    return _peer_key(request)
 
 
-# Create limiter instance
+# The app-wide limiter (``app.state.limiter``), keyed per peer.
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=["200 per day", "50 per hour"],
     storage_uri=storage_uri,
     headers_enabled=True,
 )
 
-# Create user-aware limiter with higher limits for authenticated users
+# Per-caller limiter: keyed on the bearer digest, else the peer (see
+# ``get_user_identifier``). It does not key on the user id, so two logins of
+# one user are two buckets.
 # Note: headers_enabled=False because slowapi has issues injecting headers
 # when endpoints return non-Response objects (e.g., Pydantic models/lists)
 user_limiter = Limiter(
@@ -148,8 +321,9 @@ user_limiter = Limiter(
 
 #: What a rate-limit key's prefix says it is keyed on. Every key function in
 #: this module prefixes its key (``bearer:<digest>``, ``peer:<addr>``,
-#: ``user:<id>``, ``refresh-user:<sub>``, ``ip:<addr>``) except slowapi's own
-#: ``get_remote_address``, which answers a bare address.
+#: ``user:<id>``, ``refresh-user:<sub>``, ``ip:<addr>``). No limiter here uses
+#: slowapi's own ``get_remote_address`` any more, but a decorator may still pass
+#: it as ``key_func``; it answers a bare address and is classified ``ip`` below.
 _KEY_KIND_BY_PREFIX: tuple[tuple[str, str], ...] = (
     ("bearer:", "bearer"),
     ("peer:", "peer"),
@@ -165,11 +339,10 @@ def _refusal_key_kind(request: Request, key_func: Any) -> str:
 
     Derived from the limit's own key function, by re-deriving the key it
     computed for this request and reading the key's KIND off its prefix. The
-    function's name is not enough: ``get_user_identifier`` keys on the socket
-    address whenever ``request.state.user`` is unset (which, before the limiter
-    runs, it always is), and a header naming it ``user`` would point a reader at
-    a per-user bucket that does not exist. The key itself never leaves this
-    function — it is a bearer digest, an address or a user id.
+    function's name is not enough: ``get_user_identifier`` keys on the bearer
+    digest when a token is presented and on the peer address otherwise, so its
+    kind is per request. The key itself never leaves this function — it is a
+    bearer digest, an address or a user id.
     """
     if key_func is get_remote_address:
         return "ip"
@@ -409,14 +582,14 @@ _api_limits = (
 )
 
 auth_limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=_auth_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
 )
 
 api_limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=get_peer_ip_identifier,
     default_limits=_api_limits,  # type: ignore[arg-type]
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
@@ -433,9 +606,9 @@ def _get_refresh_token_subject(request: Request) -> str:
     ``sub`` claim synchronously and give each user their own bucket.
 
     Mobile clients send the token in the POST body instead.  The body isn't
-    available synchronously in slowapi's key function, so we fall back to IP.
-    The endpoint limit is set high enough (60/min) that shared-IP mobile
-    traffic still has headroom.
+    available synchronously in slowapi's key function, so we fall back to the
+    peer (see :func:`_peer_key`). The endpoint limit is set high enough
+    (60/min) that shared-peer mobile traffic still has headroom.
     """
     try:
         token = request.cookies.get("refresh_token")
@@ -452,7 +625,7 @@ def _get_refresh_token_subject(request: Request) -> str:
                 return f"refresh-user:{sub}"
     except Exception:
         pass
-    return f"ip:{get_remote_address(request)}"
+    return _peer_key(request)
 
 
 refresh_limiter = Limiter(
@@ -463,21 +636,33 @@ refresh_limiter = Limiter(
 )
 
 
-# Loopback hosts treated as "the dev fleet" — exempt from auth rate limits
-# in development. The primary runner, every spawned test runner, and the
+# Loopback callers are treated as "the dev fleet" — exempt from auth rate
+# limits in development. The primary runner, every spawned test runner, and the
 # supervisor all phone home over 127.0.0.1 on a dev box, so without an
 # exemption they share a single 5/min bucket and concurrent test spawns
 # starve each other (and the primary). Production traffic is unaffected:
 # this only fires when ENVIRONMENT == "development".
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _is_loopback(address: str | None) -> bool:
+    """True for a loopback IP, including an IPv4-mapped IPv6 one
+    (``::ffff:127.0.0.1``) and all of ``127.0.0.0/8``. Anything that does not
+    parse as an IP (``None``, ``"unknown"``, a hostname) is not loopback."""
+    ip = _ip(address)
+    return ip is not None and ip.is_loopback
 
 
 def _is_loopback_dev(request: Request) -> bool:
+    """True for a development request whose socket peer AND derived peer (the
+    rightmost ``X-Forwarded-For``, the derivation the rate-limit keys use —
+    :func:`peer_address`, unwidened) are both loopback. Either alone is not the dev fleet:
+    a loopback socket peer may be a local proxy forwarding a remote caller,
+    and a loopback ``X-Forwarded-For`` entry may come from a remote peer."""
     if settings.ENVIRONMENT != "development":
         return False
     client = getattr(request, "client", None)
     host = getattr(client, "host", None) if client else None
-    return host in _LOOPBACK_HOSTS
+    return _is_loopback(host) and _is_loopback(peer_address(request))
 
 
 def auth_rate_limit(limit_string: str):
