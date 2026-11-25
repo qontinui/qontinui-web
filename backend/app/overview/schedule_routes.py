@@ -69,7 +69,8 @@ def schedule_source(
     """The coord door for this principal. A device principal always carries its
     verified bearer; a person's bearer was captured by ``get_overview_caller``."""
     if principal.kind == "device":
-        assert principal.token is not None
+        if principal.token is None:
+            raise RuntimeError("a device principal reached the schedule with no bearer")
         return DeviceSource(principal.token)
     return OperatorSource(access.tenant_id)
 
