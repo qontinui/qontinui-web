@@ -94,12 +94,24 @@ export function TreeRow({
           <span className="inline-flex" data-testid={verdictTestId(cls.kind)}>
             <StatusBadge status={status} palette={TREE_STATUS_PALETTE} />
           </span>
+          {/* From a 53rem ROW (RecordRow's `@container/record-row`, where the
+              reason widens), never by the viewport. Capped at 24ch with the
+              name in its `title`: this group does not shrink, and an agent
+              branch name (`agent/<device>-<id>/<slug>`) runs past 80
+              characters, which would otherwise take the width the path (the
+              row's label) needs. A long name shows its LAST segment, because
+              the prefix is the same on every agent branch from one device.
+              The detail's `branch` line carries it in full at every width. */}
           {tree.branch && (
             <Badge
               variant="outline"
-              className="font-mono text-[10px] hidden md:inline-flex"
+              className="font-mono text-[10px] hidden @min-[53rem]/record-row:inline-flex max-w-[24ch]"
+              title={tree.branch}
+              data-testid="coord-tree-branch-badge"
             >
-              {tree.branch}
+              <span className="min-w-0 truncate">
+                {branchBadgeText(tree.branch)}
+              </span>
             </Badge>
           )}
           {tree.dirty && (
@@ -247,4 +259,21 @@ export function TreeRow({
       />
     </RecordRow>
   );
+}
+
+/** About what the 24ch cap shows in 10px mono after the badge's padding. */
+const BRANCH_BADGE_CHARS = 20;
+
+/**
+ * The branch badge's text: the whole name when it fits the badge, else its
+ * last `/` segment after an ellipsis (`…/<slug>`), which is the part that tells
+ * two agent branches apart. The badge's `title` and the detail always carry
+ * the whole name.
+ */
+export function branchBadgeText(branch: string): string {
+  if (branch.length <= BRANCH_BADGE_CHARS) return branch;
+  const slash = branch.lastIndexOf("/");
+  return slash >= 0 && slash < branch.length - 1
+    ? `…/${branch.slice(slash + 1)}`
+    : branch;
 }

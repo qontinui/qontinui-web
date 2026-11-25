@@ -214,12 +214,16 @@ export function PlanRow({
           >
             <StatusBadge status={status} palette={PLAN_STATUS_PALETTE} />
           </span>
-          {/* Dropped below `sm` like the row's own reason slot — §5's density
-              budget. The detail panel below carries them unconditionally, so
-              nothing is lost on a narrow viewport; it costs a click. */}
+          {/* Dropped below a 45rem ROW like the row's own reason slot — §5's
+              density budget, read from RecordRow's `@container/record-row`,
+              never the viewport, so a narrowed column drops them too. They
+              hide whole rather than shrink: a clipped chip would show part of
+              a caveat as if it were all of it. The detail panel below carries
+              them unconditionally, so nothing is lost on a narrow row; it
+              costs a click. */}
           {markers.length > 0 && (
             <span
-              className="hidden sm:inline-flex items-center gap-1"
+              className="hidden @min-[45rem]/record-row:inline-flex items-center gap-1"
               data-testid="coord-plan-body-signal"
             >
               {markers.map((m) => (
@@ -240,10 +244,11 @@ export function PlanRow({
               <span className="text-foreground/90">{tag.title}</span>
             </div>
             {/* Unconditional here, and spelled out rather than chipped: the
-                row's chips are dropped below `sm` and their whole caveat lives
-                in a `title`, which a touch device cannot hover. The detail is
-                where the sentence actually gets read. Distinct testids from
-                the row's, so a query for one never matches two elements. */}
+                row's chips are dropped below a 45rem row and their whole
+                caveat lives in a `title`, which a touch device cannot hover.
+                The detail is where the sentence actually gets read. Distinct
+                testids from the row's, so a query for one never matches two
+                elements. */}
             {markers.map((m) => (
               <div key={m.testId} data-testid={`${m.testId}-detail`}>
                 <span className="text-muted-foreground">Document: </span>

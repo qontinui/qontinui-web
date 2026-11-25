@@ -5,12 +5,12 @@
  * tests pin the shared resolution rules; these pin the three things this domain
  * gets wrong in a way nothing else on the page corrects:
  *
- * 1. **"No row" is `on`, not the resolver's bare `off`.** Coord answers
- *    `effective_level: "off"` both for "nobody ever wrote a row" and for "an
- *    operator turned it off". Reading the first literally ships the whole
- *    feature dark — the worker decides nothing, holds nothing and publishes
- *    nothing, with no error anywhere, which is indistinguishable from the eight
- *    silent days the plan exists to end.
+ * 1. **"No row" is `on`, and is labelled as coord's default.** With no row
+ *    coord serves the typed default `on` (qontinui-coord#4239; it used to
+ *    answer `"off"`). Showing it as `off` ships the whole feature dark — the
+ *    worker decides nothing, holds nothing and publishes nothing, with no error
+ *    anywhere, which is indistinguishable from the eight silent days the plan
+ *    exists to end.
  * 2. **An unparseable level is `off`, and the row is NAMED.** What this dial
  *    authorises is this tenant's bodies reaching every other tenant with no
  *    human in the loop; a setting coord cannot read is not permission to do
@@ -82,14 +82,45 @@ beforeEach(() => {
 describe("what the operator can read off the dial", () => {
   it("names 'no row' as coord's built-in default rather than as off", async () => {
     getMock.mockResolvedValue(
-      view({ effective_level: "off", resolved_scope: "none" })
+      view({
+        effective_level: "on",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
     );
     renderSection(<PolicyAutoPublishDialControl />);
 
     const inForce = await screen.findByTestId("policy-auto-publish-in-force");
-    expect(inForce).toHaveTextContent("on");
+    expect(inForce).toHaveTextContent(/^In force:\s*on/);
     expect(inForce).toHaveTextContent(/built-in default \(on\)/);
     expect(inForce).toHaveTextContent(/no one has set this tenant/i);
+  });
+
+  it("shows a no-row default it cannot parse as unknown, never as off", async () => {
+    getMock.mockResolvedValue(
+      view({
+        effective_level: "sometimes",
+        master_enabled: false,
+        resolved_scope: "none",
+      })
+    );
+    renderSection(<PolicyAutoPublishDialControl />);
+
+    const notice = await screen.findByTestId(
+      "policy-auto-publish-unrecognized-level"
+    );
+    expect(notice).toHaveTextContent("sometimes");
+    expect(notice).toHaveTextContent(/no row is set/i);
+    // With no row coord enforces its own default; the console just cannot
+    // name it, so it must not claim `off`.
+    const inForce = screen.getByTestId("policy-auto-publish-in-force");
+    expect(inForce).toHaveTextContent(/^In force:\s*unknown/);
+    expect(inForce).toHaveTextContent(/cannot be shown here/i);
+    expect(inForce).not.toHaveTextContent(/fail-closed/i);
+    expect(inForce).not.toHaveTextContent(/no one has set/i);
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).not.toBeChecked();
+    }
   });
 
   it("resolves an unrecognised level to off and names the row that holds it", async () => {
