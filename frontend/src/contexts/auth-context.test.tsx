@@ -23,6 +23,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
+import { installBeacon, uninstallBeacon } from "@/lib/telemetry/beacon";
+
 import { AuthProvider, useAuth } from "./auth-context";
 
 // --- Mocks: keep the AuthProvider's collaborators inert/controllable. --------
@@ -177,6 +179,89 @@ describe("AuthProvider boot-time hydration resilience", () => {
     expect(screen.getByTestId("user").textContent).toBe("none");
     // Exhausted the retry budget rather than awaiting one stalled call forever.
     expect(getCurrentUser).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * The bootstrap /users/me timeout is an incident the telemetry beacon must
+ * report (plan 2026-11-23-an-exec-mode-pass-draws-an-unattributed-load-time-429,
+ * Phase 5). The beacon drops caller/navigation aborts, so the timeout has to
+ * abort with a typed TimeoutError reason or it is silently dropped.
+ */
+describe("AuthProvider bootstrap timeout reaches the telemetry beacon", () => {
+  const DSN = "https://abc123def456@o4509.ingest.de.sentry.io/1234567";
+  const INGEST_HOST = "https://o4509.ingest.de.sentry.io";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    uninstallBeacon();
+    purgeStaleSession.mockReturnValue(false);
+    isAuthenticated.mockReturnValue(true);
+    isAccessTokenExpired.mockReturnValue(false);
+    isRefreshDue.mockReturnValue(false);
+    logout.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "globalPrivacyControl", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(navigator, "doNotTrack", {
+      configurable: true,
+      value: null,
+    });
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: undefined,
+    });
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED", "1");
+    vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", DSN);
+  });
+
+  afterEach(() => {
+    uninstallBeacon();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("the bootstrap /users/me timeout is reported by the beacon", async () => {
+    const ingest: string[] = [];
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      writable: true,
+      value: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).startsWith(INGEST_HOST)) {
+          ingest.push(String(init?.body ?? ""));
+          return Promise.resolve(new Response(null, { status: 200 }));
+        }
+        // A stalled /users/me: rejects only when aborted, with the reason.
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+      }),
+    });
+    expect(installBeacon()).toBe(true);
+    // The real auth service sends /users/me through the (wrapped) fetch with
+    // the bootstrap's signal; the first attempt stalls, the second succeeds.
+    getCurrentUser
+      .mockImplementationOnce(async (signal: AbortSignal) => {
+        await window.fetch("https://api.qontinui.example/api/v1/users/me", {
+          signal,
+        });
+        return fakeUser;
+      })
+      .mockResolvedValueOnce(fakeUser);
+
+    vi.useFakeTimers();
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(ingest).toHaveLength(1);
+    expect(ingest[0]).toContain("TimeoutError");
   });
 });
 
