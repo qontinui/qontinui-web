@@ -1394,8 +1394,13 @@ async def _route_device_message(
         if asker is not None:
             try:
                 await asker.send_json(msg)
-            except BENIGN_SEND_EXCEPTIONS:
-                pass
+            except Exception as e:  # noqa: BLE001 - a dead asker must not end the loop
+                logger.warning(
+                    "devices_ws_user_session_end_reply_failed",
+                    device_id=str(device_id),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
             return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
