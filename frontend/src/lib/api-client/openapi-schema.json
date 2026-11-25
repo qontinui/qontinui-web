@@ -113489,6 +113489,149 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/resource-stops": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched::\n\n    {\"table_present\": <bool>, \"count\": <int>, \"stops\": [StopRow, ...],\n     \"bounded\": <bool>, \"limit\": <int>, \"limit_clamped\": <bool>,\n     \"summary\": <object | null>}\n\n``table_present: false`` means the coord table does not exist yet \u2014 an\nempty ``stops`` list is then UNKNOWN, never \"no stops\". ``bounded`` is\ntrue when ``limit`` truncated the page. A ``StopRow`` carries\n``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that\nrefused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,\nthe nullable stats ``session_count_terminal``,\n``session_count_live_claude``, ``active_ci_runners`` and\n``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /\n``fleet_calibration`` objects as the runner recorded them.\n\nQuery params are forwarded verbatim WITHOUT local validation: coord\nrefuses a value outside its vocabulary (422) and clamps ``limit``, and a\nlocal rewrite here would turn a refusal into a different, wider read.",
+        "operationId": "api_v1_operations_fleet_resource_stops_get",
+        "parameters": [
+          {
+            "description": "Narrow to one device. Tenant scoping still applies on top.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one device. Tenant scoping still applies on top.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+              "title": "Lane"
+            }
+          },
+          {
+            "description": "Narrow to the pool that refused: host | wsl | threads.",
+            "in": "query",
+            "name": "guard_lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to the pool that refused: host | wsl | threads.",
+              "title": "Guard Lane"
+            }
+          },
+          {
+            "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "true adds coord's per-device roll-up.",
+            "in": "query",
+            "name": "summary",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true adds coord's per-device roll-up.",
+              "title": "Summary"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Resource Stops Api V1 Operations Fleet Resource Stops Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fleet Resource Stops",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/runners/{runner_id}": {
       "delete": {
         "description": "Manually remove a runner from the cross-machine beacon registry.",
