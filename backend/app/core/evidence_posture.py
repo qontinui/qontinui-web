@@ -1054,6 +1054,38 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         "through this door; the write itself is coord's, proxied, and outside "
         "this table's scope"
     ),
+    ("POST", "/api/v1/operations/plans/{slug}/phase-attestations"): Read(
+        "a person's door: gated by require_coord_tenant_admin, which needs a "
+        "signed-in web operator with the admin role in the effective tenant; "
+        "the one device-admitting dependency is the optional audit-actor "
+        "lookup that only labels by_actor, so a device mutates nothing "
+        "through this door; the write itself is coord's, proxied, and outside "
+        "this table's scope"
+    ),
+    ("DELETE", "/api/v1/operations/plans/{slug}/phase-attestations"): Read(
+        "a person's door: gated by require_coord_tenant_admin, which needs a "
+        "signed-in web operator with the admin role in the effective tenant; "
+        "the one device-admitting dependency is the optional audit-actor "
+        "lookup that only labels by_actor, so a device mutates nothing "
+        "through this door; the write itself is coord's, proxied, and outside "
+        "this table's scope"
+    ),
+    ("POST", "/api/v1/operations/plans/{slug}/citations"): Read(
+        "a person's door: gated by require_coord_tenant_admin, which needs a "
+        "signed-in web operator with the admin role in the effective tenant; "
+        "the one device-admitting dependency is the optional audit-actor "
+        "lookup that only labels by_actor, so a device mutates nothing "
+        "through this door; the write itself is coord's, proxied, and outside "
+        "this table's scope"
+    ),
+    ("DELETE", "/api/v1/operations/plans/{slug}/citations"): Read(
+        "a person's door: gated by require_coord_tenant_admin, which needs a "
+        "signed-in web operator with the admin role in the effective tenant; "
+        "the one device-admitting dependency is the optional audit-actor "
+        "lookup that only labels by_actor, so a device mutates nothing "
+        "through this door; the write itself is coord's, proxied, and outside "
+        "this table's scope"
+    ),
     # ── design reference library (``get_memory_tenant``) ─────────────────
     **_design_refs_record_rows(
         "sites",

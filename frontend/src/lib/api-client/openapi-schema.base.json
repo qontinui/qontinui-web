@@ -115637,6 +115637,16 @@
               "title": "Slug",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "with_citations",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "With Citations",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -115670,6 +115680,132 @@
           }
         ],
         "summary": "Get Coord Plan",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/plans/{slug}/citations": {
+      "delete": {
+        "description": "Retract a manually recorded PR citation (coord-authored ones stay).",
+        "operationId": "api_v1_operations_plans_slug_citations_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^\\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Plan Citation Api V1 Operations Plans  Slug  Citations Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Coord Plan Citation",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Cite a PR as delivery evidence for a work unit (admin-gated).\n\nProxies coord ``POST /coord/work-units/{slug}/operator-citations``. A\ncitation only FEEDS coord's delivery check, which reads whether the PR\nactually landed, so citing one cannot mark a unit shipped.",
+        "operationId": "api_v1_operations_plans_slug_citations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^\\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Plan Citation Api V1 Operations Plans  Slug  Citations Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Post Coord Plan Citation",
         "tags": [
           "operations"
         ]
@@ -115713,6 +115849,132 @@
           }
         },
         "summary": "Get Coord Plan History",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/plans/{slug}/phase-attestations": {
+      "delete": {
+        "description": "Retract a phase attestation (the row stays, marked retracted).",
+        "operationId": "api_v1_operations_plans_slug_phase_attestations_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^\\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Coord Plan Phase Attestation Api V1 Operations Plans  Slug  Phase Attestations Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Coord Plan Phase Attestation",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Record a phase attestation on a work unit (tenant-scoped, admin-gated).\n\nPlan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``\nPhase 6: the person's door for \"this phase is done and here is the\nevidence\", which the Project Overview shows as ``Confirmed done on <date>``.\nProxies coord ``POST /coord/work-units/{slug}/operator-phase-attestations``;\ncoord resolves the evidence (a finding or prompt-document id) within the\ncaller's tenant at write time. ``by_actor`` is the authenticated operator.",
+        "operationId": "api_v1_operations_plans_slug_phase_attestations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^\\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Plan Phase Attestation Api V1 Operations Plans  Slug  Phase Attestations Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Post Coord Plan Phase Attestation",
         "tags": [
           "operations"
         ]

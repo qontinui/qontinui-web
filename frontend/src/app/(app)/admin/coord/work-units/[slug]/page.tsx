@@ -21,6 +21,9 @@
  *   - Status history timeline from `coord.work_unit_status_history`
  *     (rows: `{from_status?, to_status, transitioned_at, by_actor?, reason?}`)
  *   - Transition button — POST /api/v1/operations/plans/{slug}/transition
+ *   - Evidence panel — POST|DELETE /api/v1/operations/plans/{slug}/
+ *     phase-attestations and /citations (the delivery evidence the Overview
+ *     calls a phase done on; plan Phase 6)
  *   - Schedule panel — PATCH /api/v1/operations/plans/{slug}/schedule-metadata
  *     (the phases, phase-to-unit links and milestone link the Project Overview
  *     derives its Timeline from; plan
@@ -110,6 +113,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { EvidencePanel } from "./_components/EvidencePanel";
 import { SchedulePanel } from "./_components/SchedulePanel";
 
 // Work-unit lifecycle statuses. NB `ready`/`shipped` are coord-DERIVED on
@@ -125,6 +129,20 @@ const TRANSITION_TARGETS = [
   "superseded",
   "obsolete",
 ];
+
+/** Declared phase names by index, for display beside an evidence row. */
+function phaseNamesOf(plan: CoordWorkUnit): Record<number, string> {
+  const out: Record<number, string> = {};
+  const phases = plan.metadata?.phases;
+  if (Array.isArray(phases)) {
+    for (const p of phases) {
+      const i = (p as { index?: unknown })?.index;
+      const n = (p as { name?: unknown })?.name;
+      if (typeof i === "number" && typeof n === "string") out[i] = n;
+    }
+  }
+  return out;
+}
 
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -444,6 +462,10 @@ export default function CoordPlanDetailPage() {
           {/* Phase 5 of the overview-derives-from-coord plan: the person's door
               for the phases and links the Project Overview reads. */}
           <SchedulePanel slug={slug} plan={plan} onSaved={fetchAll} />
+
+          {/* Phase 6: the delivery evidence (phase attestations, cited PRs)
+              the Overview calls a phase done on. */}
+          <EvidencePanel slug={slug} phaseNames={phaseNamesOf(plan)} />
 
           {/* R7 — the transition log is supporting material, so it folds; its
               count stays visible in the collapsed header so an empty history
