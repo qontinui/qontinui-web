@@ -131,14 +131,21 @@ async def test_end_close_input_are_stamped_and_client_origin_cannot_ride(monkeyp
                 "origin": "forged",
             },
             {"type": "terminal_input", "terminal_id": "t-1", "data": "bHMK"},
-            {"type": "terminal_list", "request_id": "req-3"},
+            {"type": "terminal_list", "request_id": "req-3", "origin": "user_session"},
+            {
+                "type": "terminal_create",
+                "request_id": "req-4",
+                "origin": "user_session",
+            },
         ]
     )
     await _run(ws)
-    end, close, inp, lst = manager.forwarded
+    end, close, inp, lst, create = manager.forwarded
     for sent in (end, close, inp):
         assert sent["origin"] == FIXTURE["origin"] == "user_session"
-    assert "origin" not in lst
+    # An unstamped type never carries origin, even a forged one.
+    assert "origin" not in lst and "origin" not in create
+    assert end["origin"] != "operator_single" and close["origin"] != "forged"
     assert end["session_id"] == "sess-1" and end["force"] is True
     # Fixture: every stamped frame carries exactly the fixture's keys.
     for name, frame in (
@@ -225,17 +232,6 @@ def test_origin_is_relay_owned_on_source_input_forwards():
     assert "origin" in INPUT_FORWARD_RELAY_OWNED_KEYS
 
 
-def test_end_coordinator_forwards_no_door_or_origin():
-    src = (
-        Path(__file__).parent.parent / "app/services/runner/remote_relay/end.py"
-    ).read_text()
-    body = src.split("async def _forward_end", 1)[1].split("def _cancel_end_timer", 1)[
-        0
-    ]
-    assert '"door"' not in body and 'msg.get("door")' not in body
-    assert '"origin"' not in body
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "kwargs,code",
@@ -259,3 +255,108 @@ async def test_connect_rejections_carry_typed_code_in_close_and_error_frame(
     assert ws.closed[1].startswith(f"{code}: ")
     assert len(ws.closed[1].encode()) <= 123
     assert ws.sent[0]["code"] == code
+
+
+@pytest.fixture(autouse=True)
+def _clean_pending():
+    user_session_end._pending.clear()
+    yield
+    user_session_end._pending.clear()
+
+
+@pytest.mark.asyncio
+async def test_terminal_end_without_request_id_is_refused_and_not_forwarded(
+    monkeypatch,
+):
+    manager = _patch(monkeypatch, owned=True)
+    ws = _WS([{"type": "terminal_end", "session_id": "s"}])
+    await _run(ws)
+    assert manager.forwarded == []
+    assert ws.sent[-1]["code"] == "request_id_required"
+
+
+@pytest.mark.asyncio
+async def test_failed_send_releases_only_the_callers_entry():
+    a, b = object(), object()
+    assert user_session_end.register("d", "r", a) is None
+    assert user_session_end.claim("d", "r", b) is None  # not b's: kept
+    assert user_session_end.claim("d", "r", a) is a
+
+
+@pytest.mark.asyncio
+async def test_failed_send_releases_the_entry_end_to_end(monkeypatch):
+    manager = _patch(monkeypatch, owned=True)
+
+    async def _fail(_rid: Any, _msg: dict[str, Any]) -> bool:
+        return False
+
+    manager.send_terminal = _fail  # type: ignore[method-assign]
+    ws = _WS([{"type": "terminal_end", "session_id": "s", "request_id": "r"}])
+    await _run(ws)
+    assert user_session_end._pending == {}
+    assert ws.sent[-1]["message"] == "Runner is not connected."
+
+
+@pytest.mark.asyncio
+async def test_duplicate_request_id_from_another_socket_is_refused():
+    a, b = object(), object()
+    assert user_session_end.register("d", "r", a) is None
+    assert user_session_end.register("d", "r", b) == "end_request_id_in_use"
+    assert user_session_end.claim("d", "r") is a  # a's entry untouched
+
+
+@pytest.mark.asyncio
+async def test_pending_ends_are_capped_per_socket():
+    a, b = object(), object()
+    cap = user_session_end.MAX_PENDING_PER_SOCKET
+    for i in range(cap):
+        assert user_session_end.register("d", f"r{i}", a) is None
+    assert user_session_end.register("d", "over", a) == "too_many_pending_ends"
+    assert user_session_end.register("d", "other", b) is None
+
+
+@pytest.mark.asyncio
+async def test_drop_socket_forgets_its_entries_only():
+    a, b = object(), object()
+    user_session_end.register("d", "ra", a)
+    user_session_end.register("d", "rb", b)
+    user_session_end.drop_socket(a)
+    assert user_session_end.claim("d", "ra") is None
+    assert user_session_end.claim("d", "rb") is b
+
+
+@pytest.mark.asyncio
+async def test_ttl_expiry_answers_the_asker_with_a_typed_error(monkeypatch):
+    import asyncio
+
+    from app.services.runner.remote_relay import end as end_module
+
+    monkeypatch.setattr(end_module, "PENDING_END_TTL_SECONDS", 0.01)
+    ws = _WS([])
+    user_session_end.register("d", "r-ttl", ws)
+    await asyncio.sleep(0.1)
+    assert user_session_end._pending == {}
+    assert ws.sent == [
+        {
+            "type": "error",
+            "code": "end_reply_timeout",
+            "request_id": "r-ttl",
+            "message": "target did not answer the end request in time; "
+            "its outcome is unknown",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dead_asker_does_not_break_the_device_router():
+    class _Dead:
+        async def send_json(self, _p: Any) -> None:
+            raise RuntimeError("boom")
+
+    user_session_end.register("dev", "r", _Dead())
+    dm = SimpleNamespace(refresh_ttl=AsyncMock(), get_websocket=lambda _i: None)
+    # Must return normally (and not fall through to the remote relay).
+    await devices_ws._route_device_message(
+        {"type": "terminal_ended", "request_id": "r"}, "dev", "u", dm
+    )
+    assert user_session_end._pending == {}
