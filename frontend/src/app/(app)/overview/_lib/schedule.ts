@@ -138,12 +138,21 @@ export function missingLabels(
   states: readonly string[],
   labels: Readonly<Record<string, string>>
 ): string[] {
-  return states.filter((s) => !(labels[s] ?? "").trim());
+  return states.filter((s) => !(own(labels, s) ?? "").trim());
 }
 
 /** What a value this build has no label for reads: neutral, never a concrete
  *  state it might be mistaken for. */
 export const UNRECOGNISED = "Unrecognised";
+
+/** An own property of a plain table, or undefined: `constructor` or
+ *  `toString` are not states. */
+function own<V>(
+  table: Readonly<Record<string, V>>,
+  key: string
+): V | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
 
 /** A word that is not in a table (a state a newer server serves) is said
  *  plainly as unrecognised, never passed through as its raw identifier. */
@@ -152,7 +161,7 @@ function word<T extends string>(
   state: T,
   fallback: string
 ): string {
-  const found = (labels as Readonly<Record<string, string | undefined>>)[state];
+  const found = own(labels as Readonly<Record<string, string>>, state);
   return found && found.trim() ? found : fallback;
 }
 
@@ -409,21 +418,23 @@ function slugId(text: string): string {
 function coordLane(m: MilestoneView, index: number): LaneMilestone {
   const date = figureDay(m.target_date);
   const status = m.status.value;
-  const recognised = status !== null && status in COORD_TONE;
+  const tone = status === null ? undefined : own(COORD_TONE, status);
+  const recognised = tone !== undefined;
   const unknownStatus = describeUnknown(m.status);
   return {
     key: `coord:${m.id ?? slugId(m.name)}:${index}`,
     uiId: `coord-${m.id ?? slugId(m.name) ?? index}`,
     title: m.name,
     date: date.day,
-    statusWord: recognised
-      ? milestoneStatusWord(status)
-      : status !== null
-        ? UNRECOGNISED
-        : [unknownStatus.headline, unknownStatus.reason]
-            .filter(Boolean)
-            .join(" � "),
-    tone: recognised ? COORD_TONE[status] : "unknown",
+    statusWord:
+      status !== null && recognised
+        ? milestoneStatusWord(status)
+        : status !== null
+          ? UNRECOGNISED
+          : [unknownStatus.headline, unknownStatus.reason]
+              .filter(Boolean)
+              .join(" — "),
+    tone: tone ?? "unknown",
     sources: ["coord"],
     dateFrom: date.kind,
   };
@@ -463,7 +474,7 @@ export function mergeMilestones(
       title: m.title,
       date: m.target_date,
       statusWord: MILESTONE_STATUS_LABEL[m.status],
-      tone: TYPED_TONE[m.status],
+      tone: own(TYPED_TONE, m.status) ?? "unknown",
       sources: ["entered"],
       dateFrom: "entered",
     });

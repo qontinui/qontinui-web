@@ -66,6 +66,13 @@ function WhereNow({ env }: { env: ScheduleEnvelope }) {
   }
   const counts = countPhases(phases);
   const under = currentPhases(phases);
+  const unconfirmed = counts.notConfirmed + counts.unavailable;
+  const headline =
+    under.length > 0
+      ? under.map((p) => `${p.code} ${p.name}`).join(", ")
+      : counts.total > 0 && unconfirmed === counts.total
+        ? "Not confirmed"
+        : `${counts.done} of ${counts.total} phases done`;
   return (
     <Fact
       label="Where it is now"
@@ -76,9 +83,7 @@ function WhereNow({ env }: { env: ScheduleEnvelope }) {
           : null
       }
     >
-      {under.length > 0
-        ? under.map((p) => `${p.code} ${p.name}`).join(", ")
-        : `${counts.done} of ${counts.total} phases done`}
+      {headline}
     </Fact>
   );
 }

@@ -219,6 +219,29 @@ describe("an unknown schedule", () => {
 });
 
 describe("the header", () => {
+  it("when no phase has a confirmed state it does not headline '0 of N phases done'", () => {
+    show(
+      envelope({ phases: known([phase(1, "F1", "F1"), phase(2, "F2", "F2")]) })
+    );
+    const now = byId("overview.schedule.header.now")!;
+    expect(now.textContent).not.toMatch(/0 of 2 phases done/);
+    expect(now.textContent).toContain("Not confirmed");
+    expect(now.textContent).toContain("2 of 2 phases have no confirmed state");
+  });
+
+  it("renders no U+FFFD anywhere, even for an unknown milestone status", () => {
+    const base = envelope();
+    const item = milestone("Review", "2026-12-01", "met", {
+      status: unknown("coord_unreachable", "2026-11-21T10:00:00Z"),
+    });
+    const { container } = show({
+      ...base,
+      milestones: { ...base.milestones, items: known([item]) },
+    });
+    expect(container.textContent).toContain("Not available since 21 Nov 2026");
+    expect(container.textContent).not.toContain(String.fromCharCode(0xfffd));
+  });
+
   it("names the phase under way, the next date and how many figures disagree", () => {
     show(envelope({ disagreement_count: 2 }));
     expect(byId("overview.schedule.header.now")?.textContent).toContain(
