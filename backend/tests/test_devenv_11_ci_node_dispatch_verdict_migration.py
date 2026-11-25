@@ -40,6 +40,7 @@ from tests._alembic_harness import (
     column_comment,
     column_info,
     ephemeral_database,
+    is_superuser,
     load_revision_module,
     run_alembic,
     scalar,
@@ -189,6 +190,10 @@ def test_columns_land_nullable_and_a_prior_row_reads_null() -> None:
         db_url,
     ):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        if not is_superuser(engine):
+            pytest.skip(
+                "seeding a machine row skips FK checks, which needs a superuser"
+            )
         machine_id = str(uuid4())
         with engine.begin() as conn:
             # The owner FK targets auth.users; this test is about the new
