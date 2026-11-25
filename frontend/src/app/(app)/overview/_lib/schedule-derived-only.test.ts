@@ -23,7 +23,7 @@ const SCHEDULE_FILES = [
 ];
 
 const OVERLAY_VOCABULARY =
-  /entered_by|disagrees|disagreement|basis:\s*entered|["']entered["']|enteredBy|entered_only|overlayPhases|mergeMilestones|ScheduleBasis/;
+  /entered_by|disagrees|disagreement|basis:\s*entered|["']entered["']|enteredBy|entered_only|overlayPhases|mergeMilestones|ScheduleBasis|overlay[A-Z_][A-Za-z_]*|\bEntered\b|enteredLabel/;
 
 describe("the schedule carries no entered-value overlay", () => {
   it.each(SCHEDULE_FILES)("%s", (file) => {

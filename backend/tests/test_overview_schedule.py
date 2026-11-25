@@ -1985,6 +1985,7 @@ _SCHEDULE_CODE = [
 _OVERLAY_VOCABULARY = re.compile(
     r"entered_by|disagrees|basis:\s*entered|[\"']entered[\"']|apply_entered"
     r"|disagreement_count|entered_only|TypedInputs|load_typed_inputs"
+    r"|overlay_value|_count_disagreements|\bEntered\b|_entered_label"
 )
 
 

@@ -68,14 +68,11 @@ export function MilestoneLane({
   window,
   today,
   uiPrefix,
-  backdrop,
 }: {
   lane: LaneMilestone[];
   window: AxisWindow;
   today: Date;
   uiPrefix: string;
-  /** Replaces the today line (the estimate chart also shades its breaks). */
-  backdrop?: React.ReactNode;
 }) {
   return (
     <div className={LABEL_COLUMN} data-ui-bridge-id={`${uiPrefix}.milestones`}>
@@ -83,7 +80,7 @@ export function MilestoneLane({
         Milestones
       </div>
       <div className="relative min-h-10 overflow-hidden">
-        {backdrop ?? <TodayLine window={window} today={today} />}
+        <TodayLine window={window} today={today} />
         {lane.map((m) => {
           const day = toDay(m.date);
           const at = day ? dayOffset(day, window) : null;
