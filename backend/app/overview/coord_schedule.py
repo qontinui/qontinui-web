@@ -14,7 +14,10 @@ Two halves, kept apart so the rules can be tested without a network:
 
 The device bearer's reach is a CLOSED list, :data:`DEVICE_READ_DOORS`: the
 three read doors this module sends it to. ``tests/test_overview_schedule.py``
-asserts no other path is ever requested with it. No write verb exists here.
+asserts no other path is ever requested with it. This code issues only GETs; the
+device document door (``/coord/agent-prompt-documents``) may record a policy read in
+coord as a side effect of serving one, so "read-only" here means no write verb is
+sent, not that coord keeps no trace.
 
 ``parse_milestone_table`` is a port of the Phase 1 probe's parser
 (``backend/scripts/probe_overview_schedule.py``); a parity test runs both over
@@ -25,7 +28,6 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
@@ -145,8 +147,32 @@ class CoordScheduleSource(Protocol):
     async def document(self, kind: str, name: str) -> dict[str, Any]: ...
 
 
+_SAFE_SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def _safe_segment(segment: str) -> bool:
+    """A path segment that cannot climb out of the door it is appended to."""
+    return segment not in (".", "..") and _SAFE_SEGMENT.fullmatch(segment) is not None
+
+
 def _q(segment: str) -> str:
-    return urllib.parse.quote(segment, safe="")
+    """A data-derived value as ONE path segment. Anything outside
+    ``[A-Za-z0-9._-]+``, and ``.`` / ``..``, is refused as a unit coord does not
+    hold (:class:`CoordNotFound`), so a hostile slug cannot reach another route."""
+    if not _safe_segment(segment):
+        raise CoordNotFound(f"unsafe path segment {segment!r}")
+    return segment
+
+
+def _assert_door_path(path: str, prefixes: tuple[str, ...] | None) -> None:
+    """Every segment after the door prefix is safe, and (device) the path stays
+    inside the closed door list."""
+    if prefixes is not None and not any(
+        path == door or path.startswith(door + "/") for door in prefixes
+    ):
+        raise RuntimeError(f"the device bearer must not reach {path}")
+    if not all(_safe_segment(seg) for seg in path.split("/")[1:]):
+        raise RuntimeError(f"unsafe coord path {path!r}")
 
 
 async def _guarded_get(
@@ -195,6 +221,7 @@ class OperatorSource:
     async def _get(
         self, path: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        _assert_door_path(path, None)
         return await _guarded_get(
             path, params=params, tenant_id=self._tenant_id, forward_bearer=True
         )
@@ -232,10 +259,7 @@ class DeviceSource:
     async def _get(
         self, path: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        if not any(
-            path == door or path.startswith(door + "/") for door in DEVICE_READ_DOORS
-        ):
-            raise RuntimeError(f"the device bearer must not reach {path}")
+        _assert_door_path(path, DEVICE_READ_DOORS)
         return await _guarded_get(path, params=params, headers=self._headers)
 
     async def work_unit_page(self, limit: int, offset: int) -> dict[str, Any]:
@@ -394,7 +418,8 @@ def parse_initiative(text: str) -> InitiativeFacts:
                         break
                     parsed[kv[0]] = kv[1]
                 if ok and parsed:
-                    assert facts.milestone_entries is not None
+                    if facts.milestone_entries is None:
+                        raise ValueError("milestones list opened without a list")
                     facts.milestone_entries.append(parsed)
                 else:
                     facts.unparsed_entries.append(stripped)
