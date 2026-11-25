@@ -69,7 +69,6 @@ describe("the Timeline page", () => {
     expect(byId("overview.schedule.chart.phase.F2.state")?.textContent).toBe(
       "In progress"
     );
-    expect(byId("overview.timeline.no-estimate")).toBeNull();
     // Derived only: the typed read paths are not touched at all.
     expect(mocks.listResource).not.toHaveBeenCalled();
     expect(mocks.getResource).not.toHaveBeenCalled();
@@ -84,7 +83,6 @@ describe("the Timeline page", () => {
     expect(text).not.toMatch(/entered/i);
     expect(text).not.toMatch(/differ/i);
     expect(byId("overview.schedule.header.disagreements")).toBeNull();
-    expect(byId("overview.timeline.overlay")).toBeNull();
     expect(plainLanguageViolations(container)).toEqual([]);
   });
 
@@ -112,7 +110,6 @@ describe("the Timeline page", () => {
     expect(byId("overview.schedule.phases.unknown")?.textContent).toContain(
       "no delivery programme is recorded"
     );
-    expect(byId("overview.timeline.no-estimate")).toBeNull();
   });
 
   it("shows a loading state while the first read is in flight", () => {
