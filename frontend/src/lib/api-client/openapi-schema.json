@@ -987,6 +987,50 @@
       "AdminAgentRegistryRow": {
         "description": "One raw ``coord.agent_registry`` row, plus its pref-override counts.",
         "properties": {
+          "admin_disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled At"
+          },
+          "admin_disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled By"
+          },
+          "admin_disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disposition"
+          },
+          "admin_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Reason"
+          },
           "agent_name": {
             "title": "Agent Name",
             "type": "string"
@@ -1346,6 +1390,45 @@
           "subscription_tier"
         ],
         "title": "AdminUserData",
+        "type": "object"
+      },
+      "AgentAdminSwitchRequest": {
+        "additionalProperties": false,
+        "description": "Client body for the tenant-admin spawn switch.\n\n``disposition`` is the admin's pick from the row's\n``allowed_dispositions`` and only means something with ``disabled: true``\n(coord answers 422 ``disposition_requires_disabled`` otherwise). Neither\nrule is copied here \u2014 coord's refusal is forwarded verbatim, and a web-side\ncopy of the disposition set would drift from the row it is checked\nagainst.",
+        "properties": {
+          "disabled": {
+            "title": "Disabled",
+            "type": "boolean"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "block | degrade | warn_proceed (from the row's set)",
+            "title": "Disposition"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why; recorded on the row and shown to every member in the catalog",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "title": "AgentAdminSwitchRequest",
         "type": "object"
       },
       "AgentCommandCreate": {
@@ -1739,7 +1822,7 @@
             "type": "string"
           },
           "source": {
-            "description": "default | user_pref",
+            "description": "default | user_pref | admin",
             "title": "Source",
             "type": "string"
           },
@@ -78166,6 +78249,90 @@
           }
         ],
         "summary": "Put Admin Agent Registry Row",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/admin/registry/{agent_name}/switch": {
+      "put": {
+        "description": "ADMIN: switch spawns of one agent type off (or back on) tenant-wide.\n\nGated in the WEB tier as well as in coord (``rbac::require_role(\"admin\")``),\nso a non-admin gets the renderable ``not_coord_tenant_admin`` and no coord\ncall is made. The forwarded body carries only what the admin set: an\nomitted ``disposition`` / ``reason`` is absent, not ``null``.",
+        "operationId": "api_v1_agent_registry_admin_registry_agent_name_switch_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "title": "Agent Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAdminSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Agent Admin Switch Api V1 Agent Registry Admin Registry  Agent Name  Switch Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Agent Admin Switch",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/catalog": {
+      "get": {
+        "description": "Every agent type the tenant's spawns may be authorized under.\n\nReadable by ANY member: the page shows members what is switched off and\nwhy, read-only. Coord resolves the tenant from the forwarded bearer.",
+        "operationId": "api_v1_agent_registry_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Catalog Api V1 Agent Registry Catalog Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Agent Catalog",
         "tags": [
           "agent-registry"
         ]

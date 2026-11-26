@@ -38,6 +38,13 @@ tell "deselected with disposition degrade" from "never seeded" — the two look
 identical from ``coord_agent_registry_effective``, and only the second is the
 truth. This script closes that gap.
 
+It is an optional BULK tool, not the only way a role row comes to exist. The
+``/admin/coord/agent-registry`` page lists coord's catalog
+(``GET /coord/agent-registry/catalog``) — declared roles, harness built-ins,
+spawn kinds and observed names included — and an admin's "Spawns: Off" on an
+entry with no row writes that row through coord's admin-switch door (plan
+``2026-11-24-tenant-admins-switch-agent-spawns-off-per-agent-type`` Phase 7).
+
 ## What it writes
 
 One row per ``.claude/agents/<name>.md``, via
@@ -62,8 +69,10 @@ One row per ``.claude/agents/<name>.md``, via
  ``allowed_dispositions`` all three on a NEW row (``block``, ``degrade``,
                        ``warn_proceed``); an existing row's value is
                        PRESERVED, for the same reason ``default_enabled``
-                       is — a narrowed set is a recorded operator choice,
-                       and coord REPLACES this column rather than merging it
+                       is — a narrowed set is a recorded operator choice.
+                       coord's upsert keeps a column the request OMITS
+                       (``COALESCE``) but takes a SENT list whole, with no
+                       merge, so echoing the full set would widen it
  ``fanout_bound``      1
  ``definition_body``   the markdown body, so the registry carries the
                        definition and not just a name
@@ -454,9 +463,13 @@ def build_body(
     # account because someone updated one list and not the other.
     #
     # `allowed_dispositions` is preserved for exactly the same reason, and it
-    # needs saying separately because coord REPLACES that column rather than
-    # merging it: re-sending the full set would widen an operator's narrowed
-    # one back to all three without anyone deciding to.
+    # needs saying separately because of how coord's upsert treats a LIST.
+    # Every column but `default_enabled` is `COALESCE(new, current)`
+    # (`upsert_registry_row`, qontinui-coord `agent_registry.rs`): an OMITTED
+    # value keeps the stored one, but a SENT value is taken whole — coord never
+    # merges two lists. So re-sending the full set would widen an operator's
+    # narrowed one back to all three without anyone deciding to; sending the
+    # stored set back is a no-op.
     if existing is not None:
         enabled = bool(existing.get("default_enabled", True))
         dispositions = list(
