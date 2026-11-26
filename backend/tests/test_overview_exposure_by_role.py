@@ -3,8 +3,11 @@
 Phase 1 of plan
 ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``:
 an access matrix of seven doors x three members of one tenant, so that any
-change to who reads what at these doors turns a named test red and the matrix
-moves only on purpose. No behaviour is changed here.
+change inside qontinui-web to who reads what at these doors turns a named test
+red and the matrix moves only on purpose. No behaviour is changed here. The
+outside-role cells stub coord's identity answer as a 403, so they measure web's
+handling of that answer; a change in COORD that started admitting such a member
+would not turn them red (that is coord's own Phase 2 test suite).
 
 **Scope: qontinui-web only.** Coord serves the same documents and answers the
 same questions at its own operator doors (``GET /coord/prompt-documents``,
@@ -19,7 +22,8 @@ qontinui-coord; nothing in this module can see it.
 * a Developer — ``["operator"]`` (the members page's "Developer" tier);
 * a member holding only an outside role (``helper`` today, ``stakeholder``
   once the plan's Phases 10-11 land). Coord's ``GET /admin/coord/me`` requires
-  ``operator`` in the active tenant and answers such a member 403, which web
+  ``operator`` or a role above it (``admin`` ranks above ``operator``) in the
+  active tenant and answers such a member 403, which web
   maps to 403 ``tenant_not_resolved`` inside ``coord_identity._fetch_identity``.
 
 **Resolved the real way.** Unlike ``test_overview_authoring.py``, nothing here
@@ -39,8 +43,9 @@ the test database.
 everything at every door, by design: a Developer is a member of the
 operator's team. The only thing that keeps a person outside the team off a
 team role is the rule that such a person is never given one (plan D8). The
-outside-role member is refused 403 ``tenant_not_resolved`` at every door,
-before any handler runs.
+outside-role member is refused 403 ``tenant_not_resolved`` at every door; the
+intent-document and console cells also assert that no store read or coord call
+beyond the identity check was made.
 """
 
 from __future__ import annotations
@@ -430,7 +435,7 @@ class TestChangeLogDoor:
         # The rows carry the before AND after values, so the log is a second
         # way to read a document's text.
         assert "INTERNAL-POSITION-MARKER" in str(latest["before"])
-        assert "added" in str(latest["after"])
+        assert "Q2. INTERNAL-POSITION-MARKER: added." in str(latest["after"])
 
     async def test_exposure_change_log_administrator(self, harness: Harness) -> None:
         """INTENDED: an Administrator reads the edit history, with values."""
@@ -495,6 +500,7 @@ class TestConsolePromptDocumentDoor:
         response, stub = await self._read(harness, OUTSIDE)
         _assert_refused(response)
         proxied = [c.args[0] for c in stub.get.call_args_list]
+        assert proxied, "the identity call did not go through the stubbed transport"
         assert all(u.endswith("/admin/coord/me") for u in proxied), proxied
 
 
@@ -550,4 +556,5 @@ class TestConsoleRespondDoor:
         _assert_refused(response)
         assert stub.post.call_count == 0
         proxied = [c.args[0] for c in stub.get.call_args_list]
+        assert proxied, "the identity call did not go through the stubbed transport"
         assert all(u.endswith("/admin/coord/me") for u in proxied), proxied
