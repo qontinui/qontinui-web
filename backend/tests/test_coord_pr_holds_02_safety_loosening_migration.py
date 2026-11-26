@@ -59,7 +59,7 @@ _REVISION_FILENAME = "coord_pr_holds_02_safety_loosening.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "agent_status_intent_globs_declared_01"
+_PARENT_REVISION_ID = "overview_07_schedule_last_known"
 
 _OLD_KINDS = ("manual", "security_tier", "migration_order", "create", "coord_proposal")
 _NEW_KIND = "safety_loosening"
