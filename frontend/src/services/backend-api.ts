@@ -18,6 +18,7 @@ import type { Workflow } from "@/lib/action-schema/action-types";
 import { createLogger } from "@/lib/logger";
 import { isEndpointUnresolved } from "@/lib/errors/endpoint-unresolved";
 import { ApiConfig } from "@/services/api-config";
+import { timeoutAbortReason } from "@/lib/abort-reasons";
 
 const log = createLogger("BackendAPI");
 
@@ -735,8 +736,11 @@ export class BackendAPI {
         }
 
         const controller = new AbortController();
+        // A typed `TimeoutError` reason, so the telemetry beacon reports this
+        // timeout instead of dropping it as a caller/navigation abort.
         const timeoutId = setTimeout(
-          () => controller.abort(),
+          () =>
+            controller.abort(timeoutAbortReason()),
           this.config.timeout || 30000
         );
 

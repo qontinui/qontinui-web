@@ -116,4 +116,12 @@ ENV QONTINUI_BUILD_SHA=$BUILD_SHA
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
+# uvicorn trusts X-Forwarded-For (rewriting request.client.host) only from the
+# peers listed in FORWARDED_ALLOW_IPS, and unset that is 127.0.0.1 alone, so
+# behind the ALB client.host is the ALB node's address. Nothing sets it yet:
+# it must be set to the CIDR of the VPC the ALB lives in, in the deployed ECS
+# task definition (infra, not in this repo). Never "*": any caller reaching
+# the task directly could then choose its own client.host. The rate-limit
+# keys do not wait on it; they read the rightmost X-Forwarded-For themselves
+# (app/middleware/rate_limit.py `_peer_key`).
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

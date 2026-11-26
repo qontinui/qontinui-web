@@ -34,6 +34,7 @@
 
 import type { DeviceCredentialDark } from "@/components/operations/coordCredentialStatus";
 import type { ResourceSamplesResponse } from "@/components/operations/fleetResources";
+import type { ResourceStopsResponse } from "@/components/operations/fleetResourceStops";
 import type {
   AggregatedTaskRuns,
   FleetStatus,
@@ -784,6 +785,23 @@ export async function fetchFleetResourceSamples(
     idempotent: true,
   });
   return readJson<ResourceSamplesResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/resource-stops?limit=` (`get_fleet_resource_stops`) — the runner's
+ * recorded resource-guard refusals and deferrals, newest first.
+ */
+export async function fetchFleetResourceStops(
+  limit: number,
+  options: HttpOptions = {}
+): Promise<ResourceStopsResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/resource-stops?limit=${encodeURIComponent(String(limit))}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ResourceStopsResponse>(res, `GET ${url}`);
 }
 
 /**

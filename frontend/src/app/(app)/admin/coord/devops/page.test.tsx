@@ -50,7 +50,7 @@ vi.mock("@/services/service-factory", () => ({
     // table as a parsed body, so each is served from there as a 200 Response,
     // and a rejection passes through exactly as `get`'s did.
     fetch: async (url: string, init?: unknown) =>
-      /fleet\/health|resource-samples|worktree-slots|ci-runners|fault-to-visibility/.test(
+      /fleet\/health|resource-samples|resource-stops|worktree-slots|ci-runners|fault-to-visibility/.test(
         String(url)
       )
         ? new Response(JSON.stringify(await httpGet(url, init)), {
@@ -318,6 +318,17 @@ function mockRoutes(fixture: Fixture) {
     const u = String(url);
     if (u.includes("resource-samples")) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
+    }
+    if (u.includes("resource-stops")) {
+      return Promise.resolve({
+        table_present: true,
+        count: 0,
+        stops: [],
+        bounded: false,
+        limit: 50,
+        limit_clamped: false,
+        summary: null,
+      });
     }
     if (u.includes("worktree-slots")) {
       return Promise.resolve(

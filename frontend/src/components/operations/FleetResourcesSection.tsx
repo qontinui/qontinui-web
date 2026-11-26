@@ -35,8 +35,10 @@ import { memo, useEffect, useState } from "react";
 import { SectionCaption } from "@/components/presentation";
 import { CiRunPanel } from "./CiRunPanel";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import { FleetResourceStopsSection } from "./FleetResourceStopsSection";
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { useFleetResourceSamples } from "./useFleetResourceSamples";
+import { useFleetResourceStops } from "./useFleetResourceStops";
 import type { FleetDeviceRef } from "./fleetResources";
 
 export interface FleetResourcesSectionProps {
@@ -59,6 +61,7 @@ export const FleetResourcesSection = memo(function FleetResourcesSection({
   // Two polls of one route would be two chances to disagree about what the
   // fleet looks like right now.
   const resources = useFleetResourceSamples();
+  const stops = useFleetResourceStops();
 
   // Same ticking clock the strip keeps: without it the CI panel's freshness
   // would only advance when a poll SUCCEEDS, so an outage would pin every row
@@ -94,6 +97,11 @@ export const FleetResourcesSection = memo(function FleetResourcesSection({
         schemaPending={resources.data?.schema_pending}
         sinceFetchSecs={sinceFetchSecs}
         error={resources.error}
+      />
+      <FleetResourceStopsSection
+        devices={devices}
+        stops={stops}
+        nowMs={nowMs}
       />
     </div>
   );

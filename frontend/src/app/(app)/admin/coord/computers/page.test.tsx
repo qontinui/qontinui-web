@@ -652,6 +652,131 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
   });
 
+  it("labels a declared-host CI runner, and only that one — runner_name and absent add nothing", async () => {
+    const base = {
+      device_id: DEVICE_ID,
+      host_key: "merytshost",
+      repo: "qontinui/qontinui-web",
+      ci_runner_status: "idle",
+      last_seen_at: null,
+      registrar_fresh: true,
+      service_active_state: null,
+    };
+    const runners = [
+      {
+        ...base,
+        hostname: "gh-runner-declared@qontinui/qontinui-web",
+        runner_name: "declared-1",
+        service_unit: null,
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-paired@qontinui/qontinui-web",
+        runner_name: "paired-1",
+        service_unit: "actions.runner.qontinui.paired-1.service",
+        service_active_state: "active",
+        attributed_by: "runner_name" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-older@qontinui/qontinui-web",
+        runner_name: "older-coord-1",
+        service_unit: null,
+      },
+    ];
+    const fx = detailFx();
+    httpGet.mockResolvedValue({
+      ...fx,
+      ci_runners: runners,
+      workloads: { ...fx.workloads, ci_runners: runners },
+    });
+    render(<CoordComputerDetailPage />);
+    const rows = await screen.findAllByTestId("coord-computer-ci-runner-row");
+    expect(rows).toHaveLength(3);
+    expect(
+      within(rows[0]).getByTestId("coord-computer-ci-runner-declared-host")
+        .textContent
+    ).toBe("placed on machine (declared host), unit unknown");
+    expect(
+      within(rows[1]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
+    expect(
+      within(rows[2]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
+  });
+
+  it("does not read as agreement for runners coord never compared — declared-host and older-coord rows alike", async () => {
+    const base = {
+      device_id: DEVICE_ID,
+      host_key: "merytshost",
+      repo: "qontinui/qontinui-web",
+      ci_runner_status: "idle",
+      last_seen_at: null,
+      registrar_fresh: true,
+      service_unit: null,
+      service_active_state: null,
+    };
+    const runners = [
+      {
+        ...base,
+        hostname: "gh-runner-declared-1@qontinui/qontinui-web",
+        runner_name: "declared-1",
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-declared-2@qontinui/qontinui-web",
+        runner_name: "declared-2",
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-older@qontinui/qontinui-web",
+        runner_name: "older-coord-1",
+      },
+    ];
+    const fx = detailFx();
+    const withRunners = {
+      ...fx,
+      ci_runners: runners,
+      workloads: { ...fx.workloads, ci_runners: runners },
+    };
+
+    // Empty divergence list: the none-message narrows to paired rows.
+    httpGet.mockResolvedValue(withRunners);
+    const { unmount } = render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-divergence-none")).textContent
+    ).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners with no paired unit are not compared."
+    );
+    unmount();
+
+    // Non-empty divergence list: the same note sits beside it.
+    httpGet.mockResolvedValue({
+      ...withRunners,
+      divergence: [
+        {
+          kind: "reported_down_registrar_online",
+          unit: "actions.runner.qontinui.paired-1.service",
+          runner_name: "paired-1",
+          reported_active_state: "failed",
+          registrar_status: "online",
+          registrar_device_id: DEVICE_ID,
+        },
+      ],
+    });
+    render(<CoordComputerDetailPage />);
+    expect(
+      await screen.findByTestId("coord-computer-divergence-row")
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("coord-computer-divergence-not-compared").textContent
+    ).toBe("3 CI runners with no paired unit are not compared.");
+    expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
+  });
+
   it("says 'no disagreement found' — never 'agree' — when the registrar read succeeded", async () => {
     httpGet.mockResolvedValue(detailFx());
     render(<CoordComputerDetailPage />);

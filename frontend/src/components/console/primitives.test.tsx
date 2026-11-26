@@ -62,6 +62,49 @@ describe("FilterTabs (R6)", () => {
     expect(screen.getByTestId("t-absent")).not.toHaveTextContent("0");
   });
 
+  it("renders a string count verbatim — a lower bound says so in its own text", () => {
+    // A read that stopped at its ceiling: the tab claims "at least", never an
+    // exact total, and is still not the dash (it WAS fetched).
+    render(
+      <FilterTabs
+        tabs={[{ id: "all", label: "All", count: "≥1000" }]}
+        active="all"
+        onChange={() => {}}
+        testIdPrefix="t"
+      />
+    );
+    expect(screen.getByTestId("t-all")).toHaveTextContent("All≥1000");
+    expect(screen.getByTestId("t-all")).not.toHaveTextContent("–");
+  });
+
+  it("carries a tab's title — the sentence its count slot has no room for", () => {
+    // A floor of zero renders a bare `0` in the monospace count slot; the
+    // words that say it counts only the rows read live in the title.
+    render(
+      <FilterTabs
+        tabs={[
+          {
+            id: "live",
+            label: "Live",
+            count: 0,
+            title: "0 among the rows read: it counts only the rows read",
+          },
+          { id: "stale", label: "Stale" },
+        ]}
+        active="live"
+        onChange={() => {}}
+        testIdPrefix="t"
+      />
+    );
+    expect(screen.getByTestId("t-live")).toHaveTextContent("Live0");
+    expect(screen.getByTestId("t-live")).toHaveAttribute(
+      "title",
+      "0 among the rows read: it counts only the rows read"
+    );
+    // No sentence, no attribute.
+    expect(screen.getByTestId("t-stale")).not.toHaveAttribute("title");
+  });
+
   it("marks the active tab and reports a change", () => {
     const onChange = vi.fn();
     render(
@@ -400,6 +443,82 @@ describe("FilterChips (R6, multi-select)", () => {
       "all (list partial)"
     );
   });
+
+  // `repeated-chrome-must-earn-its-space-by-varying`: a strip whose only chip
+  // is `all` can never narrow anything — `/sessions` rendered "provider: all"
+  // on every visit, for a vocabulary no row carried. Its caller opts in.
+  it("with `hideWhenEmpty`, renders NOTHING when there is no option and no selection", () => {
+    const { container } = render(
+      <FilterChips
+        label="provider"
+        options={[]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        hideWhenEmpty
+        testIdPrefix="e"
+      />
+    );
+    expect(screen.queryByTestId("e")).toBeNull();
+    expect(screen.queryByTestId("e-all")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  // The default is to RENDER. `/admin/coord/dossiers`' readiness strip has no
+  // options while coord has not served its vocabulary, and the strip's title
+  // is where that UNKNOWN is disclosed — hiding the strip would hide it.
+  it("by default still renders a strip with no options, with its title", () => {
+    render(
+      <FilterChips
+        label="readiness:"
+        options={[]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        maxVisible={8}
+        testIdPrefix="d"
+        title="coord has not served the readiness vocabulary for this query yet"
+      />
+    );
+    const strip = screen.getByTestId("d");
+    expect(strip).toHaveAttribute(
+      "title",
+      "coord has not served the readiness vocabulary for this query yet"
+    );
+    expect(screen.getByTestId("d-all")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it.each([
+    ["by default", false],
+    ["with `hideWhenEmpty`", true],
+  ])(
+    "%s, keeps a strip with no option while it carries a selection, so the selection can be cleared",
+    (_name, hideWhenEmpty) => {
+      // The vocabulary emptied under a live selection (the rows that carried
+      // the value went away). Hiding the strip here would leave the list
+      // filtered with no visible way to clear it — the `all` chip is that way.
+      const clear = vi.fn();
+      render(
+        <FilterChips
+          label="provider"
+          options={[]}
+          selected={["claude"]}
+          onToggle={() => {}}
+          onClear={clear}
+          hideWhenEmpty={hideWhenEmpty}
+          testIdPrefix="e"
+        />
+      );
+      expect(screen.getByTestId("e")).toHaveAttribute(
+        "data-selected",
+        "claude"
+      );
+      const all = screen.getByTestId("e-all");
+      expect(all).toHaveAttribute("aria-disabled", "false");
+      fireEvent.click(all);
+      expect(clear).toHaveBeenCalledTimes(1);
+    }
+  );
 });
 
 // ----------------------------------------------------------------------------
@@ -511,8 +630,71 @@ describe("RecordRow (R2, R4)", () => {
     const reason = screen.getByTestId("row-reason");
     expect(reason).toHaveAttribute("title", "waiting on CI");
     expect(reason.className).toContain("truncate");
-    // Hidden below `sm` — the badge's own title answers "why?" there.
-    expect(reason.className).toContain("hidden sm:inline");
+  });
+
+  /**
+   * The reason answers to the ROW's width, not the viewport's (plan
+   * `2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport`
+   * Phase 2). This is the ENCODED half: jsdom has no layout engine, so it
+   * pins the class contract that produces the geometry, not the geometry.
+   * The geometry (label ≥ 192 px wherever a reason shows, at 1280 and 1024)
+   * is an operated UI Bridge check; a browser-backed component test reading
+   * `getBoundingClientRect` would encode it.
+   */
+  it("sizes the reason by the row's own width and gives the label a 12rem basis the reason yields to", () => {
+    // Mounted the way the consoles mount it: through `RecordList`'s
+    // `renderRow`, so the contract is observed on the population's path.
+    render(
+      <RecordList
+        items={[base]}
+        itemKey={(r) => r.identity}
+        loaded
+        renderRow={(r, ctx) => (
+          <RecordRow
+            {...r}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+            data-testid="row"
+          />
+        )}
+      />
+    );
+    const classes = (el: Element) => el.className.split(/\s+/);
+    // The root is the NAMED inline-size container the reason's queries bind to.
+    expect(classes(screen.getByTestId("row"))).toContain(
+      "@container/record-row"
+    );
+
+    const reason = screen.getByTestId("row-reason");
+    expect(classes(reason)).toContain("hidden");
+    expect(classes(reason)).toContain("@min-[45rem]/record-row:inline");
+    expect(classes(reason)).toContain("max-w-[22ch]");
+    expect(classes(reason)).toContain("@min-[53rem]/record-row:max-w-[40ch]");
+    // The reason gives up width first, so the label keeps its basis.
+    expect(classes(reason)).toContain("shrink-[999]");
+    // No viewport breakpoint may decide the reason's display or cap.
+    expect(reason.className).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/);
+
+    const label = screen.getByText("feat/thing");
+    expect(classes(label)).toContain("grow");
+    expect(classes(label)).toContain("basis-48");
+    expect(classes(label)).toContain("min-w-0");
+    expect(classes(label)).not.toContain("flex-1");
+  });
+
+  it("composes a consumer's className with the row's container", () => {
+    render(
+      <RecordRow
+        {...base}
+        expanded={false}
+        onToggle={() => {}}
+        className="opacity-60"
+        data-testid="row"
+      />
+    );
+    const root = screen.getByTestId("row").className.split(/\s+/);
+    expect(root).toContain("@container/record-row");
+    expect(root).toContain("opacity-60");
   });
 
   it("drops the inline reason while expanded — the panel carries it in full", () => {

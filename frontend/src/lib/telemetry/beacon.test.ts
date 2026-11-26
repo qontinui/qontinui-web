@@ -132,10 +132,10 @@ describe("scrubbing through the capture path (no raw URL / message body leaks)",
     sentBodies.length = 0;
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED", "1");
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", INGEST_URL);
-    // Force the keepalive-fetch transmit fallback (jsdom Blob has no readable
-    // .text(), so we route through fetch where the body is a plain JSON string
-    // we can capture + inspect for scrubbing).
-    sendBeacon = vi.fn(() => false); // returns false → beacon falls back to fetch
+    // The live-page transport is a keepalive fetch, whose body is a plain JSON
+    // string we can capture + inspect for scrubbing. sendBeacon (pagehide only)
+    // refuses here, so it can never carry a send in these tests.
+    sendBeacon = vi.fn(() => false);
     Object.defineProperty(navigator, "sendBeacon", {
       configurable: true,
       value: sendBeacon,
@@ -185,7 +185,7 @@ describe("scrubbing through the capture path (no raw URL / message body leaks)",
     await Promise.resolve();
 
     // The cross-origin failure must have been transmitted to the dedicated
-    // ingest origin (via the fetch fallback after sendBeacon returned false).
+    // ingest origin (via the observed keepalive fetch).
     expect(sentBodies.length).toBeGreaterThan(0);
     const body = sentBodies[0];
     expect(body).toContain("web.staging.qontinui.io"); // host kept
@@ -217,8 +217,8 @@ describe("Sentry DSN-mode transport", () => {
 
   function installFetchCapture() {
     sentBodies = [];
-    // sendBeacon returns false → force the keepalive-fetch fallback so we can
-    // capture the body + content type.
+    // The live-page transport is a keepalive fetch, so we capture the body +
+    // content type there. sendBeacon (pagehide only) refuses here.
     const sendBeacon = vi.fn(() => false);
     Object.defineProperty(navigator, "sendBeacon", {
       configurable: true,
