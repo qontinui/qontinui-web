@@ -400,6 +400,20 @@ def test_an_unknown_policy_required_agent_is_bad_input(monkeypatch, agents_dir):
 # what the seeder reads.
 CONTRACT = {
     "spawn_paths": ["in_session_subagent", "parallel_fanout", "standing_continuation"],
+    "runner_keys": [
+        {
+            "agent_name": "runner-instance",
+            "spawn_path": "in_session_subagent",
+            "call_site": "c",
+            "purpose": "p",
+        },
+        {
+            "agent_name": "auto-review",
+            "spawn_path": "in_session_subagent",
+            "call_site": "c",
+            "purpose": "p",
+        },
+    ],
     "kind_seeds": [
         {
             "agent_name": "operator_spawn",
@@ -1201,14 +1215,18 @@ def test_an_unreadable_contract_file_is_unproven_not_a_crash(tmp_path, monkeypat
         seeder.load_spawn_contract(repo, env=env, git=_git({}))
 
 
-@pytest.mark.parametrize("missing", ["kind_seeds", "class_seeds", "spawn_paths"])
+@pytest.mark.parametrize(
+    "missing", ["kind_seeds", "class_seeds", "spawn_paths", "runner_keys"]
+)
 def test_a_contract_missing_a_list_protects_nothing_so_is_unproven(missing):
     contract = {k: v for k, v in CONTRACT.items() if k != missing}
     with pytest.raises(seeder.UnprovenError, match="missing"):
         seeder.contract_names(contract)
 
 
-@pytest.mark.parametrize("emptied", ["kind_seeds", "class_seeds", "spawn_paths"])
+@pytest.mark.parametrize(
+    "emptied", ["kind_seeds", "class_seeds", "spawn_paths", "runner_keys"]
+)
 def test_a_contract_with_an_empty_list_protects_nothing_so_is_unproven(emptied):
     contract = {**CONTRACT, emptied: []}
     with pytest.raises(seeder.UnprovenError, match="lists no"):
@@ -1219,6 +1237,19 @@ def test_contract_names_cover_kinds_classes_and_paths():
     names = seeder.contract_names(CONTRACT)
     assert {"operator_spawn", "gate_continuation"} <= names
     assert {"in_session_subagent", "parallel_fanout", "standing_continuation"} <= names
+
+
+def test_contract_names_cover_every_runner_key():
+    names = seeder.contract_names(CONTRACT)
+    assert {k["agent_name"] for k in CONTRACT["runner_keys"]} <= names
+
+
+def test_find_orphans_excludes_every_runner_key():
+    rows = [
+        {"agent_name": k["agent_name"], "spawn_path": "in_session_subagent"}
+        for k in CONTRACT["runner_keys"]
+    ]
+    assert seeder.find_orphans(rows, set(), seeder.contract_names(CONTRACT)) == []
 
 
 # ---- the credential --------------------------------------------------------
