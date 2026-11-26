@@ -90,10 +90,17 @@ INVALID-index limit: a ``CONCURRENTLY`` build runs outside the migration
 transaction, where no ``lock_timeout`` applies, and a build that fails partway
 can leave an INVALID index that a re-run's ``IF NOT EXISTS`` then skips. For
 the two plain indexes that is slow, not wrong. For the two partial UNIQUE
-indexes an INVALID index still enforces uniqueness on every write, so the
-no-duplicate guarantee holds; recovery is ``DROP INDEX CONCURRENTLY coord.<name>``
-and a re-run. No ``indisvalid`` check is made because coord's migration
-classifier rejects ``op.get_bind()``.
+indexes it is NOT safe: a build cancelled before PostgreSQL marks the index
+ready leaves ``indisready = false``, an index that is never written to and so
+enforces nothing, and the re-run skips it silently (measured on postgres 16
+during review). Only an index with ``indisready = true`` enforces uniqueness.
+After any interrupted upgrade, check
+``SELECT indexrelid::regclass, indisvalid, indisready FROM pg_index WHERE
+indexrelid IN ('coord.uq_condition_runs_group_source_ref'::regclass,
+'coord.uq_conditions_group_external_ref'::regclass)`` and, when either flag is
+false, ``DROP INDEX CONCURRENTLY coord.<name>`` and re-run. The migration makes
+no such check itself because coord's migration classifier rejects SQL executed
+through ``op.get_bind()``.
 
 Merge-train classifier disposition
 ==================================

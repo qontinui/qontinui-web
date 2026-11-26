@@ -465,12 +465,14 @@ def test_live_up_down_up_adds_and_drops_exactly_the_planned_objects() -> None:
         assert (
             _row(engine, "condition_runs", "run_id", run_id) == seeded["condition_runs"]
         )
+        assert (
+            _row(engine, "conditions", "condition_id", condition_id)
+            == seeded["conditions"]
+        )
 
         # 5. Re-upgrade: the objects are back.
         run_alembic(root, db_url, "upgrade", _REVISION_ID)
         _assert_planned_objects(engine, present=True)
-        module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
-        assert module.revision == _REVISION_ID
 
 
 @pytest.fixture(scope="module")
