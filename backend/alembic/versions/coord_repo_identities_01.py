@@ -1,7 +1,7 @@
 """coord.repo_identities, and canonical_repos.bare_dir -- following a repo rename
 
 Revision ID: coord_repo_identities_01
-Revises: agent_status_intent_globs_declared_01
+Revises: prcheckruns_changed_at_01
 Create Date: 2026-11-08
 
 Phases 3 and 4a (qontinui-web half) of plan
@@ -144,7 +144,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "coord_repo_identities_01"
-down_revision: str | Sequence[str] | None = "agent_status_intent_globs_declared_01"
+down_revision: str | Sequence[str] | None = "prcheckruns_changed_at_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
