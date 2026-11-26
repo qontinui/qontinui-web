@@ -36,13 +36,19 @@ from urllib.parse import quote
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.coord_proxy import require_coord_tenant_admin
 from app.api.v1.endpoints.agent_registry import (
     _coord_request_deploy_order_aware,
     get_registry_user,
+)
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    refusal_error,
 )
 from app.models.user import User
 
@@ -103,12 +109,14 @@ def _catalog_payload(payload: Any) -> dict[str, Any]:
             "agent_registry_catalog_off_contract",
             payload_type=type(payload).__name__,
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "coord's agent catalog answer carried no `agents` list; "
-                "refusing to show an empty catalog"
-            ),
+        raise refusal_error(
+            status.HTTP_502_BAD_GATEWAY,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.report_defect,
+            "coord's agent catalog answer carried no `agents` list; "
+            "refusing to show an empty catalog",
+            discriminator="agent_registry_catalog_off_contract",
+            glossary_terms=[GlossaryTerm.coord],
         )
     unread = payload.get("sources_unread")
     if not isinstance(unread, list):

@@ -279,6 +279,23 @@ describe("getAgentCatalog", () => {
     enforcement: "hook",
   };
 
+  it("accepts Spec CI's hermetic catalog stub whole (no entry or note dropped)", async () => {
+    const { HERMETIC_STUBS } =
+      await import("../../../tests/spec-ci/hermetic-stubs");
+    const stub = HERMETIC_STUBS.find((s) =>
+      s.pattern.test("/api/v1/agent-registry/catalog")
+    );
+    expect(stub).toBeDefined();
+    respondWith(stub!.body);
+    const catalog = await getAgentCatalog();
+    expect(catalog.agents.map((e) => e.agent_name)).toEqual([
+      "code-reviewer",
+      "triage-judge",
+    ]);
+    expect(catalog.sources_unread).toEqual([]);
+    expect(catalog.declared_skipped).toEqual([]);
+  });
+
   it("returns agents, sources_unread and declared_skipped as served", async () => {
     const unread = [{ source: "declared_role", reason: "mirror failed" }];
     const skipped = [
