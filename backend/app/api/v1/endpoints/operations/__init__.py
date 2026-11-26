@@ -10000,9 +10000,13 @@ async def post_register_decision_gate(
     unit_id = unit.get("id") if isinstance(unit, dict) else None
     if not isinstance(unit_id, str) or not unit_id:
         # A 2xx that does not name the unit is UNKNOWN, never a guess at an id.
-        raise HTTPException(
-            status_code=502,
-            detail="coord did not return a work unit id for that slug",
+        raise refusal_error(
+            502,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "coord did not return a work unit id for that slug",
+            discriminator="coord_work_unit_id_missing",
+            glossary_terms=[GlossaryTerm.coord],
         )
     register_body: dict[str, Any] = {
         "work_unit_id": unit_id,
