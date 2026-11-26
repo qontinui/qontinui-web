@@ -987,6 +987,50 @@
       "AdminAgentRegistryRow": {
         "description": "One raw ``coord.agent_registry`` row, plus its pref-override counts.",
         "properties": {
+          "admin_disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled At"
+          },
+          "admin_disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled By"
+          },
+          "admin_disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disposition"
+          },
+          "admin_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Reason"
+          },
           "agent_name": {
             "title": "Agent Name",
             "type": "string"
@@ -1346,6 +1390,45 @@
           "subscription_tier"
         ],
         "title": "AdminUserData",
+        "type": "object"
+      },
+      "AgentAdminSwitchRequest": {
+        "additionalProperties": false,
+        "description": "Client body for the tenant-admin spawn switch.\n\n``disposition`` is the admin's pick from the row's\n``allowed_dispositions`` and only means something with ``disabled: true``\n(coord answers 422 ``disposition_requires_disabled`` otherwise). Neither\nrule is copied here \u2014 coord's refusal is forwarded verbatim, and a web-side\ncopy of the disposition set would drift from the row it is checked\nagainst.",
+        "properties": {
+          "disabled": {
+            "title": "Disabled",
+            "type": "boolean"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "block | degrade | warn_proceed (from the row's set)",
+            "title": "Disposition"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why; recorded on the row and shown to every member in the catalog",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "title": "AgentAdminSwitchRequest",
         "type": "object"
       },
       "AgentCommandCreate": {
@@ -1739,7 +1822,7 @@
             "type": "string"
           },
           "source": {
-            "description": "default | user_pref",
+            "description": "default | user_pref | admin",
             "title": "Source",
             "type": "string"
           },
@@ -11181,11 +11264,17 @@
             },
             "title": "Results",
             "type": "array"
+          },
+          "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "fidelity_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "CompareResponse",
         "type": "object"
@@ -42067,13 +42156,25 @@
         "type": "object"
       },
       "PairCodeRedeemOut": {
-        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
+        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,\nplus ``device_machine_key`` (the same additive field pair-cli returns).\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
         "properties": {
           "device_id": {
             "description": "The runner's device UUID.",
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Device machine key (``dmk_``) minted for this device at redeem, returned exactly once \u2014 the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.",
+            "title": "Device Machine Key"
           },
           "device_token_jwt": {
             "description": "Coord-issued device-token JWT.",
@@ -58046,11 +58147,17 @@
             ],
             "title": "Style Arm",
             "type": "string"
+          },
+          "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "style_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "SimilarByStyleResponse",
         "type": "object"
@@ -78521,6 +78628,90 @@
         ]
       }
     },
+    "/api/v1/agent-registry/admin/registry/{agent_name}/switch": {
+      "put": {
+        "description": "ADMIN: switch spawns of one agent type off (or back on) tenant-wide.\n\nGated in the WEB tier as well as in coord (``rbac::require_role(\"admin\")``),\nso a non-admin gets the renderable ``not_coord_tenant_admin`` and no coord\ncall is made. The forwarded body carries only what the admin set: an\nomitted ``disposition`` / ``reason`` is absent, not ``null``.",
+        "operationId": "api_v1_agent_registry_admin_registry_agent_name_switch_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "title": "Agent Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAdminSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Agent Admin Switch Api V1 Agent Registry Admin Registry  Agent Name  Switch Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Agent Admin Switch",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/catalog": {
+      "get": {
+        "description": "Every agent type the tenant's spawns may be authorized under.\n\nReadable by ANY member: the page shows members what is switched off and\nwhy, read-only. Coord resolves the tenant from the forwarded bearer.",
+        "operationId": "api_v1_agent_registry_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Catalog Api V1 Agent Registry Catalog Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Agent Catalog",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
     "/api/v1/agent-registry/prefs/{agent_name}": {
       "put": {
         "description": "Upsert the caller's OWN pref for one agent.\n\nProxies coord's SELF door ``PUT /coord/agent-registry/prefs/me/{agent_name}``.\nCoord's 403s and 422 error codes pass through as structured detail.",
@@ -94613,7 +94804,7 @@
     },
     "/api/v1/devices/{device_id}/authorize-redeem": {
       "post": {
-        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* deletes a REVOKED machine-key row so the runner's ``/self-mint`` can\n  enrol a fresh key (a usable key is left alone).\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
+        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* removes machine-key rows that must not outlive the authorization\n  (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):\n  when the device WAS under a deny, its key row whatever its state (any\n  key predating the re-arm is suspect); otherwise only a REVOKED row. A\n  usable key on a never-revoked device is kept \u2014 it is how a runner\n  offline past its JWT grace recovers on its own (``/exchange``).\n\nWhat re-keys a device whose row was removed is its next pairing, which\nmints a fresh key because no row exists: an operator pair code or\n``pair-cli``, or the bound code minted here IF the runner collects it\nthrough ``/pending-redeem`` (a runner build without that poller never\ndoes). ``/self-mint`` also enrols one, given a live paired device JWT.\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
         "operationId": "api_v1_devices_device_id_authorize_redeem_post",
         "parameters": [
           {
@@ -113851,6 +114042,149 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/resource-stops": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched::\n\n    {\"table_present\": <bool>, \"count\": <int>, \"stops\": [StopRow, ...],\n     \"bounded\": <bool>, \"limit\": <int>, \"limit_clamped\": <bool>,\n     \"summary\": <object | null>}\n\n``table_present: false`` means the coord table does not exist yet \u2014 an\nempty ``stops`` list is then UNKNOWN, never \"no stops\". ``bounded`` is\ntrue when ``limit`` truncated the page. A ``StopRow`` carries\n``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that\nrefused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,\nthe nullable stats ``session_count_terminal``,\n``session_count_live_claude``, ``active_ci_runners`` and\n``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /\n``fleet_calibration`` objects as the runner recorded them.\n\nQuery params are forwarded verbatim WITHOUT local validation: coord\nrefuses a value outside its vocabulary (422) and clamps ``limit``, and a\nlocal rewrite here would turn a refusal into a different, wider read.",
+        "operationId": "api_v1_operations_fleet_resource_stops_get",
+        "parameters": [
+          {
+            "description": "Narrow to one device. Tenant scoping still applies on top.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one device. Tenant scoping still applies on top.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+              "title": "Lane"
+            }
+          },
+          {
+            "description": "Narrow to the pool that refused: host | wsl | threads.",
+            "in": "query",
+            "name": "guard_lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to the pool that refused: host | wsl | threads.",
+              "title": "Guard Lane"
+            }
+          },
+          {
+            "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "true adds coord's per-device roll-up.",
+            "in": "query",
+            "name": "summary",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true adds coord's per-device roll-up.",
+              "title": "Summary"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Resource Stops Api V1 Operations Fleet Resource Stops Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fleet Resource Stops",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/runners/{runner_id}": {
       "delete": {
         "description": "Manually remove a runner from the cross-machine beacon registry.",
@@ -119344,7 +119678,7 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains four fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains five fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"lifecycle_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta},\n      \"agent_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta}\n                    | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every\nkey always present, ``null`` a value) describing the coord READ behind\nthat half \u2014 plan\n`2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`\nPhase 3. Both reads stop at 500 rows: the lifecycle half at coord's own\n``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the\nagent half at the 500 it asks ``/coord/agent-sessions`` for (the most\nrecently seen). ``bound`` comes in three arms:\n\n* below its ceiling \u2014 ``bound_kind: \"complete\"`` with ``truncated:\n  false``: the half holds every row the read matched;\n* a FULL half, ``shown >= limit`` \u2014 ``\"unknown\"`` with ``truncated`` and\n  ``total`` null: more rows may exist, and nothing coord sent says\n  whether they do, so a count over it is a floor;\n* a 200 whose body carries no ``sessions`` list \u2014 ``\"unknown\"`` over\n  ``shown: 0``: nothing countable was served, so the half's SIZE is\n  unknown. ``shown < limit`` is what tells it from a full half, and no\n  count over it is a total or a floor \u2014 not even a floor of zero.\n\n``shown`` counts the rows coord SERVED, before this route's own\n``device`` / ``status`` / ``q`` narrowing, so it need not equal\n``count``. A failed agent read carries no ``bound`` \u2014 there is no page to\nbound.\n\n``agent_only`` is a set difference against the lifecycle rows coord\nserved, so it is established only while ``lifecycle_half.bound.truncated``\nis ``false``. Beyond the ceiling it means \"no ``coord.sessions`` row among\nthe ones served\" \u2014 one may exist past it \u2014 and the row keeps its real\nagent half either way.\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {

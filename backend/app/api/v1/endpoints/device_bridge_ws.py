@@ -104,6 +104,7 @@ from app.core.refusal import (
     build_refusal,
     refusal_payload,
 )
+from app.middleware.upstream_refusal import upstream_refusal_headers
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
@@ -1038,6 +1039,14 @@ async def runner_proxy(
         response = Response(content=resp.content, status_code=resp.status_code)
         for name, value in resp.headers.multi_items():
             if name.lower() in _LOCAL_PROXY_EXCLUDED_RESPONSE_HEADERS:
+                continue
+            response.raw_headers.append(
+                (name.lower().encode("latin-1"), value.encode("latin-1"))
+            )
+        # A runner 429 names the runner's lane (`upstream_refusal_headers`);
+        # its own Retry-After was already copied above, so it is not repeated.
+        for name, value in upstream_refusal_headers("runner", resp).items():
+            if name.lower() == "retry-after" and "retry-after" in resp.headers:
                 continue
             response.raw_headers.append(
                 (name.lower().encode("latin-1"), value.encode("latin-1"))

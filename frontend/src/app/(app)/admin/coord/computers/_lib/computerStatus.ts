@@ -168,6 +168,26 @@ export interface CiRunnerWire {
   registrar_fresh: boolean;
   service_unit: string | null;
   service_active_state: string | null;
+  /**
+   * How coord placed this registrar row on the machine:
+   *
+   * - `"runner_name"` — joined by canonical runner name to a systemd unit
+   *   the computer itself reported. `service_unit` is set only when coord
+   *   could pair the row with exactly one such unit; a row with no paired
+   *   unit takes no part in divergence.
+   * - `"declared_host"` — placed only through the runner's declared
+   *   `qontinui-host-<h>` label. No reported unit was paired, so
+   *   `service_unit` is null and no divergence is computed for the row.
+   *
+   * Absent or `null` means coord did not say (a build predating the field):
+   * UNKNOWN, rendered as neither value.
+   *
+   * `AmbiguousCiRunnerWire` flattens this struct, so ambiguous (and
+   * unattributed) rows may carry the field too; those rows are attributed to
+   * no computer, and the page renders the field only for rows attributed to
+   * the computer it shows (`ciRunnerAttributionText`).
+   */
+  attributed_by?: "runner_name" | "declared_host" | null;
 }
 
 /** Coord's `EventRow`. */
@@ -1490,6 +1510,59 @@ export function ciRunnerStatusText(r: CiRunnerWire): string {
 }
 
 /**
+ * The attribution note for a registrar row attributed to this computer, or
+ * `null` when there is nothing to add. Only `declared_host` earns a note: the
+ * row sits on this machine by its declared host label alone, with no reported
+ * unit paired, so neither its unit nor a divergence verdict is known.
+ * `runner_name` is the normal paired case (no note), and an absent or `null`
+ * field is UNKNOWN — it must not read as either value, so it adds nothing.
+ */
+export function ciRunnerAttributionText(r: CiRunnerWire): string | null {
+  return r.attributed_by === "declared_host"
+    ? "placed on machine (declared host), unit unknown"
+    : null;
+}
+
+/**
+ * How many of this computer's registrar rows coord did NOT compare against a
+ * reported unit. Coord computes divergence only for a row paired with a unit,
+ * so the predicate is `service_unit` alone — never `attributed_by`: a
+ * declared-host row has no unit, and neither does a `runner_name` row coord
+ * could not pair, nor a row from a coord that predates the field. A `null`
+ * list (the registrar read failed) counts 0; the page renders the divergence
+ * section UNKNOWN then anyway.
+ */
+export function uncomparedRunnerCount(
+  runners: readonly CiRunnerWire[] | null
+): number {
+  return (runners ?? []).filter((r) => r.service_unit == null).length;
+}
+
+/**
+ * The note that `n` registrar rows were left out of the divergence
+ * comparison, or `null` when `n` is 0 (every attributed row was compared).
+ */
+export function divergenceNotComparedText(n: number): string | null {
+  if (n <= 0) return null;
+  return n === 1
+    ? "1 CI runner with no paired unit is not compared."
+    : `${n} CI runners with no paired unit are not compared.`;
+}
+
+/**
+ * The divergence section's empty-list message. When every row was paired with
+ * a unit it is today's text unchanged. Otherwise it narrows "no disagreement"
+ * to the paired rows and says how many were not compared, so an empty list
+ * does not read as agreement for rows coord never checked.
+ */
+export function divergenceNoneText(uncomparedCount: number): string {
+  const notCompared = divergenceNotComparedText(uncomparedCount);
+  return notCompared === null
+    ? "No disagreement found among fresh registrar rows."
+    : `No disagreement found among fresh registrar rows paired with a unit. ${notCompared}`;
+}
+
+/**
  * The computers claiming an ambiguous runner, by name. A claimant not in this
  * read's list (a computer outside the page's view) is named by its id prefix
  * rather than dropped — every claimant is part of the answer.
@@ -1731,6 +1804,11 @@ export function deriveComputerDetailHealth(input: {
   divergence: DivergenceWire[] | null;
   /** Only an explicit `true` makes the divergence list a measurement. */
   registrarReadOk: boolean;
+  /**
+   * Registrar rows coord did not compare ([`uncomparedRunnerCount`]); the
+   * divergence badge says so rather than reading as full agreement.
+   */
+  uncomparedRunners?: number;
 }): ComputersHealth {
   const {
     computer,
@@ -1741,6 +1819,7 @@ export function deriveComputerDetailHealth(input: {
     events,
     divergence,
     registrarReadOk,
+    uncomparedRunners = 0,
   } = input;
   // Not-found is a MEASUREMENT that supersedes whatever an earlier read held:
   // coord now says this computer is not in the tenant, so no retained figure
@@ -1813,13 +1892,13 @@ export function deriveComputerDetailHealth(input: {
       },
       {
         key: "divergence",
-        label: `divergence ${divergence === null || !registrarReadOk ? DASH : divergence.length}`,
+        label: `divergence ${divergence === null || !registrarReadOk ? DASH : divergence.length}${registrarReadOk && divergence !== null && uncomparedRunners > 0 ? ` (${uncomparedRunners} not compared)` : ""}`,
         tone:
           registrarReadOk && divergence !== null && divergence.length > 0
             ? "default"
             : "muted",
         title: registrarReadOk
-          ? "Where the computer's own report and a fresh CI-registrar row attributed to it disagree."
+          ? `Where the computer's own report and a fresh CI-registrar row attributed to it disagree.${uncomparedRunners > 0 ? ` ${divergenceNotComparedText(uncomparedRunners)}` : ""}`
           : "Coord did not confirm a successful CI registrar read — unknown, not none.",
         "data-testid": "coord-computer-health-divergence",
       },

@@ -57,13 +57,17 @@ import {
  *
  * ## What the operator has to be able to read off this control
  *
- * The same four things the sibling dial states, for the same reasons — see
- * `PolicyWriteDialControl`, whose shape this follows deliberately:
+ * The three things the sibling dial states, for the same reasons — see
+ * `PolicyWriteDialControl`, whose shape this follows deliberately — plus a
+ * fourth, the read-back:
  *
- * - **"No row" is a named default, never `off`.** For THIS domain that trap is
- *   sharper than for the other one: D6 warns that an unregistered domain
+ * - **"No row" is a named default, never an operator's choice.** With no row
+ *   coord serves its typed default `auto` (qontinui-coord#4239), and the
+ *   control labels it as coord's built-in default. For THIS domain the trap is
+ *   sharper than for `policy_write`: D6 warns that an unregistered domain
  *   resolves `off` for every tenant, so publications would land and nothing
- *   would fan out, with no error anywhere.
+ *   would fan out, with no error anywhere — and a console that showed the
+ *   no-row case as `off` would report the feature dark while it is live.
  * - **A row coord cannot parse resolves to `off`, and says so**; a no-row
  *   default this console cannot parse (vocabulary skew) is UNKNOWN.
  * - **Which scope band answered**, so a write that will stay overridden is not

@@ -47,6 +47,7 @@ import structlog
 from fastapi import HTTPException, Request
 
 from app.core.config import coord_device_base
+from app.middleware.upstream_refusal import upstream_http_exception
 
 logger = structlog.get_logger(__name__)
 
@@ -123,7 +124,7 @@ async def _get(
         )
         raise HTTPException(status_code=502, detail="upstream_error")
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise upstream_http_exception(resp, upstream="coord", detail=resp.text)
     try:
         return resp.json()
     except ValueError as exc:
