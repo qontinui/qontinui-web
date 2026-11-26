@@ -83,22 +83,31 @@ CONSTRAINT``, for two reasons:
 
 The cost, stated rather than hidden: Postgres validates a CHECK added with its
 column by scanning the existing rows while the ALTER holds ACCESS EXCLUSIVE
-(no rewrite; the classifier's own measurement is ~125 ms per 3M rows on PG16).
-This table is append-only with 31-day retention, at one row per reported
-account per runner report. Its row count is not measured here; at the
-classifier's rate even several million rows scan in well under a second. Every pre-existing row holds NULL, which passes, so the scan
-cannot fail the upgrade. The ALTER's lock WAIT is bounded by the house ``SET
-LOCAL lock_timeout = '3s'`` (``alembic/env.py`` resets ``lock_timeout`` after
-each revision), so a queued ALTER stalls coord's ingest for at most 3 s before
-the deploy fails and retries; once granted, the lock is held until the alembic
-batch transaction commits.
+(no rewrite). The table is append-only with 31-day retention, at one row per
+reported account per runner report, and coord states that report's cadence as
+10 minutes, so it holds about 4,464 rows per reported account: on the order of
+10^5 rows fleet-wide. The classifier's own measurement, ~125 ms per 3M rows on
+PG16, was taken on a table of unrecorded width and a scan costs per heap page,
+so it is a guide rather than a bound; a table this size still scans in well
+under a second at any plausible row width. Every pre-existing row holds NULL,
+which passes, so the scan cannot fail the upgrade.
 
-The CHECK has an evolution cost as well as a per-INSERT one: changing the word
-set later needs a revision that drops and re-adds this named constraint, which
-coord's migration classifier rejects on the upgrade path and parks for review.
-That cost is accepted because the vocabulary is closed by design (the plan's
-D1 has exactly three states), and a stored word outside it would make the
-launch budget's absent-versus-unread decision unreadable.
+The ALTER's lock WAIT is bounded by the house ``SET LOCAL lock_timeout = '3s'``
+(``alembic/env.py`` resets ``lock_timeout`` after each revision). While it
+waits, the queued ACCESS EXCLUSIVE request blocks the table's readers and
+writers alike (coord's ingest and its launch-budget reads) for at most 3 s;
+then the batch transaction aborts and the migrate run fails and pages. Nothing
+retries it automatically: the next push, the nightly 03:00 UTC run or a
+dispatch re-applies it. Once granted, the lock is held until the alembic batch
+transaction commits.
+
+The CHECK has an evolution cost as well as a per-INSERT one: adding a word to
+the set later needs a revision that drops and re-adds this named constraint,
+which coord's migration classifier rejects on the upgrade path and parks for
+review (removing a word can instead add a second CHECK ``NOT VALID``, which it
+admits). That cost is accepted because the vocabulary is closed by design (the
+plan's D1 has exactly three states), and a stored word outside it would make
+the launch budget's absent-versus-unread decision unreadable.
 
 ``IF NOT EXISTS`` is type-blind: a pre-existing ``session_window`` column of
 another type or without the CHECK makes the ADD a silent no-op. Re-running the

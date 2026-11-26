@@ -375,7 +375,7 @@ def test_launch_budget_02_adds_session_window_and_enforces_its_contract() -> Non
         }
 
         # 5. Any other spelling is refused by the named CHECK: a case variant,
-        #    a near-synonym, a blank, and the wire's "unknown".
+        #    a near-synonym, a blank, and "unknown".
         for word in ("Absent", "none", "", "unknown"):
             _refused(engine, _classified(word))
 
