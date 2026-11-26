@@ -31,6 +31,9 @@ const {
   listAgentRegistry,
   listAdminAgentRegistry,
   putAgentRegistryDefaults,
+  getAgentCatalog,
+  putAgentAdminSwitch,
+  AgentAdminSwitchError,
 } = await import("./agent-registry");
 const { outcomeUnknownReason } =
   await import("@/components/admin/coord/writeOutcome");
@@ -252,5 +255,198 @@ describe("what a failed write says", () => {
     expect((err as AgentPrefError).detailServed).toBe(false);
     expect(isWriteOutcomeUnknown(err)).toBe(true);
     expect(outcomeUnknownReason(err)).toBe("HTTP 503 with no readable reason");
+  });
+});
+
+describe("getAgentCatalog", () => {
+  afterEach(() => fetchMock.mockReset());
+
+  const entry = {
+    agent_name: "triage-judge",
+    has_row: false,
+    spawn_path: "in_session_subagent",
+    purpose: "judges",
+    sources: [
+      {
+        source: "declared_role",
+        repo: "o/r",
+        sha: "abc",
+        path: ".claude/agents/t.md",
+      },
+    ],
+    admin_disabled: false,
+    default_enabled: true,
+    enforcement: "hook",
+  };
+
+  it("returns agents, sources_unread and declared_skipped as served", async () => {
+    const unread = [{ source: "declared_role", reason: "mirror failed" }];
+    const skipped = [
+      {
+        repo: "o/r",
+        path: ".claude/agents/X.md",
+        declared_name: "X Y",
+        reason: "grammar",
+      },
+    ];
+    respondWith({
+      agents: [entry],
+      sources_unread: unread,
+      declared_skipped: skipped,
+    });
+    const catalog = await getAgentCatalog();
+    expect(catalog.agents).toEqual([entry]);
+    expect(catalog.declared_skipped).toEqual(skipped);
+    expect(catalog.sources_unread).toEqual(unread);
+    expect(fetchMock.mock.calls[0][0]).toMatch(
+      /\/api\/v1\/agent-registry\/catalog$/
+    );
+  });
+
+  it("refuses a body with no agent list rather than showing an empty catalog", async () => {
+    respondWith({ sources_unread: [] });
+    await expect(getAgentCatalog()).rejects.toBeInstanceOf(AgentPrefError);
+  });
+
+  it("reads an absent sources_unread as one UNKNOWN source, never 'all read'", async () => {
+    respondWith({ agents: [] });
+    const catalog = await getAgentCatalog();
+    expect(catalog.sources_unread).toHaveLength(1);
+    expect(catalog.sources_unread[0].reason).toMatch(/unknown/);
+  });
+
+  it("tolerates an entry with no sources list and no enforcement_note", async () => {
+    const { sources: _drop, ...bare } = entry;
+    respondWith({ agents: [bare], sources_unread: [] });
+    const catalog = await getAgentCatalog();
+    expect(catalog.agents[0].sources).toEqual([]);
+    expect(catalog.agents[0].enforcement_note).toBeUndefined();
+  });
+
+  it("reads wrong-typed scalars as absent rather than letting a render throw", async () => {
+    respondWith({
+      agents: [
+        {
+          ...entry,
+          purpose: 7,
+          allowed_dispositions: "block",
+          also_vetoes: [1, "x"],
+        },
+      ],
+      sources_unread: [],
+    });
+    const [e] = (await getAgentCatalog()).agents;
+    expect(e.purpose).toBeNull();
+    expect(e.allowed_dispositions).toBeNull();
+    expect(e.also_vetoes).toEqual(["x"]);
+  });
+
+  it("drops malformed sources_unread and declared_skipped notes and says so", async () => {
+    respondWith({
+      agents: [],
+      sources_unread: [
+        null,
+        { source: "observed", reason: {} },
+        { source: "row", reason: "down" },
+      ],
+      declared_skipped: [
+        { repo: "o/r", path: 7, declared_name: "x", reason: "r" },
+      ],
+    });
+    const catalog = await getAgentCatalog();
+    expect(catalog.declared_skipped).toEqual([]);
+    expect(catalog.sources_unread).toEqual([
+      { source: "row", reason: "down" },
+      expect.objectContaining({
+        source: "malformed_entries",
+        reason: expect.stringMatching(/^3 catalog notes were malformed/),
+      }),
+    ]);
+  });
+
+  it("drops a malformed source record and says so", async () => {
+    respondWith({
+      agents: [{ ...entry, sources: [null, 7, { source: "row" }] }],
+      sources_unread: [],
+    });
+    const catalog = await getAgentCatalog();
+    expect(catalog.agents[0].sources).toEqual([{ source: "row" }]);
+    expect(catalog.sources_unread).toEqual([
+      expect.objectContaining({
+        source: "malformed_entries",
+        reason: expect.stringMatching(
+          /^2 catalog source records were malformed/
+        ),
+      }),
+    ]);
+  });
+
+  it("drops a malformed entry and says so, rather than failing the page", async () => {
+    respondWith({
+      agents: [entry, null, { purpose: "no name" }],
+      sources_unread: [],
+    });
+    const catalog = await getAgentCatalog();
+    expect(catalog.agents.map((e) => e.agent_name)).toEqual(["triage-judge"]);
+    expect(catalog.sources_unread).toEqual([
+      expect.objectContaining({
+        source: "malformed_entries",
+        reason: expect.stringMatching(/^2 catalog entries were malformed/),
+      }),
+    ]);
+  });
+});
+
+describe("putAgentAdminSwitch", () => {
+  afterEach(() => fetchMock.mockReset());
+
+  it("PUTs the body once to the switch door", async () => {
+    respondWith({ agent: {}, effective: {}, created: true });
+    await putAgentAdminSwitch("triage-judge", {
+      disabled: true,
+      disposition: "block",
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(
+      /\/api\/v1\/agent-registry\/admin\/registry\/triage-judge\/switch$/
+    );
+    expect(init).toMatchObject({ method: "PUT", maxRetries: 0 });
+    expect(JSON.parse(init.body)).toEqual({
+      disabled: true,
+      disposition: "block",
+    });
+  });
+
+  it("carries coord's code and message on a refusal", async () => {
+    respondWith(
+      {
+        detail: {
+          error: "disposition_not_allowed",
+          message: "`warn_proceed` is not in [block, degrade]",
+          agent_name: "code-reviewer",
+        },
+      },
+      422
+    );
+    const err = await putAgentAdminSwitch("code-reviewer", {
+      disabled: true,
+      disposition: "warn_proceed",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AgentAdminSwitchError);
+    const e = err as InstanceType<typeof AgentAdminSwitchError>;
+    expect(e.coordCode).toBe("disposition_not_allowed");
+    expect(e.status).toBe(422);
+    expect(e.message).toContain("warn_proceed");
+    // A 422 is a refusal: nothing landed.
+    expect(isWriteOutcomeUnknown(e)).toBe(false);
+  });
+
+  it("names coord's code when it sent no message", async () => {
+    respondWith({ detail: { error: "registry_not_provisioned" } }, 503);
+    const err = (await putAgentAdminSwitch("x", { disabled: true }).catch(
+      (e: unknown) => e
+    )) as InstanceType<typeof AgentAdminSwitchError>;
+    expect(err.coordCode).toBe("registry_not_provisioned");
+    expect(err.message).toBe("registry_not_provisioned");
   });
 });

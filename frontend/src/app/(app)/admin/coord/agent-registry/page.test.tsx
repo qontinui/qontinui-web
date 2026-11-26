@@ -28,6 +28,7 @@ import userEvent from "@testing-library/user-event";
 
 const listAdminAgentRegistry = vi.fn();
 const putAgentRegistryDefaults = vi.fn();
+const getAgentCatalog = vi.fn();
 
 vi.mock("@/lib/api/agent-registry", async () => {
   const actual = await vi.importActual<
@@ -38,6 +39,7 @@ vi.mock("@/lib/api/agent-registry", async () => {
     listAdminAgentRegistry: (...a: unknown[]) => listAdminAgentRegistry(...a),
     putAgentRegistryDefaults: (...a: unknown[]) =>
       putAgentRegistryDefaults(...a),
+    getAgentCatalog: (...a: unknown[]) => getAgentCatalog(...a),
   };
 });
 
@@ -76,6 +78,14 @@ describe("/admin/coord/agent-registry", () => {
     putAgentRegistryDefaults.mockReset();
     listAdminAgentRegistry.mockResolvedValue([row()]);
     putAgentRegistryDefaults.mockResolvedValue(undefined);
+    getAgentCatalog.mockReset();
+    // An empty catalog: every line below is a registry row, so these tests
+    // stay about the rows. The catalog's own suite is page.catalog.test.tsx.
+    getAgentCatalog.mockResolvedValue({
+      agents: [],
+      sources_unread: [],
+      declared_skipped: [],
+    });
   });
 
   it("lists the raw registry rows with their tenant default", async () => {
@@ -329,10 +339,25 @@ describe("/admin/coord/agent-registry", () => {
     }
   );
 
-  it("a 403 explains the gate instead of rendering an empty registry", async () => {
+  it("a 403 turns the page read-only with the reason, and still lists the catalog", async () => {
     listAdminAgentRegistry.mockRejectedValue(
       new AgentPrefError("not_coord_tenant_admin", null, 403)
     );
+    getAgentCatalog.mockResolvedValue({
+      agents: [
+        {
+          agent_name: "code-reviewer",
+          has_row: true,
+          spawn_path: "in_session_subagent",
+          purpose: "Reviews code changes.",
+          sources: [{ source: "row" }],
+          admin_disabled: true,
+          default_enabled: false,
+          enforcement: "hook",
+        },
+      ],
+      sources_unread: [],
+    });
     render(<CoordAgentRegistryPage />);
 
     await waitFor(() =>
@@ -340,9 +365,26 @@ describe("/admin/coord/agent-registry", () => {
         screen.getByTestId("coord-agent-registry-forbidden")
       ).toBeInTheDocument()
     );
-    // An empty list here would STATE that the tenant has no agents.
-    expect(screen.queryByTestId("coord-agent-registry-empty")).toBeNull();
     expect(screen.getByText(/administrator-only/i)).toBeInTheDocument();
+    // A member sees what is switched off — read-only.
+    const sw = await screen.findByRole("switch", {
+      name: "Spawns of code-reviewer",
+    });
+    expect(sw).toBeDisabled();
+    expect(
+      screen.getByTestId("agent-spawn-switch-label-code-reviewer")
+    ).toHaveTextContent("Off");
+    expect(
+      screen.getByTestId("agent-spawn-switch-code-reviewer")
+    ).toHaveAttribute(
+      "title",
+      "Only a tenant administrator can change this switch."
+    );
+    // No admin-only control is offered.
+    expect(screen.queryByLabelText("Default-enable code-reviewer")).toBeNull();
+    expect(screen.queryByTestId("agent-registry-add-by-name")).toBeNull();
+    // Nothing here states "this tenant has no agents".
+    expect(screen.queryByTestId("coord-agent-registry-empty")).toBeNull();
   });
 
   it("a non-403 load failure keeps the retry affordance", async () => {
@@ -391,7 +433,7 @@ describe("/admin/coord/agent-registry", () => {
       "–"
     );
     expect(screen.getByTestId("agent-registry-health")).toHaveTextContent(
-      "agents –"
+      "registry rows –"
     );
   });
 
@@ -416,14 +458,27 @@ describe("/admin/coord/agent-registry", () => {
     expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1);
   });
 
-  it("an empty registry says rows are created by seeding", async () => {
+  it("an empty registry and catalog no longer sends the admin to seeding", async () => {
     listAdminAgentRegistry.mockResolvedValue([]);
     render(<CoordAgentRegistryPage />);
 
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("coord-agent-registry-empty")
-      ).toHaveTextContent(/seeding/i)
+    const empty = await screen.findByTestId("coord-agent-registry-empty");
+    expect(empty).not.toHaveTextContent(/seed/i);
+    expect(empty).toHaveTextContent(/Add one by name/);
+    expect(
+      screen.getByTestId("agent-registry-add-by-name")
+    ).toBeInTheDocument();
+  });
+
+  it("an empty registry with an unread catalog says the list is unknown", async () => {
+    listAdminAgentRegistry.mockResolvedValue([]);
+    getAgentCatalog.mockRejectedValue(new Error("Failed to fetch"));
+    render(<CoordAgentRegistryPage />);
+
+    const empty = await screen.findByTestId("coord-agent-registry-empty");
+    expect(empty).toHaveTextContent(/unknown/i);
+    expect(screen.getByTestId("agent-catalog-load-error")).toHaveTextContent(
+      "Failed to fetch"
     );
   });
 });
