@@ -1,7 +1,7 @@
 """overview.schedule_last_known: when a schedule figure was last known from coord
 
 Revision ID: overview_07_schedule_last_known
-Revises: cfgyaml02_config_yaml_read_sha
+Revises: prcheckruns_changed_at_01
 Create Date: 2026-11-25
 
 Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord`` D4/D8.
@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "overview_07_schedule_last_known"
-down_revision: str | Sequence[str] | None = "cfgyaml02_config_yaml_read_sha"
+down_revision: str | Sequence[str] | None = "prcheckruns_changed_at_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
