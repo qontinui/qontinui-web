@@ -1169,6 +1169,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-registry/admin/registry/{agent_name}/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Agent Admin Switch
+         * @description ADMIN: switch spawns of one agent type off (or back on) tenant-wide.
+         *
+         *     Gated in the WEB tier as well as in coord (``rbac::require_role("admin")``),
+         *     so a non-admin gets the renderable ``not_coord_tenant_admin`` and no coord
+         *     call is made. The forwarded body carries only what the admin set: an
+         *     omitted ``disposition`` / ``reason`` is absent, not ``null``.
+         */
+        put: operations["api_v1_agent_registry_admin_registry_agent_name_switch_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-registry/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Catalog
+         * @description Every agent type the tenant's spawns may be authorized under.
+         *
+         *     Readable by ANY member: the page shows members what is switched off and
+         *     why, read-only. Coord resolves the tenant from the forwarded bearer.
+         */
+        get: operations["api_v1_agent_registry_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-registry/prefs/{agent_name}": {
         parameters: {
             query?: never;
@@ -27897,6 +27945,14 @@ export interface components {
          * @description One raw ``coord.agent_registry`` row, plus its pref-override counts.
          */
         AdminAgentRegistryRow: {
+            /** Admin Disabled At */
+            admin_disabled_at?: string | null;
+            /** Admin Disabled By */
+            admin_disabled_by?: string | null;
+            /** Admin Disposition */
+            admin_disposition?: string | null;
+            /** Admin Reason */
+            admin_reason?: string | null;
             /** Agent Name */
             agent_name: string;
             /**
@@ -28088,6 +28144,31 @@ export interface components {
             username: string;
         };
         /**
+         * AgentAdminSwitchRequest
+         * @description Client body for the tenant-admin spawn switch.
+         *
+         *     ``disposition`` is the admin's pick from the row's
+         *     ``allowed_dispositions`` and only means something with ``disabled: true``
+         *     (coord answers 422 ``disposition_requires_disabled`` otherwise). Neither
+         *     rule is copied here — coord's refusal is forwarded verbatim, and a web-side
+         *     copy of the disposition set would drift from the row it is checked
+         *     against.
+         */
+        AgentAdminSwitchRequest: {
+            /** Disabled */
+            disabled: boolean;
+            /**
+             * Disposition
+             * @description block | degrade | warn_proceed (from the row's set)
+             */
+            disposition?: string | null;
+            /**
+             * Reason
+             * @description Why; recorded on the row and shown to every member in the catalog
+             */
+            reason?: string | null;
+        };
+        /**
          * AgentCommandCreate
          * @description Request to create (or replace) an account's override of a command.
          */
@@ -28258,7 +28339,7 @@ export interface components {
             purpose: string;
             /**
              * Source
-             * @description default | user_pref
+             * @description default | user_pref | admin
              */
             source: string;
             /**
@@ -32558,6 +32639,11 @@ export interface components {
             fidelity_arm: "design_compare" | "tokens_only";
             /** Results */
             results: components["schemas"]["CompareHit"][];
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
+            unmeasured_candidates: number;
         };
         /** CompareSnapshot */
         CompareSnapshot: {
@@ -53269,6 +53355,11 @@ export interface components {
              * @enum {string}
              */
             style_arm: "fingerprint" | "tokens_only";
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
+            unmeasured_candidates: number;
         };
         /** SiteCreate */
         SiteCreate: {
@@ -62535,6 +62626,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_agent_registry_admin_registry_agent_name_switch_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentAdminSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_agent_registry_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

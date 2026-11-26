@@ -544,6 +544,22 @@ def _flatten(tokens: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return flat
 
 
+def is_stated_unknown_token_set(tokens: dict[str, Any]) -> bool:
+    """True when the token set is the capture worker's stated-unknown
+    sentinel (``{"state": "unknown", "reason": ...}``, qontinui-design-refs
+    ``src/upload/upload-capture.ts``): a statement that nothing was measured,
+    not a measurement."""
+    return tokens.get("state") == "unknown"
+
+
+def is_measured_token_set(tokens: dict[str, Any]) -> bool:
+    """True only for a token set that can be compared: it carries at least one
+    token leaf and is not the stated-unknown sentinel. Ranking anything else
+    (``{}``, a leafless ``{"color": {}}``, the sentinel) would report a
+    distance (``1.0``, nothing shared) that measures nothing."""
+    return not is_stated_unknown_token_set(tokens) and bool(_flatten(tokens))
+
+
 def token_distance(ours: dict[str, Any], theirs: dict[str, Any]) -> float:
     """0 (identical token sets) .. 1 (nothing shared): the share of token
     names in either set whose values differ or are missing from one side."""

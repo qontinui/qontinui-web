@@ -415,8 +415,11 @@ SOURCE_INPUT_ACK_FRAME_TYPE = "remote_terminal_input_ack"
 #   refusal of this keystroke: an ``error`` carrying a ``request_id`` is the
 #   mobile watcher's shape and is not published on the remote-only channel.
 # - ``timestamp`` — stamped by the relay at forward time.
+# - ``origin`` — the relay's provenance stamp (``origin: user_session`` is set
+#   only by the user-session terminal path, ``runner_terminal_ws``). A source
+#   must never be able to claim it on a frame the target will read.
 INPUT_FORWARD_RELAY_OWNED_KEYS: frozenset[str] = frozenset(
-    {"type", "remote", "grant_jti", "terminal_id", "request_id", "timestamp"}
+    {"type", "remote", "grant_jti", "terminal_id", "request_id", "timestamp", "origin"}
 )
 
 # Keys of a target ``terminal_input_ack`` the relay OWNS on the return. The
