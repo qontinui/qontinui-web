@@ -94,7 +94,7 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "cfgyaml02_config_yaml_read_sha"`` — the single alembic head
+``down_revision = "agent_status_intent_globs_declared_01"`` — the single alembic head
 at authoring (``alembic heads`` printed exactly one line). A re-point is three
 coupled edits: ``down_revision``, the ``Revises:`` line below, and
 ``_PARENT_REVISION_ID`` in
@@ -103,7 +103,7 @@ coupled edits: ``down_revision``, the ``Revises:`` line below, and
 Hand-authored; ``alembic revision --autogenerate`` was not run.
 
 Revision ID: pressure_stops_01_resource_pressure_stop_events
-Revises: cfgyaml02_config_yaml_read_sha
+Revises: agent_status_intent_globs_declared_01
 Create Date: 2026-11-24
 
 """
@@ -114,7 +114,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "pressure_stops_01_resource_pressure_stop_events"
-down_revision: str | None = "cfgyaml02_config_yaml_read_sha"
+down_revision: str | None = "agent_status_intent_globs_declared_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

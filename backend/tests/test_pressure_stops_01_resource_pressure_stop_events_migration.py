@@ -52,7 +52,7 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 import check_coord_column_drops as guard  # noqa: E402
 
 _REVISION_ID = "pressure_stops_01_resource_pressure_stop_events"
-_PARENT_REVISION_ID = "cfgyaml02_config_yaml_read_sha"
+_PARENT_REVISION_ID = "agent_status_intent_globs_declared_01"
 _REVISION_FILENAME = "pressure_stops_01_resource_pressure_stop_events.py"
 
 _SCHEMA = "coord"
