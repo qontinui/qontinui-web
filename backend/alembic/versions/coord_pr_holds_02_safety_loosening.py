@@ -1,7 +1,7 @@
 """coord.pr_holds — admit the hold kind ``safety_loosening``
 
 Revision ID: coord_pr_holds_02_safety_loosening
-Revises: agent_status_intent_globs_declared_01
+Revises: overview_07_schedule_last_known
 Create Date: 2026-11-26
 
 Step (0) of Phase 142 of plan ``2026-10-28-one-session-lifecycle-authority``
@@ -54,7 +54,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pr_holds_02_safety_loosening"
-down_revision: str | Sequence[str] | None = "agent_status_intent_globs_declared_01"
+down_revision: str | Sequence[str] | None = "overview_07_schedule_last_known"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
