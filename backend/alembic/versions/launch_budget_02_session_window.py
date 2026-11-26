@@ -16,12 +16,15 @@ Why the column exists
 coord's launch-budget decision can only tell them apart if the runner says
 which one it saw:
 
-* **absent** — the provider sends NO five-hour window for this account. A
-  Claude Max 20x account's rate-limit headers carry the unified family
-  (``-unified-status``, ``-unified-representative-claim``, ``-unified-7d-*``)
-  and no ``-unified-5h-*`` header at all, and a 2xx OAuth usage body reports
-  ``five_hour: null``. That is an observation: there is no session window to
-  read, so the decision prices the run on the weekly and model windows.
+* **absent** — the provider sends NO five-hour window for this account, as the
+  runner infers it from positive evidence: a rate-limit header set that carries
+  the unified family (``-unified-status``, ``-unified-representative-claim``,
+  ``-unified-7d-*``) and no ``-unified-5h-*`` header, or a 2xx OAuth usage body
+  whose ``five_hour`` is null. The header half was measured on one Claude Max
+  20x account's response on 2026-11-26; the OAuth half is an assumption the
+  plan's Phase 1 checks against a live grant. Once classified, it is an
+  observation: there is no session window to read, so the decision prices the
+  run on the weekly and model windows.
 * **unread** — the window may exist, and this reading could not see it (a
   failed probe, a response without the unified family, a runner build that
   predates the classification). That is UNKNOWN, and coord keeps answering
@@ -82,11 +85,20 @@ The cost, stated rather than hidden: Postgres validates a CHECK added with its
 column by scanning the existing rows while the ALTER holds ACCESS EXCLUSIVE
 (no rewrite; the classifier's own measurement is ~125 ms per 3M rows on PG16).
 This table is append-only with 31-day retention, at one row per reported
-account per runner report, so it holds on the order of 10^5 rows and the scan
-is milliseconds. Every pre-existing row holds NULL, which passes, so the scan
+account per runner report. Its row count is not measured here; at the
+classifier's rate even several million rows scan in well under a second. Every pre-existing row holds NULL, which passes, so the scan
 cannot fail the upgrade. The ALTER's lock WAIT is bounded by the house ``SET
 LOCAL lock_timeout = '3s'`` (``alembic/env.py`` resets ``lock_timeout`` after
-each revision), so a queued ALTER never stalls coord's ingest behind it.
+each revision), so a queued ALTER stalls coord's ingest for at most 3 s before
+the deploy fails and retries; once granted, the lock is held until the alembic
+batch transaction commits.
+
+The CHECK has an evolution cost as well as a per-INSERT one: changing the word
+set later needs a revision that drops and re-adds this named constraint, which
+coord's migration classifier rejects on the upgrade path and parks for review.
+That cost is accepted because the vocabulary is closed by design (the plan's
+D1 has exactly three states), and a stored word outside it would make the
+launch budget's absent-versus-unread decision unreadable.
 
 ``IF NOT EXISTS`` is type-blind: a pre-existing ``session_window`` column of
 another type or without the CHECK makes the ADD a silent no-op. Re-running the
