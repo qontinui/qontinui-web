@@ -19519,6 +19519,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/overview/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Schedule
+         * @description The project's phases, milestones, decision gates and forecast, derived
+         *     from coord and nothing else: no typed row is read (plan D5).
+         *
+         *     A figure coord could not give is ``state: unknown`` with a reason, never an
+         *     empty list or a default. Cached per tenant and door for 60 s; after a coord
+         *     failure the last good read is served ``stale`` for up to 10 minutes.
+         */
+        get: operations["api_v1_overview_schedule_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/overview/settings": {
         parameters: {
             query?: never;
@@ -41438,6 +41463,19 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ForecastValue */
+        ForecastValue: {
+            current_phase?: components["schemas"]["SchedulePhaseRef"] | null;
+            /** Forecast Finish */
+            forecast_finish?: string | null;
+            next_phase?: components["schemas"]["SchedulePhaseRef"] | null;
+            /** Planned Finish */
+            planned_finish?: string | null;
+            /** Position */
+            position: string;
+            /** Slip Days */
+            slip_days?: number | null;
+        };
         /** ForkSkillRequest */
         ForkSkillRequest: {
             /** New Name */
@@ -41628,6 +41666,33 @@ export interface components {
         GateRejectRequest: {
             /** Reason */
             reason?: string | null;
+        };
+        /** GateView */
+        GateView: {
+            /** Decided At */
+            decided_at?: string | null;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Unit Slug */
+            unit_slug?: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "pending" | "passed" | "failed";
+        };
+        /** GatesSection */
+        GatesSection: {
+            items: components["schemas"]["Resolved_list_GateView__"];
+            other_checks_not_shown: components["schemas"]["OtherChecks"];
+            read: components["schemas"]["ReadExtent"];
+            /**
+             * Withdrawn Not Shown
+             * @default 0
+             */
+            withdrawn_not_shown: number;
         };
         /**
          * GenerateDescriptionRequest
@@ -42327,6 +42392,15 @@ export interface components {
              * @default true
              */
             useFallback: boolean;
+        };
+        /** InitiativeView */
+        InitiativeView: {
+            ends: components["schemas"]["Resolved_date_"];
+            /** Name */
+            name: string;
+            starts: components["schemas"]["Resolved_date_"];
+            /** Version */
+            version?: number | null;
         };
         /**
          * InstallEventAck
@@ -45049,6 +45123,25 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** MilestoneView */
+        MilestoneView: {
+            /** Decision Record */
+            decision_record?: string | null;
+            /** Decision Record Version */
+            decision_record_version?: number | null;
+            /** Id */
+            id?: string | null;
+            met_at: components["schemas"]["Resolved_date_"];
+            /** Name */
+            name: string;
+            /**
+             * Shown By
+             * @default
+             */
+            shown_by: string;
+            status: components["schemas"]["Resolved_Literal__met____not_met____not_confirmed___"];
+            target_date: components["schemas"]["Resolved_date_"];
+        };
         /** MilestonesItem */
         MilestonesItem: {
             /** Can Edit */
@@ -45065,6 +45158,12 @@ export interface components {
             items: components["schemas"]["MilestoneRead"][];
             /** Total */
             total: number;
+        };
+        /** MilestonesSection */
+        MilestonesSection: {
+            items: components["schemas"]["Resolved_list_MilestoneView__"];
+            /** Unreadable Rows */
+            unreadable_rows?: string[];
         };
         /**
          * MockExecutionRequest
@@ -46101,6 +46200,19 @@ export interface components {
             settings?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * OtherChecks
+         * @description Gates that are execution plumbing, counted so the omission is visible.
+         */
+        OtherChecks: {
+            /** Total */
+            total: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /**
          * Outcome
@@ -47555,6 +47667,23 @@ export interface components {
             status: "planned" | "in_progress" | "done";
             /** Title */
             title: string;
+        };
+        /** PhaseView */
+        PhaseView: {
+            actual_end: components["schemas"]["Resolved_date_"];
+            actual_start: components["schemas"]["Resolved_date_"];
+            /** Code */
+            code: string;
+            /** Index */
+            index: number;
+            /** Linked */
+            linked: boolean;
+            /** Milestone Id */
+            milestone_id?: string | null;
+            /** Name */
+            name: string;
+            planned_end: components["schemas"]["Resolved_date_"];
+            state: components["schemas"]["Resolved_Literal__planned____in_progress____done____not_confirmed___"];
         };
         /**
          * PhaseWrite
@@ -49486,6 +49615,21 @@ export interface components {
             user_id: string;
         };
         /**
+         * ReadExtent
+         * @description How much of a bounded read was made (D8): never a silent cap.
+         */
+        ReadExtent: {
+            /** Read */
+            read: number;
+            /** Total */
+            total?: number | null;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
          * ReconciliationAxisA
          * @description Axis A — coord's STORED ``work_units.status``.
          *
@@ -51003,6 +51147,216 @@ export interface components {
              */
             via: "pin" | "pool";
         };
+        /** ResolvedSource */
+        ResolvedSource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "coord_work_unit" | "coord_delivery" | "coord_document" | "coord_gates" | "derived";
+            /** Label */
+            label: string;
+            /** Version */
+            version?: number | null;
+        };
+        /** Resolved[ForecastValue] */
+        Resolved_ForecastValue_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            value?: components["schemas"]["ForecastValue"] | null;
+        };
+        /** Resolved[Literal['met', 'not_met', 'not_confirmed']] */
+        Resolved_Literal__met____not_met____not_confirmed___: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: ("met" | "not_met" | "not_confirmed") | null;
+        };
+        /** Resolved[Literal['planned', 'in_progress', 'done', 'not_confirmed']] */
+        Resolved_Literal__planned____in_progress____done____not_confirmed___: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: ("planned" | "in_progress" | "done" | "not_confirmed") | null;
+        };
+        /** Resolved[UnitRef] */
+        Resolved_UnitRef_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            value?: components["schemas"]["UnitRef"] | null;
+        };
+        /** Resolved[date] */
+        Resolved_date_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /** Resolved[list[GateView]] */
+        Resolved_list_GateView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["GateView"][] | null;
+        };
+        /** Resolved[list[MilestoneView]] */
+        Resolved_list_MilestoneView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["MilestoneView"][] | null;
+        };
+        /** Resolved[list[PhaseView]] */
+        Resolved_list_PhaseView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["PhaseView"][] | null;
+        };
         /** ResourceCatalog */
         ResourceCatalog: {
             /** Resources */
@@ -52057,6 +52411,47 @@ export interface components {
             state: "measured" | "unknown";
             /** Unmeasured Device Ids */
             unmeasured_device_ids: string[];
+        };
+        /** ScheduleEnvelope */
+        ScheduleEnvelope: {
+            /**
+             * Door
+             * @enum {string}
+             */
+            door: "operator" | "device";
+            forecast: components["schemas"]["Resolved_ForecastValue_"];
+            gates: components["schemas"]["GatesSection"];
+            initiative: components["schemas"]["InitiativeView"];
+            milestones: components["schemas"]["MilestonesSection"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            phases: components["schemas"]["Resolved_list_PhaseView__"];
+            programme: components["schemas"]["Resolved_UnitRef_"];
+            /** Sources */
+            sources?: components["schemas"]["SourceStamp"][];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Unreadable Phases */
+            unreadable_phases?: string[];
+            work_units: components["schemas"]["ReadExtent"];
+        };
+        /** SchedulePhaseRef */
+        SchedulePhaseRef: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
         };
         /**
          * ScheduledWorkflowRunCreate
@@ -53952,6 +54347,23 @@ export interface components {
             status?: number | null;
             /** Url */
             url?: string | null;
+        };
+        /** SourceStamp */
+        SourceStamp: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "coord_work_unit" | "coord_delivery" | "coord_document" | "coord_gates" | "derived";
+            /** Label */
+            label: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Version */
+            version?: number | null;
         };
         /**
          * SpawnLaunchSettingPut
@@ -58612,6 +59024,13 @@ export interface components {
              * @description Package ID to uninstall
              */
             package_id: number;
+        };
+        /** UnitRef */
+        UnitRef: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title?: string | null;
         };
         /**
          * UnknownOutcome
@@ -89429,6 +89848,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceCatalog"];
+                };
+            };
+        };
+    };
+    api_v1_overview_schedule_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleEnvelope"];
                 };
             };
         };

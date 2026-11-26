@@ -289,4 +289,11 @@ REGISTRY: dict[str, ResourceSpec] = {
 #: exhaustiveness test.
 EXCLUDED_TABLES: dict[str, str] = {
     "change_log": "the audit trail itself — every resource writes it, none edits it",
+    "schedule_last_known": (
+        "the schedule's last-known stamp (GET /schedule, plan "
+        "2026-11-25-overview-timeline-and-milestones-derive-from-coord D8): a "
+        "figure name and an instant, written only by that read path, never by a "
+        "person, so it has no edit permission to catalogue (the route itself is "
+        "readable by any member and has no write verb)"
+    ),
 }
