@@ -1169,6 +1169,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-registry/admin/registry/{agent_name}/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Agent Admin Switch
+         * @description ADMIN: switch spawns of one agent type off (or back on) tenant-wide.
+         *
+         *     Gated in the WEB tier as well as in coord (``rbac::require_role("admin")``),
+         *     so a non-admin gets the renderable ``not_coord_tenant_admin`` and no coord
+         *     call is made. The forwarded body carries only what the admin set: an
+         *     omitted ``disposition`` / ``reason`` is absent, not ``null``.
+         */
+        put: operations["api_v1_agent_registry_admin_registry_agent_name_switch_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-registry/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Catalog
+         * @description Every agent type the tenant's spawns may be authorized under.
+         *
+         *     Readable by ANY member: the page shows members what is switched off and
+         *     why, read-only. Coord resolves the tenant from the forwarded bearer.
+         */
+        get: operations["api_v1_agent_registry_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-registry/prefs/{agent_name}": {
         parameters: {
             query?: never;
@@ -6583,8 +6631,18 @@ export interface paths {
          *       device (the newest authorization supersedes);
          *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
          *       explicit act, never a side effect;
-         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
-         *       enrol a fresh key (a usable key is left alone).
+         *     * removes machine-key rows that must not outlive the authorization
+         *       (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
+         *       when the device WAS under a deny, its key row whatever its state (any
+         *       key predating the re-arm is suspect); otherwise only a REVOKED row. A
+         *       usable key on a never-revoked device is kept — it is how a runner
+         *       offline past its JWT grace recovers on its own (``/exchange``).
+         *
+         *     What re-keys a device whose row was removed is its next pairing, which
+         *     mints a fresh key because no row exists: an operator pair code or
+         *     ``pair-cli``, or the bound code minted here IF the runner collects it
+         *     through ``/pending-redeem`` (a runner build without that poller never
+         *     does). ``/self-mint`` also enrols one, given a live paired device JWT.
          *
          *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
          *     the device collects it, through ``/pending-redeem``.
@@ -14355,6 +14413,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/resource-stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Resource Stops
+         * @description Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched::
+         *
+         *         {"table_present": <bool>, "count": <int>, "stops": [StopRow, ...],
+         *          "bounded": <bool>, "limit": <int>, "limit_clamped": <bool>,
+         *          "summary": <object | null>}
+         *
+         *     ``table_present: false`` means the coord table does not exist yet — an
+         *     empty ``stops`` list is then UNKNOWN, never "no stops". ``bounded`` is
+         *     true when ``limit`` truncated the page. A ``StopRow`` carries
+         *     ``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that
+         *     refused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,
+         *     the nullable stats ``session_count_terminal``,
+         *     ``session_count_live_claude``, ``active_ci_runners`` and
+         *     ``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /
+         *     ``fleet_calibration`` objects as the runner recorded them.
+         *
+         *     Query params are forwarded verbatim WITHOUT local validation: coord
+         *     refuses a value outside its vocabulary (422) and clamps ``limit``, and a
+         *     local rewrite here would turn a refusal into a different, wider read.
+         */
+        get: operations["api_v1_operations_fleet_resource_stops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/runners/{runner_id}": {
         parameters: {
             query?: never;
@@ -17525,7 +17623,7 @@ export interface paths {
          *
          *     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
          *
-         *     With ``shape=consolidated`` the envelope gains four fields and every
+         *     With ``shape=consolidated`` the envelope gains five fields and every
          *     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
          *
          *         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -17535,7 +17633,39 @@ export interface paths {
          *           "row_class_counts": {"linked": n, "lifecycle_only": n,
          *                                "agent_only": n, "unknown": n},
          *           "withheld_by_filter": n,
-         *           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+         *           "lifecycle_half": {"read": "ok", "bound": BoundedReadMeta},
+         *           "agent_half": {"read": "ok", "bound": BoundedReadMeta}
+         *                         | {"read": "failed", "detail": "..."} }
+         *
+         *     ``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every
+         *     key always present, ``null`` a value) describing the coord READ behind
+         *     that half — plan
+         *     `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+         *     Phase 3. Both reads stop at 500 rows: the lifecycle half at coord's own
+         *     ``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the
+         *     agent half at the 500 it asks ``/coord/agent-sessions`` for (the most
+         *     recently seen). ``bound`` comes in three arms:
+         *
+         *     * below its ceiling — ``bound_kind: "complete"`` with ``truncated:
+         *       false``: the half holds every row the read matched;
+         *     * a FULL half, ``shown >= limit`` — ``"unknown"`` with ``truncated`` and
+         *       ``total`` null: more rows may exist, and nothing coord sent says
+         *       whether they do, so a count over it is a floor;
+         *     * a 200 whose body carries no ``sessions`` list — ``"unknown"`` over
+         *       ``shown: 0``: nothing countable was served, so the half's SIZE is
+         *       unknown. ``shown < limit`` is what tells it from a full half, and no
+         *       count over it is a total or a floor — not even a floor of zero.
+         *
+         *     ``shown`` counts the rows coord SERVED, before this route's own
+         *     ``device`` / ``status`` / ``q`` narrowing, so it need not equal
+         *     ``count``. A failed agent read carries no ``bound`` — there is no page to
+         *     bound.
+         *
+         *     ``agent_only`` is a set difference against the lifecycle rows coord
+         *     served, so it is established only while ``lifecycle_half.bound.truncated``
+         *     is ``false``. Beyond the ceiling it means "no ``coord.sessions`` row among
+         *     the ones served" — one may exist past it — and the row keeps its real
+         *     agent half either way.
          *
          *     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
          *     hid although their agent half matched it — the two halves disagree (e.g.
@@ -19381,6 +19511,31 @@ export interface paths {
          * @description Every overview resource, with what the caller may do in this project.
          */
         get: operations["api_v1_overview_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Schedule
+         * @description The project's phases, milestones, decision gates and forecast, derived
+         *     from coord and nothing else: no typed row is read (plan D5).
+         *
+         *     A figure coord could not give is ``state: unknown`` with a reason, never an
+         *     empty list or a default. Cached per tenant and door for 60 s; after a coord
+         *     failure the last good read is served ``stale`` for up to 10 minutes.
+         */
+        get: operations["api_v1_overview_schedule_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -27815,6 +27970,14 @@ export interface components {
          * @description One raw ``coord.agent_registry`` row, plus its pref-override counts.
          */
         AdminAgentRegistryRow: {
+            /** Admin Disabled At */
+            admin_disabled_at?: string | null;
+            /** Admin Disabled By */
+            admin_disabled_by?: string | null;
+            /** Admin Disposition */
+            admin_disposition?: string | null;
+            /** Admin Reason */
+            admin_reason?: string | null;
             /** Agent Name */
             agent_name: string;
             /**
@@ -28006,6 +28169,31 @@ export interface components {
             username: string;
         };
         /**
+         * AgentAdminSwitchRequest
+         * @description Client body for the tenant-admin spawn switch.
+         *
+         *     ``disposition`` is the admin's pick from the row's
+         *     ``allowed_dispositions`` and only means something with ``disabled: true``
+         *     (coord answers 422 ``disposition_requires_disabled`` otherwise). Neither
+         *     rule is copied here — coord's refusal is forwarded verbatim, and a web-side
+         *     copy of the disposition set would drift from the row it is checked
+         *     against.
+         */
+        AgentAdminSwitchRequest: {
+            /** Disabled */
+            disabled: boolean;
+            /**
+             * Disposition
+             * @description block | degrade | warn_proceed (from the row's set)
+             */
+            disposition?: string | null;
+            /**
+             * Reason
+             * @description Why; recorded on the row and shown to every member in the catalog
+             */
+            reason?: string | null;
+        };
+        /**
          * AgentCommandCreate
          * @description Request to create (or replace) an account's override of a command.
          */
@@ -28176,7 +28364,7 @@ export interface components {
             purpose: string;
             /**
              * Source
-             * @description default | user_pref
+             * @description default | user_pref | admin
              */
             source: string;
             /**
@@ -32476,6 +32664,11 @@ export interface components {
             fidelity_arm: "design_compare" | "tokens_only";
             /** Results */
             results: components["schemas"]["CompareHit"][];
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
+            unmeasured_candidates: number;
         };
         /** CompareSnapshot */
         CompareSnapshot: {
@@ -41270,6 +41463,19 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ForecastValue */
+        ForecastValue: {
+            current_phase?: components["schemas"]["SchedulePhaseRef"] | null;
+            /** Forecast Finish */
+            forecast_finish?: string | null;
+            next_phase?: components["schemas"]["SchedulePhaseRef"] | null;
+            /** Planned Finish */
+            planned_finish?: string | null;
+            /** Position */
+            position: string;
+            /** Slip Days */
+            slip_days?: number | null;
+        };
         /** ForkSkillRequest */
         ForkSkillRequest: {
             /** New Name */
@@ -41460,6 +41666,33 @@ export interface components {
         GateRejectRequest: {
             /** Reason */
             reason?: string | null;
+        };
+        /** GateView */
+        GateView: {
+            /** Decided At */
+            decided_at?: string | null;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Unit Slug */
+            unit_slug?: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "pending" | "passed" | "failed";
+        };
+        /** GatesSection */
+        GatesSection: {
+            items: components["schemas"]["Resolved_list_GateView__"];
+            other_checks_not_shown: components["schemas"]["OtherChecks"];
+            read: components["schemas"]["ReadExtent"];
+            /**
+             * Withdrawn Not Shown
+             * @default 0
+             */
+            withdrawn_not_shown: number;
         };
         /**
          * GenerateDescriptionRequest
@@ -42159,6 +42392,15 @@ export interface components {
              * @default true
              */
             useFallback: boolean;
+        };
+        /** InitiativeView */
+        InitiativeView: {
+            ends: components["schemas"]["Resolved_date_"];
+            /** Name */
+            name: string;
+            starts: components["schemas"]["Resolved_date_"];
+            /** Version */
+            version?: number | null;
         };
         /**
          * InstallEventAck
@@ -44881,6 +45123,25 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** MilestoneView */
+        MilestoneView: {
+            /** Decision Record */
+            decision_record?: string | null;
+            /** Decision Record Version */
+            decision_record_version?: number | null;
+            /** Id */
+            id?: string | null;
+            met_at: components["schemas"]["Resolved_date_"];
+            /** Name */
+            name: string;
+            /**
+             * Shown By
+             * @default
+             */
+            shown_by: string;
+            status: components["schemas"]["Resolved_Literal__met____not_met____not_confirmed___"];
+            target_date: components["schemas"]["Resolved_date_"];
+        };
         /** MilestonesItem */
         MilestonesItem: {
             /** Can Edit */
@@ -44897,6 +45158,12 @@ export interface components {
             items: components["schemas"]["MilestoneRead"][];
             /** Total */
             total: number;
+        };
+        /** MilestonesSection */
+        MilestonesSection: {
+            items: components["schemas"]["Resolved_list_MilestoneView__"];
+            /** Unreadable Rows */
+            unreadable_rows?: string[];
         };
         /**
          * MockExecutionRequest
@@ -45935,6 +46202,19 @@ export interface components {
             } | null;
         };
         /**
+         * OtherChecks
+         * @description Gates that are execution plumbing, counted so the omission is visible.
+         */
+        OtherChecks: {
+            /** Total */
+            total: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
          * Outcome
          * @description Execution outcome of an action.
          */
@@ -46777,7 +47057,8 @@ export interface components {
          *
          *     Mirrors the canonical ``PairCompleteResponse`` shape that the
          *     runner's ``pair.rs::PairCompleteResponse`` decoder consumes:
-         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.
+         *     ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,
+         *     plus ``device_machine_key`` (the same additive field pair-cli returns).
          *     The runner uses the same decoder for both the paste-pair and the
          *     headless ``pair-cli`` paths.
          */
@@ -46788,6 +47069,11 @@ export interface components {
              * @description The runner's device UUID.
              */
             device_id: string;
+            /**
+             * Device Machine Key
+             * @description Device machine key (``dmk_``) minted for this device at redeem, returned exactly once — the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.
+             */
+            device_machine_key?: string | null;
             /**
              * Device Token Jwt
              * @description Coord-issued device-token JWT.
@@ -47381,6 +47667,23 @@ export interface components {
             status: "planned" | "in_progress" | "done";
             /** Title */
             title: string;
+        };
+        /** PhaseView */
+        PhaseView: {
+            actual_end: components["schemas"]["Resolved_date_"];
+            actual_start: components["schemas"]["Resolved_date_"];
+            /** Code */
+            code: string;
+            /** Index */
+            index: number;
+            /** Linked */
+            linked: boolean;
+            /** Milestone Id */
+            milestone_id?: string | null;
+            /** Name */
+            name: string;
+            planned_end: components["schemas"]["Resolved_date_"];
+            state: components["schemas"]["Resolved_Literal__planned____in_progress____done____not_confirmed___"];
         };
         /**
          * PhaseWrite
@@ -49312,6 +49615,21 @@ export interface components {
             user_id: string;
         };
         /**
+         * ReadExtent
+         * @description How much of a bounded read was made (D8): never a silent cap.
+         */
+        ReadExtent: {
+            /** Read */
+            read: number;
+            /** Total */
+            total?: number | null;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
          * ReconciliationAxisA
          * @description Axis A — coord's STORED ``work_units.status``.
          *
@@ -50829,6 +51147,216 @@ export interface components {
              */
             via: "pin" | "pool";
         };
+        /** ResolvedSource */
+        ResolvedSource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "coord_work_unit" | "coord_delivery" | "coord_document" | "coord_gates" | "derived";
+            /** Label */
+            label: string;
+            /** Version */
+            version?: number | null;
+        };
+        /** Resolved[ForecastValue] */
+        Resolved_ForecastValue_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            value?: components["schemas"]["ForecastValue"] | null;
+        };
+        /** Resolved[Literal['met', 'not_met', 'not_confirmed']] */
+        Resolved_Literal__met____not_met____not_confirmed___: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: ("met" | "not_met" | "not_confirmed") | null;
+        };
+        /** Resolved[Literal['planned', 'in_progress', 'done', 'not_confirmed']] */
+        Resolved_Literal__planned____in_progress____done____not_confirmed___: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: ("planned" | "in_progress" | "done" | "not_confirmed") | null;
+        };
+        /** Resolved[UnitRef] */
+        Resolved_UnitRef_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            value?: components["schemas"]["UnitRef"] | null;
+        };
+        /** Resolved[date] */
+        Resolved_date_: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /** Resolved[list[GateView]] */
+        Resolved_list_GateView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["GateView"][] | null;
+        };
+        /** Resolved[list[MilestoneView]] */
+        Resolved_list_MilestoneView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["MilestoneView"][] | null;
+        };
+        /** Resolved[list[PhaseView]] */
+        Resolved_list_PhaseView__: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            source: components["schemas"]["ResolvedSource"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "known" | "unknown";
+            /** Unknown Reason */
+            unknown_reason?: ("coord_unreachable" | "coord_denied" | "coord_stale" | "no_programme" | "ambiguous_programme" | "not_declared" | "not_recorded" | "ship_retracted" | "tenant_mismatch" | "unparseable" | "truncated" | "phase_dates_missing" | "no_phases" | "no_calendar") | null;
+            /** Unknown Since */
+            unknown_since?: string | null;
+            /** Value */
+            value?: components["schemas"]["PhaseView"][] | null;
+        };
         /** ResourceCatalog */
         ResourceCatalog: {
             /** Resources */
@@ -51883,6 +52411,47 @@ export interface components {
             state: "measured" | "unknown";
             /** Unmeasured Device Ids */
             unmeasured_device_ids: string[];
+        };
+        /** ScheduleEnvelope */
+        ScheduleEnvelope: {
+            /**
+             * Door
+             * @enum {string}
+             */
+            door: "operator" | "device";
+            forecast: components["schemas"]["Resolved_ForecastValue_"];
+            gates: components["schemas"]["GatesSection"];
+            initiative: components["schemas"]["InitiativeView"];
+            milestones: components["schemas"]["MilestonesSection"];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            phases: components["schemas"]["Resolved_list_PhaseView__"];
+            programme: components["schemas"]["Resolved_UnitRef_"];
+            /** Sources */
+            sources?: components["schemas"]["SourceStamp"][];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Unreadable Phases */
+            unreadable_phases?: string[];
+            work_units: components["schemas"]["ReadExtent"];
+        };
+        /** SchedulePhaseRef */
+        SchedulePhaseRef: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
         };
         /**
          * ScheduledWorkflowRunCreate
@@ -53181,6 +53750,11 @@ export interface components {
              * @enum {string}
              */
             style_arm: "fingerprint" | "tokens_only";
+            /**
+             * Unmeasured Candidates
+             * @description How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.
+             */
+            unmeasured_candidates: number;
         };
         /** SiteCreate */
         SiteCreate: {
@@ -53773,6 +54347,23 @@ export interface components {
             status?: number | null;
             /** Url */
             url?: string | null;
+        };
+        /** SourceStamp */
+        SourceStamp: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "coord_work_unit" | "coord_delivery" | "coord_document" | "coord_gates" | "derived";
+            /** Label */
+            label: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Version */
+            version?: number | null;
         };
         /**
          * SpawnLaunchSettingPut
@@ -58434,6 +59025,13 @@ export interface components {
              */
             package_id: number;
         };
+        /** UnitRef */
+        UnitRef: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title?: string | null;
+        };
         /**
          * UnknownOutcome
          * @description Coord answered a 200 with an ``outcome`` tag this build does not know.
@@ -62447,6 +63045,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_agent_registry_admin_registry_agent_name_switch_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentAdminSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_agent_registry_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -82480,6 +83137,48 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_fleet_resource_stops_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow to one device. Tenant scoping still applies on top. */
+                device_id?: string | null;
+                /** @description Narrow to one metric lane: memory_free_commit | thread_pressure. */
+                lane?: string | null;
+                /** @description Narrow to the pool that refused: host | wsl | threads. */
+                guard_lane?: string | null;
+                /** @description RFC 3339 instant or UTC date; inclusive lower bound. */
+                since?: string | null;
+                /** @description Page size. Coord clamps it and echoes `limit_clamped`. */
+                limit?: number | null;
+                /** @description true adds coord's per-device roll-up. */
+                summary?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_fleet_runners_runner_id_delete: {
         parameters: {
             query?: never;
@@ -89149,6 +89848,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceCatalog"];
+                };
+            };
+        };
+    };
+    api_v1_overview_schedule_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleEnvelope"];
                 };
             };
         };

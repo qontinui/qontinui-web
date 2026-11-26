@@ -74,7 +74,7 @@ from app.services.coord_jwks import (
     identity_mismatch_remedy_fields,
     jwks_failure_log_fields,
 )
-from app.services.runner import remote_terminal_relay
+from app.services.runner import remote_terminal_relay, user_session_end
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
     BENIGN_SEND_EXCEPTIONS,
@@ -1382,6 +1382,26 @@ async def _route_device_message(
                 error_type=type(e).__name__,
             )
         return
+
+    # A ``terminal_ended`` answering an end a USER-SESSION socket asked for
+    # (``runner_terminal_ws``) goes back to that socket. This sits BEFORE the
+    # remote-only arm below, which would otherwise publish every
+    # ``terminal_ended`` to the remote relay. The match is on this device's
+    # id plus the end's ``request_id``, so a remote source's end (whose
+    # minted id is in no user-session map) still reaches the remote relay.
+    if msg_type == "terminal_ended":
+        asker = user_session_end.claim(device_id, msg.get("request_id"))
+        if asker is not None:
+            try:
+                await asker.send_json(msg)
+            except Exception as e:  # noqa: BLE001 - a dead asker must not end the loop
+                logger.warning(
+                    "devices_ws_user_session_end_reply_failed",
+                    device_id=str(device_id),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+            return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
     # (new with D6), ``terminal_input_ack`` (the per-keystroke receipt of the

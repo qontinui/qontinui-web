@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QuestionRow } from "./QuestionRow";
 import type { AgentQuestionRow } from "./questionStatus";
+import { expectRowKeyedReveal } from "@/test/recordRowSlot";
 
 function q(overrides: Partial<AgentQuestionRow> = {}): AgentQuestionRow {
   return {
@@ -205,5 +206,52 @@ describe("QuestionRow — decision effects", () => {
     expect(chips()).toHaveLength(0);
     expect(screen.queryByTestId("coord-question-effect-link")).toBeNull();
     expect(statusKinds()).toEqual(["pending"]);
+  });
+});
+
+describe("QuestionRow — the plan phase", () => {
+  it("reveals the phase badge by the ROW's width, never the viewport's", () => {
+    render(
+      <QuestionRow
+        question={q({ plan_phase: "Phase 2" })}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    // One rung up: RecordRow's 53rem, where the reason widens.
+    const badge = screen.getByTestId("coord-question-plan-phase-badge");
+    expectRowKeyedReveal(badge, "@min-[53rem]/record-row:inline-flex");
+  });
+
+  it("caps the free-text phase and keeps it whole in the badge's title", () => {
+    const phase = "the Acme integration phase, second pass";
+    render(
+      <QuestionRow
+        question={q({ plan_phase: phase })}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    const badge = screen.getByTestId("coord-question-plan-phase-badge");
+    expect(badge).toHaveAttribute("title", phase);
+    expect(badge.className.split(/\s+/)).toContain("max-w-[24ch]");
+    const text = badge.firstElementChild as HTMLElement;
+    expect(text).toHaveTextContent(phase);
+    expect(text.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["min-w-0", "truncate"])
+    );
+  });
+
+  it("names the phase in the detail, where a narrow row still reads it", () => {
+    renderRow({ plan_phase: "Phase 2" });
+    expect(screen.getByTestId("coord-question-plan-phase")).toHaveTextContent(
+      "Plan phase: Phase 2"
+    );
+  });
+
+  it("renders no phase badge and no phase line when the question carries none", () => {
+    renderRow({ plan_phase: null });
+    expect(screen.queryByTestId("coord-question-plan-phase-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-question-plan-phase")).toBeNull();
   });
 });

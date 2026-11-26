@@ -140,6 +140,65 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     note: "AgentRegistryResponse{agents: AgentRegistryEntry[]} (endpoints/agent_registry.py:153-177; consumed by lib/api/agent-registry.ts:110-117) — coord proxy, no coord process in CI",
   },
   {
+    // The /admin/coord/agent-registry catalog (qontinui-coord#4585's
+    // GET /coord/agent-registry/catalog behind the web proxy). With no coord
+    // in the hermetic stack the proxy 502s on every crawl of that page.
+    // POPULATED so the crawl renders the catalog line renderer rather than
+    // the empty state: one row-backed policy-required entry and one
+    // declared-role entry with no registry row, so both source-badge arms
+    // render. Every value is one coord's build_catalog can produce: an
+    // in-session subagent with no contract-kind/class source derives
+    // `enforcement: "hook"`. The stacked follow-up's fields
+    // (`also_vetoes`, `enforcement_note`, `hook_or_advisory`) are left out
+    // until coord serves them. `sources_unread` is an EMPTY LIST (every
+    // source read) and `declared_skipped` empty, as coord's envelope always
+    // serializes both.
+    pattern: /\/api\/v1\/agent-registry\/catalog(\?|$)/,
+    body: {
+      agents: [
+        {
+          agent_name: "code-reviewer",
+          has_row: true,
+          spawn_path: "in_session_subagent",
+          purpose:
+            "Reviews code changes for bugs, best practices violations, security issues, and performance concerns",
+          sources: [{ source: "row" }],
+          admin_disabled: false,
+          admin_disposition: null,
+          admin_reason: null,
+          default_enabled: true,
+          policy_required: true,
+          allowed_dispositions: ["block", "degrade", "warn_proceed"],
+          enforcement: "hook",
+        },
+        {
+          agent_name: "triage-judge",
+          has_row: false,
+          spawn_path: "in_session_subagent",
+          purpose: "Judges one triage page.",
+          sources: [
+            {
+              source: "declared_role",
+              repo: "qontinui/qontinui-claude-config",
+              sha: "0000000000000000000000000000000000000000",
+              path: ".claude/agents/triage-judge.md",
+            },
+          ],
+          admin_disabled: false,
+          admin_disposition: null,
+          admin_reason: null,
+          default_enabled: true,
+          policy_required: false,
+          allowed_dispositions: ["block", "degrade", "warn_proceed"],
+          enforcement: "hook",
+        },
+      ],
+      sources_unread: [],
+      declared_skipped: [],
+    },
+    note: "AgentCatalog{agents, sources_unread, declared_skipped} (qontinui-coord#4585 crates/coord/src/agent_registry_catalog.rs, values build_catalog can derive; consumed by lib/api/agent-registry.ts getAgentCatalog) — coord proxy, no coord process in CI",
+  },
+  {
     pattern: /\/api\/v1\/operations\/tenants(\?|$)/,
     // One synthetic tenant, ACTIVE — prod ci-bot resolves exactly one tenant,
     // and the settings identity section renders its Tenant / Tenant ID label

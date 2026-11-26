@@ -127,8 +127,8 @@ class OverviewPrincipal:
     Deliberately not :class:`app.api.deps.ActorPrincipal`: that type is the
     narrow "which arm" answer and forbids carrying claims, while a device
     principal here needs its claims (``device_id`` for attribution) and its
-    verified bearer (forwarded to coord's device-membership door, and nowhere
-    else).
+    verified bearer (forwarded to coord's device-membership door and the three
+    schedule read doors listed on :attr:`token`, and nowhere else).
     """
 
     kind: PrincipalKind
@@ -137,8 +137,22 @@ class OverviewPrincipal:
     device_id: UUID | None = None
     #: The verified device JWT's claim set; ``None`` for a user.
     claims: dict[str, Any] | None = None
-    #: The verified device bearer itself; ``None`` for a user. Only ever sent
-    #: to coord's ``/coord/devices/me/memberships``.
+    #: The verified device bearer itself; ``None`` for a user. Sent to a CLOSED
+    #: list of coord READ doors, and nowhere else (plan
+    #: ``2026-11-25-overview-timeline-and-milestones-derive-from-coord`` D1
+    #: widened this from the single memberships door):
+    #:
+    #: * ``/coord/devices/me/memberships`` (:func:`_device_caller`);
+    #: * ``/coord/agent-work-units``, ``/coord/agent-gates`` and
+    #:   ``/coord/agent-prompt-documents`` (``app.overview.coord_schedule``
+    #:   ``DEVICE_READ_DOORS``, reached only by ``GET /overview/schedule``).
+    #:
+    #: Every one is a GET; no write verb is reachable with it, and it is never
+    #: forwarded to an operator route. ``tests/test_overview_schedule.py`` pins
+    #: the list: a new door is a visible change to that test and to this comment.
+    #: The device source puts it in an explicit ``Authorization`` header; it
+    #: never goes through ``capture_caller_bearer``'s ContextVars, which are the
+    #: operator door's.
     token: str | None = None
 
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { isParseableRedisUrl } from "./redis-url";
+import {
+  isParseableRedisUrl,
+  REDIS_URL_UNPARSEABLE_MESSAGE,
+} from "./redis-url";
 
 describe("isParseableRedisUrl", () => {
   it.each([
@@ -51,5 +54,21 @@ describe("isParseableRedisUrl", () => {
     "/tmp/redis.sock\n",
   ])("rejects %j", (url) => {
     expect(isParseableRedisUrl(url)).toBe(false);
+  });
+});
+
+describe("REDIS_URL_UNPARSEABLE_MESSAGE", () => {
+  // A deployed-log leak check greps every line for userinfo shapes. The fixed
+  // line must read as clean to it, or a deployment that leaked nothing reads
+  // as a leak (finding f25c2655: the old grammar text matched `//user:pw@`).
+  it("carries no userinfo-shaped text a log secret scanner would flag", () => {
+    // No `@` rules out every userinfo shape, `//user:pw@` included.
+    expect(REDIS_URL_UNPARSEABLE_MESSAGE).not.toMatch(/@/);
+    expect(REDIS_URL_UNPARSEABLE_MESSAGE).not.toMatch(/:\/\//);
+  });
+
+  it("keeps the phrase the leak tripwire and operators key on", () => {
+    expect(REDIS_URL_UNPARSEABLE_MESSAGE).toMatch(/not a parseable Redis URL/);
+    expect(REDIS_URL_UNPARSEABLE_MESSAGE).toMatch(/percent-encoding/);
   });
 });

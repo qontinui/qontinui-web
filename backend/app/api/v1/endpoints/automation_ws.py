@@ -17,6 +17,7 @@ from sqlalchemy import select
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
+from app.middleware.rate_limit import peer_ip
 from app.models.automation_session import AutomationSession
 from app.services.websocket_manager import get_websocket_manager
 from app.websockets.rate_limiter import RateLimiter
@@ -81,7 +82,10 @@ async def websocket_monitor_endpoint(
         - Rate limiting: 5 connections per minute per IP, 60 messages per minute
     """
     # Check connection rate limit
-    client_ip = websocket.client.host if websocket.client else "unknown"
+    # The rightmost X-Forwarded-For (what the ALB saw), as the HTTP rate-limit
+    # keys use: behind the ALB websocket.client.host is the ALB node, which
+    # would put every caller reaching that node into one connection bucket.
+    client_ip = peer_ip(websocket)
     if not RateLimiter.check_connection_rate_limit(client_ip, limit=5, window=60):
         await safe_close(
             websocket,

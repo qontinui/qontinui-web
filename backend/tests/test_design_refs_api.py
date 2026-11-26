@@ -952,6 +952,176 @@ class TestHoldout:
         assert sorted(r["rater_kind"] for r in seen["ratings"]) == ["ai", "operator"]
 
 
+# ═════════════════════════════ style: stated-unknown tokens ═════════════════════════════
+
+#: The capture worker's stated-unknown sentinel (qontinui-design-refs
+#: ``src/upload/upload-capture.ts``), written verbatim.
+UNKNOWN_TOKENS = {"state": "unknown", "reason": "infer_not_available"}
+
+
+class TestStyleNeverRanksUnknownTokens:
+    async def _capture(
+        self, h: Harness, page_id: Any, tokens: dict[str, Any], minute: int
+    ) -> str:
+        # Inserted directly so ``created_at`` is explicit: rows written in one
+        # test transaction would otherwise share ``now()`` and leave "newest"
+        # undefined.
+        capture = Capture(
+            tenant_id=h.tenant,
+            tier="private",
+            page_id=UUID(str(page_id)),
+            run_id=uuid4(),
+            viewport="desktop",
+            tokens=tokens,
+            created_at=datetime(2026, 11, 1, 12, minute, tzinfo=UTC),
+        )
+        h.db.add(capture)
+        await h.db.flush()
+        return str(capture.id)
+
+    async def test_unknown_token_sentinel_is_never_ranked(self, a: Harness) -> None:
+        a.as_("operator")
+        pages = {}
+        for name in (
+            "measured",
+            "unknown_only",
+            "newer_measured",
+            "no_capture",
+            "empty_tokens",
+            "leafless",
+        ):
+            site = await reference_site(a, f"{name}.example")
+            pages[name] = await a.page(site.id)
+        await self._capture(
+            a, pages["measured"]["id"], {"color": {"primary": "#111"}}, 1
+        )
+        # Its only capture states its tokens are unknown: never ranked, counted.
+        await self._capture(a, pages["unknown_only"]["id"], UNKNOWN_TOKENS, 2)
+        # Two measurements then the sentinel: ranked on the NEWER measurement
+        # (distance 0.5), never on the sentinel (1.0) and never on the older
+        # measurement even though it is the CLOSER one (0.0): the selection
+        # is newest measured, not best measured.
+        await self._capture(
+            a, pages["newer_measured"]["id"], {"color": {"primary": "#111"}}, 3
+        )
+        await self._capture(
+            a,
+            pages["newer_measured"]["id"],
+            {"color": {"primary": "#111"}, "space": {"unit": 4}},
+            4,
+        )
+        await self._capture(a, pages["newer_measured"]["id"], UNKNOWN_TOKENS, 5)
+        # No capture at all, the column default ``{}``, and a set with no
+        # token leaves: none can be compared, so each is counted.
+        await self._capture(a, pages["empty_tokens"]["id"], {}, 6)
+        await self._capture(a, pages["leafless"]["id"], {"color": {}}, 7)
+        a.as_("device")
+
+        # The full mounted paths (api_router at /api/v1, the design-refs router
+        # at /design-refs, which the harness mounts at ``API``), spelled out so
+        # the route each call enters is readable from this test's text.
+        similar_resp = await a.http.post(
+            "/api/v1/design-refs/similar-by-style",
+            json={"level": "page", "tokens": {"color": {"primary": "#111"}}},
+        )
+        assert similar_resp.status_code == 200, similar_resp.text
+        compare_resp = await a.http.post(
+            "/api/v1/design-refs/compare-to-references",
+            json={"snapshot": {"tokens": {"color": {"primary": "#111"}}}},
+        )
+        assert compare_resp.status_code == 200, compare_resp.text
+        similar = similar_resp.json()
+        compare = compare_resp.json()
+        for response in (similar, compare):
+            got = {r["target_id"]: r["token_distance"] for r in response["results"]}
+            assert pages["unknown_only"]["id"] not in got, response
+            assert got == {
+                pages["measured"]["id"]: 0.0,
+                pages["newer_measured"]["id"]: 0.5,
+            }, response
+            # unknown_only, no_capture, empty_tokens, leafless.
+            assert response["unmeasured_candidates"] == 4, response
+
+    async def test_a_stated_unknown_component_is_never_ranked(self, a: Harness) -> None:
+        a.as_("operator")
+        site = await reference_site(a)
+        page = await a.page(site.id)
+        capture_id = await self._capture(
+            a, page["id"], {"color": {"primary": "#111"}}, 1
+        )
+        components = {}
+        for name, tokens in (
+            ("measured", {"color": {"primary": "#111"}}),
+            ("unknown", UNKNOWN_TOKENS),
+            # The column default and a set with no token leaves: neither can
+            # be compared, so both are counted too.
+            ("empty", {}),
+            ("leafless", {"color": {}}),
+        ):
+            components[name] = await a.ok(
+                "POST",
+                "/components",
+                json={
+                    "page_id": page["id"],
+                    "capture_id": capture_id,
+                    "role": "hero",
+                    "tokens": tokens,
+                },
+            )
+        a.as_("device")
+        similar = await a.ok(
+            "POST",
+            "/similar-by-style",
+            json={
+                "level": "component",
+                "role": "hero",
+                "tokens": {"color": {"primary": "#111"}},
+            },
+        )
+        compare = await a.ok(
+            "POST",
+            "/compare-to-references",
+            json={
+                "snapshot": {"role": "hero", "tokens": {"color": {"primary": "#111"}}}
+            },
+        )
+        for response in (similar, compare):
+            got = {r["target_id"]: r["token_distance"] for r in response["results"]}
+            assert got == {components["measured"]["id"]: 0.0}, response
+            assert all(r["level"] == "component" for r in response["results"])
+            # unknown, empty, leafless.
+            assert response["unmeasured_candidates"] == 3, response
+
+    async def test_a_stated_unknown_query_is_refused(self, a: Harness) -> None:
+        site = await reference_site(a)
+        a.as_("operator")
+        page = await a.page(site.id)
+        await self._capture(a, page["id"], {"color": {"primary": "#111"}}, 1)
+        a.as_("device")
+        for path, body in (
+            ("/similar-by-style", {"level": "page", "tokens": UNKNOWN_TOKENS}),
+            ("/compare-to-references", {"snapshot": {"tokens": UNKNOWN_TOKENS}}),
+            ("/similar-by-style", {"level": "page", "tokens": {}}),
+            ("/compare-to-references", {"snapshot": {"tokens": {}}}),
+            ("/similar-by-style", {"level": "page", "tokens": {"color": {}}}),
+            ("/compare-to-references", {"snapshot": {"tokens": {"color": {}}}}),
+        ):
+            resp = await a.post(path, body)
+            assert resp.status_code == 422, (path, resp.text)
+            assert resp.json()["error"] == "tokens_not_measured", resp.text
+            assert "unknown" in resp.json()["message"], resp.text
+
+    async def test_is_measured_token_set(self) -> None:
+        assert svc.is_measured_token_set({"color": {"primary": "#111"}})
+        assert not svc.is_measured_token_set({})
+        assert not svc.is_measured_token_set({"color": {}})
+        assert not svc.is_measured_token_set({"color": {"brand": {}}})
+        assert not svc.is_measured_token_set(UNKNOWN_TOKENS)
+        assert not svc.is_measured_token_set({"state": "unknown"})
+        # A token NAMED state inside a group is a measurement, not the sentinel.
+        assert svc.is_measured_token_set({"button": {"state": "unknown"}})
+
+
 # ═════════════════════════════ search ═════════════════════════════
 
 
