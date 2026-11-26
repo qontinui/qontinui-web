@@ -301,12 +301,16 @@ def test_upgrade_is_idempotent() -> None:
 
 
 @_needs_pg
-def test_downgrade_refuses_while_a_safety_loosening_row_exists() -> None:
+@pytest.mark.parametrize("released", [False, True], ids=["live", "released"])
+def test_downgrade_refuses_while_a_safety_loosening_row_exists(released: bool) -> None:
     with ephemeral_database(admin_database_url(), "prh02_refuse") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         # A RELEASED row counts too: it is still the audit record of a hold
         # placed under the license.
-        _insert(engine, released_at=datetime.now(UTC), released_by="operator")
+        if released:
+            _insert(engine, released_at=datetime.now(UTC), released_by="operator")
+        else:
+            _insert(engine)
 
         proc = run_alembic(
             backend_root(),

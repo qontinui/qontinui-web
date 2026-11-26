@@ -31,24 +31,37 @@ row is touched, no column is dropped.
 ``downgrade()`` REFUSES while any ``safety_loosening`` row exists, live or
 released, rather than deleting or relabelling it. Such a row records a hold
 placed under P-22's license; rewriting it to another kind would change who may
-release it (``security_tier`` is operator-only, ``manual`` is placer-only), and
+release it (``security_tier`` is operator-only, ``manual`` releases only to its placer,
+the operator or coord), and
 deleting it would erase the audit trail of a release. An operator decides per
 row before downgrading. With no such row it restores the five-kind CHECK and
 the original column comment. The guard is a ``DO`` block, so it works in both
 online and ``--sql`` modes.
+
+## Merge-train classifier disposition
+
+Reject (``DROP CONSTRAINT`` inside ``ALTER TABLE``, and a validating ``ADD
+CONSTRAINT``): widening a CHECK needs the drop, so an escalation park is
+expected and intended. The ``ADD`` stays validating on purpose: in the
+downgrade it is what turns a row inserted after the guard's count into an
+error instead of a row the narrowed CHECK forbids. Each ALTER is bounded by
+``SET LOCAL lock_timeout`` because the merge train reads this table.
 """
+
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "coord_pr_holds_02_safety_loosening"
-down_revision = "agent_status_intent_globs_declared_01"
-branch_labels = None
-depends_on = None
+revision: str = "coord_pr_holds_02_safety_loosening"
+down_revision: str | Sequence[str] | None = "agent_status_intent_globs_declared_01"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     """Widen pr_holds_kind_check to admit safety_loosening."""
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.pr_holds DROP CONSTRAINT IF EXISTS pr_holds_kind_check"
     )
@@ -57,6 +70,7 @@ def upgrade() -> None:
         "CHECK (kind IN ('manual', 'security_tier', 'migration_order', 'create', "
         "'coord_proposal', 'safety_loosening'))"
     )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
     op.execute(
         """
         COMMENT ON COLUMN coord.pr_holds.kind IS
@@ -84,6 +98,7 @@ def downgrade() -> None:
         $$
         """
     )
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.pr_holds DROP CONSTRAINT IF EXISTS pr_holds_kind_check"
     )
@@ -92,6 +107,7 @@ def downgrade() -> None:
         "CHECK (kind IN ('manual', 'security_tier', 'migration_order', 'create', "
         "'coord_proposal'))"
     )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
     op.execute(
         """
         COMMENT ON COLUMN coord.pr_holds.kind IS
