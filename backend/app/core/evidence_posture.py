@@ -1042,6 +1042,18 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         "runs, so a device mutates nothing through this door; a person's write "
         "is coord's, proxied, and outside this table's scope"
     ),
+    # The /operations proxy for a work unit's schedule metadata. It is in the
+    # population only because it takes ``get_audit_actor_user_optional`` as an
+    # EXTRA (to label ``by_actor``); its gate is ``require_coord_tenant_admin``,
+    # which resolves a signed-in web operator, not a device.
+    ("PATCH", "/api/v1/operations/plans/{slug}/schedule-metadata"): Read(
+        "a person's door: gated by require_coord_tenant_admin, which needs a "
+        "signed-in web operator with the admin role in the effective tenant; "
+        "the one device-admitting dependency is the optional audit-actor "
+        "lookup that only labels by_actor, so a device mutates nothing "
+        "through this door; the write itself is coord's, proxied, and outside "
+        "this table's scope"
+    ),
     # ── design reference library (``get_memory_tenant``) ─────────────────
     **_design_refs_record_rows(
         "sites",

@@ -4967,8 +4967,12 @@ async def patch_coord_plan_schedule_metadata(
     """
     patch = body.get("metadata_patch")
     if not isinstance(patch, dict):
-        raise HTTPException(
-            status_code=422, detail="metadata_patch must be a JSON object"
+        raise refusal_error(
+            422,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            "metadata_patch must be a JSON object",
+            discriminator="schedule_metadata_patch_not_object",
         )
     coord_body: dict[str, Any] = {
         "metadata_patch": patch,
