@@ -104,7 +104,7 @@ function emptyViewText(view: FollowupView): string {
   if (view === "resolved") {
     return "No follow-up has been resolved in this window.";
   }
-  return "Nothing is waiting for an owner in this window. A claimed or resolved follow-up drops out of the open view without being deleted, so this is not “no plan surfaced any follow-up”.";
+  return "Nothing is waiting for an owner in this window. A claimed or resolved follow-up drops out of the open view without being deleted, so this is not “no plan surfaced any follow-up”. A retracted one was withdrawn and appears in no view here.";
 }
 
 export default function CoordPlanFollowupsPage() {
@@ -286,8 +286,9 @@ export default function CoordPlanFollowupsPage() {
         >
           A claimed or resolved follow-up drops out of the open view. Neither is
           deleted: a claimed one becomes an ordinary provenance edge on the plan
-          that surfaced it, and a resolved one is under Fixing or Resolved.
-          Candidates that carry the open ones along are at{" "}
+          that surfaced it, and a resolved one is under Fixing or Resolved. A
+          retracted one was withdrawn and appears in no view here. Candidates
+          that carry the open ones along are at{" "}
           <Link
             href="/admin/coord/plan-candidates"
             className="underline"

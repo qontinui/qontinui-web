@@ -318,6 +318,62 @@ class WorkArtifactEdgeClaim(BaseModel):
     to_id: UUID
 
 
+#: The longest ``reason`` a retraction or correction accepts. The runner's
+#: ``DELETE /plan-library/links/{id}`` forwarder checks the same bound after
+#: folding its attribution in (``EDGE_REASON_MAX_CHARS``), so keep the two
+#: equal. (Its ``PUT`` forwarder passes ``reason`` through unbounded; this
+#: bound is then the only one.)
+EDGE_REASON_MAX_CHARS = 2000
+
+
+def _non_blank_reason(value: str) -> str:
+    if not value.strip():
+        raise ValueError(
+            "reason is blank — an unexplained retraction or correction is the "
+            "silent rewrite this door exists to prevent"
+        )
+    return value
+
+
+class WorkArtifactEdgeRetract(BaseModel):
+    """Retract (soft-delete) a wrongly-recorded edge.
+
+    ``DELETE /plan-library/edges/{edge_id}``. The row is kept —
+    ``retracted_at`` / ``retracted_by`` / ``retracted_reason`` are stamped —
+    and every edge reader stops reporting it. ``reason`` is required and must
+    not be blank.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(..., min_length=1, max_length=EDGE_REASON_MAX_CHARS)
+
+    _reason = field_validator("reason")(_non_blank_reason)
+
+
+class WorkArtifactEdgeCorrect(BaseModel):
+    """Replace a recorded edge's claim — ``relation`` / ``to_id`` / ``note`` — in place.
+
+    ``PUT /plan-library/edges/{edge_id}``. A FULL replace: ``to_id`` and
+    ``note`` are required keys (``null`` is a value), so an omitted one can
+    never silently clear a target or a note. The edge's identity (``id``,
+    ``from_id``, ``created_at``, ``created_by``) never moves; the claim it
+    replaced is kept in ``corrected_replaced``. Validated like
+    :class:`WorkArtifactEdgeCreate`: a null ``to_id`` only for
+    ``spawned_followup``, whose ``note`` must then be non-blank, and no
+    self-edge. ``reason`` is required and must not be blank.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    relation: WorkArtifactRelation
+    to_id: UUID | None
+    note: str | None
+    reason: str = Field(..., min_length=1, max_length=EDGE_REASON_MAX_CHARS)
+
+    _reason = field_validator("reason")(_non_blank_reason)
+
+
 # ─────────────── coord-owned link block (shared) ───────────────
 #
 # Used by BOTH the single-artifact detail read and the candidates read. It
@@ -568,10 +624,58 @@ class WorkArtifactEdgeRead(BaseORMSchema):
     peer_slug: str | None = None
     peer_title: str | None = None
     #: On a ``spawned_followup``: its state (``open`` / ``claimed`` / a
-    #: resolution), anchors, size class and closure facts. ``None`` on every
+    #: resolution, or ``retracted`` on the reads that serve a retracted edge —
+    #: by id, ``include_retracted``, the ``DELETE`` response), anchors, size
+    #: class and closure facts. ``None`` on every
     #: other relation — those carry none of it. A re-post that lands on an
     #: existing follow-up returns it here AS IT IS, resolved ones included.
     followup: FollowupFacts | None = None
+
+    # ── correction (``plan_library_13_edge_correction``) ──
+    #: Set together by ``DELETE /plan-library/edges/{id}``; ``None`` on a live
+    #: edge. A retracted edge is served by ``include_retracted=true``, the
+    #: by-id read and the ``DELETE`` response; every other read drops it.
+    retracted_at: IsoDatetime | None = None
+    retracted_by: str | None = None
+    retracted_reason: str | None = None
+    #: ``None`` for an edge exactly as first recorded; ``"corrected"`` once
+    #: ``PUT /plan-library/edges/{id}`` overwrote its claim in place.
+    source: Literal["corrected"] | None = None
+    #: The LATEST correction: when, by whom, why.
+    corrected_at: IsoDatetime | None = None
+    corrected_by: str | None = None
+    corrected_reason: str | None = None
+    #: The claim that correction replaced — ``{relation, to_id, note, source,
+    #: corrected_at, corrected_by, corrected_reason, replaced}`` — with any
+    #: earlier correction nested under ``replaced``. ``None`` until corrected.
+    corrected_replaced: dict[str, Any] | None = None
+
+
+class WorkArtifactEdgeCorrected(WorkArtifactEdgeRead):
+    """``PUT /plan-library/edges/{edge_id}``'s answer: the edge as stored, plus
+    whether THIS request wrote it.
+
+    ``changed: false`` is an idempotent replay — the stored claim already
+    equalled the request, so nothing was written and the request's ``reason``
+    was NOT recorded; ``corrected_reason`` / ``corrected_by`` are whichever
+    earlier correction (yours or a peer's) put the claim there, or null if
+    none did. Mirrors ``changed`` on ``PUT …/anchors``.
+    """
+
+    changed: bool
+
+
+class WorkArtifactEdgesResponse(BaseModel):
+    """``GET /plan-library/{id}/edges`` — the artifact's edges, both directions.
+
+    The same edges, rendered the same way, as ``WorkArtifactDetail.edges`` —
+    without the body, the version log or the coord hop. ``count`` is
+    ``len(items)``: the read is not paged, so a zero is an artifact with no
+    (live) edges, never a truncated page.
+    """
+
+    items: list[WorkArtifactEdgeRead]
+    count: int
 
 
 class WorkArtifactDetail(WorkArtifactSummary):

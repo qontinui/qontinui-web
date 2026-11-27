@@ -211,6 +211,9 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     """Generic not found error"""
 
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    """The path exists but does not serve this HTTP method"""
+
     CONFLICT = "CONFLICT"
     """Generic conflict error"""
 
@@ -227,12 +230,14 @@ class ErrorCode(StrEnum):
     """An upstream service did not respond in time"""
 
 
-# Mapping of HTTP status codes to default error codes
+# Mapping of HTTP status codes to default error codes. A status absent here
+# falls back by CLASS in ``get_default_error_code`` — never a 4xx to a 5xx code.
 DEFAULT_ERROR_CODES = {
     400: ErrorCode.BAD_REQUEST,
     401: ErrorCode.UNAUTHORIZED,
     403: ErrorCode.FORBIDDEN,
     404: ErrorCode.NOT_FOUND,
+    405: ErrorCode.METHOD_NOT_ALLOWED,
     409: ErrorCode.CONFLICT,
     422: ErrorCode.VALIDATION_ERROR,
     423: ErrorCode.RESOURCE_LOCKED,
@@ -248,10 +253,24 @@ def get_default_error_code(status_code: int) -> ErrorCode:
     """
     Get the default error code for a given HTTP status code.
 
+    An unmapped status falls back by its CLASS: a 4xx to ``BAD_REQUEST``
+    (the caller's request was refused) and anything else to
+    ``INTERNAL_SERVER_ERROR``. Before plan
+    ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+    Phase 5 every unmapped status fell to ``INTERNAL_SERVER_ERROR``, so a
+    genuine 405 (a GET on a POST-only path) carried a server-failure envelope
+    — which, per that plan's incident record, a tolerant client rendered as an
+    empty result.
+
     Args:
         status_code: HTTP status code
 
     Returns:
         ErrorCode enum value
     """
-    return DEFAULT_ERROR_CODES.get(status_code, ErrorCode.INTERNAL_SERVER_ERROR)
+    mapped = DEFAULT_ERROR_CODES.get(status_code)
+    if mapped is not None:
+        return mapped
+    if 400 <= status_code < 500:
+        return ErrorCode.BAD_REQUEST
+    return ErrorCode.INTERNAL_SERVER_ERROR

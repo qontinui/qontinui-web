@@ -158,4 +158,12 @@ def edge_read(
         peer_slug=peer.slug if peer is not None else None,
         peer_title=peer.title if peer is not None else None,
         followup=followup_facts(edge, anchors),
+        retracted_at=edge.retracted_at,
+        retracted_by=edge.retracted_by,
+        retracted_reason=edge.retracted_reason,
+        source=edge.source,
+        corrected_at=edge.corrected_at,
+        corrected_by=edge.corrected_by,
+        corrected_reason=edge.corrected_reason,
+        corrected_replaced=edge.corrected_replaced,
     )

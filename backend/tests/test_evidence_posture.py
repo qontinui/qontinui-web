@@ -80,7 +80,12 @@ from app.core.evidence_posture import (
 #: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
 #:   phase progress and ids, this plan;
 #: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
-GAP_COUNT_PIN = 10
+#:
+#: Two fewer when the edge verbs landed (plan
+#: ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+#: Phase 5, ``PUT`` / ``DELETE /plan-library/edges/{edge_id}``): the two
+#: ``#1459`` rows above are ``Verb`` rows now.
+GAP_COUNT_PIN = 8
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;

@@ -229,6 +229,9 @@ describe("/admin/coord/plan-followups consumes /plan-library/followups", () => {
     );
     expect(empty).toHaveTextContent("without being deleted");
     expect(empty).toHaveTextContent("no plan surfaced any follow-up");
+    expect(empty).toHaveTextContent(
+      "A retracted one was withdrawn and appears in no view here"
+    );
   });
 
   it("states that a claimed or resolved follow-up drops out of the open view", async () => {
@@ -239,6 +242,9 @@ describe("/admin/coord/plan-followups consumes /plan-library/followups", () => {
       await screen.findByTestId("coord-followups-semantics")
     ).toHaveTextContent(
       "A claimed or resolved follow-up drops out of the open view"
+    );
+    expect(screen.getByTestId("coord-followups-semantics")).toHaveTextContent(
+      "A retracted one was withdrawn and appears in no view here"
     );
   });
 

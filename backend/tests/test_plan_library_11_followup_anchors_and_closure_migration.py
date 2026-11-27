@@ -8,8 +8,9 @@ What is pinned, and why each matters:
 * **Static, no database.** Every ``op.execute`` in ``upgrade()`` is ONE static
   literal and only the ``CONCURRENTLY`` build sits in an autocommit block — the
   shapes coord's migration classifier admits, so the PR is not parked. The
-  open-queue index's predicate is ``OPEN_FOLLOWUP_SQL`` (the model's one
-  spelling of "open"), the downgrade's ``_COLUMNS`` is the upgrade's
+  open-queue index's predicate is ``OPEN_FOLLOWUP_INDEX_SQL`` (the model's
+  spelling of that index's predicate — its readers' ``OPEN_FOLLOWUP_SQL``
+  adds liveness since ``plan_library_13_edge_correction``), the downgrade's ``_COLUMNS`` is the upgrade's
   ``ADD COLUMN`` sequence, and the revision declares exactly the constraints
   the model declares.
 * **Model ≡ migration, through PostgreSQL.** ``conftest`` builds the shared
@@ -40,6 +41,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.work_artifact import (
     FOLLOWUP_ANCHOR_CHECKS,
     FOLLOWUP_EDGE_CHECKS,
+    OPEN_FOLLOWUP_INDEX_SQL,
     OPEN_FOLLOWUP_SQL,
 )
 from tests._alembic_harness import (
@@ -129,12 +131,16 @@ def test_every_upgrade_execute_is_a_static_literal_in_the_right_block() -> None:
 
 
 def test_the_open_queue_index_predicate_is_the_models() -> None:
-    """``OPEN_FOLLOWUP_SQL`` is the ONE spelling of "open"; the revision
-    cannot import it (no revision imports ``app``) or interpolate it (the
-    classifier refuses an f-string), so it is pinned equal here instead."""
+    """``OPEN_FOLLOWUP_INDEX_SQL`` is the model's spelling of this index's
+    predicate; the revision cannot import it (no revision imports ``app``) or
+    interpolate it (the classifier refuses an f-string), so it is pinned equal
+    here instead. The open READS render ``OPEN_FOLLOWUP_SQL``, which must
+    CONTAIN it verbatim — that containment is what lets the planner prove this
+    partial index for them."""
     (build,) = [sql for sql in _upgrade_sql() if _OPEN_QUEUE_INDEX in sql]
     predicate = build.split(" WHERE ", 1)[1]
-    assert " ".join(predicate.split()) == " ".join(OPEN_FOLLOWUP_SQL.split())
+    assert " ".join(predicate.split()) == " ".join(OPEN_FOLLOWUP_INDEX_SQL.split())
+    assert OPEN_FOLLOWUP_SQL.startswith(f"{OPEN_FOLLOWUP_INDEX_SQL} AND ")
 
 
 def test_the_downgrade_columns_are_the_upgrade_columns() -> None:

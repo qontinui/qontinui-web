@@ -26,8 +26,8 @@ What lives here
 
 Closure state
 -------------
-A follow-up is OPEN iff no artifact owns it and nothing closed it
-(``app.models.work_artifact.OPEN_FOLLOWUP_SQL``). Its state is
+A follow-up is OPEN iff it is live (not retracted), no artifact owns it and
+nothing closed it (``app.models.work_artifact.OPEN_FOLLOWUP_SQL``). Its state is
 :func:`followup_state`. The current-state columns (``resolution_pr`` …
 ``resolved_at``) describe the CURRENT state only; every transition appends a
 ``{from, to, at, by, pr, commit, note}`` entry to ``resolution_history``.
@@ -50,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.bounded_read import KeysetPosition
 from app.crud.work_artifact import (
     FOLLOWUP_STATE_SQL,
+    EdgeRetracted,
     _keyset_cut,
     _org_scope,
     sql_predicate,
@@ -91,9 +92,18 @@ _COMMIT = re.compile(FOLLOWUP_COMMIT_PATTERN)
 
 
 def followup_state(edge: WorkArtifactEdge) -> str | None:
-    """``open`` | ``claimed`` | the resolution — ``None`` on any other relation."""
+    """``retracted`` | ``open`` | ``claimed`` | the resolution — ``None`` on any
+    other relation. ``retracted`` comes first: a withdrawn follow-up keeps its
+    old owner or resolution as history, and must not read as still holding
+    it. (Every write door refuses a retracted row under its row lock before it
+    reads this: :func:`_lock_followup` for the settle and anchor doors,
+    ``claim_followup`` for the claim, ``_lock_edge`` for ``PUT`` / ``DELETE``;
+    the ``POST`` re-post that fills facts onto an existing follow-up locks it in
+    ``create_edge``'s lookup, where a retracted row no longer matches.)"""
     if edge.relation != SPAWNED_FOLLOWUP_RELATION:
         return None
+    if edge.retracted_at is not None:
+        return "retracted"
     if edge.to_id is not None:
         return "claimed"
     return edge.resolution or "open"
@@ -299,6 +309,10 @@ async def _lock_followup(db: AsyncSession, edge_id: UUID) -> WorkArtifactEdge:
             f"edge {edge_id} has relation '{edge.relation}'; only "
             f"'{SPAWNED_FOLLOWUP_RELATION}' carries anchors and a closure state"
         )
+    if edge.retracted_at is not None:
+        # A withdrawn follow-up is in no queue and has no closure to move;
+        # writing to it would revive a claim somebody deliberately retracted.
+        raise EdgeRetracted.of(edge)
     return edge
 
 
@@ -827,10 +841,11 @@ async def _settle_one(
                 outcome.reopened += 1
             else:
                 outcome.raced += 1
-    except (FollowupTransitionConflict, FollowupTransitionInvalid):
+    except (FollowupTransitionConflict, FollowupTransitionInvalid, EdgeRetracted):
         # Another writer moved the row between the page read and the lock —
-        # the compare-and-set on ``fixing`` under ``citation`` refused it, or
-        # the move is otherwise no longer legal; its move stands.
+        # the compare-and-set on ``fixing`` under ``citation`` refused it, the
+        # move is otherwise no longer legal, or the edge was retracted; its
+        # move stands.
         outcome.raced += 1
 
 

@@ -2041,6 +2041,12 @@ class TestStrictQueryKeepsEveryDeclaredKey:
         artifact_id = created.json()["artifact"]["id"]
         org_id = created.json()["artifact"]["organization_id"]
         org = UUID(org_id) if org_id else None
+        followup = await client.post(
+            f"{API_PREFIX}/{artifact_id}/edges",
+            json={"relation": "spawned_followup", "note": "strict keys edge"},
+        )
+        assert followup.status_code == 201, followup.text
+        edge_id = followup.json()["id"]
         # ``cursor`` is a declared key on every paged route, and a token is
         # bound to the filters it was minted under — so each route gets a
         # REAL token for exactly the filters sent beside it (the position is
@@ -2115,8 +2121,13 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             f"{API_PREFIX}/difficulty": {},
             f"{API_PREFIX}/model-routing": {},
             f"{API_PREFIX}/vocabulary": {},
-            f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
+            f"{API_PREFIX}/{{artifact_id}}": {
+                "include_coord": "false",
+                "include_retracted": "false",
+            },
+            f"{API_PREFIX}/{{artifact_id}}/edges": {"include_retracted": "true"},
             f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},
+            f"{API_PREFIX}/edges/{{edge_id}}": {},
         }
 
         routes = self._get_routes(app)
@@ -2126,7 +2137,10 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             declared = accepted_query_keys(route.dependant)
             assert set(params) == set(declared), (path, declared)
             resp = await client.get(
-                path.replace("{artifact_id}", artifact_id), params=params
+                path.replace("{artifact_id}", artifact_id).replace(
+                    "{edge_id}", edge_id
+                ),
+                params=params,
             )
             assert resp.status_code == 200, (path, resp.status_code, resp.text)
 

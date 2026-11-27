@@ -109,11 +109,6 @@ SPEC_FRONT_END_PLAN: Final = "2026-10-09-spec-front-end-of-the-software-factory"
 JUNK_ROW_PLAN: Final = (
     "2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent"
 )
-#: Owns the plan-library edge retract/correct verbs (qontinui-web #1459).
-EDGE_CORRECTION_PLAN: Final = (
-    "2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-"
-    "phase-is-uncorrectable"
-)
 
 WRITE_METHODS: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -213,6 +208,15 @@ STORES: Final[dict[str, Store]] = {
     "followup_resolutions": Store(
         states=("open", "fixing", "fixed", "already_fixed", "dismissed"),
         terminal=("fixed", "already_fixed", "dismissed"),
+    ),
+    # A plan-library provenance edge (plan
+    # 2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable
+    # Phase 5). Nothing automatic moves either state: a live edge rests until
+    # somebody corrects or retracts it, and a retraction is final (the row is
+    # kept as history; the claim is re-recorded as a NEW live edge).
+    "plan_library_edges": Store(
+        states=("live", "retracted"),
+        terminal=("live", "retracted"),
     ),
     # An image-slot candidate's status (plan
     # 2026-10-13-image-generation-and-visual-judgment, Phase 13). Every move is
@@ -327,6 +331,26 @@ _FOLLOWUP_RESOLUTION = f"POST {_V1}/plan-library/edges/{{edge_id}}/resolution"
 _FOLLOWUP_RESOLUTION_VERB = Verb(
     verb=_FOLLOWUP_RESOLUTION,
     admits=("open", "fixing", "fixed", "already_fixed", "dismissed"),
+)
+#: A live edge's claim — relation, target, note — is corrected in place, the
+#: replaced claim kept on the row (``corrected_replaced``).
+_EDGE = f"{_V1}/plan-library/edges/{{edge_id}}"
+_EDGE_CORRECT_VERB = Verb(verb=f"PUT {_EDGE}", admits=("live",))
+#: An edge that should never have been recorded is retracted (soft-deleted).
+_EDGE_RETRACT_VERB = Verb(verb=f"DELETE {_EDGE}", admits=("live",))
+#: A retraction is final; a claim withdrawn by mistake is re-recorded as a NEW
+#: live edge. That POST never reads or revives the retracted row, so it is not a
+#: ``Verb`` on it.
+_EDGE_RETRACTION_IS_FINAL = AppendOnlyByDesign(
+    "a retraction is final — the withdrawn claim stays on its row as audit "
+    "history and is never un-retracted; a claim retracted by mistake is "
+    f"re-recorded with POST {_V1}/plan-library/{{artifact_id}}/edges, which "
+    "writes a NEW live edge beside the retracted one (the partial unique "
+    "indexes and the create dedup ignore retracted rows). A depends_on the "
+    "runner's plan scanner derived from a plan's Depends-On: header is "
+    "re-posted whenever the scanner's memory of applied edges resets (each "
+    "runner start, a path-settings change, a plan-library-backfill run), so "
+    "edit the header before retracting it"
 )
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
@@ -463,32 +487,33 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             ),
         ),
     ),
+    # A wrong relation, target or note is corrected in place; an edge that
+    # should not exist at all is retracted.
     ("POST", f"{_V1}/plan-library/{{artifact_id}}/edges"): Evidence(
         closed_fields=("relation", "size_class"),
-        correction=Gap(
-            tracked_by=EDGE_CORRECTION_PLAN,
-            what=(
-                "a recorded provenance edge (e.g. a wrong relation — "
-                "'supersedes' where 'spawned_followup' or 'depends_on' was "
-                "meant) cannot be retracted or corrected on main; the "
-                "PUT/DELETE /plan-library/edges/{edge_id} verbs are "
-                "qontinui-web #1459. Read GET /plan-library/vocabulary BEFORE "
-                "writing"
-            ),
-        ),
+        store="plan_library_edges",
+        correction=_EDGE_CORRECT_VERB,
+        aspects=(("an edge that should not exist", _EDGE_RETRACT_VERB),),
     ),
-    ("PATCH", f"{_V1}/plan-library/edges/{{edge_id}}"): Evidence(
+    # A re-claim to a different artifact stays a 409 here (silently re-pointing
+    # would erase the first claim); a WRONG claim is corrected in place by the
+    # PUT, which records the claim it replaced.
+    ("PATCH", _EDGE): Evidence(
         closed_fields=(),
-        correction=Gap(
-            tracked_by=EDGE_CORRECTION_PLAN,
-            what=(
-                "a claim on an open spawned_followup: re-claiming to a "
-                "different artifact is a 409 by design (silently re-pointing "
-                "would erase the first claim), and no verb retracts a wrong "
-                "claim on main; the edge correct/retract verbs are "
-                "qontinui-web #1459"
-            ),
-        ),
+        store="plan_library_edges",
+        correction=_EDGE_CORRECT_VERB,
+    ),
+    # A wrong correction is corrected by another; each keeps the one before it.
+    ("PUT", _EDGE): Evidence(
+        closed_fields=("relation",),
+        store="plan_library_edges",
+        correction=_EDGE_CORRECT_VERB,
+        aspects=(("an edge that should not exist", _EDGE_RETRACT_VERB),),
+    ),
+    ("DELETE", _EDGE): Evidence(
+        closed_fields=(),
+        store="plan_library_edges",
+        correction=_EDGE_RETRACTION_IS_FINAL,
     ),
     ("PUT", f"{_V1}/plan-library/edges/{{edge_id}}/anchors"): Evidence(
         closed_fields=("size_class", "size_class_source"),
