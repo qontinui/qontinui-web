@@ -5,6 +5,7 @@ import {
   formatLaneAge,
   laneName,
   resolveLaneFreshness,
+  type LaneAge,
 } from "./laneFreshnessStatus";
 import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 
@@ -63,6 +64,19 @@ describe("resolveLaneFreshness", () => {
     expect(s.reason).not.toMatch(/read failed/);
   });
 
+  it("reads a malformed lane element as UNKNOWN, never as a stale lane", () => {
+    const s = resolveLaneFreshness({
+      stale_lanes: [
+        { lane: "host", lane_instance: null, age_secs: 300 },
+        { lane: "wsl", lane_instance: null, age_secs: null },
+      ] as unknown as LaneAge[],
+      sample_stale_after_secs: 120,
+    });
+    expect(s.kind).toBe("unknown");
+    expect(s.measured).toBe(false);
+    expect(s.reason).toMatch(/cannot read/);
+  });
+
   it("orders several stale lanes stalest first", () => {
     const s = resolveLaneFreshness({
       stale_lanes: [
@@ -72,7 +86,8 @@ describe("resolveLaneFreshness", () => {
       sample_stale_after_secs: 120,
     });
     expect(s.lanes.map(laneName)).toEqual(["wsl/Ubuntu", "host"]);
-    expect(s.label).toBe("stale lane: wsl/Ubuntu 3h, host 5m");
+    expect(s.label).toBe("stale lanes: wsl/Ubuntu 3h, host 5m");
+    expect(s.reason).toMatch(/stalest lane's newest sample is 3h old/);
   });
 
   it("reads null as UNKNOWN (read failed), never as no stale lanes", () => {

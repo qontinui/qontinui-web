@@ -157,13 +157,24 @@ export function resolveLaneFreshness(
       measured: false,
     };
   }
-  if (stale_lanes === null || !Array.isArray(stale_lanes)) {
+  const wellFormed = (l: unknown): l is LaneAge =>
+    typeof l === "object" &&
+    l !== null &&
+    typeof (l as LaneAge).lane === "string" &&
+    typeof (l as LaneAge).age_secs === "number" &&
+    Number.isFinite((l as LaneAge).age_secs);
+  if (
+    stale_lanes === null ||
+    !Array.isArray(stale_lanes) ||
+    !stale_lanes.every(wellFormed)
+  ) {
     return {
       kind: "unknown",
       label: "lane freshness unknown",
       reason:
         stale_lanes === null
-          ? "Coord's per-lane freshness read failed this tick, so whether " +
+          ? "Coord's per-lane freshness was not read, or the read failed " +
+            "this tick, so whether " +
             "one sample lane has gone quiet is UNKNOWN. It is not 'no stale " +
             "lanes'."
           : "Coord sent per-lane freshness in a shape this console cannot " +
@@ -195,10 +206,11 @@ export function resolveLaneFreshness(
     .join(", ");
   return {
     kind: "stale",
-    label: `stale lane: ${named}`,
+    label: `${lanes.length > 1 ? "stale lanes" : "stale lane"}: ${named}`,
     reason:
       `Coord expects samples from ${lanes.map(laneName).join(", ")} and the ` +
-      `newest is ${formatLaneAge(stalest)} old` +
+      (lanes.length > 1 ? "stalest lane's " : "lane's ") +
+      `newest sample is ${formatLaneAge(stalest)} old` +
       (threshold !== null
         ? `, past the ${formatLaneAge(threshold)} threshold. `
         : ". ") +
