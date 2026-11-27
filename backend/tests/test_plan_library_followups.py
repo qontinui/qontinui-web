@@ -1526,7 +1526,7 @@ class TestReplaceAnchors:
             client, "clrsweep", size_class="small", source="sweep"
         )
         resp = await client.put(
-            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            f"/api/v1/plan-library/edges/{edge_id}/anchors",
             json={"anchors": [_anchor("a.py")], "clear_size_class": True},
         )
         assert resp.status_code == 200, resp.text
@@ -1534,7 +1534,7 @@ class TestReplaceAnchors:
         assert resp.json()["followup"]["size_class"] is None
         assert resp.json()["followup"]["size_class_source"] is None
         again = await client.put(
-            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            f"/api/v1/plan-library/edges/{edge_id}/anchors",
             json={"anchors": [_anchor("a.py")], "clear_size_class": True},
         )
         assert again.status_code == 200, again.text
