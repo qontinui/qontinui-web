@@ -1492,8 +1492,9 @@ export function eventLabel(kind: string): string {
  * runner placed inside a watched slice without establishing the unit (a
  * slice-remainder event: `victim_unit: null` means NOT ESTABLISHED, not "no
  * unit"), else the hostname coord stamps on an identity conflict. A blank or
- * whitespace-only value of any of these keys names nothing and falls through. `detail` is runner-authored
- * JSON, so it is read field by field; an older runner sends no `victim_slice`.
+ * whitespace-only value of any of these keys names nothing and falls through.
+ * `detail` is runner-authored JSON, so it is read field by field; an older
+ * runner sends no `victim_slice`.
  */
 export function eventSubject(e: ComputerEventWire): string | null {
   const d =
@@ -1509,7 +1510,11 @@ export function eventSubject(e: ComputerEventWire): string | null {
   );
 }
 
-/** A trimmed, non-empty string, else null: a blank subject key names nothing. */
+/**
+ * A trimmed, non-empty string, else null: a blank subject key names nothing.
+ * Stricter than `str`, which keeps whitespace-only values: a subject is a
+ * label, and a whitespace label would render as an empty one.
+ */
 function nonBlank(v: unknown): string | null {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
 }

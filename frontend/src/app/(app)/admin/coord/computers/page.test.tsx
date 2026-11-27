@@ -24,8 +24,9 @@
  * 8. **An OOM kill placed only in a slice reads `in <slice>`** on the detail
  *    page's event row and the list row's last-event line, a placed scope reads
  *    as that scope, and one with neither (or a blank slice) reads `no subject
- *    reported` (plan `2026-11-27-devops-oom-kills-inside-agent-build-slices-
- *    carry-no-victim` Phase 5, test 30).
+ *    reported` (plan
+ *    `2026-11-27-devops-oom-kills-inside-agent-build-slices-carry-no-victim`
+ *    Phase 5, test 30).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

@@ -1144,7 +1144,7 @@ describe("eventSubject — an OOM kill names its slice when no unit was establis
         victim_unit: null,
         victim_slice: "agent-builds.slice",
         victim_cgroup:
-          "user.slice/user-1000.slice/user@1000.service/agent-builds.slice",
+          "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice",
         slices: "read",
         count: 1,
         attribution: "slice_memory_events",
@@ -1193,6 +1193,10 @@ describe("eventSubject — an OOM kill names its slice when no unit was establis
       const subject = subjectOf({ victim_unit: null, victim_slice });
       expect(subject).toBeNull();
     }
+    // A padded slice is named trimmed.
+    expect(subjectOf({ victim_slice: "  agent-builds.slice " })).toBe(
+      "in agent-builds.slice"
+    );
     // A whitespace-only unit or victim_unit names nothing either, so the
     // slice is still the subject.
     expect(
