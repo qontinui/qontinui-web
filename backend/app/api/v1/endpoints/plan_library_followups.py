@@ -150,6 +150,10 @@ async def replace_followup_anchors(
 
     ``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when
     supplied together, set the class; omitted, the stored class is kept.
+    ``clear_size_class: true`` (default false) nulls both columns together —
+    only for a ``sweep``-set class (a ``declared`` one is a 422 with error
+    ``size_class_not_sweep_set``, row unchanged; an unclassified row reports
+    ``changed: false``) — and is a 422 beside ``size_class``.
 
     This is the correction door for anchors: a wrong set is corrected by
     PUTting the right one. ``changed: false`` means the body restated what was
@@ -175,7 +179,13 @@ async def replace_followup_anchors(
             unanchored_reason=payload.unanchored_reason,
             size_class=payload.size_class,
             size_class_source=payload.size_class_source,
+            clear_size_class=payload.clear_size_class,
         )
+    except followups_crud.FollowupSizeClassNotSweepSet as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": exc.code, "message": str(exc)},
+        ) from exc
     except followups_crud.FollowupTransitionInvalid as exc:  # pragma: no cover
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -186,6 +196,7 @@ async def replace_followup_anchors(
         anchors=len(payload.anchors),
         unanchored=payload.unanchored_reason is not None,
         size_class=payload.size_class,
+        clear_size_class=payload.clear_size_class,
         changed=changed,
         actor=_actor(current_user),
     )
