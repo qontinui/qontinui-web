@@ -98,6 +98,7 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
     error: deviceStatusStream.error,
     seeded: deviceStatusStream.seeded,
     everSeeded: deviceStatusStream.everSeeded,
+    answeredAtMs: deviceStatusStream.everSeeded ? 1_700_000_000_000 : null,
     refetch: vi.fn(),
   }),
 }));

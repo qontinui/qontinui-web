@@ -92,3 +92,26 @@ export function mergeDeviceStatusRow<T extends KeyedRow>(
   next.set(key, row);
   return next;
 }
+
+/**
+ * Apply the frames that arrived while a fleet read was on the wire over that
+ * read's rows. The read's snapshot can predate them, and it replaces the whole
+ * map, so without this a report would go backwards until its next frame. A
+ * frame the read has provably overtaken is dropped: the read holds that device's
+ * later report. Rows the read no longer serves stay gone unless a frame names
+ * them, so pruning still works.
+ */
+export function applyFramesOverRead<T extends KeyedRow>(
+  read: Map<string, T>,
+  frames: readonly T[]
+): Map<string, T> {
+  let next = read;
+  for (const frame of frames) {
+    const current = next.get(coordDeviceHostKey(frame));
+    if (current !== undefined && isStrictlyNewer(current, frame) === true) {
+      continue;
+    }
+    next = mergeDeviceStatusRow(next, frame);
+  }
+  return next;
+}

@@ -41,6 +41,7 @@ function mockStream(rows: DeviceStatus[]): UseDeviceStatusStreamResult {
     error: null,
     seeded: true,
     everSeeded: true,
+    answeredAtMs: Date.now() - 180_000,
     refetch: async () => {},
   } as unknown as UseDeviceStatusStreamResult;
 }
@@ -117,19 +118,40 @@ describe("DeviceStatusTile stalled badge", () => {
 describe("DeviceStatusTile — a failed read is never an empty list", () => {
   /** Failure text naming a machine, so its absence is checkable. */
   const FAILURE = "network error: device-host-4471 refused the connection";
-  const NEVER_ANSWERED = { error: FAILURE, seeded: true, everSeeded: false };
+  const NEVER_ANSWERED = {
+    error: FAILURE,
+    seeded: true,
+    everSeeded: false,
+    answeredAtMs: null,
+  };
   const ANSWERED_THEN_FAILED = {
     error: FAILURE,
     seeded: true,
     everSeeded: true,
+    get answeredAtMs() {
+      return Date.now() - 180_000;
+    },
   };
-  const ANSWERED = { error: null, seeded: true, everSeeded: true };
-  const LOADING = { error: null, seeded: false, everSeeded: false };
+  const ANSWERED = {
+    error: null,
+    seeded: true,
+    everSeeded: true,
+    answeredAtMs: Date.now(),
+  };
+  const LOADING = {
+    error: null,
+    seeded: false,
+    everSeeded: false,
+    answeredAtMs: null,
+  };
 
   function renderTileIn(
     presenting: boolean,
     rows: DeviceStatus[],
-    read: Pick<UseDeviceStatusStreamResult, "error" | "seeded" | "everSeeded">
+    read: Pick<
+      UseDeviceStatusStreamResult,
+      "error" | "seeded" | "everSeeded" | "answeredAtMs"
+    >
   ) {
     const stream = {
       ...mockStream(rows),
@@ -215,10 +237,46 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
   });
 
+  it.each([
+    [true, "The latest read failed, so these are the last reports received"],
+    [
+      false,
+      `The latest read failed (${FAILURE}), so these are the last reports received`,
+    ],
+  ])(
+    "rows kept through a failed read say they are last-known (presenting=%s)",
+    (presenting, sentence) => {
+      renderTileIn(presenting, [baseRow()], {
+        ...ANSWERED_THEN_FAILED,
+        answeredAtMs: Date.now() - 180_000,
+      });
+      expect(screen.getByTestId("device-status-last-known")).toHaveTextContent(
+        sentence
+      );
+      if (presenting) {
+        expect(
+          screen.getByTestId("device-status-last-known").textContent
+        ).not.toContain(FAILURE);
+      }
+    }
+  );
+
+  it.each([
+    ["answered", ANSWERED],
+    ["never answered", NEVER_ANSWERED],
+    ["loading", LOADING],
+  ])(
+    "rows from a read that %s carry no last-known sentence",
+    (_state, read) => {
+      renderTileIn(true, [baseRow()], read);
+      expect(screen.queryByTestId("device-status-last-known")).toBeNull();
+    }
+  );
+
   it("presenting, a read answered empty and the latest one failed: past tense, qualified by the failure — never the present-tense sentence", () => {
     renderTileIn(true, [], ANSWERED_THEN_FAILED);
     expect(screen.getByTestId("device-status-stale-empty")).toHaveTextContent(
-      "No machine had reported what it is working on at the last read that succeeded. The latest read failed, so whether one has reported since is not known."
+      "No machine had reported what it is working on at the last read that succeeded, 3m ago. The latest read failed, so whether one has reported since is not known."
     );
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
@@ -231,7 +289,7 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     renderTileIn(false, [], ANSWERED_THEN_FAILED);
     const stale = screen.getByTestId("device-status-stale-empty");
     expect(stale).toHaveTextContent(
-      "No devices were reporting status at the last read that answered."
+      "No devices were reporting status at the last read that answered, 3m ago."
     );
     expect(stale).toHaveTextContent(FAILURE);
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
