@@ -9916,6 +9916,110 @@ async def post_ci_status_notify_when_green(
     )
 
 
+# ---- Register a decision gate (project Overview, Phase 8) -----------------
+#
+# Plan `2026-11-25-overview-timeline-and-milestones-derive-from-coord`
+# Phase 8. The project Overview is DERIVED ONLY from coord (D5), so a decision
+# gate it shows must be enterable in coord, on the page that already holds
+# gates: `/admin/coord/gates`. The verdict is entered with the existing
+# approve / reject / reopen controls; this route only REGISTERS the gate.
+#
+# Coord's operator route `POST /coord/gates/register` (`gate_routes.rs`
+# `register_gate`, on `operator_or_service_writes`) already accepts an
+# `operator_approval` predicate anchored `(work_unit_id, phase_name)` and takes
+# the unit by id, so this proxy resolves the slug first. Two coord facts the
+# body below is shaped around:
+#   * coord DERIVES `gate_class = security-surface` for EVERY `operator_approval`
+#     gate that supplies none (`derive_gate_class`), and the Overview hides that
+#     class (D3). Explicit supply always wins, so this route sends
+#     `routine-review`. It is never client-selectable: an operator-chosen
+#     `security-surface` / `ops-confirm` would make the gate vanish from the
+#     very page it was registered for.
+#   * `register_gate_core` refuses another tenant's unit with
+#     `WorkUnitNotInTenant`; the slug read here is tenant-scoped too, so a
+#     foreign slug is refused by coord and never reaches the register call.
+
+DECISION_GATE_CLASS = "routine-review"
+_DECISION_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+
+
+class DecisionGateRequest(BaseModel):
+    """Body for ``POST /operations/gates/decision``.
+
+    ``extra="forbid"``: ``gate_class`` is deliberately not accepted (see above),
+    so a caller that sends it gets a typed 422 instead of a silent drop.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_unit_slug: str
+    phase_name: str
+    prompt: str
+    clearance_audience: Literal["operator", "agent"] = "operator"
+
+    @field_validator("work_unit_slug", "phase_name", "prompt")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        if len(stripped) > 500:
+            raise ValueError("must be at most 500 characters")
+        return stripped
+
+    @field_validator("work_unit_slug")
+    @classmethod
+    def _slug_shape(cls, v: str) -> str:
+        if not _DECISION_SLUG_RE.fullmatch(v):
+            raise ValueError("work_unit_slug is not a valid work unit slug")
+        return v
+
+
+@router.post("/gates/decision", response_model=NotifyWhenGreenResponse)
+async def post_register_decision_gate(
+    body: DecisionGateRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Register a decision gate: ``operator_approval`` anchored on a work unit.
+
+    1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the
+       unit id. A slug coord does not know in this tenant is coord's own error,
+       passed through.
+    2. ``POST /coord/gates/register`` with the predicate
+       ``{"kind": "operator_approval", "prompt": ...}``, anchor
+       ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and
+       the fixed ``gate_class`` above.
+
+    Returns coord's registration outcome (``gate_id``, ``warnings``, ...).
+    """
+    detail = await _proxy_coord_get(
+        f"/coord/work-units/{quote(body.work_unit_slug, safe='')}",
+        tenant_id=tenant_id,
+    )
+    unit = detail.get("work_unit") if isinstance(detail, dict) else None
+    unit_id = unit.get("id") if isinstance(unit, dict) else None
+    if not isinstance(unit_id, str) or not unit_id:
+        # A 2xx that does not name the unit is UNKNOWN, never a guess at an id.
+        raise refusal_error(
+            502,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "coord did not return a work unit id for that slug",
+            discriminator="coord_work_unit_id_missing",
+            glossary_terms=[GlossaryTerm.coord],
+        )
+    register_body: dict[str, Any] = {
+        "work_unit_id": unit_id,
+        "phase_name": body.phase_name,
+        "predicate": {"kind": "operator_approval", "prompt": body.prompt},
+        "clearance_audience": body.clearance_audience,
+        "gate_class": DECISION_GATE_CLASS,
+    }
+    return await _proxy_coord_post(
+        "/coord/gates/register", register_body, tenant_id=tenant_id
+    )
+
+
 @router.websocket("/ci-status/ws")
 async def websocket_ci_status(
     websocket: WebSocket,
