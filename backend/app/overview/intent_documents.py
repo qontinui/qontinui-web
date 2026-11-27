@@ -646,9 +646,9 @@ def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
     key: no — absent already reads internal, and a write would only move the
     version. Anything else (duplicates, an empty or unknown value): yes, so the
     splice leaves exactly one key. A ``shared`` mark behind non-canonical
-    fences is rewritten too: coord does not read such a block as frontmatter
-    (its validation and any frontmatter reader skip it), so the rewrite puts
-    the block where coord sees it."""
+    fences is rewritten too: coord's ``frontmatter_span`` (the reader its
+    prompt-document validation uses) does not see such a block, so the
+    rewrite puts the block where coord sees it."""
     count, stored = _stored_visibility(frontmatter)
     if count == 1 and stored == value:
         return value == "shared" and not _fences_canonical(frontmatter)

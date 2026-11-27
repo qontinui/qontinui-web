@@ -742,10 +742,12 @@ class TestRoundTwo:
 #: Fences coord does not read as frontmatter: a BOM before the opening fence,
 #: trailing blanks on a fence. A visibility write must leave them canonical.
 NONCANONICAL_BODIES = {
-    "bom-led": "﻿---\ntitle: x\n---\n\nbody\n",
+    "bom-led": "\ufeff---\ntitle: x\n---\n\nbody\n",
     "blank-trailed": "--- \ntitle: x\n---  \n\nbody\n",
     "crlf-blank-trailed": "---\r\ntitle: x\r\n--- \r\n\r\nbody\r\n",
-    "shared-but-hidden": "﻿---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+    "shared-but-hidden": "\ufeff---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+    # Mixed endings: the closing fence keeps its own CRLF.
+    "mixed-closing": "---\ntitle: x\n---\r\n\nbody\n",
 }
 
 
@@ -757,6 +759,7 @@ CANONICAL_AFTER_WRITE = {
         "---\r\ntitle: x\r\nvisibility: shared\r\n---\r\n\r\nbody\r\n"
     ),
     "shared-but-hidden": "---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+    "mixed-closing": "---\ntitle: x\nvisibility: shared\n---\r\n\nbody\n",
 }
 
 
@@ -789,7 +792,10 @@ class TestRoundFour:
             admin, "product_intent:shared-but-hidden", "shared"
         )
         assert first.status_code == 200, first.text
+        # The FIRST write did rewrite the hidden mark: one patch, version moved.
+        assert len(coord_round4.patches) == 1
         version = first.json()["item"]["version"]
+        assert version == 4
         patches = len(coord_round4.patches)
         again = await _set_visibility(
             admin, "product_intent:shared-but-hidden", "shared", version=version
@@ -856,3 +862,17 @@ class TestRoundFour:
         stored = coord_more.docs[("success_metric", "broken")]["body"]
         assert stored.endswith("# Broken\n\nFixed prose.\n"), stored
         assert stored.startswith("---\naudience: 'unclosed\n---\n"), stored
+
+    async def test_a_visibility_null_alone_or_an_empty_patch_is_a_422(
+        self, admin: httpx.AsyncClient, coord: FakeCoord
+    ) -> None:
+        """`visibility: null` leaves the mark alone, so on its own it asks for
+        nothing — refused like an empty patch, and nothing reaches coord."""
+        for payload in ({"visibility": None}, {}):
+            response = await admin.patch(
+                f"{API}/intent-documents/product_intent:vision",
+                json=payload,
+                headers={"If-Match": '"3"'},
+            )
+            assert response.status_code == 422, (payload, response.text)
+        assert coord.patches == []
