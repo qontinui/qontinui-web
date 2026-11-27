@@ -1488,15 +1488,28 @@ export function eventLabel(kind: string): string {
 
 /**
  * The event's subject — the unit it names (`unit` on a service transition,
- * `victim_unit` on an OOM kill), or the hostname coord stamps on an identity
- * conflict. `detail` is runner-authored JSON, so it is read field by field.
+ * `victim_unit` on an OOM kill), else `in <victim_slice>` for an OOM kill the
+ * runner placed inside a watched slice without establishing the unit (a
+ * slice-remainder event: `victim_unit: null` means NOT ESTABLISHED, not "no
+ * unit"), else the hostname coord stamps on an identity conflict. A blank
+ * `victim_slice` names nothing and falls through. `detail` is runner-authored
+ * JSON, so it is read field by field; an older runner sends no `victim_slice`.
  */
 export function eventSubject(e: ComputerEventWire): string | null {
   const d =
     typeof e.detail === "object" && e.detail !== null
       ? (e.detail as Record<string, unknown>)
       : {};
-  return str(d.unit) ?? str(d.victim_unit) ?? str(d.hostname) ?? null;
+  const slice = str(
+    typeof d.victim_slice === "string" ? d.victim_slice.trim() : null
+  );
+  return (
+    str(d.unit) ??
+    str(d.victim_unit) ??
+    (slice !== null ? `in ${slice}` : null) ??
+    str(d.hostname) ??
+    null
+  );
 }
 
 /**

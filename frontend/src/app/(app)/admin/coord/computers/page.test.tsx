@@ -21,6 +21,11 @@
  * 7. **Each list row's GPUs render in its expanded capacity block** — model
  *    and VRAM per GPU, `none` for a measured `[]` — and only one row's block
  *    is open at a time.
+ * 8. **An OOM kill placed only in a slice reads `in <slice>`** on the detail
+ *    page's event row and the list row's last-event line, a placed scope reads
+ *    as that scope, and one with neither (or a blank slice) reads `no subject
+ *    reported` (plan `2026-11-27-devops-oom-kills-inside-agent-build-slices-
+ *    carry-no-victim` Phase 5, test 30).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,6 +54,7 @@ import {
   computerFx,
   detailFx,
   DEVICE_ID,
+  eventFx,
   OTHER_COMPUTER_ID,
   laneFx,
   listFx,
@@ -900,5 +906,86 @@ describe("/admin/coord/computers/[computerId]", () => {
     const unknown = await screen.findByTestId("coord-computer-unknown-banner");
     expect(unknown.getAttribute("data-issue")).toBe("route_unavailable");
     expect(unknown.textContent).toContain("UNKNOWN — ");
+  });
+});
+
+describe("/admin/coord/computers — an OOM kill's subject", () => {
+  const remainder = eventFx({
+    event_id: "oom_kill:remainder",
+    observed_age_secs: 60,
+    detail: {
+      victim_unit: null,
+      victim_slice: "agent-builds.slice",
+      slices: "read",
+      count: 1,
+      attribution: "slice_memory_events",
+    },
+  });
+  const placed = eventFx({
+    event_id: "oom_kill:placed",
+    observed_age_secs: 120,
+    detail: {
+      victim_unit: "agent-build-x.scope",
+      victim_slice: "agent-builds.slice",
+      slices: "read",
+      count: 1,
+      attribution: "cgroup_memory_events",
+    },
+  });
+  const neither = eventFx({
+    event_id: "oom_kill:neither",
+    observed_age_secs: 180,
+  });
+  const blankSlice = eventFx({
+    event_id: "oom_kill:blank-slice",
+    observed_age_secs: 240,
+    detail: {
+      victim_unit: null,
+      victim_slice: "",
+      count: 1,
+      attribution: "slice_memory_events",
+    },
+  });
+
+  function eventRow(id: string): HTMLElement {
+    const row = screen
+      .getAllByTestId("coord-computer-event-row")
+      .find((r) => r.getAttribute("data-row-key") === id);
+    if (!row) throw new Error(`no event row keyed ${id}`);
+    return row;
+  }
+
+  it("names the slice on a remainder event row, the scope on a placed one, and nothing on the rest", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({ events: [neither, blankSlice, placed, remainder] })
+    );
+    render(<CoordComputerDetailPage />);
+    expect(
+      await screen.findAllByTestId("coord-computer-event-row")
+    ).toHaveLength(4);
+
+    expect(
+      within(eventRow("oom_kill:remainder")).getByText("in agent-builds.slice")
+    ).toBeTruthy();
+
+    const placedRow = eventRow("oom_kill:placed");
+    expect(within(placedRow).getByText("agent-build-x.scope")).toBeTruthy();
+    expect(within(placedRow).queryByText(/^in /)).toBeNull();
+
+    for (const id of ["oom_kill:neither", "oom_kill:blank-slice"]) {
+      const row = eventRow(id);
+      expect(within(row).getByText("no subject reported")).toBeTruthy();
+      expect(within(row).queryByText(/^in /)).toBeNull();
+    }
+  });
+
+  it("names the slice on the list row's last-event line", async () => {
+    httpGet.mockResolvedValue(listFx([computerFx({ last_event: remainder })]));
+    render(<CoordComputersPage />);
+    const [row] = await screen.findAllByTestId("coord-computer-row");
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    expect(
+      (await screen.findByTestId("coord-computer-last-event")).textContent
+    ).toContain("Last event: OOM kill (in agent-builds.slice), ");
   });
 });

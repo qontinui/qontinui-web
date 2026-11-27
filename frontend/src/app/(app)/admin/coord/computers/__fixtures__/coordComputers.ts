@@ -9,6 +9,7 @@
 
 import type {
   ComputerDetailWire,
+  ComputerEventWire,
   ComputerLaneWire,
   ComputerServiceWire,
   ComputerSummaryWire,
@@ -189,6 +190,27 @@ export function serviceFx(
     // Coord's `service_is_down`.
     down: active === "failed" || active === "inactive",
     ...over,
+  };
+}
+
+/**
+ * Coord's `EventRow`. `detail` is the runner's JSON, stored verbatim; the
+ * default is the residual `oom_kill` the runner emits today when no watched
+ * unit or slice was placed (`victim_unit: null`, `attribution: "vmstat_delta"`).
+ */
+export function eventFx(
+  over: Partial<ComputerEventWire> & { observed_age_secs?: number } = {},
+  nowMs = Date.now()
+): ComputerEventWire {
+  const { observed_age_secs, ...rest } = over;
+  const at = iso(observed_age_secs ?? 300, nowMs);
+  return {
+    event_id: "oom_kill:boot-1:1",
+    kind: "oom_kill",
+    observed_at: at,
+    recorded_at: at,
+    detail: { victim_unit: null, count: 1, attribution: "vmstat_delta" },
+    ...rest,
   };
 }
 
