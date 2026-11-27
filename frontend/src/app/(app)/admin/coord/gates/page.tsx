@@ -65,7 +65,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Archive, Pause, Play, RefreshCw, Skull, Wrench } from "lucide-react";
+import {
+  Archive,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Skull,
+  Wrench,
+} from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
@@ -79,6 +87,7 @@ import { useClearanceRuleSet } from "../_shared/useClearanceRuleSet";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
 import { RunSweepDialog } from "./_components/RunSweepDialog";
+import { RegisterDecisionGateDialog } from "./_components/RegisterDecisionGateDialog";
 
 // Auto-refresh cadence. Slightly above the backend's ~30s cache TTL so a
 // poll usually lands a fresh server-side eval rather than a cache hit.
@@ -137,6 +146,8 @@ export default function CoordGatesPage() {
   const [wouldReap, setWouldReap] = useState(false);
   // Controls the "Run land-backfill sweep" dialog (dry-run-first, operator-only).
   const [sweepOpen, setSweepOpen] = useState(false);
+  // Controls the "Register decision gate" dialog (project Overview, Phase 8).
+  const [registerOpen, setRegisterOpen] = useState(false);
 
   // Wall-clock of the last successful load, and a 1s ticker that drives the
   // "updated Xs ago" label without re-fetching.
@@ -313,6 +324,17 @@ export default function CoordGatesPage() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setRegisterOpen(true)}
+            data-testid="gates-register-decision"
+            data-ui-bridge-id="coord.gates-register-decision"
+            title="Register a gate that waits for a person's decision on a work unit's phase"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Register decision gate
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setSweepOpen(true)}
             data-testid="gates-run-sweep"
             title="Run the land-backfill gate-doctor sweep (dry-run first)"
@@ -423,6 +445,11 @@ export default function CoordGatesPage() {
         )
       )}
 
+      <RegisterDecisionGateDialog
+        open={registerOpen}
+        onOpenChange={setRegisterOpen}
+        onRegistered={() => load(true)}
+      />
       <RunSweepDialog
         open={sweepOpen}
         onOpenChange={setSweepOpen}
