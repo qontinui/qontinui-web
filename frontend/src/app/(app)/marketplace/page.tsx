@@ -244,6 +244,7 @@ export default function MarketplacePage() {
 
         {selectedPackage && (
           <InstallDialog
+            key={selectedPackage.id}
             open={installDialogOpen}
             onOpenChange={setInstallDialogOpen}
             package={selectedPackage}
@@ -257,6 +258,7 @@ export default function MarketplacePage() {
                   ? 100
                   : 0
             }
+            error={installPackageMutation.error?.message}
           />
         )}
       </div>
