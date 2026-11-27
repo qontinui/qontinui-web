@@ -16,6 +16,7 @@ import type { SaveResult } from "@/components/overview/editing/useResource";
 import { toIntentEntry, type IntentDocument } from "../_lib/intent";
 import {
   IntentSection,
+  NOT_SHARED_TEXT,
   slugFromTitle,
   type IntentSectionActions,
 } from "./IntentSection";
@@ -57,10 +58,14 @@ function Harness({
   outcome,
   initial = [template],
   canEdit = true,
+  setVisibility = vi.fn(async () => null),
+  withheld,
 }: {
   outcome: (doc: IntentDocument) => SaveResult<IntentDocument>;
   initial?: IntentDocument[];
   canEdit?: boolean;
+  setVisibility?: IntentSectionActions["setVisibility"];
+  withheld?: boolean;
 }) {
   const [docs, setDocs] = useState(initial);
   const swap = (id: string, next: IntentDocument) =>
@@ -81,12 +86,14 @@ function Harness({
     },
     move: vi.fn(),
     createDocument: vi.fn(),
+    setVisibility,
   };
   return (
     <IntentSection
       kind="audience_profile"
       entries={docs.map(toIntentEntry)}
       actions={actions}
+      withheld={withheld}
     />
   );
 }
@@ -371,6 +378,90 @@ describe("a document that vanishes while its editor is open", () => {
     expect(
       screen.getByRole("heading", { name: "Example audience" })
     ).toBeTruthy();
+  });
+});
+
+describe("who may read a document (plan 2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility, Phase 5)", () => {
+  const shared: IntentDocument = { ...written, visibility: "shared" };
+
+  it("offers no visibility control to a reader who cannot edit", () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: shared })}
+        initial={[shared]}
+        canEdit={false}
+      />
+    );
+    expect(screen.getByText("Directs the fleet.")).toBeTruthy();
+    expect(screen.queryByText("Seen by:")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+
+  it("shows an editor who sees each document, unmarked reading as the team", () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: written })}
+        initial={[written]}
+      />
+    );
+    expect(screen.getByText("Seen by:")).toBeTruthy();
+    const team = screen.getByRole("radio", { name: "your team" });
+    const others = screen.getByRole("radio", {
+      name: "also the people you share it with",
+    });
+    expect(team.getAttribute("aria-checked")).toBe("true");
+    expect(others.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("sets the mark when an editor shares a document", async () => {
+    const setVisibility = vi.fn(async () => null);
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: written })}
+        initial={[written]}
+        setVisibility={setVisibility}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("radio", { name: "also the people you share it with" })
+    );
+    await waitFor(() =>
+      expect(setVisibility).toHaveBeenCalledWith(written.id, "shared")
+    );
+  });
+
+  it("says the failure when the mark could not be saved", async () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: written })}
+        initial={[written]}
+        setVisibility={async () => "The service isn't responding."}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("radio", { name: "also the people you share it with" })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/isn't responding/)
+    );
+  });
+
+  it("does not call a withheld section unwritten", () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: written })}
+        initial={[]}
+        canEdit={false}
+        withheld
+      />
+    );
+    expect(screen.getByText(NOT_SHARED_TEXT)).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The people this project serves haven't been described yet."
+      )
+    ).toBeNull();
   });
 });
 

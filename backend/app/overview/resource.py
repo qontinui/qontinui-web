@@ -24,7 +24,7 @@ from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.overview.permissions import OverviewAccess, PermissionRule
+from app.overview.permissions import OutsideRead, OverviewAccess, PermissionRule
 
 Operation = Literal["list", "get", "create", "update", "delete"]
 
@@ -71,6 +71,10 @@ class ListResult:
     #: Set when the store answered but cannot see its data — an empty
     #: ``items`` then means "cannot see", never "nothing here".
     degraded: str | None = None
+    #: The store left out records that exist but are not shared with this
+    #: caller (``outside_read="marked"``). Says that some were, never how
+    #: many or which.
+    withheld: bool = False
 
 
 class ResourceStore(Protocol):
@@ -136,3 +140,11 @@ class ResourceSpec:
     #: (a page's body is in ``page_versions``). A DELETE snapshot keeps every
     #: field, because the record and whatever kept its history go with it.
     audit_exclude: frozenset[str] = frozenset()
+    #: How a caller WITHOUT a team role reads this resource
+    #: (:data:`app.overview.permissions.OutsideRead`). ``none``, the default,
+    #: refuses them with 403 ``not_shared_with_you``; ``marked`` lets them
+    #: through to a store that serves only what is marked for them. Plan
+    #: ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+    #: D5: a resource that has not declared how outside roles read it is not
+    #: read by them.
+    outside_read: OutsideRead = "none"

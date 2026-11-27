@@ -16,7 +16,10 @@ Invariants
 ----------
 1. **Scoped to the ACTIVE tenant**, resolved from ``X-Qontinui-Active-Tenant``
    through coord's identity door and membership-validated there.
-2. **Reads are open to any member; the write is admin-only** — the settings
+2. **Reads are open to any member holding a team role; the write is
+   admin-only** — a member without a team role is refused with 403
+   ``not_shared_with_you``, as on every overview read that declares no
+   outside read (``app.overview.permissions``); the settings
    include ``editing_roles``, which decides who else may edit — decided by
    :mod:`app.overview.permissions`, the same function the resource catalog
    serves as ``can_edit``. The write appends ``overview.change_log`` in its
@@ -42,6 +45,8 @@ from app.overview.permissions import (
     OverviewAccess,
     OverviewCaller,
     get_overview_caller,
+    holds_team_role,
+    not_shared_refusal,
     require_edit,
 )
 from app.schemas.overview import OverviewSettingsRead, OverviewSettingsWrite
@@ -63,7 +68,18 @@ async def get_overview_tenant_id(
     selected". This resolves the effective tenant through the same
     :func:`get_overview_caller` every write uses, so a read and a write in the
     same session can never land in different projects.
+
+    A caller without a team role in that tenant (nor qontinui staff) is
+    refused with 403 ``not_shared_with_you``: the settings carry
+    ``editing_roles`` and the money assumptions, and they declare no outside
+    read (plan
+    ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+    Phase 5).
     """
+    if not holds_team_role(
+        caller.roles, staff=bool(getattr(_user, "is_superuser", False))
+    ):
+        raise not_shared_refusal()
     return caller.tenant_id
 
 

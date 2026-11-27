@@ -9,11 +9,21 @@
  * description (plan `2026-09-20-overview-authoring-layer`, Phase 1): each
  * document can be rewritten, moved within its section, and new ones added.
  * Every control is absent for a reader who may not edit — never disabled.
+ *
+ * Who may read each document is set here too, by whoever may edit it: "Seen
+ * by: your team / also the people you share it with" (the document's
+ * `visibility:` mark; plan
+ * `2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility`
+ * Phase 5). Unmarked reads as "your team". A reader the project shares
+ * documents with is served only those, and the page says when some were left
+ * out.
  */
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { MarkdownView } from "@/components/overview/MarkdownView";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
@@ -30,6 +40,7 @@ import {
   type IntentDocument,
   type IntentEntry,
   type SummaryIntentKind,
+  type Visibility,
 } from "../_lib/intent";
 
 export const INTENT_HEADINGS: Record<
@@ -84,6 +95,82 @@ export interface IntentSectionActions {
     name: string,
     body: string
   ) => Promise<SaveResult<IntentDocument>>;
+  /** Set who may read a document. Resolves to a sentence on failure, null
+   *  once saved. */
+  setVisibility: (id: string, visibility: Visibility) => Promise<string | null>;
+}
+
+const VISIBILITY_CHOICES: { value: Visibility; label: string }[] = [
+  { value: "internal", label: "your team" },
+  { value: "shared", label: "also the people you share it with" },
+];
+
+/**
+ * "Seen by: …" for one document. Rendered only for a reader who may edit;
+ * a reader who may not sees no control at all.
+ */
+function VisibilityControl({
+  entry,
+  docId,
+  setVisibility,
+}: {
+  entry: IntentEntry;
+  docId: string;
+  setVisibility: IntentSectionActions["setVisibility"];
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const uiBridgeId = `overview.summary.${docId}.visibility`;
+  const labelId = `${docId}--visibility-label`;
+  const change = async (value: string) => {
+    if (value !== "internal" && value !== "shared") return;
+    if (value === entry.visibility) return;
+    setSaving(true);
+    setError(null);
+    setError(await setVisibility(entry.id, value));
+    setSaving(false);
+  };
+  return (
+    <div className="mt-2 text-sm" data-ui-bridge-id={uiBridgeId}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span id={labelId} className="text-muted-foreground">
+          Seen by:
+        </span>
+        <RadioGroup
+          aria-labelledby={labelId}
+          value={entry.visibility}
+          onValueChange={(value) => void change(value)}
+          disabled={saving}
+          className="flex flex-wrap gap-x-4 gap-y-1"
+        >
+          {VISIBILITY_CHOICES.map(({ value, label }) => {
+            const id = `${docId}--visibility-${value}`;
+            return (
+              <div key={value} className="flex min-h-9 items-center gap-2">
+                <RadioGroupItem
+                  value={value}
+                  id={id}
+                  data-ui-bridge-id={`${uiBridgeId}.${value}`}
+                />
+                <Label htmlFor={id} className="font-normal">
+                  {label}
+                </Label>
+              </div>
+            );
+          })}
+        </RadioGroup>
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="mt-1 text-destructive"
+          data-ui-bridge-id={`${uiBridgeId}.error`}
+        >
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function IntentBody({ entry, id }: { entry: IntentEntry; id: string }) {
@@ -281,16 +368,25 @@ function NewDocumentForm({
 const linkButton =
   "inline-flex min-h-9 items-center rounded-md px-1 text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground disabled:no-underline";
 
+/** Said in place of "not written yet" when the server withheld documents
+ *  from this reader: what is missing may exist and simply not be shared. */
+export const NOT_SHARED_TEXT = "Nothing in this part has been shared with you.";
+
 export function IntentSection({
   kind,
   entries,
   actions,
+  withheld = false,
 }: {
   kind: SummaryIntentKind;
   entries: IntentEntry[];
   actions: IntentSectionActions;
+  /** The server left out documents not shared with this reader, so an empty
+   *  section must not claim nothing was written. */
+  withheld?: boolean;
 }) {
-  const { heading, missing, noun } = INTENT_HEADINGS[kind];
+  const { heading, missing: unwrittenText, noun } = INTENT_HEADINGS[kind];
+  const missing = withheld ? NOT_SHARED_TEXT : unwrittenText;
   // Every template with an OPEN editor stays an unwritten row until that
   // editor closes. Otherwise a save's own optimistic result (or a conflict
   // carrying the other writer's text) moves it into the written list — or
@@ -469,6 +565,13 @@ export function IntentSection({
                     {title}
                     <IntentBody entry={entry} id={docId} />
                   </EditableSection>
+                )}
+                {canEdit && entry.state !== "unreadable" && (
+                  <VisibilityControl
+                    entry={entry}
+                    docId={docId}
+                    setVisibility={actions.setVisibility}
+                  />
                 )}
                 <div className="flex flex-wrap items-center gap-x-3">
                   <ChangeLogPanel

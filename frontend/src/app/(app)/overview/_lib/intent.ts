@@ -29,6 +29,10 @@ export interface IntentDocument {
   /** Prose — the frontmatter is served apart and never edited here. */
   body: string;
   frontmatter: string | null;
+  /** Who may read it, from the frontmatter's `visibility:` key (plan
+   *  `2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility`
+   *  Phase 5). Absent — an older backend — reads `internal`. */
+  visibility?: Visibility;
   /** The document's position in its section, 1-based; null = default. */
   overview_order: number | null;
   state: IntentState | "unreadable";
@@ -39,6 +43,14 @@ export interface IntentDocument {
   updated_at: string | null;
   updated_by: string | null;
 }
+
+/**
+ * Who may read a document. `internal`: the operator's team only. `shared`:
+ * also the people the project shares it with (a member holding only an
+ * outside role). The server decides it from the frontmatter and fails closed:
+ * no mark reads `internal`.
+ */
+export type Visibility = "internal" | "shared";
 
 /** The intent kinds the Summary shows, in page order. */
 export const SUMMARY_INTENT_KINDS = [
@@ -125,6 +137,8 @@ export interface IntentEntry {
   updatedAt: string | null;
   /** The load error, for `unreadable` only. */
   error?: string;
+  /** Who may read it; `internal` unless the server says `shared`. */
+  visibility: Visibility;
 }
 
 /**
@@ -291,6 +305,7 @@ export function toIntentEntry(doc: IntentDocument): IntentEntry {
     title: titleOfDocument(doc.name, prose),
     hasBody: stripFrontmatter(prose).trim().length > 0,
     body: bodyWithoutLeadHeading(prose),
+    visibility: doc.visibility === "shared" ? "shared" : "internal",
     ...(state === "unreadable" ? { error: doc.error ?? "" } : {}),
   };
 }

@@ -49,10 +49,8 @@ export default function OverviewSummaryPage() {
     loading: tenantsLoading,
     error: tenantsError,
   } = useTenant();
-  const { intent, progress, saveBody, move, createDocument } = useSummaryData(
-    activeTenantId,
-    tenantsLoading || tenantsError !== null
-  );
+  const { intent, progress, saveBody, move, setVisibility, createDocument } =
+    useSummaryData(activeTenantId, tenantsLoading || tenantsError !== null);
   // The domain cost ledger — the measurement of the direction the Intent
   // sections state (plan
   // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
@@ -68,6 +66,7 @@ export default function OverviewSummaryPage() {
     viewerId: user?.id != null ? String(user.id) : null,
     saveBody,
     move,
+    setVisibility,
     createDocument,
   };
 
@@ -133,14 +132,29 @@ export default function OverviewSummaryPage() {
                 </details>
               </div>
             ) : (
-              SUMMARY_INTENT_KINDS.map((kind) => (
-                <IntentSection
-                  key={kind}
-                  kind={kind}
-                  entries={intent.entries.filter((e) => e.kind === kind)}
-                  actions={actions}
-                />
-              ))
+              <>
+                {intent.withheld && (
+                  // The server left out documents not shared with this
+                  // reader. Said once, with no count and no titles, so the
+                  // shorter page is not read as everything there is.
+                  <p
+                    role="status"
+                    className="border-l-2 border-border pl-4 text-[15px] leading-relaxed text-muted-foreground"
+                    data-ui-bridge-id="overview.summary.withheld"
+                  >
+                    Some documents are not shared with you.
+                  </p>
+                )}
+                {SUMMARY_INTENT_KINDS.map((kind) => (
+                  <IntentSection
+                    key={kind}
+                    kind={kind}
+                    entries={intent.entries.filter((e) => e.kind === kind)}
+                    actions={actions}
+                    withheld={intent.withheld}
+                  />
+                ))}
+              </>
             )}
           </>
         )}

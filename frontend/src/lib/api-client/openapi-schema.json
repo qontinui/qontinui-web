@@ -14059,6 +14059,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -14292,6 +14297,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -24415,6 +24425,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -28327,6 +28342,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -32682,6 +32702,15 @@
             "title": "Version",
             "type": "integer"
           },
+          "visibility": {
+            "default": "internal",
+            "enum": [
+              "internal",
+              "shared"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          },
           "withdrawn": {
             "default": false,
             "title": "Withdrawn",
@@ -32705,7 +32734,7 @@
         "type": "object"
       },
       "IntentDocumentUpdate": {
-        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.",
+        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.\n``visibility`` sets the frontmatter's ``visibility:`` key and nothing else\nin the block; it cannot be null.",
         "properties": {
           "body": {
             "anyOf": [
@@ -32732,6 +32761,21 @@
               }
             ],
             "title": "Overview Order"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "internal",
+                  "shared"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
           }
         },
         "title": "IntentDocumentUpdate",
@@ -32781,6 +32825,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -38177,6 +38226,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -42019,6 +42073,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43026,6 +43085,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -50039,6 +50103,11 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "withheld": {
+            "default": false,
+            "title": "Withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -52654,6 +52723,10 @@
             "title": "Can Edit",
             "type": "boolean"
           },
+          "can_read": {
+            "title": "Can Read",
+            "type": "boolean"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -52693,6 +52766,7 @@
           "description",
           "operations",
           "can_edit",
+          "can_read",
           "schemas"
         ],
         "title": "ResourceDescriptor",
@@ -123794,7 +123868,7 @@
     },
     "/api/v1/overview/change-log": {
       "get": {
-        "description": "Newest first. Readable by any member, like the records it describes.",
+        "description": "Newest first. Readable by any member holding a team role. A caller\nwithout one is refused (403 ``not_shared_with_you``, by\n:func:`get_overview_access`) for every resource, ``marked`` ones too:\neach row carries a write's before and after values, which would show an\nunshared document's text.",
         "operationId": "api_v1_overview_change_log_get",
         "parameters": [
           {

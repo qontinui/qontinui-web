@@ -38,6 +38,20 @@ What the adapter adds on top of coord's own prompt-document routes:
 * **One permission answer.** Coord accepts a prompt-document write only from
   an admin of the tenant, so this resource's rule is ``coord_admin`` — the
   project's ``editing_roles`` cannot widen a store that does not read it.
+
+* **Who outside the team may read it: the ``visibility:`` mark.** Plan
+  ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+  Phase 5 (D5). A document's frontmatter key ``visibility: shared`` or
+  ``internal`` is served as ``visibility``; no frontmatter, no key, a value
+  this module does not know, or the key twice reads ``internal`` — fail
+  closed. A caller WITHOUT a team role (``OverviewAccess.team_role``) is
+  served only ``shared`` documents: the list leaves the rest out and says
+  ``withheld`` (never how many or which), and a get of one answers 404, as for
+  a document that does not exist, so its name is not confirmed either. A team
+  role reads everything, as before. Coord filters the same way for that
+  caller at its own doors (Phase 10); this is the second line. A tenant admin
+  sets the mark with ``visibility`` on an update, which splices that one key
+  into the stored frontmatter and leaves every other byte as stored.
 """
 
 from __future__ import annotations
@@ -85,6 +99,11 @@ IntentKind = Literal[
     "decision_record",
 ]
 IntentState = Literal["authored", "skeleton", "unknown", "unreadable"]
+#: Who may read a document. ``internal``: the operator's team only.
+#: ``shared``: also a member holding only an outside role. Absent means
+#: internal.
+Visibility = Literal["internal", "shared"]
+VISIBILITY_KEY = "visibility"
 
 #: Coord's own name rule for a hand-authored document.
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -107,6 +126,79 @@ def split_frontmatter(raw: str) -> tuple[str | None, str]:
     if not match:
         return None, raw
     return match.group(0), raw[match.end() :].lstrip()
+
+
+#: A TOP-LEVEL ``visibility:`` line in a frontmatter block (no indentation, so
+#: a nested mapping's key of the same name is not it). Group 1 is everything
+#: up to and including the colon and the spaces after it; group 2 the value
+#: as written; the line ending (LF or CRLF) is not part of the match.
+_VISIBILITY_LINE = re.compile(r"(?m)^(visibility:[ \t]*)([^\r\n]*?)[ \t]*(?=\r?$)")
+
+
+def _plain_value(raw: str) -> str:
+    """A YAML scalar as written, with a trailing comment and one pair of
+    matching quotes removed. Nothing cleverer: a value this does not reduce to
+    exactly ``shared`` reads internal."""
+    value = raw
+    if " #" in value:
+        value = value.split(" #", 1)[0]
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return value
+
+
+def visibility_of(frontmatter: str | None) -> Visibility:
+    """``shared`` only when the block carries exactly one top-level
+    ``visibility:`` key whose value is ``shared``; ``internal`` otherwise —
+    no block, no key, an unknown value, or the key twice (fail closed)."""
+    if not frontmatter:
+        return "internal"
+    values = [_plain_value(m.group(2)) for m in _VISIBILITY_LINE.finditer(frontmatter)]
+    return "shared" if values == ["shared"] else "internal"
+
+
+def _stored_visibility_values(frontmatter: str | None) -> list[str]:
+    if not frontmatter:
+        return []
+    return [_plain_value(m.group(2)) for m in _VISIBILITY_LINE.finditer(frontmatter)]
+
+
+#: The closing delimiter of a frontmatter block, with the line ending before
+#: it (group 1) — where a new key is inserted.
+_CLOSING = re.compile(r"(\r?\n)---[ \t]*(?:\r?\n)?\Z")
+
+
+def splice_visibility(frontmatter: str | None, value: Visibility) -> str:
+    """The frontmatter block with ``visibility:`` set to ``value``, every other
+    byte as it was. Each existing top-level ``visibility:`` line has its value
+    replaced in place; with none, one line is added before the closing
+    delimiter, in the block's own line ending; with no block at all, a new
+    block holding only that key is returned."""
+    if not frontmatter:
+        return f"---\n{VISIBILITY_KEY}: {value}\n---\n"
+    if _VISIBILITY_LINE.search(frontmatter):
+        return _VISIBILITY_LINE.sub(lambda m: f"{m.group(1)}{value}", frontmatter)
+    closing = _CLOSING.search(frontmatter)
+    if (
+        closing is None
+    ):  # pragma: no cover — split_frontmatter only yields closed blocks
+        raise ValueError("frontmatter block has no closing delimiter")
+    at = closing.start()
+    newline = closing.group(1)
+    return f"{frontmatter[:at]}{newline}{VISIBILITY_KEY}: {value}{frontmatter[at:]}"
+
+
+def splice_visibility_into_body(raw: str, value: Visibility) -> str:
+    """A stored document body with its frontmatter's ``visibility:`` set:
+    the block is spliced (:func:`splice_visibility`) and everything after it
+    is kept byte for byte. A body with no block gets one, followed by a blank
+    line, as :func:`join_frontmatter` writes it."""
+    match = _FRONTMATTER.match(raw)
+    if not match:
+        return f"{splice_visibility(None, value)}\n{raw}"
+    block = match.group(0)
+    return splice_visibility(block, value) + raw[match.end() :]
 
 
 def join_frontmatter(frontmatter: str | None, prose: str) -> str:
@@ -146,6 +238,11 @@ class IntentDocumentRead(BaseModel):
     body: str
     #: The YAML block agents read, verbatim; read-only here.
     frontmatter: str | None
+    #: Who may read it, from the frontmatter's ``visibility:`` key. Absent,
+    #: unknown or repeated reads ``internal`` (:func:`visibility_of`). A
+    #: skeleton or unreadable document on a list read reads ``internal``,
+    #: since its frontmatter was not read.
+    visibility: Visibility = "internal"
     #: The document's position in its section, 1-based. ``None``: the page's
     #: default order.
     overview_order: int | None
@@ -188,19 +285,24 @@ class IntentDocumentCreate(BaseModel):
 
 class IntentDocumentUpdate(BaseModel):
     """Absent fields are left alone. ``overview_order: null`` returns the
-    document to the page's default order; ``body`` cannot be cleared."""
+    document to the page's default order; ``body`` cannot be cleared.
+    ``visibility`` sets the frontmatter's ``visibility:`` key and nothing else
+    in the block; it cannot be null."""
 
     body: str | None = Field(default=None, min_length=1, max_length=MAX_BODY_CHARS)
     overview_order: int | None = Field(default=None, ge=1, le=MAX_ORDER)
+    visibility: Visibility | None = None
 
     @model_validator(mode="after")
     def _something_and_no_blank_body(self) -> IntentDocumentUpdate:
-        if not self.model_fields_set & {"body", "overview_order"}:
-            raise ValueError("give body, overview_order, or both")
+        if not self.model_fields_set & {"body", "overview_order", "visibility"}:
+            raise ValueError("give body, overview_order, visibility, or several")
         if "body" in self.model_fields_set and (
             self.body is None or not self.body.strip()
         ):
             raise ValueError("body cannot be cleared, only changed")
+        if "visibility" in self.model_fields_set and self.visibility is None:
+            raise ValueError("visibility is internal or shared")
         return self
 
 
@@ -304,6 +406,7 @@ def to_read(
         description=doc.get("description"),
         body=prose,
         frontmatter=frontmatter,
+        visibility=visibility_of(frontmatter),
         overview_order=_order(doc),
         state=resolved,
         error=error,
@@ -334,6 +437,16 @@ def _coord_error(exc: HTTPException, record: str) -> Exception:
     if exc.status_code in (400, 422):
         return StoreRefused(422, "rejected_by_store", detail)
     return exc
+
+
+def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
+    """Whether setting ``value`` changes what is stored. Already exactly that
+    one key with that value: no. ``internal`` on a document with no key: no —
+    absent already reads internal, and a write would only move the version."""
+    stored = _stored_visibility_values(frontmatter)
+    if stored == [value]:
+        return False
+    return not (value == "internal" and not stored)
 
 
 # ---------------------------------------------------------------------------
@@ -413,13 +526,30 @@ class IntentDocumentStore:
                     error=str(exc) or "unreadable",
                 )
 
-        items = await asyncio.gather(*(one(r) for r in rows))
+        items = list(await asyncio.gather(*(one(r) for r in rows)))
         degraded = listing.get("degraded")
-        return ListResult(items=list(items), degraded=degraded if degraded else None)
+        withheld = False
+        if not ctx.access.team_role:
+            # A caller without a team role sees only what is marked for them.
+            # A skeleton or an unreadable document reads internal (its
+            # frontmatter was not read), so it is withheld too — never shown
+            # as "not written" to someone who could not have seen it anyway.
+            shared = [d for d in items if d.visibility == "shared"]
+            withheld = len(shared) != len(items)
+            items = shared
+        served: list[BaseModel] = list(items)
+        return ListResult(
+            items=served, degraded=degraded if degraded else None, withheld=withheld
+        )
 
     async def get(self, ctx: StoreContext, record: str) -> IntentDocumentRead:
         kind, name = parse_record_id(record)
-        return to_read(await self._get_raw(ctx, kind, name))
+        document = to_read(await self._get_raw(ctx, kind, name))
+        if not ctx.access.team_role and document.visibility != "shared":
+            # 404, as for a document that does not exist: a 403 would confirm
+            # the name to someone it is not shared with.
+            raise RecordNotFound(record)
+        return document
 
     async def _place(
         self, ctx: StoreContext, doc: dict[str, Any], order: int | None
@@ -533,6 +663,27 @@ class IntentDocumentStore:
             else:
                 attrs["overview_order"] = payload.overview_order
             patch["attrs"] = attrs
+        if (
+            "visibility" in fields
+            and payload.visibility is not None
+            and _visibility_changes(before.frontmatter, payload.visibility)
+        ):
+            if "body" in patch:
+                # The prose changes too: re-join it to the spliced block.
+                patch["body"] = join_frontmatter(
+                    splice_visibility(before.frontmatter, payload.visibility),
+                    payload.body or "",
+                )
+            else:
+                # Only the mark changes: splice into the body AS STORED, so
+                # every byte outside that one key is kept, spacing included.
+                patch["body"] = splice_visibility_into_body(
+                    current.get("body") or "", payload.visibility
+                )
+            patch["change_description"] = (
+                patch.get("change_description", "Edited on the Project Overview")
+                + f"; visibility set to {payload.visibility}"
+            )
         if "body" not in patch and "attrs" not in patch:
             return before, before  # nothing changed; no write, no version move
 

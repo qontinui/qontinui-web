@@ -34,6 +34,10 @@ export interface ResourceList<T> {
   can_edit: boolean;
   /** The store answered but cannot see its data: an empty list is UNKNOWN. */
   degraded: string | null;
+  /** The store left out records that are not shared with this caller (a
+   *  member without a team role). Says that some were, never which. Absent
+   *  from an older backend, which withholds nothing. */
+  withheld?: boolean;
 }
 
 export interface ResourceItem<T> {
@@ -48,6 +52,10 @@ export interface ResourceDescriptor {
   description: string;
   operations: string[];
   can_edit: boolean;
+  /** Whether the caller may read this resource at all — what the read routes
+   *  enforce. False only for a member without a team role on a resource that
+   *  shares nothing with them. */
+  can_read?: boolean;
   schemas: Record<string, JsonSchema>;
 }
 

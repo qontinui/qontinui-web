@@ -28,7 +28,14 @@ import {
 export type ListState<T> =
   | { state: "loading" }
   | { state: "error"; message: string }
-  | { state: "ready"; items: T[]; degraded: string | null };
+  | {
+      state: "ready";
+      items: T[];
+      degraded: string | null;
+      /** Records exist that are not shared with this caller. Absent reads
+       *  as false: nothing was withheld. */
+      withheld?: boolean;
+    };
 
 export type SaveResult<T> =
   | { ok: true; item: T }
@@ -91,7 +98,12 @@ export function useResourceList<T extends VersionedRecord>(
     ).then(
       (body) =>
         live &&
-        setList({ state: "ready", items: body.items, degraded: body.degraded }),
+        setList({
+          state: "ready",
+          items: body.items,
+          degraded: body.degraded,
+          withheld: body.withheld === true,
+        }),
       (err: unknown) =>
         live &&
         setList({

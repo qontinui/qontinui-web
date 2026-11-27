@@ -66,9 +66,16 @@ REGISTRY: dict[str, ResourceSpec] = {
             description=(
                 "What the project is, what it is working towards, how success "
                 "is measured and who it is for. Stored in coord as the tenant's "
-                "intent documents; addressed '<kind>:<name>'."
+                "intent documents; addressed '<kind>:<name>'. 'visibility' "
+                "(internal / shared, from the document's frontmatter; absent or "
+                "unknown reads internal) says who outside the team may read it."
             ),
             permission="coord_admin",
+            # A caller without a team role reads only documents marked
+            # `visibility: shared` (the store filters). Coord filters the same
+            # way at its own doors (that plan's Phase 10); this is the second
+            # line.
+            outside_read="marked",
             read_model=IntentDocumentRead,
             create_model=IntentDocumentCreate,
             update_model=IntentDocumentUpdate,
