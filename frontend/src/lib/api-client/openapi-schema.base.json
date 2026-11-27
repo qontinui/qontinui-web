@@ -16630,6 +16630,40 @@
         "title": "DatasetUpdate",
         "type": "object"
       },
+      "DecisionGateRequest": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/gates/decision``.\n\n``extra=\"forbid\"``: ``gate_class`` is deliberately not accepted (see above),\nso a caller that sends it gets a typed 422 instead of a silent drop.",
+        "properties": {
+          "clearance_audience": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Clearance Audience",
+            "type": "string"
+          },
+          "phase_name": {
+            "title": "Phase Name",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "title": "Work Unit Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_unit_slug",
+          "phase_name",
+          "prompt"
+        ],
+        "title": "DecisionGateRequest",
+        "type": "object"
+      },
       "DeferredQuestionBatch": {
         "description": "Batch of deferred questions to sync.",
         "properties": {
@@ -113310,6 +113344,48 @@
           }
         },
         "summary": "Get Fleet Worktree Slots",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/decision": {
+      "post": {
+        "description": "Register a decision gate: ``operator_approval`` anchored on a work unit.\n\n1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the\n   unit id. A slug coord does not know in this tenant is coord's own error,\n   passed through.\n2. ``POST /coord/gates/register`` with the predicate\n   ``{\"kind\": \"operator_approval\", \"prompt\": ...}``, anchor\n   ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and\n   the fixed ``gate_class`` above.\n\nReturns coord's registration outcome (``gate_id``, ``warnings``, ...).",
+        "operationId": "api_v1_operations_gates_decision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionGateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyWhenGreenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Register Decision Gate",
         "tags": [
           "operations"
         ]
