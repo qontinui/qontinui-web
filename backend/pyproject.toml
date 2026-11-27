@@ -58,6 +58,7 @@ qontinui-schemas = {path = "../../qontinui-schemas", develop = true}
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
 croniter = "^6"
+pyyaml = "^6.0.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9"

@@ -413,8 +413,8 @@ class TestTheMarkIsReadAsYaml:
         )
         # A new block follows the body's own line endings, after a leading BOM.
         assert (
-            splice_visibility_into_body("﻿# T\r\n\r\nx\r\n", "shared")
-            == "﻿---\r\nvisibility: shared\r\n---\r\n\r\n# T\r\n\r\nx\r\n"
+            splice_visibility_into_body("\ufeff# T\r\n\r\nx\r\n", "shared")
+            == "\ufeff---\r\nvisibility: shared\r\n---\r\n\r\n# T\r\n\r\nx\r\n"
         )
 
     async def test_a_block_that_does_not_parse_reads_internal_and_is_not_spliced(
@@ -510,10 +510,17 @@ class TestTheMarkThroughTheApi:
     async def test_the_withheld_answer_does_not_depend_on_the_kind_asked_for(
         self, outsider: httpx.AsyncClient
     ) -> None:
-        """Every kind but product_intent holds only unshared documents here;
-        asking for product_intent alone must still say withheld, or the
-        difference would tell which kinds hold something."""
-        for kind in ("product_intent", "initiative", "decision_record"):
+        """``withheld`` is one answer for the tenant. Asking for a kind that
+        is EMPTY here (success_metric, domain_spec) must still say withheld:
+        per-kind, it would read false there and true elsewhere, and the
+        difference would tell which kinds hold unshared documents."""
+        for kind in (
+            "product_intent",
+            "initiative",
+            "decision_record",
+            "success_metric",
+            "domain_spec",
+        ):
             listing = (
                 await outsider.get(f"{API}/intent-documents", params={"kind": kind})
             ).json()
@@ -540,3 +547,120 @@ class TestTheMarkThroughTheApi:
             assert len(listing["items"]) == 6
             assert (await c.get(f"{API}/pages")).status_code == 200
             assert (await c.get(f"{API}/settings")).status_code == 200
+
+
+# ===========================================================================
+# Round-2 review fixes
+# ===========================================================================
+
+#: Flow nesting deep enough to exhaust PyYAML's recursive composer, small
+#: enough to pass the size bound — so only the RecursionError guard holds it.
+DEEP_BLOCK = "---\nx: " + "[" * 2000 + "]" * 2000 + "\n---\n"
+DEEP_BODY = DEEP_BLOCK + "\n# Deep\n\nText.\n"
+ALIAS_BODY = "---\na: &s shared\nvisibility: *s\nb: 1\n---\n\n# Alias\n\nText.\n"
+CRLF_NO_BLOCK_BODY = "# Plain\r\n\r\nText.\r\n"
+
+
+@pytest.fixture()
+def coord_round2(coord: FakeCoord) -> FakeCoord:
+    coord.seed("domain_spec", "deep", DEEP_BODY)
+    coord.seed("audience_profile", "alias", ALIAS_BODY)
+    coord.seed("success_metric", "crlf-plain", CRLF_NO_BLOCK_BODY)
+    return coord
+
+
+class TestRoundTwo:
+    async def test_deeply_nested_frontmatter_reads_internal_and_is_not_spliced(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import (
+            FrontmatterNotEditable,
+            splice_visibility,
+            visibility_of,
+        )
+
+        assert visibility_of(DEEP_BLOCK) == "internal"
+        with pytest.raises(FrontmatterNotEditable):
+            splice_visibility(DEEP_BLOCK, "shared")
+        # Past the size bound: internal, without asking the parser.
+        huge = "---\nvisibility: shared\n" + "x: 1\n" * 4000 + "---\n"
+        assert visibility_of(huge) == "internal"
+
+    async def test_a_deeply_nested_document_does_not_break_the_list(
+        self,
+        outsider: httpx.AsyncClient,
+        admin: httpx.AsyncClient,
+        coord_round2: FakeCoord,
+    ) -> None:
+        for client in (outsider, admin):
+            response = await client.get(f"{API}/intent-documents")
+            assert response.status_code == 200, response.text
+        team_ids = _ids((await admin.get(f"{API}/intent-documents")).json())
+        assert "domain_spec:deep" in team_ids
+        got = await outsider.get(f"{API}/intent-documents/domain_spec:deep")
+        assert got.status_code == 404, got.text
+        refused = await _set_visibility(admin, "domain_spec:deep", "shared")
+        assert refused.status_code == 422, refused.text
+
+    async def test_a_document_shared_through_an_alias_can_be_unshared(
+        self,
+        outsider: httpx.AsyncClient,
+        admin: httpx.AsyncClient,
+        coord_round2: FakeCoord,
+    ) -> None:
+        seen = await outsider.get(f"{API}/intent-documents/audience_profile:alias")
+        assert seen.status_code == 200, seen.text
+        response = await _set_visibility(admin, "audience_profile:alias", "internal")
+        assert response.status_code == 200, response.text
+        assert coord_round2.docs[("audience_profile", "alias")]["body"] == (
+            "---\na: &s shared\nvisibility: internal\nb: 1\n---\n\n# Alias\n\nText.\n"
+        )
+        gone = await outsider.get(f"{API}/intent-documents/audience_profile:alias")
+        assert gone.status_code == 404, gone.text
+
+    async def test_unsharing_is_never_refused(self) -> None:
+        from app.overview.intent_documents import (
+            _parses,
+            splice_visibility,
+            visibility_of,
+        )
+
+        for block in (
+            # An anchor on the key's own value that a later key aliases.
+            "---\nvisibility: &v shared\nb: *v\n---\n",
+            # An indented top-level mapping.
+            "---\n  a: 1\n  visibility: shared\n---\n",
+        ):
+            assert visibility_of(block) == "shared", block
+            spliced = splice_visibility(block, "internal")
+            assert visibility_of(spliced) == "internal", spliced
+            assert _parses(spliced), spliced
+
+    async def test_comments_and_blank_lines_after_a_nested_value_are_kept(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import splice_visibility
+
+        block = "---\nvisibility:\n  a: 1\n# about b\n\nb: 2\n---\n"
+        assert (
+            splice_visibility(block, "shared")
+            == "---\nvisibility: shared\n# about b\n\nb: 2\n---\n"
+        )
+        scalar = "---\nvisibility: |\n  shared\n# c\nb: 2\n---\n"
+        assert (
+            splice_visibility(scalar, "internal")
+            == "---\nvisibility: internal\n# c\nb: 2\n---\n"
+        )
+
+    async def test_body_and_visibility_on_a_crlf_document_without_a_block(
+        self, admin: httpx.AsyncClient, coord_round2: FakeCoord
+    ) -> None:
+        response = await admin.patch(
+            f"{API}/intent-documents/success_metric:crlf-plain",
+            json={"body": "﻿# Plain\r\n\r\nNew.\r\n", "visibility": "shared"},
+            headers={"If-Match": '"3"'},
+        )
+        assert response.status_code == 200, response.text
+        assert coord_round2.docs[("success_metric", "crlf-plain")]["body"] == (
+            "﻿---\r\nvisibility: shared\r\n---\r\n\r\n# Plain\r\n\r\nNew.\r\n"
+        )

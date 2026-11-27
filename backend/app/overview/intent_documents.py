@@ -135,11 +135,17 @@ def split_frontmatter(raw: str) -> tuple[str | None, str]:
 #: ``opening + inner + closing``; ``inner`` has no line ending of its own on
 #: its last line, because that ending belongs to ``closing``.
 _BLOCK_PARTS = re.compile(
-    r"\A(?P<opening>﻿?---[ \t]*(?P<nl>\r?\n))(?P<inner>[\s\S]*?)"
+    r"\A(?P<opening>\ufeff?---[ \t]*(?P<nl>\r?\n))(?P<inner>[\s\S]*?)"
     r"(?P<closing>\r?\n---[ \t]*(?:\r?\n)?)\Z"
 )
 
 _STR_TAG = "tag:yaml.org,2002:str"
+
+#: The longest frontmatter block the parser is asked to read. Real blocks are
+#: a few hundred bytes; anything past this reads ``internal`` and is not
+#: spliced, so one oversized document cannot cost every list read a parse of
+#: it. (Nesting depth is bounded separately: see ``RecursionError`` below.)
+MAX_FRONTMATTER_CHARS = 16_000
 
 
 class FrontmatterNotEditable(ValueError):
@@ -154,12 +160,21 @@ def _top_level_mapping(inner: str) -> yaml.MappingNode | None:
     scalar is not mistaken for a key. ``None`` for an empty block (or one of
     comments only). Raises :class:`FrontmatterNotEditable` for anything that
     is not a block-style mapping, or does not parse."""
+    if len(inner) > MAX_FRONTMATTER_CHARS:
+        raise FrontmatterNotEditable(
+            f"the frontmatter is longer than {MAX_FRONTMATTER_CHARS} characters"
+        )
     try:
         root = yaml.compose(inner, Loader=yaml.SafeLoader)
     except yaml.YAMLError as exc:
         raise FrontmatterNotEditable(
             f"the frontmatter is not valid YAML: {exc}"
         ) from exc
+    except RecursionError as exc:
+        # PyYAML's composer recurses once per nesting level, so a block nested
+        # a few hundred deep exhausts the stack. That is not a YAMLError, and
+        # left uncaught it would 500 every list read of the tenant.
+        raise FrontmatterNotEditable("the frontmatter is nested too deeply") from exc
     if root is None:
         return None
     if not isinstance(root, yaml.MappingNode) or root.flow_style:
@@ -218,11 +233,24 @@ def _line_span(lines: list[str], key: yaml.Node, value: yaml.Node) -> tuple[int,
     """The ``[first, last)`` line indexes a top-level entry occupies: from its
     key's line through the line its value ends on, indented children of a
     nested value included. A value ending at column 0 ended on the line
-    before (the mark sits at the start of the next line)."""
+    before (the mark sits at the start of the next line).
+
+    For a nested or block-scalar value the parser's end mark lies on the NEXT
+    token's line, so blank lines and comment lines between the value and the
+    next key would fall inside the span. They belong to what follows, so the
+    span is walked back past them and they are kept."""
     first = key.start_mark.line
     end = value.end_mark
     last = end.line if end.column == 0 and end.line > first else end.line + 1
-    return first, min(last, len(lines))
+    # An alias value (`visibility: *s`) is the anchored node itself, whose
+    # marks lie where the anchor was: never less than the key's own line.
+    last = min(max(last, first + 1), len(lines))
+    while last - 1 > first:
+        text = lines[last - 1].strip()
+        if text and not text.startswith("#"):
+            break
+        last -= 1
+    return first, last
 
 
 def splice_visibility(
@@ -254,31 +282,75 @@ def splice_visibility(
     # that opens the closing delimiter, which is given back below.
     closing_nl = "\r\n" if closing.startswith("\r\n") else "\n"
     lines = (inner + closing_nl).splitlines(keepends=True) if inner else []
-    if entries:
-        spans = [_line_span(lines, k, v) for k, v in entries]
-        first_start, first_end = spans[0]
-        ending = lines[first_end - 1][len(lines[first_end - 1].rstrip("\r\n")) :]
-        drop: set[int] = set()
-        for start, end in spans:
-            drop.update(range(start, end))
-        rebuilt: list[str] = []
-        for index, text in enumerate(lines):
-            if index == first_start:
-                rebuilt.append(line + (ending or newline))
-            if index not in drop:
-                rebuilt.append(text)
-        body = "".join(rebuilt)
-    else:
-        body = "".join(lines) + line + closing_nl
-    if not body.endswith(("\r\n", "\n")):  # pragma: no cover — every line has one
-        body += closing_nl
-    trimmed = body[: -len(closing_nl)] if body.endswith(closing_nl) else body
-    result = parts.group("opening") + trimmed + closing
-    if visibility_of(result) != value or _stored_visibility(result)[0] != 1:
-        raise FrontmatterNotEditable(
-            "the frontmatter could not take the visibility key and still read back"
+
+    def assemble(replacement: str | None) -> str:
+        """The block with every visibility entry removed and, when
+        ``replacement`` is given, that one line in the first entry's place
+        (or before the closing delimiter when there was none)."""
+        if entries:
+            spans = [_line_span(lines, k, v) for k, v in entries]
+            first_start, first_end = spans[0]
+            last_line = lines[first_end - 1]
+            ending = last_line[len(last_line.rstrip("\r\n")) :] or newline
+            drop: set[int] = set()
+            for start, end in spans:
+                drop.update(range(start, end))
+            rebuilt: list[str] = []
+            for index, text in enumerate(lines):
+                if index == first_start and replacement is not None:
+                    rebuilt.append(replacement + ending)
+                if index not in drop:
+                    rebuilt.append(text)
+            body = "".join(rebuilt)
+        else:
+            body = "".join(lines) + (
+                replacement + closing_nl if replacement is not None else ""
+            )
+        trimmed = body[: -len(closing_nl)] if body.endswith(closing_nl) else body
+        return parts.group("opening") + trimmed + closing
+
+    result = assemble(line)
+    if visibility_of(result) == value and _stored_visibility(result)[0] == 1:
+        return result
+    if value == "internal":
+        # The NARROWING direction is never refused. A block that read shared
+        # through an alias, an anchor a later key reuses, or an indented
+        # top-level mapping may not take the one line cleanly. Then, in order:
+        # remove the key outright (absent reads internal); else, when its
+        # value carries an anchor another key still uses, leave it and add a
+        # second key (a duplicate reads internal, and the block still
+        # parses); else keep the spliced block, which no longer reads shared.
+        removed = assemble(None)
+        if _parses(removed) and visibility_of(removed) != "shared":
+            return removed
+        trimmed_inner = "".join(lines)
+        trimmed_inner = trimmed_inner[: -len(closing_nl)] if trimmed_inner else ""
+        doubled = (
+            parts.group("opening")
+            + (trimmed_inner + closing_nl if trimmed_inner else "")
+            + line
+            + closing
         )
-    return result
+        if _parses(doubled) and visibility_of(doubled) != "shared":
+            return doubled
+        if visibility_of(result) != "shared":
+            return result
+    raise FrontmatterNotEditable(
+        "the frontmatter could not take the visibility key and still read back"
+    )
+
+
+def _parses(block: str) -> bool:
+    """Whether a frontmatter block reads as a block-style mapping (or is
+    empty)."""
+    parts = _BLOCK_PARTS.match(block)
+    if parts is None:
+        return False
+    try:
+        _top_level_mapping(parts.group("inner"))
+    except FrontmatterNotEditable:
+        return False
+    return True
 
 
 def _newline_of(raw: str) -> str:
@@ -294,18 +366,27 @@ def splice_visibility_into_body(raw: str, value: Visibility) -> str:
     match = _FRONTMATTER.match(raw)
     if not match:
         nl = _newline_of(raw)
-        bom = "﻿" if raw.startswith("﻿") else ""
+        bom = "\ufeff" if raw.startswith("\ufeff") else ""
         rest = raw[len(bom) :]
         return f"{bom}{splice_visibility(None, value, nl)}{nl}{rest}"
     block = match.group(0)
     return splice_visibility(block, value) + raw[match.end() :]
 
 
-def join_frontmatter(frontmatter: str | None, prose: str) -> str:
+def join_frontmatter(frontmatter: str | None, prose: str, nl: str | None = None) -> str:
+    """The block, a blank line, then the prose. ``nl`` is the line ending the
+    join writes (default: the block's own). A BOM at the start of the prose is
+    moved in front of the block, where a reader looks for it."""
     if not frontmatter:
         return prose
-    block = frontmatter if frontmatter.endswith("\n") else frontmatter + "\n"
-    return f"{block}\n{prose}"
+    nl = nl or _newline_of(frontmatter)
+    bom = ""
+    if prose.startswith("\ufeff"):
+        prose = prose[1:]
+        if not frontmatter.startswith("\ufeff"):
+            bom = "\ufeff"
+    block = frontmatter if frontmatter.endswith("\n") else frontmatter + nl
+    return f"{bom}{block}{nl}{prose}"
 
 
 def record_id(kind: str, name: str) -> str:
@@ -605,16 +686,17 @@ class IntentDocumentStore:
         kinds = set(wanted_kinds) if filters.get("kind") else set(INTENT_KINDS)
         team = ctx.access.team_role
         listing = await self.coord.list(ctx.access.tenant_id)
-        # A caller without a team role is judged over EVERY intent kind, not
-        # just the kinds asked for: `withheld` is then one answer for the
-        # tenant, so filtering by kind cannot reveal which kinds hold
-        # documents that are not shared with them.
-        fetch_kinds = kinds if team else set(INTENT_KINDS)
-        rows = [
+        intent_rows = [
             d
             for d in listing.get("documents") or []
-            if isinstance(d, dict) and d.get("kind") in fetch_kinds
+            if isinstance(d, dict) and d.get("kind") in INTENT_KINDS
         ]
+        rows = [d for d in intent_rows if d.get("kind") in kinds]
+        # For a caller without a team role, `withheld` is judged over EVERY
+        # intent kind, not just the kinds asked for: it is then one answer for
+        # the tenant, so filtering by kind cannot reveal which kinds hold
+        # documents that are not shared with them.
+        other_rows = [d for d in intent_rows if d.get("kind") not in kinds]
         gate = asyncio.Semaphore(LIST_CONCURRENCY)
 
         async def one(row: dict[str, Any]) -> IntentDocumentRead:
@@ -644,7 +726,14 @@ class IntentDocumentStore:
             # as "not written" to someone who could not have seen it anyway.
             shared = [d for d in items if d.visibility == "shared"]
             withheld = len(shared) != len(items)
-            items = [d for d in shared if d.kind in kinds]
+            items = shared
+            # The other kinds are read one at a time and only until the first
+            # document not shared with them, so a filtered list does not cost
+            # a read of every body in the tenant.
+            for row in other_rows:
+                if withheld:
+                    break
+                withheld = (await one(row)).visibility != "shared"
         served: list[BaseModel] = list(items)
         return ListResult(
             items=served, degraded=degraded if degraded else None, withheld=withheld
@@ -776,16 +865,15 @@ class IntentDocumentStore:
             and payload.visibility is not None
             and _visibility_changes(before.frontmatter, payload.visibility)
         ):
+            # The line ending the stored document uses, else the new prose's.
+            nl = _newline_of((current.get("body") or "") + (payload.body or ""))
             try:
                 if "body" in patch:
                     # The prose changes too: re-join it to the spliced block.
                     patch["body"] = join_frontmatter(
-                        splice_visibility(
-                            before.frontmatter,
-                            payload.visibility,
-                            _newline_of(current.get("body") or ""),
-                        ),
+                        splice_visibility(before.frontmatter, payload.visibility, nl),
                         payload.body or "",
+                        nl,
                     )
                 else:
                     # Only the mark changes: splice into the body AS STORED,
