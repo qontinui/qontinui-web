@@ -901,6 +901,10 @@ class TestRoundFour:
             # visibility gate through IntentDocumentStore.list, and deriving it
             # here would enter on the producer side of that seam. The
             # roles-to-team-role rule is pinned by the HTTP tests above.
+            # An outside role omits the keyword and takes the field's
+            # fail-closed default, so the test also builds where the field
+            # does not exist and goes red on the listing, not on a TypeError.
+            extra: dict[str, Any] = {"team_role": True} if team_role else {}
             return OverviewAccess(
                 tenant_id=tenant,
                 roles=roles,
@@ -910,9 +914,11 @@ class TestRoundFour:
                 actor="tester@example.com",
                 kind="user",
                 via_device=None,
-                team_role=team_role,
+                **extra,
             )
 
+        # Called through the class so a static attributor can resolve the
+        # receiver to IntentDocumentStore.list; it is the same call as store.list.
         outside = await IntentDocumentStore.list(
             store,
             StoreContext(access=access(OUTSIDE_ROLES, False), db=None, request=None),  # type: ignore[arg-type]
