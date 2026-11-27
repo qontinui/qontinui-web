@@ -911,33 +911,37 @@ describe("/admin/coord/computers/[computerId]", () => {
 
 describe("/admin/coord/computers — an OOM kill's subject", () => {
   const remainder = eventFx({
-    event_id: "oom_kill:remainder",
+    event_id: "1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b",
     observed_age_secs: 60,
     detail: {
       victim_unit: null,
       victim_slice: "agent-builds.slice",
+      victim_cgroup:
+        "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice",
       slices: "read",
       count: 1,
       attribution: "slice_memory_events",
     },
   });
   const placed = eventFx({
-    event_id: "oom_kill:placed",
+    event_id: "2a3b4c5d-6e7f-4081-9a2b-3c4d5e6f7a8b",
     observed_age_secs: 120,
     detail: {
       victim_unit: "agent-build-x.scope",
       victim_slice: "agent-builds.slice",
+      victim_cgroup:
+        "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice/agent-build-x.scope",
       slices: "read",
       count: 1,
       attribution: "cgroup_memory_events",
     },
   });
   const neither = eventFx({
-    event_id: "oom_kill:neither",
+    event_id: "3b4c5d6e-7f80-4192-8b3c-4d5e6f7a8b9c",
     observed_age_secs: 180,
   });
   const blankSlice = eventFx({
-    event_id: "oom_kill:blank-slice",
+    event_id: "4c5d6e7f-8091-42a3-9c4d-5e6f7a8b9cad",
     observed_age_secs: 240,
     detail: {
       victim_unit: null,
@@ -965,14 +969,19 @@ describe("/admin/coord/computers — an OOM kill's subject", () => {
     ).toHaveLength(4);
 
     expect(
-      within(eventRow("oom_kill:remainder")).getByText("in agent-builds.slice")
+      within(eventRow("1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b")).getByText(
+        "in agent-builds.slice"
+      )
     ).toBeTruthy();
 
-    const placedRow = eventRow("oom_kill:placed");
+    const placedRow = eventRow("2a3b4c5d-6e7f-4081-9a2b-3c4d5e6f7a8b");
     expect(within(placedRow).getByText("agent-build-x.scope")).toBeTruthy();
     expect(within(placedRow).queryByText(/^in /)).toBeNull();
 
-    for (const id of ["oom_kill:neither", "oom_kill:blank-slice"]) {
+    for (const id of [
+      "3b4c5d6e-7f80-4192-8b3c-4d5e6f7a8b9c",
+      "4c5d6e7f-8091-42a3-9c4d-5e6f7a8b9cad",
+    ]) {
       const row = eventRow(id);
       expect(within(row).getByText("no subject reported")).toBeTruthy();
       expect(within(row).queryByText(/^in /)).toBeNull();

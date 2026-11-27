@@ -1169,7 +1169,8 @@ describe("eventSubject — an OOM kill names its slice when no unit was establis
         })
       ).toBe("agent-build-x.scope");
     }
-    // A service transition's `unit` outranks a slice too.
+    // Key order only, not a wire shape the runner emits: `unit` outranks a
+    // slice when both are present.
     expect(
       subjectOf({
         unit: "qontinui-runner.service",
@@ -1191,8 +1192,16 @@ describe("eventSubject — an OOM kill names its slice when no unit was establis
     for (const victim_slice of ["", "   ", 7, true, {}]) {
       const subject = subjectOf({ victim_unit: null, victim_slice });
       expect(subject).toBeNull();
-      expect(subject ?? "no subject reported").not.toMatch(/^in /);
     }
+    // A whitespace-only unit or victim_unit names nothing either, so the
+    // slice is still the subject.
+    expect(
+      subjectOf({
+        unit: " ",
+        victim_unit: "  ",
+        victim_slice: "agent-builds.slice",
+      })
+    ).toBe("in agent-builds.slice");
     // A blank slice falls through to the next key rather than stopping there.
     expect(subjectOf({ victim_slice: "", hostname: "merytshost" })).toBe(
       "merytshost"
