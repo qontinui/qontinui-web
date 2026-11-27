@@ -15,6 +15,13 @@
  * 4. **`services_reported: false` makes coord's `services_failed: 0` UNKNOWN.**
  * 5. **Coord's `down` flag decides a service row**, not a second reading.
  * 6. **The two 404s, the two 403s, and schema_pending are told apart.**
+ *
+ * Plan `2026-11-27-devops-oom-kills-inside-agent-build-slices-carry-no-victim`
+ * Phase 5 (test 30):
+ *
+ * 7. **An OOM kill placed only in a slice names the slice** (`in <slice>`),
+ *    after `unit` / `victim_unit` and before `hostname`; a blank or absent
+ *    `victim_slice` names nothing, so the event still reads unsubjected.
  */
 
 import { describe, expect, it } from "vitest";
@@ -39,6 +46,7 @@ import {
   deriveComputerDetailHealth,
   deriveComputersHealth,
   emptyLanesText,
+  eventSubject,
   gpuText,
   gpuTitle,
   gpusNote,
@@ -63,6 +71,7 @@ import {
 import {
   computerFx,
   detailFx,
+  eventFx,
   laneFx,
   listFx,
   serviceFx,
@@ -561,7 +570,10 @@ describe("divergence wording with uncompared rows", () => {
   };
 
   it("counts every row with no paired unit, whatever attributed_by says", () => {
-    const paired = { ...row, service_unit: "actions.runner.qontinui.x.service" };
+    const paired = {
+      ...row,
+      service_unit: "actions.runner.qontinui.x.service",
+    };
     expect(
       uncomparedRunnerCount([
         { ...row, attributed_by: "declared_host" },
@@ -1119,5 +1131,90 @@ describe("readGpus — null is UNKNOWN, [] is a measured none", () => {
         computeCapability: null,
       })
     ).toBe("vendor: nvidia · driver: 999.10 · compute capability: unknown");
+  });
+});
+
+describe("eventSubject — an OOM kill names its slice when no unit was established", () => {
+  const subjectOf = (detail: Record<string, unknown>) =>
+    eventSubject(eventFx({ detail }, NOW));
+
+  it("names a slice-remainder kill `in <victim_slice>`", () => {
+    expect(
+      subjectOf({
+        victim_unit: null,
+        victim_slice: "agent-builds.slice",
+        victim_cgroup:
+          "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice",
+        slices: "read",
+        count: 1,
+        attribution: "slice_memory_events",
+      })
+    ).toBe("in agent-builds.slice");
+  });
+
+  it("names the scope, not the slice that contains it, when the unit was placed", () => {
+    // A B or C event carries both: the slice whose counter moved and the child
+    // it was attributed to. The narrower subject wins.
+    for (const attribution of [
+      "cgroup_memory_events",
+      "user_journal_unit_oom",
+    ]) {
+      expect(
+        subjectOf({
+          victim_unit: "agent-build-x.scope",
+          victim_slice: "agent-builds.slice",
+          slices: "read",
+          count: 1,
+          attribution,
+        })
+      ).toBe("agent-build-x.scope");
+    }
+    // Key order only, not a wire shape the runner emits: `unit` outranks a
+    // slice when both are present.
+    expect(
+      subjectOf({
+        unit: "qontinui-runner.service",
+        victim_slice: "qontinui-runner.slice",
+      })
+    ).toBe("qontinui-runner.service");
+  });
+
+  it("reports no subject when neither a unit nor a slice was established", () => {
+    // The default fixture is today's residual vmstat event.
+    expect(eventSubject(eventFx({}, NOW))).toBeNull();
+    // Slices read, kill outside every watched slice: still no subject.
+    expect(
+      subjectOf({ victim_unit: null, victim_slice: null, slices: "read" })
+    ).toBeNull();
+  });
+
+  it("never renders a blank or non-string victim_slice as `in `", () => {
+    for (const victim_slice of ["", "   ", 7, true, {}]) {
+      const subject = subjectOf({ victim_unit: null, victim_slice });
+      expect(subject).toBeNull();
+    }
+    // A padded slice is named trimmed.
+    expect(subjectOf({ victim_slice: "  agent-builds.slice " })).toBe(
+      "in agent-builds.slice"
+    );
+    // A whitespace-only unit or victim_unit names nothing either, so the
+    // slice is still the subject.
+    expect(
+      subjectOf({
+        unit: " ",
+        victim_unit: "  ",
+        victim_slice: "agent-builds.slice",
+      })
+    ).toBe("in agent-builds.slice");
+    // A blank slice falls through to the next key rather than stopping there.
+    expect(subjectOf({ victim_slice: "", hostname: "merytshost" })).toBe(
+      "merytshost"
+    );
+  });
+
+  it("puts the slice before the hostname", () => {
+    expect(
+      subjectOf({ victim_slice: "agent-builds.slice", hostname: "merytshost" })
+    ).toBe("in agent-builds.slice");
   });
 });
