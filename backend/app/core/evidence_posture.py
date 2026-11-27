@@ -497,8 +497,10 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             how=(
                 "a PUT replaces the follow-up's whole anchor set and its "
                 "unanchored_reason with the body, and size_class + "
-                "size_class_source, when supplied, replace the class — so a "
-                "wrong anchor set or class is corrected by PUTting the right one"
+                "size_class_source, when supplied, replace the class, and "
+                "clear_size_class: true nulls a sweep-set class (a declared one "
+                "is a 422 size_class_not_sweep_set) — so a wrong anchor set or "
+                "class is corrected by PUTting the right one"
             ),
         ),
     ),
