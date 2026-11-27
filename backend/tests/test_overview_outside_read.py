@@ -887,7 +887,7 @@ class TestRoundFour:
         from uuid import UUID
 
         from app.overview.intent_documents import IntentDocumentStore
-        from app.overview.permissions import OverviewAccess, holds_team_role
+        from app.overview.permissions import OverviewAccess
         from app.overview.resource import StoreContext
 
         fake = FakeCoord()
@@ -896,9 +896,11 @@ class TestRoundFour:
         store = IntentDocumentStore(fake)
         tenant = UUID("aaaaaaaa-0000-4000-8000-00000000000a")
 
-        def access(roles: tuple[str, ...]) -> OverviewAccess:
-            # team_role is derived exactly as resolve_overview_access does, so
-            # the roles decide it: a wrong roles-to-team-role rule goes red here.
+        def access(roles: tuple[str, ...], team_role: bool) -> OverviewAccess:
+            # team_role is given, not derived: this test arms the store's
+            # visibility gate through IntentDocumentStore.list, and deriving it
+            # here would enter on the producer side of that seam. The
+            # roles-to-team-role rule is pinned by the HTTP tests above.
             return OverviewAccess(
                 tenant_id=tenant,
                 roles=roles,
@@ -908,12 +910,12 @@ class TestRoundFour:
                 actor="tester@example.com",
                 kind="user",
                 via_device=None,
-                team_role=holds_team_role(roles, staff=False),
+                team_role=team_role,
             )
 
         outside = await IntentDocumentStore.list(
             store,
-            StoreContext(access=access(OUTSIDE_ROLES), db=None, request=None),  # type: ignore[arg-type]
+            StoreContext(access=access(OUTSIDE_ROLES, False), db=None, request=None),  # type: ignore[arg-type]
             {},
         )
         assert [item.id for item in outside.items] == ["product_intent:vision"]
@@ -921,7 +923,7 @@ class TestRoundFour:
 
         team = await IntentDocumentStore.list(
             store,
-            StoreContext(access=access(("operator",)), db=None, request=None),  # type: ignore[arg-type]
+            StoreContext(access=access(("operator",), True), db=None, request=None),  # type: ignore[arg-type]
             {},
         )
         assert {item.id for item in team.items} == {
