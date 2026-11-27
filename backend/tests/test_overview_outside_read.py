@@ -326,3 +326,217 @@ class TestTheMarkIsSetInPlace:
         assert response.json()["detail"]["error"] == "not_permitted"
         assert coord.patches == []
         assert coord.docs[("product_intent", "non-goals")]["body"] == UNMARKED_BODY
+
+
+# ===========================================================================
+# Review fixes: the mark is found by the YAML parser, never by a line regex
+# ===========================================================================
+
+
+class TestTheMarkIsReadAsYaml:
+    """``visibility_of`` and ``splice_visibility`` read the block as YAML, so
+    a key-shaped line inside a quoted scalar is not a key, a duplicate or an
+    empty value reads internal, and a splice always leaves exactly one
+    parseable ``visibility: <value>`` line."""
+
+    async def test_a_visibility_line_inside_a_multiline_quoted_scalar_is_not_the_key(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import visibility_of
+
+        for block in (
+            "---\nsummary: 'a\nvisibility: shared # x'\n---\n",
+            '---\nsummary: "a\nvisibility: shared"\nb: 1\n---\n',
+        ):
+            assert visibility_of(block) == "internal", block
+
+    async def test_splicing_beside_a_multiline_quoted_scalar_keeps_it_whole(
+        self,
+    ) -> None:
+        import yaml
+
+        from app.overview.intent_documents import splice_visibility, visibility_of
+
+        block = '---\nsummary: "a\nvisibility: shared"\nb: 1\n---\n'
+        spliced = splice_visibility(block, "shared")
+        inner = spliced.split("---\n")[1]
+        assert yaml.safe_load(inner) == {
+            "summary": "a visibility: shared",
+            "b": 1,
+            "visibility": "shared",
+        }
+        assert visibility_of(spliced) == "shared"
+
+    async def test_a_duplicated_key_reads_internal_and_a_splice_leaves_one(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import splice_visibility, visibility_of
+
+        block = "---\na: 1\nvisibility: shared\nb: 2\nvisibility: shared\n---\n"
+        assert visibility_of(block) == "internal"
+        spliced = splice_visibility(block, "shared")
+        assert spliced == "---\na: 1\nvisibility: shared\nb: 2\n---\n"
+        assert visibility_of(spliced) == "shared"
+
+    async def test_an_empty_value_and_its_children_are_replaced_by_one_line(
+        self,
+    ) -> None:
+        import yaml
+
+        from app.overview.intent_documents import splice_visibility, visibility_of
+
+        for block in (
+            "---\nvisibility:\nb: 2\n---\n",
+            "---\na: 1\nvisibility:\n  nested: x\n  more: y\nb: 2\n---\n",
+        ):
+            assert visibility_of(block) == "internal", block
+            spliced = splice_visibility(block, "shared")
+            assert "visibility: shared\n" in spliced
+            assert "nested" not in spliced
+            loaded = yaml.safe_load(spliced.split("---\n")[1])
+            assert isinstance(loaded, dict) and loaded["visibility"] == "shared"
+            assert loaded["b"] == 2
+
+    async def test_crlf_and_a_missing_trailing_newline_are_kept(self) -> None:
+        from app.overview.intent_documents import (
+            splice_visibility,
+            splice_visibility_into_body,
+        )
+
+        assert (
+            splice_visibility("---\r\na: 1\r\n---\r\n", "shared")
+            == "---\r\na: 1\r\nvisibility: shared\r\n---\r\n"
+        )
+        assert (
+            splice_visibility("---\na: 1\n---", "shared")
+            == "---\na: 1\nvisibility: shared\n---"
+        )
+        # A new block follows the body's own line endings, after a leading BOM.
+        assert (
+            splice_visibility_into_body("﻿# T\r\n\r\nx\r\n", "shared")
+            == "﻿---\r\nvisibility: shared\r\n---\r\n\r\n# T\r\n\r\nx\r\n"
+        )
+
+    async def test_a_block_that_does_not_parse_reads_internal_and_is_not_spliced(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import (
+            FrontmatterNotEditable,
+            splice_visibility,
+            visibility_of,
+        )
+
+        for block in (
+            "---\na: 'unclosed\nvisibility: shared\n---\n",
+            "---\n[visibility, shared]\n---\n",
+            "---\n{visibility: shared}\n---\n",
+        ):
+            if "{" not in block:
+                assert visibility_of(block) == "internal", block
+            with pytest.raises(FrontmatterNotEditable):
+                splice_visibility(block, "shared")
+
+
+CRLF_BODY = "---\r\naudience: leaders\r\n---\r\n\r\n# Vision\r\n\r\nText.\r\n"
+UNPARSEABLE_BODY = "---\naudience: 'unclosed\n---\n\n# Broken\n\nText.\n"
+
+
+@pytest.fixture()
+def coord_more(coord: FakeCoord) -> FakeCoord:
+    coord.seed("success_metric", "crlf", CRLF_BODY)
+    coord.seed("success_metric", "broken", UNPARSEABLE_BODY)
+    return coord
+
+
+class TestTheMarkThroughTheApi:
+    async def test_a_crlf_document_keeps_its_line_endings(
+        self, admin: httpx.AsyncClient, coord_more: FakeCoord
+    ) -> None:
+        response = await _set_visibility(admin, "success_metric:crlf", "shared")
+        assert response.status_code == 200, response.text
+        assert coord_more.docs[("success_metric", "crlf")]["body"] == (
+            "---\r\naudience: leaders\r\nvisibility: shared\r\n---\r\n"
+            "\r\n# Vision\r\n\r\nText.\r\n"
+        )
+
+    async def test_an_unparseable_block_is_a_422_and_nothing_is_written(
+        self, admin: httpx.AsyncClient, coord_more: FakeCoord
+    ) -> None:
+        response = await _set_visibility(admin, "success_metric:broken", "shared")
+        assert response.status_code == 422, response.text
+        assert "frontmatter_not_editable" in response.text
+        assert coord_more.patches == []
+
+    async def test_body_and_visibility_in_one_patch(
+        self, admin: httpx.AsyncClient, coord: FakeCoord
+    ) -> None:
+        response = await admin.patch(
+            f"{API}/intent-documents/product_intent:non-goals",
+            json={"body": "# Non-goals\n\nRewritten.\n", "visibility": "shared"},
+            headers={"If-Match": '"3"'},
+        )
+        assert response.status_code == 200, response.text
+        assert len(coord.patches) == 1
+        assert coord.docs[("product_intent", "non-goals")]["body"] == (
+            "---\naudience: leaders\nvisibility: shared\n---\n\n"
+            "# Non-goals\n\nRewritten.\n"
+        )
+        assert response.json()["item"]["visibility"] == "shared"
+
+    async def test_shared_can_be_set_back_to_internal(
+        self,
+        admin: httpx.AsyncClient,
+        outsider: httpx.AsyncClient,
+        coord: FakeCoord,
+    ) -> None:
+        response = await _set_visibility(admin, "product_intent:vision", "internal")
+        assert response.status_code == 200, response.text
+        assert coord.docs[("product_intent", "vision")]["body"] == SHARED_BODY.replace(
+            "visibility: shared", "visibility: internal"
+        )
+        got = await outsider.get(f"{API}/intent-documents/product_intent:vision")
+        assert got.status_code == 404, got.text
+
+    async def test_an_unshared_404_is_the_same_as_a_missing_one(
+        self, outsider: httpx.AsyncClient
+    ) -> None:
+        unshared = await outsider.get(
+            f"{API}/intent-documents/product_intent:non-goals"
+        )
+        missing = await outsider.get(f"{API}/intent-documents/product_intent:nope")
+        assert unshared.status_code == missing.status_code == 404
+        assert unshared.json() == missing.json()
+
+    async def test_the_withheld_answer_does_not_depend_on_the_kind_asked_for(
+        self, outsider: httpx.AsyncClient
+    ) -> None:
+        """Every kind but product_intent holds only unshared documents here;
+        asking for product_intent alone must still say withheld, or the
+        difference would tell which kinds hold something."""
+        for kind in ("product_intent", "initiative", "decision_record"):
+            listing = (
+                await outsider.get(f"{API}/intent-documents", params={"kind": kind})
+            ).json()
+            assert listing["withheld"] is True, kind
+            assert all(item["kind"] == kind for item in listing["items"]), kind
+
+    async def test_an_outside_role_is_refused_a_files_bytes_and_an_estimates_rollup(
+        self, outsider: httpx.AsyncClient
+    ) -> None:
+        any_id = "00000000-0000-4000-8000-000000000001"
+        _not_shared(await outsider.get(f"{API}/files/{any_id}/content"))
+        _not_shared(await outsider.get(f"{API}/estimates/{any_id}/rollup"))
+
+    async def test_an_owner_is_a_team_role(
+        self,
+        async_db_session,
+        api_user,  # noqa: F811 — the imported fixture, by name
+        coord: FakeCoord,
+    ) -> None:
+        """Coord counts ``owner`` as admin-class; web agrees."""
+        async with _client(_app(async_db_session, api_user, coord, ("owner",))) as c:
+            listing = (await c.get(f"{API}/intent-documents")).json()
+            assert listing["withheld"] is False
+            assert len(listing["items"]) == 6
+            assert (await c.get(f"{API}/pages")).status_code == 200
+            assert (await c.get(f"{API}/settings")).status_code == 200

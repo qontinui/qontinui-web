@@ -63,6 +63,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+import yaml  # type: ignore[import-untyped]
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -128,75 +129,174 @@ def split_frontmatter(raw: str) -> tuple[str | None, str]:
     return match.group(0), raw[match.end() :].lstrip()
 
 
-#: A TOP-LEVEL ``visibility:`` line in a frontmatter block (no indentation, so
-#: a nested mapping's key of the same name is not it). Group 1 is everything
-#: up to and including the colon and the spaces after it; group 2 the value
-#: as written; the line ending (LF or CRLF) is not part of the match.
-_VISIBILITY_LINE = re.compile(r"(?m)^(visibility:[ \t]*)([^\r\n]*?)[ \t]*(?=\r?$)")
+#: A frontmatter block split into its three parts: the opening delimiter line
+#: (an optional BOM included), the YAML between the delimiters, and the closing
+#: delimiter with the line ending before it. The block is
+#: ``opening + inner + closing``; ``inner`` has no line ending of its own on
+#: its last line, because that ending belongs to ``closing``.
+_BLOCK_PARTS = re.compile(
+    r"\A(?P<opening>﻿?---[ \t]*(?P<nl>\r?\n))(?P<inner>[\s\S]*?)"
+    r"(?P<closing>\r?\n---[ \t]*(?:\r?\n)?)\Z"
+)
+
+_STR_TAG = "tag:yaml.org,2002:str"
 
 
-def _plain_value(raw: str) -> str:
-    """A YAML scalar as written, with a trailing comment and one pair of
-    matching quotes removed. Nothing cleverer: a value this does not reduce to
-    exactly ``shared`` reads internal."""
-    value = raw
-    if " #" in value:
-        value = value.split(" #", 1)[0]
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-        value = value[1:-1]
-    return value
+class FrontmatterNotEditable(ValueError):
+    """The frontmatter cannot take a ``visibility:`` key without risk of
+    corrupting it: it does not parse as YAML, or it is not a block-style
+    mapping. Served as 422, never written around."""
+
+
+def _top_level_mapping(inner: str) -> yaml.MappingNode | None:
+    """The block's YAML as a node tree, read by the YAML parser itself — so a
+    ``visibility:`` that is really the second line of a multi-line quoted
+    scalar is not mistaken for a key. ``None`` for an empty block (or one of
+    comments only). Raises :class:`FrontmatterNotEditable` for anything that
+    is not a block-style mapping, or does not parse."""
+    try:
+        root = yaml.compose(inner, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as exc:
+        raise FrontmatterNotEditable(
+            f"the frontmatter is not valid YAML: {exc}"
+        ) from exc
+    if root is None:
+        return None
+    if not isinstance(root, yaml.MappingNode) or root.flow_style:
+        raise FrontmatterNotEditable(
+            "the frontmatter is not a block-style mapping of keys"
+        )
+    return root
+
+
+def _visibility_entries(
+    root: yaml.MappingNode | None,
+) -> list[tuple[yaml.Node, yaml.Node]]:
+    """Every TOP-LEVEL ``visibility`` key of the mapping, with its value node."""
+    if root is None:
+        return []
+    return [
+        (key, value)
+        for key, value in root.value
+        if isinstance(key, yaml.ScalarNode)
+        and key.tag == _STR_TAG
+        and key.value == VISIBILITY_KEY
+    ]
+
+
+def _stored_visibility(frontmatter: str | None) -> tuple[int, str | None]:
+    """``(how many top-level visibility keys, the value when exactly one is a
+    plain string)``. An unparseable block reads as ``(0, None)`` here — the
+    read fails closed; the write refuses separately."""
+    if not frontmatter:
+        return 0, None
+    parts = _BLOCK_PARTS.match(frontmatter)
+    if parts is None:
+        return 0, None
+    try:
+        entries = _visibility_entries(_top_level_mapping(parts.group("inner")))
+    except FrontmatterNotEditable:
+        return 0, None
+    if len(entries) != 1:
+        return len(entries), None
+    value = entries[0][1]
+    if isinstance(value, yaml.ScalarNode) and value.tag == _STR_TAG:
+        return 1, value.value
+    return 1, None
 
 
 def visibility_of(frontmatter: str | None) -> Visibility:
-    """``shared`` only when the block carries exactly one top-level
-    ``visibility:`` key whose value is ``shared``; ``internal`` otherwise —
-    no block, no key, an unknown value, or the key twice (fail closed)."""
+    """``shared`` only when the block parses as a YAML mapping with exactly one
+    top-level ``visibility`` key whose value is the string ``shared``;
+    ``internal`` otherwise — no block, a block that does not parse, no key, the
+    key twice, an empty or unknown value (fail closed)."""
+    count, value = _stored_visibility(frontmatter)
+    return "shared" if count == 1 and value == "shared" else "internal"
+
+
+def _line_span(lines: list[str], key: yaml.Node, value: yaml.Node) -> tuple[int, int]:
+    """The ``[first, last)`` line indexes a top-level entry occupies: from its
+    key's line through the line its value ends on, indented children of a
+    nested value included. A value ending at column 0 ended on the line
+    before (the mark sits at the start of the next line)."""
+    first = key.start_mark.line
+    end = value.end_mark
+    last = end.line if end.column == 0 and end.line > first else end.line + 1
+    return first, min(last, len(lines))
+
+
+def splice_visibility(
+    frontmatter: str | None, value: Visibility, nl: str = "\n"
+) -> str:
+    """The frontmatter block with exactly one top-level ``visibility: <value>``
+    line, every other byte as it was.
+
+    * One or more existing top-level ``visibility`` entries: the FIRST entry's
+      whole span (its line, and any indented children of a nested value) is
+      replaced by the one line; every further duplicate is removed.
+    * None: the line is added before the closing delimiter, in the block's own
+      line ending.
+    * No block at all: a new block holding only that key, in ``nl``.
+
+    Raises :class:`FrontmatterNotEditable` when the block does not parse as a
+    block-style mapping, or the result would not read back as ``value``."""
     if not frontmatter:
-        return "internal"
-    values = [_plain_value(m.group(2)) for m in _VISIBILITY_LINE.finditer(frontmatter)]
-    return "shared" if values == ["shared"] else "internal"
+        return f"---{nl}{VISIBILITY_KEY}: {value}{nl}---{nl}"
+    parts = _BLOCK_PARTS.match(frontmatter)
+    if parts is None:  # pragma: no cover — split_frontmatter only yields closed blocks
+        raise FrontmatterNotEditable("the frontmatter block has no closing delimiter")
+    newline = parts.group("nl")
+    inner = parts.group("inner")
+    closing = parts.group("closing")
+    entries = _visibility_entries(_top_level_mapping(inner))
+    line = f"{VISIBILITY_KEY}: {value}"
+    # The inner lines WITH their endings: the last one borrows the newline
+    # that opens the closing delimiter, which is given back below.
+    closing_nl = "\r\n" if closing.startswith("\r\n") else "\n"
+    lines = (inner + closing_nl).splitlines(keepends=True) if inner else []
+    if entries:
+        spans = [_line_span(lines, k, v) for k, v in entries]
+        first_start, first_end = spans[0]
+        ending = lines[first_end - 1][len(lines[first_end - 1].rstrip("\r\n")) :]
+        drop: set[int] = set()
+        for start, end in spans:
+            drop.update(range(start, end))
+        rebuilt: list[str] = []
+        for index, text in enumerate(lines):
+            if index == first_start:
+                rebuilt.append(line + (ending or newline))
+            if index not in drop:
+                rebuilt.append(text)
+        body = "".join(rebuilt)
+    else:
+        body = "".join(lines) + line + closing_nl
+    if not body.endswith(("\r\n", "\n")):  # pragma: no cover — every line has one
+        body += closing_nl
+    trimmed = body[: -len(closing_nl)] if body.endswith(closing_nl) else body
+    result = parts.group("opening") + trimmed + closing
+    if visibility_of(result) != value or _stored_visibility(result)[0] != 1:
+        raise FrontmatterNotEditable(
+            "the frontmatter could not take the visibility key and still read back"
+        )
+    return result
 
 
-def _stored_visibility_values(frontmatter: str | None) -> list[str]:
-    if not frontmatter:
-        return []
-    return [_plain_value(m.group(2)) for m in _VISIBILITY_LINE.finditer(frontmatter)]
-
-
-#: The closing delimiter of a frontmatter block, with the line ending before
-#: it (group 1) — where a new key is inserted.
-_CLOSING = re.compile(r"(\r?\n)---[ \t]*(?:\r?\n)?\Z")
-
-
-def splice_visibility(frontmatter: str | None, value: Visibility) -> str:
-    """The frontmatter block with ``visibility:`` set to ``value``, every other
-    byte as it was. Each existing top-level ``visibility:`` line has its value
-    replaced in place; with none, one line is added before the closing
-    delimiter, in the block's own line ending; with no block at all, a new
-    block holding only that key is returned."""
-    if not frontmatter:
-        return f"---\n{VISIBILITY_KEY}: {value}\n---\n"
-    if _VISIBILITY_LINE.search(frontmatter):
-        return _VISIBILITY_LINE.sub(lambda m: f"{m.group(1)}{value}", frontmatter)
-    closing = _CLOSING.search(frontmatter)
-    if (
-        closing is None
-    ):  # pragma: no cover — split_frontmatter only yields closed blocks
-        raise ValueError("frontmatter block has no closing delimiter")
-    at = closing.start()
-    newline = closing.group(1)
-    return f"{frontmatter[:at]}{newline}{VISIBILITY_KEY}: {value}{frontmatter[at:]}"
+def _newline_of(raw: str) -> str:
+    return "\r\n" if "\r\n" in raw else "\n"
 
 
 def splice_visibility_into_body(raw: str, value: Visibility) -> str:
     """A stored document body with its frontmatter's ``visibility:`` set:
     the block is spliced (:func:`splice_visibility`) and everything after it
-    is kept byte for byte. A body with no block gets one, followed by a blank
-    line, as :func:`join_frontmatter` writes it."""
+    is kept byte for byte. A body with no block gets one, in the body's own
+    line ending and after a leading BOM, followed by a blank line, as
+    :func:`join_frontmatter` writes it."""
     match = _FRONTMATTER.match(raw)
     if not match:
-        return f"{splice_visibility(None, value)}\n{raw}"
+        nl = _newline_of(raw)
+        bom = "﻿" if raw.startswith("﻿") else ""
+        rest = raw[len(bom) :]
+        return f"{bom}{splice_visibility(None, value, nl)}{nl}{rest}"
     block = match.group(0)
     return splice_visibility(block, value) + raw[match.end() :]
 
@@ -440,13 +540,15 @@ def _coord_error(exc: HTTPException, record: str) -> Exception:
 
 
 def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
-    """Whether setting ``value`` changes what is stored. Already exactly that
-    one key with that value: no. ``internal`` on a document with no key: no —
-    absent already reads internal, and a write would only move the version."""
-    stored = _stored_visibility_values(frontmatter)
-    if stored == [value]:
+    """Whether setting ``value`` changes what is stored. Already exactly one
+    top-level key holding that string: no. ``internal`` on a document with no
+    key: no — absent already reads internal, and a write would only move the
+    version. Anything else (duplicates, an empty or unknown value): yes, so the
+    splice leaves exactly one key."""
+    count, stored = _stored_visibility(frontmatter)
+    if count == 1 and stored == value:
         return False
-    return not (value == "internal" and not stored)
+    return not (value == "internal" and count == 0)
 
 
 # ---------------------------------------------------------------------------
@@ -501,11 +603,17 @@ class IntentDocumentStore:
     ) -> ListResult:
         wanted_kinds = [k for k in filters.get("kind", []) if k in INTENT_KINDS]
         kinds = set(wanted_kinds) if filters.get("kind") else set(INTENT_KINDS)
+        team = ctx.access.team_role
         listing = await self.coord.list(ctx.access.tenant_id)
+        # A caller without a team role is judged over EVERY intent kind, not
+        # just the kinds asked for: `withheld` is then one answer for the
+        # tenant, so filtering by kind cannot reveal which kinds hold
+        # documents that are not shared with them.
+        fetch_kinds = kinds if team else set(INTENT_KINDS)
         rows = [
             d
             for d in listing.get("documents") or []
-            if isinstance(d, dict) and d.get("kind") in kinds
+            if isinstance(d, dict) and d.get("kind") in fetch_kinds
         ]
         gate = asyncio.Semaphore(LIST_CONCURRENCY)
 
@@ -529,14 +637,14 @@ class IntentDocumentStore:
         items = list(await asyncio.gather(*(one(r) for r in rows)))
         degraded = listing.get("degraded")
         withheld = False
-        if not ctx.access.team_role:
+        if not team:
             # A caller without a team role sees only what is marked for them.
             # A skeleton or an unreadable document reads internal (its
             # frontmatter was not read), so it is withheld too — never shown
             # as "not written" to someone who could not have seen it anyway.
             shared = [d for d in items if d.visibility == "shared"]
             withheld = len(shared) != len(items)
-            items = shared
+            items = [d for d in shared if d.kind in kinds]
         served: list[BaseModel] = list(items)
         return ListResult(
             items=served, degraded=degraded if degraded else None, withheld=withheld
@@ -668,18 +776,25 @@ class IntentDocumentStore:
             and payload.visibility is not None
             and _visibility_changes(before.frontmatter, payload.visibility)
         ):
-            if "body" in patch:
-                # The prose changes too: re-join it to the spliced block.
-                patch["body"] = join_frontmatter(
-                    splice_visibility(before.frontmatter, payload.visibility),
-                    payload.body or "",
-                )
-            else:
-                # Only the mark changes: splice into the body AS STORED, so
-                # every byte outside that one key is kept, spacing included.
-                patch["body"] = splice_visibility_into_body(
-                    current.get("body") or "", payload.visibility
-                )
+            try:
+                if "body" in patch:
+                    # The prose changes too: re-join it to the spliced block.
+                    patch["body"] = join_frontmatter(
+                        splice_visibility(
+                            before.frontmatter,
+                            payload.visibility,
+                            _newline_of(current.get("body") or ""),
+                        ),
+                        payload.body or "",
+                    )
+                else:
+                    # Only the mark changes: splice into the body AS STORED,
+                    # so every byte outside that one key is kept.
+                    patch["body"] = splice_visibility_into_body(
+                        current.get("body") or "", payload.visibility
+                    )
+            except FrontmatterNotEditable as exc:
+                raise StoreRefused(422, "frontmatter_not_editable", str(exc)) from exc
             patch["change_description"] = (
                 patch.get("change_description", "Edited on the Project Overview")
                 + f"; visibility set to {payload.visibility}"

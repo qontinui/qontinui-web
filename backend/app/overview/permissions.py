@@ -92,9 +92,13 @@ PermissionRule = Literal["editing_roles", "project_admin", "coord_admin"]
 OutsideRead = Literal["none", "marked"]
 
 #: Coord's operator hierarchy (coord ``crates/coord/src/rbac.rs``): the roles
-#: of the operator's TEAM. Any other role a tenant grants (``helper`` today,
-#: ``stakeholder`` once it ships) is an OUTSIDE role.
-TEAM_ROLES: frozenset[str] = frozenset({"operator", "agent_supervisor", "admin"})
+#: of the operator's TEAM, plus ``owner``, which coord counts as admin-class
+#: (``principal_headers.rs``) and whose team-role floor admits it
+#: (``TEAM_ROLE_FLOOR_EXTRA``). Any other role a tenant grants (``helper``
+#: today, ``stakeholder`` once it ships) is an OUTSIDE role.
+TEAM_ROLES: frozenset[str] = frozenset(
+    {"operator", "agent_supervisor", "admin", "owner"}
+)
 
 #: Which credential proved the caller. ``user`` — a Cognito user JWT (a person
 #: in a browser, or anything holding their token). ``device`` — a coord device
