@@ -733,3 +733,92 @@ class TestRoundTwo:
         assert stored == (
             "---\r\nvisibility: shared\r\n---\r\n\r\n# Plain\r\n\r\nNew.\r\n"
         )
+
+
+# ===========================================================================
+# Round-4 review fixes
+# ===========================================================================
+
+#: Fences coord does not read as frontmatter: a BOM before the opening fence,
+#: trailing blanks on a fence. A visibility write must leave them canonical.
+NONCANONICAL_BODIES = {
+    "bom-led": "﻿---\ntitle: x\n---\n\nbody\n",
+    "blank-trailed": "--- \ntitle: x\n---  \n\nbody\n",
+    "crlf-blank-trailed": "---\r\ntitle: x\r\n--- \r\n\r\nbody\r\n",
+    "shared-but-hidden": "﻿---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+}
+
+
+@pytest.fixture()
+def coord_round4(coord_more: FakeCoord) -> FakeCoord:
+    for name, body in NONCANONICAL_BODIES.items():
+        coord_more.seed("product_intent", name, body)
+    return coord_more
+
+
+def _fence_lines(body: str) -> tuple[str, str]:
+    lines = body.splitlines(keepends=True)
+    closing = next(line for line in lines[1:] if line.rstrip("\r\n").startswith("---"))
+    return lines[0], closing.rstrip("\r\n")
+
+
+class TestRoundFour:
+    async def test_a_written_block_has_canonical_fences(
+        self, admin: httpx.AsyncClient, coord_round4: FakeCoord
+    ) -> None:
+        """Coord reads frontmatter only when line 1 is exactly `---` and the
+        closing line is exactly `---`; a visibility write normalises both."""
+        for name in NONCANONICAL_BODIES:
+            response = await _set_visibility(admin, f"product_intent:{name}", "shared")
+            assert response.status_code == 200, (name, response.text)
+            stored = coord_round4.docs[("product_intent", name)]["body"]
+            opening, closing = _fence_lines(stored)
+            crlf = name.startswith("crlf")
+            assert opening == ("---\r\n" if crlf else "---\n"), (name, stored)
+            assert closing == "---", (name, stored)
+            assert "visibility: shared" in stored, (name, stored)
+            # Everything after the block is kept byte for byte.
+            assert stored.endswith("body\r\n" if crlf else "\nbody\n"), stored
+
+    async def test_a_new_block_on_an_lf_body_uses_lf_whatever_the_prose(
+        self, admin: httpx.AsyncClient, coord: FakeCoord
+    ) -> None:
+        """The stored body's line ending wins over the new prose's."""
+        response = await admin.patch(
+            f"{API}/intent-documents/product_intent:open-questions",
+            json={"body": "# Asked\r\n\r\nNew.\r\n", "visibility": "shared"},
+            headers={"If-Match": '"3"'},
+        )
+        assert response.status_code == 200, response.text
+        assert coord.docs[("product_intent", "open-questions")]["body"] == (
+            "---\nvisibility: shared\n---\n\n# Asked\r\n\r\nNew.\r\n"
+        )
+
+    async def test_an_internal_write_on_an_unparseable_block_is_a_422(
+        self, admin: httpx.AsyncClient, coord_more: FakeCoord
+    ) -> None:
+        response = await _set_visibility(admin, "success_metric:broken", "internal")
+        assert response.status_code == 422, response.text
+        assert "frontmatter_not_editable" in response.text
+        assert coord_more.patches == []
+        assert coord_more.docs[("success_metric", "broken")]["body"] == UNPARSEABLE_BODY
+
+    async def test_the_withheld_walk_reads_every_other_kind(
+        self, outsider: httpx.AsyncClient, coord: FakeCoord
+    ) -> None:
+        """No early exit: asking for one kind still reads every authored row of
+        the others, so the time taken says nothing about where an unshared
+        document sits."""
+        listing = (
+            await outsider.get(
+                f"{API}/intent-documents", params={"kind": "product_intent"}
+            )
+        ).json()
+        assert listing["withheld"] is True
+        others = {
+            key
+            for key, doc in coord.docs.items()
+            if key[0] != "product_intent" and not doc.get("unedited_seed")
+        }
+        assert len(others) >= 3
+        assert others <= set(coord.gets), (others, coord.gets)

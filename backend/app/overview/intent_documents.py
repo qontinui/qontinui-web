@@ -150,9 +150,8 @@ MAX_FRONTMATTER_CHARS = 16_000
 
 #: The refusal when no splice both parses and reads back.
 NOT_EDITABLE_HERE = (
-    "the frontmatter's visibility key is anchored, aliased or indented, so it "
-    "cannot be changed here without breaking the block; fix it by hand in the "
-    "console"
+    "the visibility line cannot be placed in this frontmatter without breaking "
+    "it — edit it by hand in the console"
 )
 #: The refusal for a block the parser is not asked to read, or cannot.
 TOO_LARGE_OR_DEEP = "frontmatter too large or deeply nested to edit here"
@@ -294,6 +293,13 @@ def splice_visibility(
     # that opens the closing delimiter, which is given back below.
     closing_nl = "\r\n" if closing.startswith("\r\n") else "\n"
     lines = (inner + closing_nl).splitlines(keepends=True) if inner else []
+    # Canonical fences on every written block: coord reads frontmatter only
+    # when line 1 is exactly `---` and the closing line is exactly `---`, so a
+    # BOM before the opening fence and trailing blanks on either fence go.
+    opening = "---" + newline
+    canonical_closing = (
+        closing_nl + "---" + (closing_nl if closing.endswith("\n") else "")
+    )
 
     def assemble(replacement: str | None) -> str:
         """The block with every visibility entry removed and, when
@@ -319,7 +325,7 @@ def splice_visibility(
                 replacement + closing_nl if replacement is not None else ""
             )
         trimmed = body[: -len(closing_nl)] if body.endswith(closing_nl) else body
-        return parts.group("opening") + trimmed + closing
+        return opening + trimmed + canonical_closing
 
     result = assemble(line)
     if _parses(result) and visibility_of(result) == value:
@@ -339,7 +345,12 @@ def splice_visibility(
 
 def _parses(block: str) -> bool:
     """Whether a frontmatter block reads as a block-style mapping (or is
-    empty)."""
+    empty).
+
+    This is PyYAML, i.e. YAML 1.1. Coord reads with serde_yaml 0.9 (YAML 1.2,
+    duplicate keys refused), so it can still refuse a body this passes — `on`
+    against `"on"`, say — and that refusal surfaces as 422
+    ``rejected_by_store``."""
     parts = _BLOCK_PARTS.match(block)
     if parts is None:
         return False
@@ -635,11 +646,26 @@ def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
     top-level key holding that string: no. ``internal`` on a document with no
     key: no — absent already reads internal, and a write would only move the
     version. Anything else (duplicates, an empty or unknown value): yes, so the
-    splice leaves exactly one key."""
+    splice leaves exactly one key. A ``shared`` mark behind non-canonical
+    fences is rewritten too: coord does not see such a block, so for coord the
+    document is not shared until the fences are."""
     count, stored = _stored_visibility(frontmatter)
     if count == 1 and stored == value:
-        return False
+        return value == "shared" and not _fences_canonical(frontmatter)
     return not (value == "internal" and count == 0)
+
+
+#: The fences exactly as coord reads them: no BOM, nothing after `---`.
+_CANONICAL_CLOSING = re.compile(r"\r?\n---(?:\r?\n)?")
+
+
+def _fences_canonical(frontmatter: str | None) -> bool:
+    parts = _BLOCK_PARTS.match(frontmatter or "")
+    if parts is None:
+        return False
+    return parts.group("opening") in ("---\n", "---\r\n") and bool(
+        _CANONICAL_CLOSING.fullmatch(parts.group("closing"))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -737,18 +763,13 @@ class IntentDocumentStore:
             shared = [d for d in items if d.visibility == "shared"]
             withheld = len(shared) != len(items)
             items = shared
-            # The other kinds count too. They are read concurrently (at most
-            # one per intent kind at a time) and all of them, so the answer's
-            # timing does not depend on where an unshared document sits.
+            # The other kinds count too. Every one of their rows is read,
+            # concurrently under the same `gate` (LIST_CONCURRENCY) as the
+            # list itself, with no early exit, so the answer's timing does not
+            # depend on where an unshared document sits.
             if other_rows:
-                walk = asyncio.Semaphore(len(INTENT_KINDS))
-
-                async def judged(row: dict[str, Any]) -> bool:
-                    async with walk:
-                        return (await one(row)).visibility != "shared"
-
-                unshared = await asyncio.gather(*(judged(r) for r in other_rows))
-                withheld = withheld or any(unshared)
+                others = await asyncio.gather(*(one(r) for r in other_rows))
+                withheld = withheld or any(d.visibility != "shared" for d in others)
         served: list[BaseModel] = list(items)
         return ListResult(
             items=served, degraded=degraded if degraded else None, withheld=withheld
@@ -875,7 +896,7 @@ class IntentDocumentStore:
             else:
                 attrs["overview_order"] = payload.overview_order
             patch["attrs"] = attrs
-        if "visibility" in fields:
+        if "visibility" in fields and payload.visibility is not None:
             # A block the parser cannot read (oversized, nested too deeply,
             # not YAML) reads internal; a write of EITHER value on it is a
             # 422, never a silent no-op that looks like it landed.
