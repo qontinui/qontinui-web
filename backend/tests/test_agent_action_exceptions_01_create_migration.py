@@ -32,10 +32,13 @@ test Postgres):
    never conflicts.
 5. **The CHECKs refuse what the plan forbids**: an unknown ``origin``, a blank
    reason, a half-set removal pair, an unknown suggestion status, a decided
-   suggestion with no decider, a duplicate suggestion key.
+   suggestion with no decider, a duplicate suggestion key, and on both tables
+   a ``*`` anywhere but a final ``.*`` / ``:*`` / ``/*`` (``shell:rm -rf *``
+   must never become a prefix class).
 6. **Refusal events** insert with ``at`` from ``now()``, a NULL
    ``listed_entry_id`` (the unlisted-barrier defect) and a NULL session, and
-   the ``(tenant_id, at DESC)`` index exists. The tenant roles hold DML on all
+   both the ``(tenant_id, at DESC)`` read index and the ``(at)`` prune index
+   exist. The tenant roles hold DML on all
    three tables and USAGE on the bigserial sequence.
 7. **Downgrade removes exactly the three tables, and a re-upgrade restores
    them**; a re-applied upgrade (stamp at the parent, upgrade again) over the
@@ -230,6 +233,10 @@ def test_upgrade_creates_the_three_tables_and_both_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_agent_refusal_events_tenant_at "
         "ON coord.agent_refusal_events (tenant_id, at DESC)"
     ) in upgrade_sql
+    assert (
+        "CREATE INDEX IF NOT EXISTS ix_agent_refusal_events_at "
+        "ON coord.agent_refusal_events (at)"
+    ) in upgrade_sql, "the global 30-day prune needs an at-leading index"
     for call in upgrade_execute_calls(_revision_path()):
         assert call.in_autocommit_block is False
 
@@ -374,8 +381,7 @@ def test_the_three_tables_have_the_declared_shape(exceptions_db: Engine) -> None
     )
     assert is_class.is_generated == "ALWAYS", is_class
     expression = is_class.generation_expression or ""
-    assert "right" in expression and "(action_key, 1)" in expression, is_class
-    assert "'*'" in expression, is_class
+    assert "action_key ~ '[.:/][*]$'" in expression, is_class
 
     assert _constraints(engine, _EXCEPTIONS, "p") == {
         "agent_action_exceptions_pkey": "PRIMARY KEY (id)"
@@ -400,7 +406,11 @@ def test_the_three_tables_have_the_declared_shape(exceptions_db: Engine) -> None
         "agent_action_exception_suggestions_status_check",
         "agent_action_exception_suggestions_decided_iff_not_pending",
         "agent_action_exception_suggestions_decided_pair",
+        "agent_action_exception_suggestions_class_star_final",
     }
+    assert "agent_action_exceptions_class_star_final" in _constraints(
+        engine, _EXCEPTIONS, "c"
+    )
 
     assert index_definition(engine, "uq_agent_action_exceptions_live_key") == (
         "CREATE UNIQUE INDEX uq_agent_action_exceptions_live_key ON "
@@ -410,6 +420,10 @@ def test_the_three_tables_have_the_declared_shape(exceptions_db: Engine) -> None
     assert index_definition(engine, "ix_agent_refusal_events_tenant_at") == (
         "CREATE INDEX ix_agent_refusal_events_tenant_at ON "
         "coord.agent_refusal_events USING btree (tenant_id, at DESC)"
+    )
+    assert index_definition(engine, "ix_agent_refusal_events_at") == (
+        "CREATE INDEX ix_agent_refusal_events_at ON "
+        "coord.agent_refusal_events USING btree (at)"
     )
 
 
@@ -423,6 +437,13 @@ def test_is_class_is_derived_from_the_key(exceptions_db: Engine) -> None:
     assert exact.is_class is False
     assert klass.is_class is True
     assert exact.added_now is True
+    for key, expected in (
+        ("prompt_document.write:policy/*", True),
+        ("tool.call:*", True),
+        ("runner.*", True),
+        ("shell:gh pr merge", False),
+    ):
+        assert _insert_entry(exceptions_db, tenant, key).is_class is expected, key
     with pytest.raises(ProgrammingError):
         with exceptions_db.begin() as conn:
             conn.execute(
@@ -503,6 +524,19 @@ def test_the_exception_checks_refuse_what_the_plan_forbids(
             "agent_action_exceptions_removed_pair",
         ),
     )
+    # A `*` anywhere but a final `.*` / `:*` / `/*` is refused, so a bare
+    # trailing `*` (`shell:rm -rf *`) never becomes a prefix class.
+    for bad_key in ("shell:rm -rf *", "tool.call:coord_*", "a.*:b", "a.b:*/*", "*"):
+        cases = (
+            *cases,
+            (
+                "INSERT INTO coord.agent_action_exceptions "
+                "(tenant_id, action_key, reason, added_by, origin) "
+                "VALUES (:t, :k, 'r', 'op', 'operator')",
+                {"t": tenant, "k": bad_key},
+                "agent_action_exceptions_class_star_final",
+            ),
+        )
     for sql, params, constraint in cases:
         with pytest.raises(IntegrityError) as excinfo:
             with engine.begin() as conn:
@@ -544,6 +578,29 @@ def test_suggestions_default_pending_and_the_checks_hold(exceptions_db: Engine) 
     assert excinfo.value.orig.diag.constraint_name == (  # type: ignore[union-attr]
         "agent_action_exception_suggestions_tenant_key_unique"
     )
+
+    with pytest.raises(IntegrityError) as excinfo:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO coord.agent_action_exception_suggestions "
+                    "(tenant_id, action_key, rationale, source_ref) "
+                    "VALUES (:t, 'shell:rm -rf *', 'r', 's')"
+                ),
+                {"t": tenant},
+            )
+    assert excinfo.value.orig.diag.constraint_name == (  # type: ignore[union-attr]
+        "agent_action_exception_suggestions_class_star_final"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO coord.agent_action_exception_suggestions "
+                "(tenant_id, action_key, rationale, source_ref) "
+                "VALUES (:t, 'prompt_document.write:claude_settings/*', 'r', 's')"
+            ),
+            {"t": tenant},
+        )
 
     refused: tuple[tuple[str, str], ...] = (
         (

@@ -18,12 +18,13 @@ What this migration creates
 
 1. ``coord.agent_action_exceptions`` — the operator's exception list, one row
    per closed action key (plan D1 grammar ``<surface>.<verb>[:<object>]``; a
-   key ending ``*`` is a CLASS, matching every key it prefixes)::
+   key ending ``.*``, ``:*`` or ``/*`` is a CLASS, matching every key it
+   prefixes, and a ``*`` anywhere else is refused)::
 
        tenant_id    uuid         NOT NULL
        id           uuid         PRIMARY KEY DEFAULT gen_random_uuid()
        action_key   text         NOT NULL
-       is_class     boolean      GENERATED ALWAYS AS (right(action_key, 1) = '*') STORED
+       is_class     boolean      GENERATED ALWAYS AS (action_key ~ '[.:/][*]$') STORED
        reason       text         NOT NULL  (non-blank)
        added_by     text         NOT NULL
        added_at     timestamptz  NOT NULL DEFAULT now()
@@ -36,6 +37,7 @@ What this migration creates
        removed_at   timestamptz  NULL
        removed_by   text         NULL
        CHECK ((removed_at IS NULL) = (removed_by IS NULL))
+       CHECK (a ``*`` in action_key appears only as a final ``.*`` / ``:*`` / ``/*``)
 
    plus a partial unique index ``(tenant_id, action_key) WHERE removed_at IS
    NULL``: one LIVE entry per key, while removed rows stay as tombstones.
@@ -56,6 +58,7 @@ What this migration creates
        UNIQUE (tenant_id, action_key)
        CHECK ((status = 'pending') = (decided_at IS NULL))
        CHECK ((decided_at IS NULL) = (decided_by IS NULL))
+       CHECK (a ``*`` in action_key appears only as a final ``.*`` / ``:*`` / ``/*``)
 
 3. ``coord.agent_refusal_events`` — one row per agent refusal written by the
    shared refusal helper (plan Phase 3), so the operator page can answer
@@ -71,15 +74,23 @@ What this migration creates
        principal_kind   text         NOT NULL
        session_id       text         NULL
 
-   plus an index ``(tenant_id, at DESC)`` for the recent-refusals read and the
-   30-day prune.
+   plus an index ``(tenant_id, at DESC)`` for the per-tenant recent-refusals
+   read and an index ``(at)`` for the global 30-day prune.
 
 Column authority
 ================
 
 * ``is_class`` is a STORED generated column, not a writable flag: the plan
   defines it as "derived: key ends ``*``", and a generated column cannot drift
-  from the key. coord never writes it; an INSERT naming it is an error.
+  from the key. It is true only for a key ending ``.*``, ``:*`` or ``/*``, never
+  for a bare trailing ``*``: ``shell:rm -rf *`` must not become a prefix class.
+  ``/*`` is a class separator beside D1's ``.*`` / ``:*`` because the plan's
+  own keys need it — D1's example ``prompt_document.write:claude_settings/*``
+  and Phase 4's ``prompt_document.write:<kind>/*`` end in ``/*``, and a
+  ``.*``/``:*``-only rule would refuse them. The ``*_class_star_final`` CHECK on both tables
+  refuses a ``*`` anywhere but that final position, so every stored key is
+  either exact (no ``*``) or a well-formed class. coord never writes
+  ``is_class``; an INSERT naming it is an error.
 * ``source_ref`` on an exception is NULL for an entry the operator typed by
   hand (it has no source); a migrated or reserved entry carries the stored row,
   dial or clause it came from. Phase 4's reconciler keys on it and skips any
@@ -107,9 +118,13 @@ Column authority
 * No column of any table carries a foreign key to tenants, matching
   ``coord.agent_registry`` (``agent_registry_01``'s design notes).
 
-The recent-refusals read and the prune both lead with ``tenant_id`` / ``at``,
-which the one index serves; the 30-day prune itself is coord's leader tick
-(plan Phase 3), not anything in the database.
+The per-tenant recent-refusals read leads with ``tenant_id`` and is served by
+``ix_agent_refusal_events_tenant_at``. The 30-day prune is global
+(``DELETE ... WHERE at < now() - interval``, no tenant predicate), which a
+``tenant_id``-leading index cannot serve, so it has its own ``(at)`` index,
+``ix_agent_refusal_events_at`` (the ``launch_budget_01``
+``ix_account_usage_samples_sampled`` precedent). The prune itself is coord's
+leader tick (plan Phase 3), not anything in the database.
 
 Lock posture
 ============
@@ -174,7 +189,7 @@ def upgrade() -> None:
             tenant_id    uuid         NOT NULL,
             id           uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
             action_key   text         NOT NULL,
-            is_class     boolean      GENERATED ALWAYS AS (right(action_key, 1) = '*') STORED,
+            is_class     boolean      GENERATED ALWAYS AS (action_key ~ '[.:/][*]$') STORED,
             reason       text         NOT NULL,
             added_by     text         NOT NULL,
             added_at     timestamptz  NOT NULL DEFAULT now(),
@@ -201,6 +216,9 @@ def upgrade() -> None:
             ),
             CONSTRAINT agent_action_exceptions_removed_pair CHECK (
                 (removed_at IS NULL) = (removed_by IS NULL)
+            ),
+            CONSTRAINT agent_action_exceptions_class_star_final CHECK (
+                action_key ~ '^[^*]*$' OR action_key ~ '^[^*]*[.:/][*]$'
             )
         )
         """
@@ -226,14 +244,16 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.agent_action_exceptions.action_key IS
-            'Plan D1 grammar <surface>.<verb>[:<object>]. A key ending * is a '
-            'CLASS matching every key it prefixes (is_class).'
+            'Plan D1 grammar <surface>.<verb>[:<object>]. A key ending .*, :* '
+            'or /* is a CLASS matching every key it prefixes (is_class); a * '
+            'anywhere else is refused by a CHECK.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.agent_action_exceptions.is_class IS
-            'Derived: true when action_key ends *. Generated, never written.'
+            'Derived: true when action_key ends .*, :* or /* (never a bare '
+            'trailing *). Generated, never written.'
         """
     )
     op.execute(
@@ -280,6 +300,9 @@ def upgrade() -> None:
             ),
             CONSTRAINT agent_action_exception_suggestions_decided_pair CHECK (
                 (decided_at IS NULL) = (decided_by IS NULL)
+            ),
+            CONSTRAINT agent_action_exception_suggestions_class_star_final CHECK (
+                action_key ~ '^[^*]*$' OR action_key ~ '^[^*]*[.:/][*]$'
             )
         )
         """
@@ -313,6 +336,12 @@ def upgrade() -> None:
         """
         CREATE INDEX IF NOT EXISTS ix_agent_refusal_events_tenant_at
             ON coord.agent_refusal_events (tenant_id, at DESC)
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_agent_refusal_events_at
+            ON coord.agent_refusal_events (at)
         """
     )
     op.execute(
