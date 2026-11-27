@@ -737,6 +737,8 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
     // are different events — one fails the work, the other delays it.
     expect(HEADROOM_MEANING.breach).toMatch(/refus/i);
     expect(HEADROOM_MEANING.warn).toMatch(/wait/i);
+    // coord ranks by free slots then pressure, never by the headroom grade
+    expect(HEADROOM_MEANING.warn).not.toMatch(/rank/i);
     expect(HEADROOM_LABEL.breach).not.toBe(HEADROOM_LABEL.warn);
     expect(HEADROOM_MEANING.unknown).not.toMatch(/health(y)?[^.]*$/i);
   });
