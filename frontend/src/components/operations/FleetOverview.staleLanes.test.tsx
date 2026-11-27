@@ -77,6 +77,7 @@ function Host({ devices }: { devices: FleetHealthDevice[] }): ReactElement {
           error: null,
           seeded: true,
           everSeeded: true,
+          answeredAtMs: null,
           refetch: noop,
         }}
         nowMs={Date.now()}
