@@ -40,6 +40,7 @@ from tests.test_overview_authoring import (
     FakeCoord,
     _app,
     _client,
+    _log_rows,
     api_user,  # noqa: F401 — a fixture, used by name
 )
 
@@ -411,11 +412,12 @@ class TestTheMarkIsReadAsYaml:
             splice_visibility("---\na: 1\n---", "shared")
             == "---\na: 1\nvisibility: shared\n---"
         )
-        # A new block follows the body's own line endings, after a leading BOM.
-        assert (
-            splice_visibility_into_body("\ufeff# T\r\n\r\nx\r\n", "shared")
-            == "\ufeff---\r\nvisibility: shared\r\n---\r\n\r\n# T\r\n\r\nx\r\n"
-        )
+        # A new block follows the body's own line endings and OPENS the body:
+        # coord reads frontmatter only when the first line is exactly `---`,
+        # so a leading BOM is dropped.
+        created = splice_visibility_into_body("\ufeff# T\r\n\r\nx\r\n", "shared")
+        assert created.startswith("---")
+        assert created == "---\r\nvisibility: shared\r\n---\r\n\r\n# T\r\n\r\nx\r\n"
 
     async def test_a_block_that_does_not_parse_reads_internal_and_is_not_spliced(
         self,
@@ -559,13 +561,26 @@ DEEP_BLOCK = "---\nx: " + "[" * 2000 + "]" * 2000 + "\n---\n"
 DEEP_BODY = DEEP_BLOCK + "\n# Deep\n\nText.\n"
 ALIAS_BODY = "---\na: &s shared\nvisibility: *s\nb: 1\n---\n\n# Alias\n\nText.\n"
 CRLF_NO_BLOCK_BODY = "# Plain\r\n\r\nText.\r\n"
+PROSE = "\n# Doc\n\nText.\n"
+#: Past the size bound: never handed to the parser.
+HUGE_BLOCK = "---\nvisibility: shared\n" + "x: 1\n" * 4000 + "---\n"
+#: A visibility key the one-line splice cannot change and removal cannot drop
+#: without breaking an alias: indented with its own anchor, and anchored then
+#: reused by a later key.
+ANCHORED_BLOCKS = (
+    "---\n  visibility: &s shared\n  b: *s\n---\n",
+    "---\nvisibility: &v shared\nb: *v\n---\n",
+)
 
 
 @pytest.fixture()
 def coord_round2(coord: FakeCoord) -> FakeCoord:
     coord.seed("domain_spec", "deep", DEEP_BODY)
     coord.seed("audience_profile", "alias", ALIAS_BODY)
-    coord.seed("success_metric", "crlf-plain", CRLF_NO_BLOCK_BODY)
+    coord.seed("audience_profile", "anchored-indented", ANCHORED_BLOCKS[0] + PROSE)
+    coord.seed("audience_profile", "anchored-reused", ANCHORED_BLOCKS[1] + PROSE)
+    coord.seed("domain_spec", "huge", HUGE_BLOCK + PROSE)
+    coord.seed("product_intent", "crlf-plain", CRLF_NO_BLOCK_BODY)
     return coord
 
 
@@ -618,23 +633,73 @@ class TestRoundTwo:
         gone = await outsider.get(f"{API}/intent-documents/audience_profile:alias")
         assert gone.status_code == 404, gone.text
 
-    async def test_unsharing_is_never_refused(self) -> None:
+    async def test_unsharing_an_indented_mapping_removes_the_key(self) -> None:
+        """The one line does not fit an indented mapping; removing the key
+        does, and the block still parses."""
         from app.overview.intent_documents import (
             _parses,
             splice_visibility,
             visibility_of,
         )
 
-        for block in (
-            # An anchor on the key's own value that a later key aliases.
-            "---\nvisibility: &v shared\nb: *v\n---\n",
-            # An indented top-level mapping.
-            "---\n  a: 1\n  visibility: shared\n---\n",
-        ):
+        block = "---\n  a: 1\n  visibility: shared\n---\n"
+        assert visibility_of(block) == "shared"
+        spliced = splice_visibility(block, "internal")
+        assert spliced == "---\n  a: 1\n---\n"
+        assert _parses(spliced)
+
+    async def test_a_key_that_cannot_be_edited_is_refused_never_doubled(
+        self,
+    ) -> None:
+        from app.overview.intent_documents import (
+            FrontmatterNotEditable,
+            splice_visibility,
+            visibility_of,
+        )
+
+        for block in ANCHORED_BLOCKS:
             assert visibility_of(block) == "shared", block
-            spliced = splice_visibility(block, "internal")
-            assert visibility_of(spliced) == "internal", spliced
-            assert _parses(spliced), spliced
+            for value in ("internal", "shared"):
+                with pytest.raises(FrontmatterNotEditable, match="by hand"):
+                    splice_visibility(block, value)  # type: ignore[arg-type]
+
+    async def test_an_anchored_key_is_a_422_with_nothing_written(
+        self, admin: httpx.AsyncClient, coord_round2: FakeCoord
+    ) -> None:
+        for name in ("anchored-indented", "anchored-reused"):
+            stored = coord_round2.docs[("audience_profile", name)]["body"]
+            response = await _set_visibility(
+                admin, f"audience_profile:{name}", "internal"
+            )
+            assert response.status_code == 422, (name, response.text)
+            assert "frontmatter_not_editable" in response.text
+            assert coord_round2.docs[("audience_profile", name)]["body"] == stored
+        assert coord_round2.patches == []
+
+    async def test_an_unreadable_block_refuses_either_value(
+        self, admin: httpx.AsyncClient, coord_round2: FakeCoord
+    ) -> None:
+        """Too large or too deep reads internal, and a write of EITHER value is
+        a 422 — never a silent no-op that looks like it landed."""
+        for name in ("deep", "huge"):
+            for value in ("internal", "shared"):
+                response = await _set_visibility(admin, f"domain_spec:{name}", value)
+                assert response.status_code == 422, (name, value, response.text)
+                assert "too large or deeply nested" in response.text
+        assert coord_round2.patches == []
+
+    async def test_an_internal_write_on_an_internal_document_is_a_no_op(
+        self,
+        admin: httpx.AsyncClient,
+        coord: FakeCoord,
+        async_db_session,
+    ) -> None:
+        response = await _set_visibility(admin, "product_intent:non-goals", "internal")
+        assert response.status_code == 200, response.text
+        assert response.json()["item"]["version"] == 3
+        assert coord.patches == []
+        assert coord.docs[("product_intent", "non-goals")]["body"] == UNMARKED_BODY
+        assert await _log_rows(async_db_session, "intent_documents") == []
 
     async def test_comments_and_blank_lines_after_a_nested_value_are_kept(
         self,
@@ -655,12 +720,16 @@ class TestRoundTwo:
     async def test_body_and_visibility_on_a_crlf_document_without_a_block(
         self, admin: httpx.AsyncClient, coord_round2: FakeCoord
     ) -> None:
+        """The created block takes the stored body's CRLF, and opens the body:
+        the prose's BOM is dropped, never moved in front of the fence."""
         response = await admin.patch(
-            f"{API}/intent-documents/success_metric:crlf-plain",
-            json={"body": "﻿# Plain\r\n\r\nNew.\r\n", "visibility": "shared"},
+            f"{API}/intent-documents/product_intent:crlf-plain",
+            json={"body": "\ufeff# Plain\r\n\r\nNew.\r\n", "visibility": "shared"},
             headers={"If-Match": '"3"'},
         )
         assert response.status_code == 200, response.text
-        assert coord_round2.docs[("success_metric", "crlf-plain")]["body"] == (
-            "﻿---\r\nvisibility: shared\r\n---\r\n\r\n# Plain\r\n\r\nNew.\r\n"
+        stored = coord_round2.docs[("product_intent", "crlf-plain")]["body"]
+        assert stored.startswith("---")
+        assert stored == (
+            "---\r\nvisibility: shared\r\n---\r\n\r\n# Plain\r\n\r\nNew.\r\n"
         )

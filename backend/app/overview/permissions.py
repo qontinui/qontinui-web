@@ -93,8 +93,9 @@ OutsideRead = Literal["none", "marked"]
 
 #: Coord's operator hierarchy (coord ``crates/coord/src/rbac.rs``): the roles
 #: of the operator's TEAM, plus ``owner``: coord counts owner as admin-class
-#: (``principal_headers.rs`` ADMIN_ROLES), and qontinui-coord PR #4627 admits
-#: owner at its ``TenantId`` team-role floor. Any other role a tenant grants
+#: (``principal_headers.rs`` ADMIN_ROLES), and qontinui-coord PR #4627 (open,
+#: not yet on coord's main) admits owner at its ``TenantId`` team-role floor.
+#: Any other role a tenant grants
 #: (``helper`` today, ``stakeholder`` once it ships) is an OUTSIDE role.
 TEAM_ROLES: frozenset[str] = frozenset(
     {"operator", "agent_supervisor", "admin", "owner"}
