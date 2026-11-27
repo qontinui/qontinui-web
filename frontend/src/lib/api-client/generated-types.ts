@@ -19935,6 +19935,10 @@ export interface paths {
          *
          *     ``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when
          *     supplied together, set the class; omitted, the stored class is kept.
+         *     ``clear_size_class: true`` (default false) nulls both columns together —
+         *     only for a ``sweep``-set class (a ``declared`` one is a 422 with error
+         *     ``size_class_not_sweep_set``, row unchanged; an unclassified row reports
+         *     ``changed: false``) — and is a 422 beside ``size_class``.
          *
          *     This is the correction door for anchors: a wrong set is corrected by
          *     PUTting the right one. ``changed: false`` means the body restated what was
@@ -41169,11 +41173,19 @@ export interface components {
          *     carries no reason (it is cleared). ``size_class`` / ``size_class_source``
          *     are optional and travel together: supplied, they set the class; omitted,
          *     the stored class is kept — a caller correcting an anchor must not erase a
-         *     classification it never read.
+         *     classification it never read. ``clear_size_class: true`` is the one way to
+         *     erase a class: it nulls ``size_class`` and ``size_class_source`` together,
+         *     only where the stored source is ``sweep`` (a ``declared`` class is a 422
+         *     ``size_class_not_sweep_set``), and contradicts supplying either field.
          */
         FollowupAnchorsReplace: {
             /** Anchors */
             anchors: components["schemas"]["FollowupAnchorIn"][];
+            /**
+             * Clear Size Class
+             * @default false
+             */
+            clear_size_class: boolean;
             /** Size Class */
             size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** Size Class Source */
