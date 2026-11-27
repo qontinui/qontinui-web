@@ -749,6 +749,17 @@ NONCANONICAL_BODIES = {
 }
 
 
+#: What each NONCANONICAL_BODIES document reads after a `shared` write.
+CANONICAL_AFTER_WRITE = {
+    "bom-led": "---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+    "blank-trailed": "---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+    "crlf-blank-trailed": (
+        "---\r\ntitle: x\r\nvisibility: shared\r\n---\r\n\r\nbody\r\n"
+    ),
+    "shared-but-hidden": "---\ntitle: x\nvisibility: shared\n---\n\nbody\n",
+}
+
+
 @pytest.fixture()
 def coord_round4(coord_more: FakeCoord) -> FakeCoord:
     for name, body in NONCANONICAL_BODIES.items():
@@ -756,29 +767,36 @@ def coord_round4(coord_more: FakeCoord) -> FakeCoord:
     return coord_more
 
 
-def _fence_lines(body: str) -> tuple[str, str]:
-    lines = body.splitlines(keepends=True)
-    closing = next(line for line in lines[1:] if line.rstrip("\r\n").startswith("---"))
-    return lines[0], closing.rstrip("\r\n")
-
-
 class TestRoundFour:
     async def test_a_written_block_has_canonical_fences(
         self, admin: httpx.AsyncClient, coord_round4: FakeCoord
     ) -> None:
         """Coord reads frontmatter only when line 1 is exactly `---` and the
-        closing line is exactly `---`; a visibility write normalises both."""
-        for name in NONCANONICAL_BODIES:
+        closing line is exactly `---`; a visibility write normalises both and
+        keeps every other byte, the blank separator line included."""
+        for name, expected in CANONICAL_AFTER_WRITE.items():
             response = await _set_visibility(admin, f"product_intent:{name}", "shared")
             assert response.status_code == 200, (name, response.text)
             stored = coord_round4.docs[("product_intent", name)]["body"]
-            opening, closing = _fence_lines(stored)
-            crlf = name.startswith("crlf")
-            assert opening == ("---\r\n" if crlf else "---\n"), (name, stored)
-            assert closing == "---", (name, stored)
-            assert "visibility: shared" in stored, (name, stored)
-            # Everything after the block is kept byte for byte.
-            assert stored.endswith("body\r\n" if crlf else "\nbody\n"), stored
+            assert stored == expected, (name, stored)
+
+    async def test_a_rewritten_hidden_mark_settles(
+        self, admin: httpx.AsyncClient, coord_round4: FakeCoord
+    ) -> None:
+        """Once the fences are canonical, sharing again writes nothing: no
+        patch, no version move."""
+        first = await _set_visibility(
+            admin, "product_intent:shared-but-hidden", "shared"
+        )
+        assert first.status_code == 200, first.text
+        version = first.json()["item"]["version"]
+        patches = len(coord_round4.patches)
+        again = await _set_visibility(
+            admin, "product_intent:shared-but-hidden", "shared", version=version
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["item"]["version"] == version
+        assert len(coord_round4.patches) == patches
 
     async def test_a_new_block_on_an_lf_body_uses_lf_whatever_the_prose(
         self, admin: httpx.AsyncClient, coord: FakeCoord
@@ -803,12 +821,13 @@ class TestRoundFour:
         assert coord_more.patches == []
         assert coord_more.docs[("success_metric", "broken")]["body"] == UNPARSEABLE_BODY
 
-    async def test_the_withheld_walk_reads_every_other_kind(
+    async def test_the_withheld_walk_has_no_early_exit(
         self, outsider: httpx.AsyncClient, coord: FakeCoord
     ) -> None:
-        """No early exit: asking for one kind still reads every authored row of
-        the others, so the time taken says nothing about where an unshared
-        document sits."""
+        """A pin on the walk's shape, not on its answer: asking for one kind
+        still reads EVERY authored row of the others, so a change that stops
+        at the first unshared document (and so leaks where it sits through
+        the time taken) goes red here."""
         listing = (
             await outsider.get(
                 f"{API}/intent-documents", params={"kind": "product_intent"}
@@ -822,3 +841,18 @@ class TestRoundFour:
         }
         assert len(others) >= 3
         assert others <= set(coord.gets), (others, coord.gets)
+
+    async def test_a_null_visibility_with_a_body_is_a_body_edit(
+        self, admin: httpx.AsyncClient, coord_more: FakeCoord
+    ) -> None:
+        """`visibility: null` leaves the mark alone, so the frontmatter is not
+        checked: a body edit on an unparseable block still lands."""
+        response = await admin.patch(
+            f"{API}/intent-documents/success_metric:broken",
+            json={"body": "# Broken\n\nFixed prose.\n", "visibility": None},
+            headers={"If-Match": '"3"'},
+        )
+        assert response.status_code == 200, response.text
+        stored = coord_more.docs[("success_metric", "broken")]["body"]
+        assert stored.endswith("# Broken\n\nFixed prose.\n"), stored
+        assert stored.startswith("---\naudience: 'unclosed\n---\n"), stored

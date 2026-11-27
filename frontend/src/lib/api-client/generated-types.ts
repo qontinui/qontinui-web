@@ -42580,7 +42580,7 @@ export interface components {
          * @description Absent fields are left alone. ``overview_order: null`` returns the
          *     document to the page's default order; ``body`` cannot be cleared.
          *     ``visibility`` sets the frontmatter's ``visibility:`` key and nothing else
-         *     in the block; it cannot be null.
+         *     in the block; ``visibility: null`` leaves it alone, like an absent field.
          */
         IntentDocumentUpdate: {
             /** Body */

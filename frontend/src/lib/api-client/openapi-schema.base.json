@@ -32176,7 +32176,7 @@
         "type": "object"
       },
       "IntentDocumentUpdate": {
-        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.\n``visibility`` sets the frontmatter's ``visibility:`` key and nothing else\nin the block; it cannot be null.",
+        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.\n``visibility`` sets the frontmatter's ``visibility:`` key and nothing else\nin the block; ``visibility: null`` leaves it alone, like an absent field.",
         "properties": {
           "body": {
             "anyOf": [

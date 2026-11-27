@@ -297,9 +297,9 @@ def splice_visibility(
     # when line 1 is exactly `---` and the closing line is exactly `---`, so a
     # BOM before the opening fence and trailing blanks on either fence go.
     opening = "---" + newline
-    canonical_closing = (
-        closing_nl + "---" + (closing_nl if closing.endswith("\n") else "")
-    )
+    # The line ending after the closing fence is the fence's own, as stored.
+    after_fence = closing[len(closing.rstrip("\r\n")) :]
+    canonical_closing = closing_nl + "---" + after_fence
 
     def assemble(replacement: str | None) -> str:
         """The block with every visibility entry removed and, when
@@ -489,7 +489,7 @@ class IntentDocumentUpdate(BaseModel):
     """Absent fields are left alone. ``overview_order: null`` returns the
     document to the page's default order; ``body`` cannot be cleared.
     ``visibility`` sets the frontmatter's ``visibility:`` key and nothing else
-    in the block; it cannot be null."""
+    in the block; ``visibility: null`` leaves it alone, like an absent field."""
 
     body: str | None = Field(default=None, min_length=1, max_length=MAX_BODY_CHARS)
     overview_order: int | None = Field(default=None, ge=1, le=MAX_ORDER)
@@ -497,14 +497,13 @@ class IntentDocumentUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _something_and_no_blank_body(self) -> IntentDocumentUpdate:
-        if not self.model_fields_set & {"body", "overview_order", "visibility"}:
+        meaningful = self.model_fields_set & {"body", "overview_order"}
+        if not meaningful and self.visibility is None:
             raise ValueError("give body, overview_order, visibility, or several")
         if "body" in self.model_fields_set and (
             self.body is None or not self.body.strip()
         ):
             raise ValueError("body cannot be cleared, only changed")
-        if "visibility" in self.model_fields_set and self.visibility is None:
-            raise ValueError("visibility is internal or shared")
         return self
 
 
@@ -647,8 +646,9 @@ def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
     key: no — absent already reads internal, and a write would only move the
     version. Anything else (duplicates, an empty or unknown value): yes, so the
     splice leaves exactly one key. A ``shared`` mark behind non-canonical
-    fences is rewritten too: coord does not see such a block, so for coord the
-    document is not shared until the fences are."""
+    fences is rewritten too: coord does not read such a block as frontmatter
+    (its validation and any frontmatter reader skip it), so the rewrite puts
+    the block where coord sees it."""
     count, stored = _stored_visibility(frontmatter)
     if count == 1 and stored == value:
         return value == "shared" and not _fences_canonical(frontmatter)
