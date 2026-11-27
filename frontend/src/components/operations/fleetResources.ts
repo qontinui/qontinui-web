@@ -219,7 +219,7 @@ export type Headroom = "ok" | "warn" | "breach" | "unknown";
  */
 export const HEADROOM_MEANING: Record<Headroom, string> = {
   ok: "above every floor coord could evaluate — memory, disk and task saturation — so work is being accepted",
-  warn: "at or below the deferring floor, or within the server's amber margin above it — work is waiting for headroom or about to, or is ranked last for dispatch, rather than failing",
+  warn: "at or below the deferring floor, or within the server's amber margin above it — work is waiting for headroom or about to, rather than failing",
   breach:
     "at or below the rejecting floor — a guard is refusing work right now, so builds fail here",
   unknown:
