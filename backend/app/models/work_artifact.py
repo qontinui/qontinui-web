@@ -15,6 +15,7 @@ the tables really land there rather than trusting that it works.
 """
 
 from datetime import UTC, datetime
+from typing import Final, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -246,27 +247,49 @@ FOLLOWUP_SIZE_CLASSES: tuple[str, ...] = ("trivial", "small", "plan_sized")
 #: attempting the fix (``sweep``). Mirrors ``ck_work_artifact_edges_size_class_source``.
 FOLLOWUP_SIZE_CLASS_SOURCES: tuple[str, ...] = ("declared", "sweep")
 
-#: The predicate of every follow-up NOT owned by an artifact, whatever its
-#: resolution — the population the state views (``fixing``, the resolved ones)
-#: and the reconcile walk read. Spelled with LITERALS on purpose: a query that
-#: binds ``relation = $1`` cannot prove a partial index's predicate under a
-#: generic prepared plan, so every reader renders this string verbatim and the
-#: planner can match ``ix_work_artifact_edges_open_followups_created_id``.
+#: The INDEX predicate of every follow-up NOT owned by an artifact, whatever
+#: its resolution: ``ix_work_artifact_edges_open_followups_created_id``'s, as
+#: ``plan_library_10_keyset_walk_indexes`` built it. Spelled with LITERALS on
+#: purpose: a query that binds ``relation = $1`` cannot prove a partial index's
+#: predicate under a generic prepared plan, so every reader renders a string
+#: that CONTAINS this one verbatim and the planner can match the index.
 #: The column names are unqualified; every statement that embeds this joins
 #: only tables without a ``relation`` / ``to_id`` column of their own.
-UNCLAIMED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NULL"
+UNCLAIMED_FOLLOWUP_INDEX_SQL = "relation = 'spawned_followup' AND to_id IS NULL"
 
-#: The ONE spelling of "this follow-up is OPEN": unowned AND unresolved. The
-#: model's open-queue index, the migration's index build (a static literal —
-#: coord's migration classifier refuses an interpolated ``op.execute``, and no
-#: revision imports ``app``; the migration test pins the two equal), and the
-#: open reads (``list_open_followups``, ``match_followups``) all render it.
-#:
-#: Composition with qontinui-web#1459 (edge correction, ``retracted_at``): that
-#: PR is not on ``main``. Whichever of the two lands second chains on the
-#: other's revision and adds ``AND retracted_at IS NULL`` here and to the
-#: rebuilt partial index, and ``transition_followup`` refuses a retracted row.
-OPEN_FOLLOWUP_SQL = f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution IS NULL"
+#: The INDEX predicate of the OPEN queue — unowned AND unresolved:
+#: ``ix_work_artifact_edges_open_followup_queue_created_id``'s, as
+#: ``plan_library_11_followup_anchors_and_closure`` built it (a static literal
+#: there — coord's migration classifier refuses an interpolated
+#: ``op.execute``, and no revision imports ``app``; that revision's test pins
+#: the two equal).
+OPEN_FOLLOWUP_INDEX_SQL = f"{UNCLAIMED_FOLLOWUP_INDEX_SQL} AND resolution IS NULL"
+
+#: Live: not retracted (``plan_library_13_edge_correction``). A retracted edge
+#: is a soft-deleted row kept for its audit trail; it asserts nothing.
+LIVE_EDGE_SQL = "retracted_at IS NULL"
+
+#: What every READER of the unclaimed follow-ups renders — the state views
+#: (``fixing``, the resolved ones) and the reconcile walk. It is the index
+#: predicate plus :data:`LIVE_EDGE_SQL`, so a retracted follow-up drops out of
+#: every view while the planner still proves the index's predicate (a query
+#: predicate that contains every index clause implies it). The two non-unique
+#: indexes are deliberately NOT rebuilt with the extra clause: that implication
+#: already lets the planner use them, so a rebuild would buy nothing and add
+#: two more upgrade-path DROP/CREATE pairs to a revision that escalates anyway.
+UNCLAIMED_FOLLOWUP_SQL = f"{UNCLAIMED_FOLLOWUP_INDEX_SQL} AND {LIVE_EDGE_SQL}"
+
+#: The ONE spelling of "this follow-up is OPEN": live, unowned AND unresolved.
+#: The open reads (``list_open_followups``, ``match_followups``) render it; it
+#: contains :data:`OPEN_FOLLOWUP_INDEX_SQL`, so the open-queue index still serves
+#: them.
+OPEN_FOLLOWUP_SQL = f"{OPEN_FOLLOWUP_INDEX_SQL} AND {LIVE_EDGE_SQL}"
+
+#: ``source`` on an edge that ``PUT /plan-library/edges/{id}`` overwrote in
+#: place. NULL is an edge exactly as first recorded. Mirrors
+#: ``ck_work_artifact_edges_source``.
+EdgeSource = Literal["corrected"]
+EDGE_SOURCE_CORRECTED: Final[EdgeSource] = "corrected"
 
 #: An anchor's / a resolution PR's repository: ``owner/name``.
 FOLLOWUP_REPO_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
@@ -809,12 +832,17 @@ class WorkArtifactEdge(Base):
 
     __tablename__ = "work_artifact_edges"
     __table_args__ = (
+        # PARTIAL on liveness since ``plan_library_13_edge_correction``: a
+        # retracted edge is kept for its audit trail, and must not block
+        # recording the right claim on the same triple ("replace" is retract +
+        # create).
         Index(
             "uq_work_artifact_edges_from_to_relation",
             "from_id",
             "to_id",
             "relation",
             unique=True,
+            postgresql_where=text(LIVE_EDGE_SQL),
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
@@ -829,7 +857,7 @@ class WorkArtifactEdge(Base):
             "ix_work_artifact_edges_open_followups_created_id",
             "created_at",
             "id",
-            postgresql_where=text(UNCLAIMED_FOLLOWUP_SQL),
+            postgresql_where=text(UNCLAIMED_FOLLOWUP_INDEX_SQL),
         ),
         # ``/followups``' keyset walk over the OPEN queue — unowned AND
         # unresolved (``plan_library_11_followup_anchors_and_closure``), so a
@@ -838,7 +866,7 @@ class WorkArtifactEdge(Base):
             "ix_work_artifact_edges_open_followup_queue_created_id",
             "created_at",
             "id",
-            postgresql_where=text(OPEN_FOLLOWUP_SQL),
+            postgresql_where=text(OPEN_FOLLOWUP_INDEX_SQL),
         ),
         # The duplicate guard for OPEN follow-ups. The unique index above
         # cannot constrain them — SQL NULLs are distinct, so every null-target
@@ -846,14 +874,23 @@ class WorkArtifactEdge(Base):
         # off one plan must stay legal (a plan can surface several); an
         # identical re-post must not become a second queue entry. Keyed on the
         # note, therefore, and PARTIAL so it can never touch the four shipped
-        # relations. Mirrors ``uq_work_artifact_edges_open_followup``.
+        # relations. Mirrors ``uq_work_artifact_edges_open_followup``; live
+        # rows only since ``plan_library_13_edge_correction``, so a retracted
+        # follow-up does not block re-surfacing the same note.
         Index(
             "uq_work_artifact_edges_open_followup",
             "from_id",
             "relation",
             text(NOTE_TRIM_SQL),
             unique=True,
-            postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
+            postgresql_where=text(
+                f"to_id IS NULL AND relation = 'spawned_followup' AND {LIVE_EDGE_SQL}"
+            ),
+        ),
+        # Mirrors ``ck_work_artifact_edges_source``.
+        CheckConstraint(
+            f"source IS NULL OR source = '{EDGE_SOURCE_CORRECTED}'",
+            name="ck_work_artifact_edges_source",
         ),
         # Mirrors ``ck_work_artifact_edges_open_target``. The four shipped
         # relations keep the target guarantee they had before this revision:
@@ -958,6 +995,42 @@ class WorkArtifactEdge(Base):
     #: Why the follow-up carries no anchor, so an unanchored row is VISIBLY
     #: unanchored rather than silently unmatchable.
     unanchored_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── correction (``plan_library_13_edge_correction``) ───────────────────
+    #
+    # Written ONLY by ``app.crud.work_artifact.retract_edge`` /
+    # ``correct_edge`` (``DELETE`` / ``PUT /plan-library/edges/{id}``), each
+    # under a row lock. Valid on every relation.
+
+    #: Set iff the edge is RETRACTED — a soft delete. The row stays (the wrong
+    #: claim is itself provenance) but every reader drops it
+    #: (:data:`LIVE_EDGE_SQL`). Never cleared: a retraction is final.
+    retracted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Who retracted it.
+    retracted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why — required by the API.
+    retracted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: :data:`EDGE_SOURCE_CORRECTED` once ``PUT`` overwrote the claim in place;
+    #: NULL for an edge exactly as first recorded.
+    source: Mapped[EdgeSource | None] = mapped_column(Text, nullable=True)
+    #: When / by whom / why the LATEST correction was made.
+    corrected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    corrected_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    corrected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The claim the latest correction REPLACED — ``{relation, to_id, note,
+    #: source, corrected_at, corrected_by, corrected_reason, replaced}`` — with
+    #: any earlier correction nested under its ``replaced``, so the whole chain
+    #: survives (the ``{by, at, reason, replaced}`` shape the plan's Phase 1
+    #: designs for a delivery-scope correction). NULL until the first
+    #: correction. Never mutated in place.
+    corrected_replaced: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
 
 class WorkArtifactEdgeAnchor(Base):

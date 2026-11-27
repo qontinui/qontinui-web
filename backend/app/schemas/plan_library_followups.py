@@ -47,9 +47,13 @@ FollowupResolution = Literal["fixing", "fixed", "already_fixed", "dismissed"]
 
 #: What a follow-up IS right now. ``open``: nobody owns it and nothing closed
 #: it. ``claimed``: an artifact owns it (``to_id``) — it left the queue the old
-#: way. The other four are its resolution.
+#: way. ``retracted``: it was withdrawn (``DELETE /plan-library/edges/{id}``)
+#: and asserts nothing; it wins over every other state, because a withdrawn
+#: row's resolution or owner is history, not a current fact. Only the reads
+#: that serve retracted edges (``include_retracted``, the by-id read, the
+#: ``DELETE`` response) ever show it. The other four are its resolution.
 FollowupState = Literal[
-    "open", "fixing", "fixed", "already_fixed", "dismissed", "claimed"
+    "open", "fixing", "fixed", "already_fixed", "dismissed", "claimed", "retracted"
 ]
 
 #: ``GET /plan-library/followups?state=``. ``resolved`` is the three states a

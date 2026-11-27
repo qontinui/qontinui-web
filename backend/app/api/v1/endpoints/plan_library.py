@@ -16,9 +16,13 @@ Routes
 ``GET   /plan-library/vocabulary`` every closed field the write doors accept + how a wrong write is corrected
 ``GET   /plan-library/export``     the filtered corpus as a zip of verbatim .md
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
+``GET   /plan-library/{id}/edges`` the same edges alone (retracted ones only on request)
 ``GET   /plan-library/{id}/export`` one artifact's verbatim body (head or version)
 ``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
+``GET   /plan-library/edges/{id}`` one edge by id, retracted or not (the read-back for the two verbs below)
 ``PATCH /plan-library/edges/{id}`` claim an open follow-up (Phase 7)
+``PUT   /plan-library/edges/{id}`` correct an edge's relation/to_id/note in place, keeping the old claim
+``DELETE /plan-library/edges/{id}`` retract (soft-delete) a wrongly-recorded edge
 ``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
 ``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
 
@@ -71,6 +75,22 @@ Invariants this module is responsible for
    error, and the reason it exists at all is that ``/candidates`` walks
    ``depends_on`` through ``to_id`` — a null target there would drop the row
    out of the join and report a blocked plan as ready.
+6c. **A recorded edge is correctable, and a correction is never silent.**
+   Phase 5 of
+   ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+   (adopting qontinui-web#1459). ``POST /{id}/edges`` re-posting a DIFFERENT
+   triple off the same ``(from_id, relation)`` still APPENDS — ``depends_on``
+   and ``feeds`` legitimately hold many — so a wrong edge is fixed through its
+   own two verbs: ``DELETE /edges/{id}`` retracts it (the row is kept with
+   who, when and why, and every edge reader drops it: the detail and edges
+   reads, the create dedup, the follow-up queues, ``/candidates``'
+   ``depends_on`` join and the prompt-chain walk), and ``PUT /edges/{id}``
+   replaces its claim in place, stamping ``source: "corrected"`` and keeping
+   the replaced claim in ``corrected_replaced``. A retraction is final; a
+   wrongly retracted claim is re-recorded through ``POST``. ``GET
+   /edges/{id}`` reads one edge by id whatever its state, because a caller
+   holding only an edge id must be able to read the claim it is about to
+   replace, and to read back what its write did.
 6a. **Export is verbatim, and one-way.** The two ``/export`` routes emit the
    stored body's bytes unmodified — no re-rendered status block, no normalized
    headings. Fidelity is the product: plan
@@ -128,7 +148,7 @@ import zipfile
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast, get_args
+from typing import Literal, cast, get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -166,6 +186,7 @@ from app.core.bounded_read import (
     KeysetPosition,
     ScopeFingerprint,
 )
+from app.core.refusal import NextActionKind, RefusalCode, refusal_error
 from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
 from app.crud import work_artifact_followups as followups_crud
@@ -212,8 +233,12 @@ from app.schemas.plan_library import (
     StatusCurrency,
     WorkArtifactDetail,
     WorkArtifactEdgeClaim,
+    WorkArtifactEdgeCorrect,
+    WorkArtifactEdgeCorrected,
     WorkArtifactEdgeCreate,
     WorkArtifactEdgeRead,
+    WorkArtifactEdgeRetract,
+    WorkArtifactEdgesResponse,
     WorkArtifactKindPatch,
     WorkArtifactListResponse,
     WorkArtifactSummary,
@@ -586,6 +611,87 @@ def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCan
         # vouch for — ``document_state`` above says why. Null, not a verdict.
         content_sha256=None,
         status_currency=None,
+    )
+
+
+_INCLUDE_RETRACTED_DESCRIPTION = (
+    "Include retracted (soft-deleted) edges, each carrying retracted_at / "
+    "retracted_by / retracted_reason. Off by default: a retracted edge is kept "
+    "for its audit trail and asserts nothing."
+)
+
+
+async def _edge_reads(
+    db: AsyncSession, artifact_id: UUID, *, include_retracted: bool
+) -> list[WorkArtifactEdgeRead]:
+    """An artifact's edges, both directions, as ``GET /{id}`` and
+    ``GET /{id}/edges`` both render them — one spelling, so the two reads
+    cannot drift on which edges or which fields a caller sees."""
+    edge_rows = await crud.list_edges(
+        db, artifact_id, include_retracted=include_retracted
+    )
+    edge_anchors = await followups_crud.load_anchors(
+        db,
+        (
+            edge.id
+            for edge, _, _ in edge_rows
+            if edge.relation == SPAWNED_FOLLOWUP_RELATION
+        ),
+    )
+    return [
+        edge_read(
+            edge,
+            direction="outgoing" if direction == "outgoing" else "incoming",
+            peer=peer,
+            anchors=edge_anchors.get(edge.id, []),
+        )
+        for edge, direction, peer in edge_rows
+    ]
+
+
+def edge_retracted_conflict(exc: crud.EdgeRetracted) -> HTTPException:
+    """The 409 every edge write answers on a retracted edge — carrying the
+    FIRST retraction, so a caller that raced (or repeated) one can see it was
+    already done. Shared with ``plan_library_followups``."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": "edge_retracted",
+            "message": str(exc),
+            "edge_id": str(exc.edge_id),
+            "retracted_at": (
+                exc.retracted_at.isoformat() if exc.retracted_at else None
+            ),
+            "retracted_by": exc.retracted_by,
+            "retracted_reason": exc.retracted_reason,
+        },
+    )
+
+
+def _edge_route_not_found(
+    kind: Literal["edge", "artifact"], ident: UUID
+) -> HTTPException:
+    """The 404 the edge-correction routes answer: ``kind`` is ``edge`` (no
+    such edge in the caller's organization) or ``artifact`` (no such artifact,
+    the subject of a read or a correction's new ``to_id``)."""
+    noun = "Work artifact edge" if kind == "edge" else "Work artifact"
+    return refusal_error(
+        status.HTTP_404_NOT_FOUND,
+        RefusalCode.not_found,
+        NextActionKind.fix_request,
+        f"{noun} not found: {ident}",
+        discriminator=f"plan_library_{kind}_not_found",
+    )
+
+
+def _edge_claim_invalid(discriminator: str, message: str) -> HTTPException:
+    """A 422 for an edge claim the schema admits but the relation does not."""
+    return refusal_error(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        RefusalCode.invalid_request,
+        NextActionKind.fix_request,
+        message,
+        discriminator=discriminator,
     )
 
 
@@ -4575,7 +4681,9 @@ async def get_write_vocabulary(
     ``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.
     Three wrong ``supersedes`` edges were written in one day by agents that
     could not read the relation vocabulary before writing, on a store where a
-    recorded edge cannot be retracted. Every value is derived from the schema
+    recorded edge could not then be retracted (it can since Phase 5 of plan
+    ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``:
+    ``PUT`` / ``DELETE /plan-library/edges/{edge_id}``). Every value is derived from the schema
     ``Literal``s (never retyped) and every correction sentence from
     ``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.
 
@@ -4603,6 +4711,10 @@ async def get_work_artifact(
         "Set false for a purely local, coord-free read — the coord block then "
         "reports 'unavailable' for a linked artifact, because 'we did not "
         "look' is not the same answer as 'there is nothing there'.",
+    ),
+    include_retracted: bool = Query(
+        False,
+        description=_INCLUDE_RETRACTED_DESCRIPTION,
     ),
     db: AsyncSession = Depends(get_async_db),
     principal: ActorPrincipal = Depends(get_audit_actor_principal),
@@ -4639,28 +4751,10 @@ async def get_work_artifact(
         )
 
     versions = await crud.list_versions(db, row.id)
-    edge_rows = await crud.list_edges(db, row.id)
+    edges = await _edge_reads(db, row.id, include_retracted=include_retracted)
 
-    edge_anchors = await followups_crud.load_anchors(
-        db,
-        (
-            edge.id
-            for edge, _, _ in edge_rows
-            if edge.relation == SPAWNED_FOLLOWUP_RELATION
-        ),
-    )
     # A dangling work_unit_slug is NOT resolved and NOT an error — see
     # invariant 3 in the module docstring.
-    edges = [
-        edge_read(
-            edge,
-            direction="outgoing" if direction == "outgoing" else "incoming",
-            peer=peer,
-            anchors=edge_anchors.get(edge.id, []),
-        )
-        for edge, direction, peer in edge_rows
-    ]
-
     coord_block = CandidateCoordLink()
     if row.work_unit_slug:
         if include_coord:
@@ -4684,6 +4778,41 @@ async def get_work_artifact(
         coord_block,
         status_currency=await _row_currency(db, row, org_id=org_id),
     )
+
+
+@router.get(
+    "/{artifact_id}/edges",
+    response_model=WorkArtifactEdgesResponse,
+    summary="One artifact's provenance edges, both directions",
+)
+async def list_work_artifact_edges(
+    artifact_id: UUID,
+    include_retracted: bool = Query(
+        False,
+        description=_INCLUDE_RETRACTED_DESCRIPTION,
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactEdgesResponse:
+    """The edges ``GET /{id}`` serves, rendered the same way, without the body,
+    the version log or the coord hop.
+
+    **This path used to answer 405.** Only ``POST`` was registered on it, and
+    the error envelope's code for an unmapped status was
+    ``INTERNAL_SERVER_ERROR``; the plan's incident record has a tolerant
+    client rendering that as an empty edge list — an absence that read as
+    zero. The route now exists, and
+    ``app.core.error_codes`` maps 405 (and every unmapped 4xx) to a client-error
+    code. ``count`` is ``len(items)``: the read is unpaged, so a zero is an
+    artifact with no live edges, never a truncated page. **404** — no such
+    artifact in the caller's organization.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    row = await crud.get_artifact(db, artifact_id, org_id=org_id)
+    if row is None:
+        raise _edge_route_not_found("artifact", artifact_id)
+    items = await _edge_reads(db, row.id, include_retracted=include_retracted)
+    return WorkArtifactEdgesResponse(items=items, count=len(items))
 
 
 @router.get(
@@ -4958,6 +5087,11 @@ async def claim_followup_edge(
       holds at most one way out. The response names the resolution; reopen it
       (``POST /plan-library/edges/{edge_id}/resolution``) first if an
       artifact should own it instead.
+    * **409** ``edge_retracted`` — the follow-up was retracted; a withdrawn
+      row gets no owner.
+
+    A WRONG claim is corrected with ``PUT /plan-library/edges/{edge_id}``,
+    which keeps the claim it replaced.
     """
     org_id = await _resolve_org_id(db, current_user)
     found = await crud.get_edge(db, edge_id, org_id=org_id)
@@ -4969,6 +5103,8 @@ async def claim_followup_edge(
     edge, origin = found
 
     if edge.relation != SPAWNED_FOLLOWUP_RELATION:
+        # The same text as ``crud.EdgeNotAFollowup``, which the lock raises
+        # when a ``PUT`` re-related the edge after this check.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
@@ -5016,6 +5152,12 @@ async def claim_followup_edge(
                 "resolution": exc.resolution,
             },
         ) from exc
+    except crud.EdgeRetracted as exc:
+        raise edge_retracted_conflict(exc) from exc
+    except crud.EdgeNotAFollowup as exc:  # re-related after the pre-check
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
     logger.info(
         "plan_library.followup_claimed",
@@ -5034,6 +5176,254 @@ async def claim_followup_edge(
         direction="outgoing",
         peer=target,
         anchors=(await followups_crud.load_anchors(db, [claimed.id]))[claimed.id],
+    )
+
+
+async def _edge_write_response(
+    db: AsyncSession, edge: WorkArtifactEdge, *, org_id: UUID | None
+) -> WorkArtifactEdgeRead:
+    """An edge just retracted or corrected, as stored — relative to the artifact
+    that RECORDED it (``from_id``), the frame ``PATCH /edges/{id}`` uses."""
+    peer = (
+        await crud.get_artifact(db, edge.to_id, org_id=org_id)
+        if edge.to_id is not None
+        else None
+    )
+    anchors = (
+        (await followups_crud.load_anchors(db, [edge.id]))[edge.id]
+        if edge.relation == SPAWNED_FOLLOWUP_RELATION
+        else ()
+    )
+    return edge_read(edge, direction="outgoing", peer=peer, anchors=anchors)
+
+
+@router.get(
+    "/edges/{edge_id}",
+    response_model=WorkArtifactEdgeRead,
+    summary="One provenance edge by id, retracted or not",
+)
+async def get_work_artifact_edge(
+    edge_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactEdgeRead:
+    """One edge, as stored, relative to the artifact that recorded it.
+
+    The by-id read the two correction verbs need. ``PUT /edges/{id}`` is a full
+    replace of the claim, so a caller holding only an edge id (a follow-up
+    brief, a finding) must be able to read ``relation`` / ``to_id`` / ``note``
+    before it writes; and a retraction or correction is verified by reading
+    the edge back, not by the write's own 200. Unlike the artifact-scoped edge
+    reads, a RETRACTED edge is served here (``retracted_at`` set) rather than
+    hidden: the caller named this edge, so hiding it would turn "retracted"
+    into "not found".
+
+    * **404** — no such edge in the caller's organization (the scope is the
+      originating artifact's, as for ``PATCH /edges/{id}``).
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    found = await crud.get_edge(db, edge_id, org_id=org_id)
+    if found is None:
+        raise _edge_route_not_found("edge", edge_id)
+    edge, _ = found
+    return await _edge_write_response(db, edge, org_id=org_id)
+
+
+# NOTE: declared BEFORE ``/{artifact_id}/kind``, same reason as the PATCH
+# above — the literal ``edges`` segment must not be swallowed by the
+# artifact-id pattern.
+@router.delete(
+    "/edges/{edge_id}",
+    response_model=WorkArtifactEdgeRead,
+    summary="Retract (soft-delete) a wrongly-recorded edge",
+)
+async def retract_work_artifact_edge(
+    edge_id: UUID,
+    payload: WorkArtifactEdgeRetract,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactEdgeRead:
+    """Withdraw an edge that should never have been recorded.
+
+    Phase 5 of
+    ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.
+    A SOFT delete: ``retracted_at`` / ``retracted_by`` / ``retracted_reason``
+    are stamped and the row is kept — the wrong claim is itself provenance —
+    while every edge reader drops it (module invariant 6c). ``reason`` is
+    required and must not be blank. A follow-up's anchors and closure stay on
+    the row; it simply leaves every queue.
+
+    A retraction is final. To record the right claim, ``POST /{id}/edges`` it
+    as a new edge — the same triple is admitted again once the old one is
+    retracted. To change a claim rather than withdraw it, use ``PUT``.
+
+    **A ``depends_on`` the runner's plan scanner derived** from a plan's
+    ``Depends-On:`` header is re-posted whenever the scanner's in-memory record
+    of applied edges resets (at least on each runner start, on a path-settings
+    change and on every ``qontinui-pr plan-library-backfill`` run), and a
+    re-post after a retraction records a fresh live edge (the create dedup
+    ignores retracted rows). The plan header is the source of that claim: edit
+    it first, then retract or correct the edge.
+
+    * **404** — no such edge in the caller's organization (the scope is the
+      originating artifact's, as for ``PATCH /edges/{id}``).
+    * **409** ``edge_retracted`` — already retracted. The body carries the
+      FIRST retraction (when, by whom, why), which is never overwritten.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    found = await crud.get_edge(db, edge_id, org_id=org_id)
+    if found is None:
+        raise _edge_route_not_found("edge", edge_id)
+    _, origin = found
+    actor = _actor(current_user)
+    try:
+        retracted = await crud.retract_edge(
+            db, edge_id, reason=payload.reason, actor=actor
+        )
+    except crud.EdgeRetracted as exc:
+        raise edge_retracted_conflict(exc) from exc
+
+    logger.info(
+        "plan_library.edge_retracted",
+        edge_id=str(retracted.id),
+        from_id=str(retracted.from_id),
+        from_slug=origin.slug,
+        to_id=str(retracted.to_id) if retracted.to_id else None,
+        relation=retracted.relation,
+        actor=actor,
+    )
+    return await _edge_write_response(db, retracted, org_id=org_id)
+
+
+# NOTE: declared BEFORE ``/{artifact_id}/kind``, same reason as above.
+@router.put(
+    "/edges/{edge_id}",
+    response_model=WorkArtifactEdgeCorrected,
+    summary="Correct a recorded edge's relation/to_id/note in place, keeping the old claim",
+)
+async def correct_work_artifact_edge(
+    edge_id: UUID,
+    payload: WorkArtifactEdgeCorrect,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactEdgeCorrected:
+    """Replace a recorded edge's claim — ``relation``, ``to_id``, ``note``.
+
+    Phase 5 of
+    ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.
+    A full replace of the claim: all three keys are required (``null`` is a
+    value). The edge's identity — ``id``, ``from_id``, ``created_at``,
+    ``created_by`` — never moves. ``source`` becomes ``"corrected"``,
+    ``corrected_at`` / ``corrected_by`` / ``corrected_reason`` record this
+    correction, and ``corrected_replaced`` keeps the claim it replaced with any
+    earlier correction nested inside, so nothing is silently rewritten.
+    Restating the stored claim is an idempotent replay: 200 with
+    ``changed: false``, nothing written — the request's ``reason`` is NOT
+    recorded, so a caller whose restatement lost a race to a peer's identical
+    correction can tell (``changed: true`` means this request wrote it).
+
+    Validated like ``POST /{id}/edges``: a null ``to_id`` only for
+    ``spawned_followup`` (422 naming the relation), whose ``note`` must then be
+    non-blank (422), and no self-edge (422).
+
+    **A ``depends_on`` the runner's plan scanner derived** from a plan's
+    ``Depends-On:`` header is re-posted whenever the scanner's in-memory record
+    of applied edges resets (at least on each runner start, on a path-settings
+    change and on every ``qontinui-pr plan-library-backfill`` run). A correction
+    that changes ``relation`` or ``to_id`` moves this row off the scanner's
+    triple, so that re-post records the original claim again as a second live
+    edge; a note-only correction keeps the triple and the re-post lands on this
+    row. The plan header is the source of that claim: edit it first.
+
+    * **404** — no such edge in the caller's organization, or ``to_id`` names
+      no artifact the caller can see.
+    * **409** ``edge_retracted`` — the edge is retracted; record a new one.
+    * **409** ``edge_correction_refused`` — the edge is a follow-up carrying a
+      closure, anchors or a size class that the new claim cannot hold, or a
+      resolved follow-up being given an owner. Retract it and record the right
+      edge, or reopen the follow-up first.
+    * **409** ``edge_correction_conflict`` — another live edge already holds
+      the new claim (``existing_edge_id`` names it when it can be found).
+    """
+    if payload.to_id is None and payload.relation not in RELATIONS_ALLOWING_OPEN_TARGET:
+        raise _edge_claim_invalid(
+            "plan_library_edge_target_required",
+            f"Relation '{payload.relation}' requires a target: supply 'to_id'. "
+            f"Only '{SPAWNED_FOLLOWUP_RELATION}' may be recorded with no far "
+            "end, because the work it names has no artifact yet.",
+        )
+    if payload.relation in RELATIONS_ALLOWING_OPEN_TARGET and is_blank(payload.note):
+        raise _edge_claim_invalid(
+            "plan_library_followup_note_required",
+            f"'{SPAWNED_FOLLOWUP_RELATION}' requires a non-empty 'note': it is "
+            "the record of what was surfaced.",
+        )
+
+    org_id = await _resolve_org_id(db, current_user)
+    found = await crud.get_edge(db, edge_id, org_id=org_id)
+    if found is None:
+        raise _edge_route_not_found("edge", edge_id)
+    edge, origin = found
+
+    if payload.to_id is not None:
+        if payload.to_id == edge.from_id:
+            raise _edge_claim_invalid(
+                "plan_library_edge_self_link",
+                "An artifact cannot be linked to itself: a 'depends_on' "
+                "self-edge makes the artifact its own unmet dependency and it "
+                "can never appear as ready in /candidates.",
+            )
+        if await crud.get_artifact(db, payload.to_id, org_id=org_id) is None:
+            raise _edge_route_not_found("artifact", payload.to_id)
+
+    actor = _actor(current_user)
+    try:
+        corrected, changed = await crud.correct_edge(
+            db,
+            edge_id,
+            relation=payload.relation,
+            to_id=payload.to_id,
+            note=payload.note,
+            reason=payload.reason,
+            actor=actor,
+        )
+    except crud.EdgeRetracted as exc:
+        raise edge_retracted_conflict(exc) from exc
+    except crud.EdgeCorrectionRefused as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "edge_correction_refused",
+                "message": str(exc),
+                "edge_id": str(exc.edge_id),
+            },
+        ) from exc
+    except crud.EdgeCorrectionConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "edge_correction_conflict",
+                "message": str(exc),
+                "edge_id": str(exc.edge_id),
+                "existing_edge_id": (
+                    str(exc.existing_edge_id) if exc.existing_edge_id else None
+                ),
+            },
+        ) from exc
+
+    logger.info(
+        "plan_library.edge_corrected",
+        edge_id=str(corrected.id),
+        from_id=str(corrected.from_id),
+        from_slug=origin.slug,
+        to_id=str(corrected.to_id) if corrected.to_id else None,
+        relation=corrected.relation,
+        changed=changed,
+        actor=actor,
+    )
+    stored = await _edge_write_response(db, corrected, org_id=org_id)
+    return WorkArtifactEdgeCorrected.model_validate(
+        {**stored.model_dump(), "changed": changed}
     )
 
 

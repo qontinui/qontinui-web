@@ -6,8 +6,10 @@ served at ``GET /api/v1/plan-library/vocabulary``.
 
 Three wrong ``supersedes`` edges on 2026-09-20 were written by agents that had
 no way to read the relation vocabulary before writing, and on this store a
-recorded edge cannot be corrected (see ``app.core.evidence_posture``). So the
-accepted set of every closed field, and what each value ASSERTS, has to be
+recorded edge could not then be corrected (it can since Phase 5 of plan
+``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``;
+see ``app.core.evidence_posture``). A wrong write is still costly to undo, so
+the accepted set of every closed field, and what each value ASSERTS, has to be
 readable at the write door.
 
 **Never retyped.** Each field's values come from ``typing.get_args`` over the
@@ -53,6 +55,7 @@ from app.schemas.plan_library_scan_roots import ScanRootState, SlugCensusSource
 _PREFIX: Final = "/api/v1/plan-library"
 _UPSERT: Final = f"POST {_PREFIX}"
 _EDGE_CREATE: Final = f"POST {_PREFIX}/{{artifact_id}}/edges"
+_EDGE_CORRECT: Final = f"PUT {_PREFIX}/edges/{{edge_id}}"
 _SCAN_ROOTS: Final = f"POST {_PREFIX}/scan-roots"
 _ANCHORS_PUT: Final = f"PUT {_PREFIX}/edges/{{edge_id}}/anchors"
 _RESOLUTION: Final = f"POST {_PREFIX}/edges/{{edge_id}}/resolution"
@@ -270,9 +273,14 @@ RESOLUTION_MEANINGS: Final[dict[str, str]] = {
 
 RELATION_NOTE: Final = (
     "supersedes asserts that THIS artifact replaces THAT one; it is wrong for "
-    "a follow-up (spawned_followup) or a prerequisite (depends_on). A recorded "
-    "edge has no correction verb on this backend yet, so choose the relation "
-    "before writing it."
+    "a follow-up (spawned_followup) or a prerequisite (depends_on). A wrong "
+    "edge is corrected with PUT /plan-library/edges/{edge_id} (relation, to_id "
+    "and note replaced in place, the old claim kept) or retracted with DELETE "
+    "/plan-library/edges/{edge_id}; both need a reason. A depends_on the "
+    "runner's plan scanner derived from a plan's Depends-On: header is "
+    "re-posted whenever the scanner's memory of applied edges resets (each "
+    "runner start, a path-settings change, a plan-library-backfill run), so "
+    "edit the header first."
 )
 
 
@@ -324,7 +332,7 @@ def closed_fields() -> list[ClosedFieldVocabulary]:
         ClosedFieldVocabulary(
             field="relation",
             written_as="request body `relation`",
-            accepted_by=[_EDGE_CREATE],
+            accepted_by=[_EDGE_CREATE, _EDGE_CORRECT],
             values=_terms(WorkArtifactRelation, RELATION_MEANINGS),
             note=RELATION_NOTE,
         ),

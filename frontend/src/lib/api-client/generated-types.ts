@@ -19872,10 +19872,95 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
+        /**
+         * One provenance edge by id, retracted or not
+         * @description One edge, as stored, relative to the artifact that recorded it.
+         *
+         *     The by-id read the two correction verbs need. ``PUT /edges/{id}`` is a full
+         *     replace of the claim, so a caller holding only an edge id (a follow-up
+         *     brief, a finding) must be able to read ``relation`` / ``to_id`` / ``note``
+         *     before it writes; and a retraction or correction is verified by reading
+         *     the edge back, not by the write's own 200. Unlike the artifact-scoped edge
+         *     reads, a RETRACTED edge is served here (``retracted_at`` set) rather than
+         *     hidden: the caller named this edge, so hiding it would turn "retracted"
+         *     into "not found".
+         *
+         *     * **404** — no such edge in the caller's organization (the scope is the
+         *       originating artifact's, as for ``PATCH /edges/{id}``).
+         */
+        get: operations["api_v1_plan_library_edges_edge_id_get"];
+        /**
+         * Correct a recorded edge's relation/to_id/note in place, keeping the old claim
+         * @description Replace a recorded edge's claim — ``relation``, ``to_id``, ``note``.
+         *
+         *     Phase 5 of
+         *     ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.
+         *     A full replace of the claim: all three keys are required (``null`` is a
+         *     value). The edge's identity — ``id``, ``from_id``, ``created_at``,
+         *     ``created_by`` — never moves. ``source`` becomes ``"corrected"``,
+         *     ``corrected_at`` / ``corrected_by`` / ``corrected_reason`` record this
+         *     correction, and ``corrected_replaced`` keeps the claim it replaced with any
+         *     earlier correction nested inside, so nothing is silently rewritten.
+         *     Restating the stored claim is an idempotent replay: 200 with
+         *     ``changed: false``, nothing written — the request's ``reason`` is NOT
+         *     recorded, so a caller whose restatement lost a race to a peer's identical
+         *     correction can tell (``changed: true`` means this request wrote it).
+         *
+         *     Validated like ``POST /{id}/edges``: a null ``to_id`` only for
+         *     ``spawned_followup`` (422 naming the relation), whose ``note`` must then be
+         *     non-blank (422), and no self-edge (422).
+         *
+         *     **A ``depends_on`` the runner's plan scanner derived** from a plan's
+         *     ``Depends-On:`` header is re-posted whenever the scanner's in-memory record
+         *     of applied edges resets (at least on each runner start, on a path-settings
+         *     change and on every ``qontinui-pr plan-library-backfill`` run). A correction
+         *     that changes ``relation`` or ``to_id`` moves this row off the scanner's
+         *     triple, so that re-post records the original claim again as a second live
+         *     edge; a note-only correction keeps the triple and the re-post lands on this
+         *     row. The plan header is the source of that claim: edit it first.
+         *
+         *     * **404** — no such edge in the caller's organization, or ``to_id`` names
+         *       no artifact the caller can see.
+         *     * **409** ``edge_retracted`` — the edge is retracted; record a new one.
+         *     * **409** ``edge_correction_refused`` — the edge is a follow-up carrying a
+         *       closure, anchors or a size class that the new claim cannot hold, or a
+         *       resolved follow-up being given an owner. Retract it and record the right
+         *       edge, or reopen the follow-up first.
+         *     * **409** ``edge_correction_conflict`` — another live edge already holds
+         *       the new claim (``existing_edge_id`` names it when it can be found).
+         */
+        put: operations["api_v1_plan_library_edges_edge_id_put"];
         post?: never;
-        delete?: never;
+        /**
+         * Retract (soft-delete) a wrongly-recorded edge
+         * @description Withdraw an edge that should never have been recorded.
+         *
+         *     Phase 5 of
+         *     ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.
+         *     A SOFT delete: ``retracted_at`` / ``retracted_by`` / ``retracted_reason``
+         *     are stamped and the row is kept — the wrong claim is itself provenance —
+         *     while every edge reader drops it (module invariant 6c). ``reason`` is
+         *     required and must not be blank. A follow-up's anchors and closure stay on
+         *     the row; it simply leaves every queue.
+         *
+         *     A retraction is final. To record the right claim, ``POST /{id}/edges`` it
+         *     as a new edge — the same triple is admitted again once the old one is
+         *     retracted. To change a claim rather than withdraw it, use ``PUT``.
+         *
+         *     **A ``depends_on`` the runner's plan scanner derived** from a plan's
+         *     ``Depends-On:`` header is re-posted whenever the scanner's in-memory record
+         *     of applied edges resets (at least on each runner start, on a path-settings
+         *     change and on every ``qontinui-pr plan-library-backfill`` run), and a
+         *     re-post after a retraction records a fresh live edge (the create dedup
+         *     ignores retracted rows). The plan header is the source of that claim: edit
+         *     it first, then retract or correct the edge.
+         *
+         *     * **404** — no such edge in the caller's organization (the scope is the
+         *       originating artifact's, as for ``PATCH /edges/{id}``).
+         *     * **409** ``edge_retracted`` — already retracted. The body carries the
+         *       FIRST retraction (when, by whom, why), which is never overwritten.
+         */
+        delete: operations["api_v1_plan_library_edges_edge_id_delete"];
         options?: never;
         head?: never;
         /**
@@ -19909,6 +19994,11 @@ export interface paths {
          *       holds at most one way out. The response names the resolution; reopen it
          *       (``POST /plan-library/edges/{edge_id}/resolution``) first if an
          *       artifact should own it instead.
+         *     * **409** ``edge_retracted`` — the follow-up was retracted; a withdrawn
+         *       row gets no owner.
+         *
+         *     A WRONG claim is corrected with ``PUT /plan-library/edges/{edge_id}``,
+         *     which keeps the claim it replaced.
          */
         patch: operations["api_v1_plan_library_edges_edge_id_patch"];
         trace?: never;
@@ -20440,7 +20530,9 @@ export interface paths {
          *     ``2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-its-vocabulary-and-a-correction-verb``.
          *     Three wrong ``supersedes`` edges were written in one day by agents that
          *     could not read the relation vocabulary before writing, on a store where a
-         *     recorded edge cannot be retracted. Every value is derived from the schema
+         *     recorded edge could not then be retracted (it can since Phase 5 of plan
+         *     ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``:
+         *     ``PUT`` / ``DELETE /plan-library/edges/{edge_id}``). Every value is derived from the schema
          *     ``Literal``s (never retyped) and every correction sentence from
          *     ``app.core.evidence_posture.ROUTE_POSTURE``, the table the build pins.
          *
@@ -20506,7 +20598,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * One artifact's provenance edges, both directions
+         * @description The edges ``GET /{id}`` serves, rendered the same way, without the body,
+         *     the version log or the coord hop.
+         *
+         *     **This path used to answer 405.** Only ``POST`` was registered on it, and
+         *     the error envelope's code for an unmapped status was
+         *     ``INTERNAL_SERVER_ERROR``; the plan's incident record has a tolerant
+         *     client rendering that as an empty edge list — an absence that read as
+         *     zero. The route now exists, and
+         *     ``app.core.error_codes`` maps 405 (and every unmapped 4xx) to a client-error
+         *     code. ``count`` is ``len(items)``: the read is unpaged, so a zero is an
+         *     artifact with no live edges, never a truncated page. **404** — no such
+         *     artifact in the caller's organization.
+         */
+        get: operations["api_v1_plan_library_artifact_id_edges_get"];
         put?: never;
         /**
          * Link this artifact to another (outgoing or incoming)
@@ -41214,7 +41321,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed" | "retracted";
             /** Unanchored Reason */
             unanchored_reason?: string | null;
         };
@@ -41315,7 +41422,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed" | "retracted";
             /** Unanchored Reason */
             unanchored_reason?: string | null;
         };
@@ -45962,7 +46069,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed" | "retracted";
             /** Unanchored Reason */
             unanchored_reason?: string | null;
         };
@@ -60259,6 +60366,97 @@ export interface components {
             to_id: string;
         };
         /**
+         * WorkArtifactEdgeCorrect
+         * @description Replace a recorded edge's claim — ``relation`` / ``to_id`` / ``note`` — in place.
+         *
+         *     ``PUT /plan-library/edges/{edge_id}``. A FULL replace: ``to_id`` and
+         *     ``note`` are required keys (``null`` is a value), so an omitted one can
+         *     never silently clear a target or a note. The edge's identity (``id``,
+         *     ``from_id``, ``created_at``, ``created_by``) never moves; the claim it
+         *     replaced is kept in ``corrected_replaced``. Validated like
+         *     :class:`WorkArtifactEdgeCreate`: a null ``to_id`` only for
+         *     ``spawned_followup``, whose ``note`` must then be non-blank, and no
+         *     self-edge. ``reason`` is required and must not be blank.
+         */
+        WorkArtifactEdgeCorrect: {
+            /** Note */
+            note: string | null;
+            /** Reason */
+            reason: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes" | "derives_from" | "refines" | "implements" | "verifies" | "traces_to";
+            /** To Id */
+            to_id: string | null;
+        };
+        /**
+         * WorkArtifactEdgeCorrected
+         * @description ``PUT /plan-library/edges/{edge_id}``'s answer: the edge as stored, plus
+         *     whether THIS request wrote it.
+         *
+         *     ``changed: false`` is an idempotent replay — the stored claim already
+         *     equalled the request, so nothing was written and the request's ``reason``
+         *     was NOT recorded; ``corrected_reason`` / ``corrected_by`` are whichever
+         *     earlier correction (yours or a peer's) put the claim there, or null if
+         *     none did. Mirrors ``changed`` on ``PUT …/anchors``.
+         */
+        WorkArtifactEdgeCorrected: {
+            /** Changed */
+            changed: boolean;
+            /** Corrected At */
+            corrected_at?: string | null;
+            /** Corrected By */
+            corrected_by?: string | null;
+            /** Corrected Reason */
+            corrected_reason?: string | null;
+            /** Corrected Replaced */
+            corrected_replaced?: {
+                [key: string]: unknown;
+            } | null;
+            /** Created At */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "outgoing" | "incoming";
+            followup?: components["schemas"]["FollowupFacts"] | null;
+            /**
+             * From Id
+             * Format: uuid
+             */
+            from_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Note */
+            note: string | null;
+            /** Peer Kind */
+            peer_kind?: string | null;
+            /** Peer Slug */
+            peer_slug?: string | null;
+            /** Peer Title */
+            peer_title?: string | null;
+            /** Relation */
+            relation: string;
+            /** Retracted At */
+            retracted_at?: string | null;
+            /** Retracted By */
+            retracted_by?: string | null;
+            /** Retracted Reason */
+            retracted_reason?: string | null;
+            /** Source */
+            source?: "corrected" | null;
+            /** To Id */
+            to_id: string | null;
+        };
+        /**
          * WorkArtifactEdgeCreate
          * @description Create one provenance edge out of (or into) the path artifact.
          *
@@ -60303,6 +60501,16 @@ export interface components {
          * @description One provenance edge, with the far end's identity denormalized in.
          */
         WorkArtifactEdgeRead: {
+            /** Corrected At */
+            corrected_at?: string | null;
+            /** Corrected By */
+            corrected_by?: string | null;
+            /** Corrected Reason */
+            corrected_reason?: string | null;
+            /** Corrected Replaced */
+            corrected_replaced?: {
+                [key: string]: unknown;
+            } | null;
             /** Created At */
             created_at: string;
             /** Created By */
@@ -60333,8 +60541,44 @@ export interface components {
             peer_title?: string | null;
             /** Relation */
             relation: string;
+            /** Retracted At */
+            retracted_at?: string | null;
+            /** Retracted By */
+            retracted_by?: string | null;
+            /** Retracted Reason */
+            retracted_reason?: string | null;
+            /** Source */
+            source?: "corrected" | null;
             /** To Id */
             to_id: string | null;
+        };
+        /**
+         * WorkArtifactEdgeRetract
+         * @description Retract (soft-delete) a wrongly-recorded edge.
+         *
+         *     ``DELETE /plan-library/edges/{edge_id}``. The row is kept —
+         *     ``retracted_at`` / ``retracted_by`` / ``retracted_reason`` are stamped —
+         *     and every edge reader stops reporting it. ``reason`` is required and must
+         *     not be blank.
+         */
+        WorkArtifactEdgeRetract: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * WorkArtifactEdgesResponse
+         * @description ``GET /plan-library/{id}/edges`` — the artifact's edges, both directions.
+         *
+         *     The same edges, rendered the same way, as ``WorkArtifactDetail.edges`` —
+         *     without the body, the version log or the coord hop. ``count`` is
+         *     ``len(items)``: the read is not paged, so a zero is an artifact with no
+         *     (live) edges, never a truncated page.
+         */
+        WorkArtifactEdgesResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["WorkArtifactEdgeRead"][];
         };
         /**
          * WorkArtifactKindPatch
@@ -90222,6 +90466,107 @@ export interface operations {
             };
         };
     };
+    api_v1_plan_library_edges_edge_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkArtifactEdgeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_edges_edge_id_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkArtifactEdgeCorrect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkArtifactEdgeCorrected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_edges_edge_id_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkArtifactEdgeRetract"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkArtifactEdgeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_plan_library_edges_edge_id_patch: {
         parameters: {
             query?: never;
@@ -90681,6 +91026,8 @@ export interface operations {
             query?: {
                 /** @description Resolve the linked coord work unit and its PR citations. Set false for a purely local, coord-free read — the coord block then reports 'unavailable' for a linked artifact, because 'we did not look' is not the same answer as 'there is nothing there'. */
                 include_coord?: boolean;
+                /** @description Include retracted (soft-deleted) edges, each carrying retracted_at / retracted_by / retracted_reason. Off by default: a retracted edge is kept for its audit trail and asserts nothing. */
+                include_retracted?: boolean;
             };
             header?: never;
             path: {
@@ -90697,6 +91044,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkArtifactDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_artifact_id_edges_get: {
+        parameters: {
+            query?: {
+                /** @description Include retracted (soft-deleted) edges, each carrying retracted_at / retracted_by / retracted_reason. Off by default: a retracted edge is kept for its audit trail and asserts nothing. */
+                include_retracted?: boolean;
+            };
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkArtifactEdgesResponse"];
                 };
             };
             /** @description Validation Error */

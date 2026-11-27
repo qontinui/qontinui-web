@@ -55,6 +55,7 @@ from app.api.v1.endpoints.plan_library import (
     _CoordProbe,
     _resolve_org_id,
     _soft_tenant_id,
+    edge_retracted_conflict,
 )
 from app.crud import work_artifact as crud
 from app.crud import work_artifact_followups as followups_crud
@@ -83,7 +84,9 @@ async def _resolve_followup(
     404 when the edge is not in scope (edges carry no org of their own; the
     scope is the originating artifact's), 422 when it is not a
     ``spawned_followup`` — the other relations are two-ended and carry neither
-    anchors nor a closure state.
+    anchors nor a closure state — and 409 ``edge_retracted`` when it was
+    retracted: a withdrawn follow-up is in no queue and has nothing to close.
+    The write re-checks retraction under its row lock.
     """
     org_id = await _resolve_org_id(db, user)
     found = await crud.get_edge(db, edge_id, org_id=org_id)
@@ -102,6 +105,8 @@ async def _resolve_followup(
                 "closure state."
             ),
         )
+    if edge.retracted_at is not None:
+        raise edge_retracted_conflict(crud.EdgeRetracted.of(edge))
     return edge, org_id
 
 
@@ -176,10 +181,15 @@ async def replace_followup_anchors(
             size_class=payload.size_class,
             size_class_source=payload.size_class_source,
         )
-    except followups_crud.FollowupTransitionInvalid as exc:  # pragma: no cover
+    except followups_crud.FollowupTransitionInvalid as exc:
+        # Reachable: ``PUT /plan-library/edges/{id}`` can re-relate a bare
+        # follow-up after ``_resolve_followup`` read it; ``_lock_followup``
+        # refuses it under the lock.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    except crud.EdgeRetracted as exc:  # retracted after _resolve_followup read it
+        raise edge_retracted_conflict(exc) from exc
     logger.info(
         "plan_library.followup_anchors_replaced",
         edge_id=str(edge_id),
@@ -260,6 +270,8 @@ async def resolve_followup(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    except crud.EdgeRetracted as exc:  # retracted after _resolve_followup read it
+        raise edge_retracted_conflict(exc) from exc
     logger.info(
         "plan_library.followup_transitioned",
         edge_id=str(edge_id),

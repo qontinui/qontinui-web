@@ -59,7 +59,10 @@ export type FollowupState =
   | "fixed"
   | "already_fixed"
   | "dismissed"
-  | "claimed";
+  | "claimed"
+  /** Withdrawn (`DELETE /plan-library/edges/{id}`). `GET /followups` never
+   *  serves one; only the by-id and `include_retracted` edge reads do. */
+  | "retracted";
 
 /** One file a follow-up is about. `repo` + `path` are the match key; the
  *  line hints drift and are never part of a match. */

@@ -256,9 +256,16 @@ async def test_device_bearer_reads_the_vocabulary(
         if d["path"] == f"{API_PREFIX}/{{artifact_id}}/edges"
     )
     assert edges["posture"] == "evidence"
-    assert edges["tracked_by"] and edges["corrections"][0].startswith(
-        "NO CORRECTION VERB TODAY"
-    )
+    # The edge verbs landed (plan
+    # 2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable
+    # Phase 5): a wrong edge is corrected in place, or retracted.
+    assert edges["tracked_by"] == []
+    assert edges["corrections"] == [
+        "CORRECT A WRONG WRITE WITH: PUT "
+        f"{API_PREFIX}/edges/{{edge_id}} (accepts a record that is live)",
+        "[an edge that should not exist] CORRECT A WRONG WRITE WITH: DELETE "
+        f"{API_PREFIX}/edges/{{edge_id}} (accepts a record that is live)",
+    ]
 
 
 @pytest.mark.asyncio

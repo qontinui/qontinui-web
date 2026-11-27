@@ -51,9 +51,14 @@ logger = structlog.get_logger(__name__)
 ACTOR = "followup_reconcile (scheduled)"
 
 #: The anchor table is created by the same revision as the closure columns,
-#: so its presence says whether this database has them at all.
+#: so its presence says whether this database has them at all; every edge
+#: read since ``plan_library_13_edge_correction`` also filters on
+#: ``retracted_at``, so the column is probed too.
 _MIGRATED_SQL = text(
-    "SELECT to_regclass('agent.work_artifact_edge_anchors') IS NOT NULL"
+    "SELECT to_regclass('agent.work_artifact_edge_anchors') IS NOT NULL "
+    "AND EXISTS (SELECT 1 FROM information_schema.columns "
+    "WHERE table_schema = 'agent' AND table_name = 'work_artifact_edges' "
+    "AND column_name = 'retracted_at')"
 )
 
 
@@ -155,8 +160,9 @@ async def run_followup_reconcile(
         if not bool((await db.execute(_MIGRATED_SQL)).scalar()):
             logger.info(
                 "followup_reconcile.skipped",
-                reason="plan_library_11_followup_anchors_and_closure not applied — "
-                "this database has no follow-up closure columns",
+                reason="plan_library_11_followup_anchors_and_closure or "
+                "plan_library_13_edge_correction not applied — this database "
+                "has no follow-up closure or edge-retraction columns",
             )
             return {"migration_applied": False}
         outcome = await reconcile_fixing_followups(
