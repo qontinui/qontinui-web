@@ -1488,15 +1488,35 @@ export function eventLabel(kind: string): string {
 
 /**
  * The event's subject — the unit it names (`unit` on a service transition,
- * `victim_unit` on an OOM kill), or the hostname coord stamps on an identity
- * conflict. `detail` is runner-authored JSON, so it is read field by field.
+ * `victim_unit` on an OOM kill), else `in <victim_slice>` for an OOM kill the
+ * runner placed inside a watched slice without establishing the unit (a
+ * slice-remainder event: `victim_unit: null` means NOT ESTABLISHED, not "no
+ * unit"), else the hostname coord stamps on an identity conflict. A blank or
+ * whitespace-only value of any of these keys names nothing and falls through.
+ * `detail` is runner-authored JSON, so it is read field by field; an older
+ * runner sends no `victim_slice`.
  */
 export function eventSubject(e: ComputerEventWire): string | null {
   const d =
     typeof e.detail === "object" && e.detail !== null
       ? (e.detail as Record<string, unknown>)
       : {};
-  return str(d.unit) ?? str(d.victim_unit) ?? str(d.hostname) ?? null;
+  const slice = nonBlank(d.victim_slice);
+  return (
+    nonBlank(d.unit) ??
+    nonBlank(d.victim_unit) ??
+    (slice !== null ? `in ${slice}` : null) ??
+    nonBlank(d.hostname)
+  );
+}
+
+/**
+ * A trimmed, non-empty string, else null: a blank subject key names nothing.
+ * Stricter than `str`, which keeps whitespace-only values: a subject is a
+ * label, and a whitespace label would render as an empty one.
+ */
+function nonBlank(v: unknown): string | null {
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
 }
 
 /**
