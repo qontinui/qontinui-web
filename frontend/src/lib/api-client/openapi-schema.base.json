@@ -29323,7 +29323,7 @@
       },
       "FollowupAnchorsReplace": {
         "additionalProperties": false,
-        "description": "``PUT /plan-library/edges/{edge_id}/anchors``.\n\n``anchors`` and ``unanchored_reason`` REPLACE what is stored: an empty\n``anchors`` must say why (``unanchored_reason``), and a non-empty one\ncarries no reason (it is cleared). ``size_class`` / ``size_class_source``\nare optional and travel together: supplied, they set the class; omitted,\nthe stored class is kept \u2014 a caller correcting an anchor must not erase a\nclassification it never read.",
+        "description": "``PUT /plan-library/edges/{edge_id}/anchors``.\n\n``anchors`` and ``unanchored_reason`` REPLACE what is stored: an empty\n``anchors`` must say why (``unanchored_reason``), and a non-empty one\ncarries no reason (it is cleared). ``size_class`` / ``size_class_source``\nare optional and travel together: supplied, they set the class; omitted,\nthe stored class is kept \u2014 a caller correcting an anchor must not erase a\nclassification it never read. ``clear_size_class: true`` is the one way to\nerase a class: it nulls ``size_class`` and ``size_class_source`` together,\nonly where the stored source is ``sweep`` (a ``declared`` class is a 422\n``size_class_not_sweep_set``), and contradicts supplying either field.",
         "properties": {
           "anchors": {
             "items": {
@@ -29332,6 +29332,11 @@
             "maxItems": 100,
             "title": "Anchors",
             "type": "array"
+          },
+          "clear_size_class": {
+            "default": false,
+            "title": "Clear Size Class",
+            "type": "boolean"
           },
           "size_class": {
             "anyOf": [
@@ -125188,7 +125193,7 @@
     },
     "/api/v1/plan-library/edges/{edge_id}/anchors": {
       "put": {
-        "description": "Say which files a follow-up is about \u2014 or why it names none.\n\n``anchors`` REPLACES the stored set: each is ``owner/name`` + a\nrepo-relative file path (forward slashes, no leading ``/``, no ``.`` /\n``..`` segment, not a directory), with optional ``line_start`` /\n``line_end`` / ``symbol`` hints. Matching is exact on ``(repo, path)``;\nlines drift and are hints only. An EMPTY set needs ``unanchored_reason``\n(an unanchored follow-up is visibly unanchored, never silently\nunmatchable); a non-empty one clears it.\n\n``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when\nsupplied together, set the class; omitted, the stored class is kept.\n\nThis is the correction door for anchors: a wrong set is corrected by\nPUTting the right one. ``changed: false`` means the body restated what was\nstored and nothing was written. Works on any ``spawned_followup`` \u2014 open,\nresolved or claimed \u2014 because what a follow-up is ABOUT does not change\nwith how it was closed.",
+        "description": "Say which files a follow-up is about \u2014 or why it names none.\n\n``anchors`` REPLACES the stored set: each is ``owner/name`` + a\nrepo-relative file path (forward slashes, no leading ``/``, no ``.`` /\n``..`` segment, not a directory), with optional ``line_start`` /\n``line_end`` / ``symbol`` hints. Matching is exact on ``(repo, path)``;\nlines drift and are hints only. An EMPTY set needs ``unanchored_reason``\n(an unanchored follow-up is visibly unanchored, never silently\nunmatchable); a non-empty one clears it.\n\n``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when\nsupplied together, set the class; omitted, the stored class is kept.\n``clear_size_class: true`` (default false) nulls both columns together \u2014\nonly for a ``sweep``-set class (a ``declared`` one is a 422 with error\n``size_class_not_sweep_set``, row unchanged; an unclassified row reports\n``changed: false``) \u2014 and is a 422 beside ``size_class``.\n\nThis is the correction door for anchors: a wrong set is corrected by\nPUTting the right one. ``changed: false`` means the body restated what was\nstored and nothing was written. Works on any ``spawned_followup`` \u2014 open,\nresolved or claimed \u2014 because what a follow-up is ABOUT does not change\nwith how it was closed.",
         "operationId": "api_v1_plan_library_edges_edge_id_anchors_put",
         "parameters": [
           {
