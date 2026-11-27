@@ -350,6 +350,9 @@ jobs:
         env:
           NEXT_PUBLIC_DEV_RESET: 'true'
           BACKEND_URL: http://localhost:8000
+          # Next build OOMed at the default V8 heap on main (shard 3/4 on
+          # e2c99a211, shard 4/4 on 26b52d3b1); give it explicit headroom.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
       # `npx playwright install --with-deps <engines>` was THREE things fused
