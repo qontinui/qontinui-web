@@ -361,7 +361,12 @@ def closed_fields() -> list[ClosedFieldVocabulary]:
             ),
             accepted_by=[_EDGE_CREATE, _ANCHORS_PUT],
             values=_terms(FollowupSizeClass, SIZE_CLASS_MEANINGS),
-            note="Omitted is UNCLASSIFIED — never read as small.",
+            note=(
+                "Omitted is UNCLASSIFIED — never read as small. On PUT …/anchors, "
+                "omitting it keeps the stored class; `clear_size_class: true` "
+                "(boolean, not a value of this field) nulls a sweep-set class "
+                "and its source together."
+            ),
         ),
         ClosedFieldVocabulary(
             field="size_class_source",
@@ -371,6 +376,11 @@ def closed_fields() -> list[ClosedFieldVocabulary]:
             ),
             accepted_by=[_ANCHORS_PUT],
             values=_terms(FollowupSizeClassSource, SIZE_CLASS_SOURCE_MEANINGS),
+            note=(
+                "Only `sweep` is clearable (`clear_size_class: true` on PUT "
+                "…/anchors); clearing a `declared` class is a 422 "
+                "`size_class_not_sweep_set`."
+            ),
         ),
         ClosedFieldVocabulary(
             field="resolution",
