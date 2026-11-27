@@ -876,3 +876,52 @@ class TestRoundFour:
             )
             assert response.status_code == 422, (payload, response.text)
         assert coord.patches == []
+
+    async def test_the_list_store_serves_an_outside_role_only_shared_documents(
+        self,
+    ) -> None:
+        """The production entry point the list route dispatches to,
+        ``IntentDocumentStore.list``, called directly: an outside role gets
+        only the document marked shared (and is told something was withheld);
+        a team role gets both."""
+        from uuid import UUID
+
+        from app.overview.intent_documents import IntentDocumentStore
+        from app.overview.permissions import OverviewAccess
+        from app.overview.resource import StoreContext
+
+        fake = FakeCoord()
+        fake.seed("product_intent", "vision", SHARED_BODY)
+        fake.seed("product_intent", "non-goals", UNMARKED_BODY)
+        store = IntentDocumentStore(fake)
+        tenant = UUID("aaaaaaaa-0000-4000-8000-00000000000a")
+
+        def access(roles: tuple[str, ...], team_role: bool) -> OverviewAccess:
+            return OverviewAccess(
+                tenant_id=tenant,
+                roles=roles,
+                editing_roles=("admin",),
+                qontinui_staff=False,
+                user_id=None,
+                actor="tester@example.com",
+                kind="user",
+                via_device=None,
+                team_role=team_role,
+            )
+
+        outside = await store.list(
+            StoreContext(access=access(OUTSIDE_ROLES, False), db=None, request=None),  # type: ignore[arg-type]
+            {},
+        )
+        assert [item.id for item in outside.items] == ["product_intent:vision"]
+        assert outside.withheld is True
+
+        team = await store.list(
+            StoreContext(access=access(("operator",), True), db=None, request=None),  # type: ignore[arg-type]
+            {},
+        )
+        assert {item.id for item in team.items} == {
+            "product_intent:vision",
+            "product_intent:non-goals",
+        }
+        assert team.withheld is False
