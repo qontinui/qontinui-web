@@ -1489,6 +1489,122 @@ class TestReplaceAnchors:
         )
         assert kept.json()["followup"]["size_class"] == "plan_sized"
 
+    async def _classified(
+        self,
+        client: httpx.AsyncClient,
+        stem: str,
+        *,
+        size_class: str | None,
+        source: str | None,
+    ) -> str:
+        """A follow-up whose class is (size_class, source) — via PUT for sweep."""
+        plan = await _make_artifact(client, stem=stem)
+        kwargs: dict[str, object] = {}
+        if source == "declared":
+            kwargs["size_class"] = size_class
+        edge_id = (
+            await _spawn_with(
+                client, plan, "class me", anchors=[_anchor("a.py")], **kwargs
+            )
+        ).json()["id"]
+        if source == "sweep":
+            swept = await client.put(
+                f"{API_PREFIX}/edges/{edge_id}/anchors",
+                json={
+                    "anchors": [_anchor("a.py")],
+                    "size_class": size_class,
+                    "size_class_source": "sweep",
+                },
+            )
+            assert swept.status_code == 200, swept.text
+        return edge_id
+
+    async def test_clear_size_class_clears_a_sweep_set_class(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        edge_id = await self._classified(
+            client, "clrsweep", size_class="small", source="sweep"
+        )
+        resp = await client.put(
+            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            json={"anchors": [_anchor("a.py")], "clear_size_class": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["changed"] is True
+        assert resp.json()["followup"]["size_class"] is None
+        assert resp.json()["followup"]["size_class_source"] is None
+        again = await client.put(
+            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            json={"anchors": [_anchor("a.py")], "clear_size_class": True},
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["changed"] is False
+
+    async def test_clear_size_class_refuses_a_declared_class(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        edge_id = await self._classified(
+            client, "clrdecl", size_class="trivial", source="declared"
+        )
+        resp = await client.put(
+            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            json={
+                "anchors": [_anchor("b.py")],
+                "clear_size_class": True,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "size_class_not_sweep_set" in resp.text
+        # Row unchanged: class kept AND the anchors were not replaced.
+        got = await client.get(f"{API_PREFIX}/followups")
+        row = next(i for i in got.json()["items"] if i["edge_id"] == edge_id)
+        assert row["size_class"] == "trivial"
+        assert row["size_class_source"] == "declared"
+        assert [a["path"] for a in row["anchors"]] == ["a.py"]
+
+    async def test_clear_size_class_on_an_unclassified_row_changes_nothing(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        edge_id = await self._classified(
+            client, "clrnone", size_class=None, source=None
+        )
+        resp = await client.put(
+            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            json={"anchors": [_anchor("a.py")], "clear_size_class": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["changed"] is False
+        assert resp.json()["followup"]["size_class"] is None
+
+    async def test_clear_size_class_contradicts_a_supplied_class(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        edge_id = await self._classified(
+            client, "clrboth", size_class="small", source="sweep"
+        )
+        for extra in (
+            {"size_class": "trivial", "size_class_source": "sweep"},
+            {"size_class": "trivial"},
+            {"size_class_source": "sweep"},
+        ):
+            resp = await client.put(
+                f"{API_PREFIX}/edges/{edge_id}/anchors",
+                json={
+                    "anchors": [_anchor("a.py")],
+                    "clear_size_class": True,
+                    **extra,
+                },
+            )
+            assert resp.status_code == 422, resp.text
+        # Explicit false is the default: the class is left alone.
+        kept = await client.put(
+            f"{API_PREFIX}/edges/{edge_id}/anchors",
+            json={"anchors": [_anchor("c.py")], "clear_size_class": False},
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json()["followup"]["size_class"] == "small"
+        assert kept.json()["followup"]["size_class_source"] == "sweep"
+
     async def test_put_refuses_a_two_ended_edge_and_an_unknown_one(
         self, client: httpx.AsyncClient
     ) -> None:

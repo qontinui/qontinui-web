@@ -322,7 +322,10 @@ class FollowupAnchorsReplace(BaseModel):
     carries no reason (it is cleared). ``size_class`` / ``size_class_source``
     are optional and travel together: supplied, they set the class; omitted,
     the stored class is kept — a caller correcting an anchor must not erase a
-    classification it never read.
+    classification it never read. ``clear_size_class: true`` is the one way to
+    erase a class: it nulls ``size_class`` and ``size_class_source`` together,
+    only where the stored source is ``sweep`` (a ``declared`` class is a 422
+    ``size_class_not_sweep_set``), and contradicts supplying either field.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -331,6 +334,8 @@ class FollowupAnchorsReplace(BaseModel):
     unanchored_reason: str | None = Field(None, max_length=2000)
     size_class: FollowupSizeClass | None = None
     size_class_source: FollowupSizeClassSource | None = None
+    #: Clear a sweep-set class (both columns to NULL). Default false = leave it.
+    clear_size_class: bool = False
 
     @field_validator("anchors")
     @classmethod
@@ -350,6 +355,11 @@ class FollowupAnchorsReplace(BaseModel):
             )
         if (self.size_class is None) != (self.size_class_source is None):
             raise ValueError("size_class and size_class_source travel together")
+        if self.clear_size_class and self.size_class is not None:
+            raise ValueError(
+                "clear_size_class contradicts size_class / size_class_source — "
+                "send one or the other"
+            )
         return self
 
 

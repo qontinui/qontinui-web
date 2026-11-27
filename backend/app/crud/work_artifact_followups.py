@@ -134,6 +134,14 @@ class FollowupTransitionInvalid(Exception):
     e.g. reopening a resting state without a reason. Surfaced as a 422."""
 
 
+class FollowupSizeClassNotSweepSet(FollowupTransitionInvalid):
+    """``clear_size_class`` met a class that is not sweep-set. Only the sweep's
+    class is clearable; a ``declared`` one is the writer's word. A 422 coded
+    ``size_class_not_sweep_set``."""
+
+    code = "size_class_not_sweep_set"
+
+
 # ───────────────────────── anchors ─────────────────────────
 
 
@@ -310,17 +318,36 @@ async def replace_anchors(
     unanchored_reason: str | None,
     size_class: str | None = None,
     size_class_source: str | None = None,
+    clear_size_class: bool = False,
 ) -> tuple[WorkArtifactEdge, bool]:
     """Replace a follow-up's whole anchor set (``PUT …/anchors``).
 
     ``anchors`` and ``unanchored_reason`` REPLACE what is stored (the API has
     already required a reason for an empty set and none for a non-empty one).
     ``size_class`` / ``size_class_source`` set the class when supplied and
-    leave it alone when not. Row-locked; one transaction, so a reader never
+    leave it alone when not. ``clear_size_class`` nulls both columns together,
+    but only a ``sweep``-set class: a ``declared`` one raises
+    :class:`FollowupSizeClassNotSweepSet` (checked under the row lock, before
+    anything is written) and an unclassified row is a no-op. It contradicts a
+    supplied class. Row-locked; one transaction, so a reader never
     sees the set half-replaced. Returns ``(edge, changed)`` — ``changed`` is
     false when the request restated what was stored, and nothing was written.
     """
+    if clear_size_class and (size_class is not None or size_class_source is not None):
+        raise FollowupTransitionInvalid(
+            "clear_size_class contradicts size_class / size_class_source"
+        )
     edge = await _lock_followup(db, edge_id)
+    if (
+        clear_size_class
+        and edge.size_class_source is not None
+        and edge.size_class_source != "sweep"
+    ):
+        raise FollowupSizeClassNotSweepSet(
+            f"follow-up {edge_id} has a '{edge.size_class_source}' size_class; "
+            "only a class the sweep set can be cleared"
+        )
+    clearing = clear_size_class and edge.size_class_source == "sweep"
     current = await load_anchors(db, [edge.id])
     # Compared as MULTISETS, never sorted: one path may carry a line-less
     # anchor beside a lined one, and ordering ``None`` against an ``int``
@@ -331,7 +358,12 @@ async def replace_anchors(
     class_change = size_class is not None and (
         size_class != edge.size_class or size_class_source != edge.size_class_source
     )
-    if stored == requested and reason == edge.unanchored_reason and not class_change:
+    if (
+        stored == requested
+        and reason == edge.unanchored_reason
+        and not class_change
+        and not clearing
+    ):
         return edge, False
 
     if stored != requested:
@@ -345,6 +377,10 @@ async def replace_anchors(
     if class_change:
         edge.size_class = size_class
         edge.size_class_source = size_class_source
+    elif clearing:
+        # Both NULL together: ck_work_artifact_edges_size_class_paired.
+        edge.size_class = None
+        edge.size_class_source = None
     await db.commit()
     await db.refresh(edge)
     return edge, True
