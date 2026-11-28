@@ -20,6 +20,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Column,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -27,7 +29,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -406,23 +408,25 @@ FOLLOWUP_ANCHOR_CHECKS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: The indexed full-text expression, spelled once and reused.
+#: The full-text expression, spelled once: the generation expression of the
+#: STORED column ``agent.work_artifacts.search_tsv`` (a table column, excluded
+#: from the mapper: read it as ``WorkArtifact.__table__.c.search_tsv``).
 #:
-#: BOTH consumers are built from this one string: ``ix_work_artifacts_search``
-#: below, and the API's ``?q=`` predicate in
-#: :func:`app.crud.work_artifact._apply_filters`. PostgreSQL matches an
-#: expression index by the PARSED expression, so a predicate that merely
-#: resembles the indexed expression yields a perfectly healthy-looking index
-#: that is never used; reusing the constant is the only thing that keeps the
-#: two identical under edits.
+#: ``plan_library_12_search_tsv_and_slug_trgm`` copies it verbatim into the
+#: column's ``GENERATED ALWAYS AS (…) STORED`` clause (its test pins the two
+#: equal), and this model declares the column with it, so the vector the API
+#: matches against is the one PostgreSQL computes on every write.
 #:
-#: Spelled UNQUALIFIED (``title``, not ``work_artifacts.title``) because that
-#: is what the deployed index actually holds. PostgreSQL *accepts* a
-#: table-qualified column reference in ``CREATE INDEX`` but normalizes it away
-#: on the way in, so the qualified spelling this constant used to carry was
-#: never the thing stored — it only ever agreed with the index by accident of
-#: parse-tree equality. Every statement that embeds this string selects from
-#: ``work_artifacts`` alone, so the bare column names are unambiguous.
+#: Nothing evaluates this expression at QUERY time any more. Until that
+#: revision it was the body of an expression index the ``?q=`` predicate had
+#: to spell identically, and the planner still walked other indexes and
+#: re-parsed every ~26 KB body per request (20-32 s measured on prod) — the
+#: parse is priced at its procost, blind to body size. The predicate now reads
+#: ``search_tsv``, so every plan shape reads a stored value. Never put this
+#: string back into a ``WHERE``.
+#:
+#: Spelled UNQUALIFIED (``title``, not ``work_artifacts.title``): a generation
+#: expression may only reference the row's own columns.
 SEARCH_TSVECTOR_SQL = (
     "to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''))"
 )
@@ -507,14 +511,20 @@ class WorkArtifact(Base):
             "created_at",
             "id",
         ),
-        # The body is SEARCH_TSVECTOR_SQL itself, never a copy of it — a
-        # second spelling here is exactly the drift the constant exists to
-        # prevent, and it stayed invisible for as long as it existed because
-        # PostgreSQL compares parse trees rather than strings.
+        # The two ``?q=`` arms, one index each
+        # (``plan_library_12_search_tsv_and_slug_trgm``): the full-text arm
+        # matches the STORED ``search_tsv``; the slug arm's leading-wildcard
+        # ``ILIKE`` is trigram-served, so their OR stays a BitmapOr.
         Index(
-            "ix_work_artifacts_search",
-            text(SEARCH_TSVECTOR_SQL),
+            "ix_work_artifacts_search_tsv",
+            "search_tsv",
             postgresql_using="gin",
+        ),
+        Index(
+            "ix_work_artifacts_slug_trgm",
+            "slug",
+            postgresql_using="gin",
+            postgresql_ops={"slug": "gin_trgm_ops"},
         ),
         # A spec ref names ONE artifact within its organization scope. Mirrors
         # ``plan_library_11_spec_artifacts``.
@@ -545,6 +555,8 @@ class WorkArtifact(Base):
         ),
         {"schema": "agent"},
     )
+    # ``search_tsv`` is on the Table, not the mapper (see the column below).
+    __mapper_args__ = {"exclude_properties": ["search_tsv"]}
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -605,6 +617,23 @@ class WorkArtifact(Base):
 
     body: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("''"), default=""
+    )
+
+    #: ``to_tsvector`` of title and body, kept by PostgreSQL
+    #: (:data:`SEARCH_TSVECTOR_SQL`). A TABLE column only: ``__mapper_args__``
+    #: excludes it from the mapper, so the ORM never names it in an INSERT,
+    #: an UPDATE, a ``RETURNING`` or a SELECT. ``deferred=True`` was not
+    #: enough — ``eager_defaults="auto"`` still put a server-generated column
+    #: in ``INSERT … RETURNING``, fetching a body-sized vector on every insert.
+    #: The ``?q=`` predicate reads it in SQL only, as
+    #: ``WorkArtifact.__table__.c.search_tsv``. Nullable, matching the
+    #: migration's ``ADD COLUMN`` (``to_tsvector`` of the coalesced text is
+    #: never NULL, but the catalog says nullable and ``create_all`` must agree).
+    search_tsv = Column(
+        "search_tsv",
+        TSVECTOR,
+        Computed(SEARCH_TSVECTOR_SQL, persisted=True),
+        nullable=True,
     )
 
     # Named ``content_sha256`` — NOT ``checksum`` (project.skills) and NOT
