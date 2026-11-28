@@ -356,10 +356,17 @@ async def reindex_once(
         # be one job. The batch fetch is deliberately tenant-agnostic —
         # it sweeps the whole substrate oldest-first — so it is grouped
         # here rather than by running the sweep once per tenant.
-        by_tenant: dict[UUID, list[tuple[UUID, str]]] = {}
-        for tenant_id, memory_id, content in batch:
-            by_tenant.setdefault(tenant_id, []).append((memory_id, content))
-        for tenant_id, targets in by_tenant.items():
+        #
+        # And per AGENT PARTITION within a tenant: a device claims a job
+        # only when it can see every target, and it sees only its own
+        # ``agent`` rows (plan 2026-11-04-web-memory-agent-scope-accepts-
+        # any-device-scope-ref D3). ``None`` groups every non-agent row.
+        by_partition: dict[tuple[UUID, str | None], list[tuple[UUID, str]]] = {}
+        for row in batch:
+            by_partition.setdefault((row.tenant_id, row.agent_partition), []).append(
+                (row.memory_id, row.content)
+            )
+        for (tenant_id, _partition), targets in by_partition.items():
             enqueued_jobs += await store.enqueue_jobs(
                 session,
                 tenant_id,

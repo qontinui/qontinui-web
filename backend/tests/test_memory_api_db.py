@@ -5601,7 +5601,10 @@ class TestQueryEcho:
                 "query_text": "explicit request",
                 "kinds": ["fact", "rule"],
                 "scopes": ["agent"],
-                "scope_ref": "agent-42",
+                # The fixture device's own agent partition: a foreign ref is
+                # now a 403 (plan 2026-11-04-web-memory-agent-scope-accepts-
+                # any-device-scope-ref), so an echo test must name its own.
+                "scope_ref": str(_FIXTURE_DEVICE_ID),
                 "limit": 3,
                 "link_expansion": True,
                 "min_importance": 0.25,
@@ -5612,7 +5615,7 @@ class TestQueryEcho:
         echo = body["query_echo"]
         assert echo["kinds"] == ["fact", "rule"]
         assert echo["scopes"] == ["agent"]
-        assert echo["scope_ref"] == "agent-42"
+        assert echo["scope_ref"] == str(_FIXTURE_DEVICE_ID)
         assert echo["limit"] == 3
         assert echo["link_expansion"] is True
         assert echo["min_importance"] == 0.25
