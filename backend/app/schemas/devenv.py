@@ -21,7 +21,7 @@ import re
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, StrictBool, field_validator
 
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
@@ -422,9 +422,10 @@ CiNodeReachabilityT = Literal["unlinked", "offline", "online", "unknown"]
 class CiNodeConfig(BaseSchema):
     """The ``CiNodeSettings`` fields, with the runner's own defaults.
 
-    ``model_access`` is the exception: its default is ``None`` ("not set
-    here"), not the runner's ``True``, because an absent value must leave the
-    runner's stored consent alone rather than overwrite it.
+    ``model_access`` and ``canonical_converge`` are the exceptions: their
+    default is ``None`` ("not set here"), not the runner's own value, because
+    an absent value must leave the runner's stored consent or grant alone
+    rather than overwrite it.
 
     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
     on purpose: a machine that has never been configured here must round-trip
@@ -469,14 +470,37 @@ class CiNodeConfig(BaseSchema):
     # ``2026-10-13-ci-node-runs-model-dependent-eval-steps`` D6). The runner
     # defaults it ON for a device never configured.
     #
-    # ``None`` (the default) means THIS surface has never spoken about it, and
-    # it is forwarded by OMITTING the key (see ``coord_payload``): coord's
+    # ``None`` (the default) means the latest save from THIS surface did not
+    # speak about it (it never set it, or chose to leave it as set on the
+    # machine), and it is forwarded by OMITTING the key (see ``coord_payload``): coord's
     # ``CiNodeDirective.model_access`` is ``Option<bool>`` and the runner keeps
     # its stored value for an absent key. So a row saved before this switch
     # existed — or any save that leaves it untouched — can neither re-enable a
     # device whose owner switched it off on the machine nor disable a fresh
     # one. Only an explicit ``True`` / ``False`` travels.
-    model_access: bool | None = None
+    #
+    # ``StrictBool``: a consent is a JSON boolean and nothing else. Pydantic's
+    # lax ``bool`` would read ``"yes"``, ``"on"``, ``"1"``, ``"true"`` or ``1``
+    # as ``True`` and forward an explicit grant nobody chose as a boolean.
+    model_access: StrictBool | None = None
+    # "Let a dispatch converge this machine's global toolchains toward
+    # canonical" — the device's canonical-convergence GRANT (plan
+    # ``2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant``
+    # Phase 3). A dispatch whose repo manifest declares a
+    # ``[canonical]`` block may install or switch rustup/volta/pyenv versions
+    # on the box only while this is granted; without it such a dispatch is
+    # refused with the drift named. The runner ships it OFF.
+    #
+    # Same shape as ``model_access``, and for the same reason: ``None`` (the
+    # default) is "the latest save from this surface did not speak", forwarded
+    # by OMITTING the key (see ``coord_payload``), and a runner carrying the plan's Phase 1
+    # keeps the grant it already holds for an absent key (an older runner
+    # reads absence as a revoke, which is the defect that plan closes). This
+    # surface cannot read the device's current value back, so ``None`` is
+    # never rendered as granted or revoked. Only an explicit ``True`` (grant) /
+    # ``False`` (revoke) travels, and only as a JSON boolean (``StrictBool``,
+    # for the reason given on ``model_access``).
+    canonical_converge: StrictBool | None = None
 
     @field_validator("repo_allowlist")
     @classmethod
@@ -516,21 +540,28 @@ class CiNodeConfig(BaseSchema):
         """The ``ci_node`` object forwarded to coord's CI-node dispatch.
 
         Identical to ``model_dump(mode="json")`` except that an unset
-        ``max_concurrent_builds`` or ``model_access`` is OMITTED instead of
-        sent as ``null``. For ``model_access`` omission is the semantics, not
-        only a guard: an absent key leaves the runner's stored consent alone.
-        For ``max_concurrent_builds`` it is a deploy-order guard: a coord predating the Option-typed relay
-        reads the field as ``u32`` with a serde default, so an absent key
-        falls back to that default while a ``null`` fails the whole
-        deserialize and every CI-node save is refused. A coord that does
-        accept ``Option<u32>`` reads an absent key as ``None`` — "use the
-        host's suggested capacity" — so omitting is correct on both.
+        ``max_concurrent_builds``, ``model_access`` or ``canonical_converge``
+        is OMITTED instead of sent as ``null``. For ``model_access`` and
+        ``canonical_converge`` omission is the semantics, not only a guard: an
+        absent key is meant to leave the runner's stored consent or grant
+        alone. For ``canonical_converge`` that holds only on a runner carrying
+        plan
+        ``2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant``
+        Phase 1; an older runner types the field as a plain ``bool`` with a
+        serde default and reads an absent key as a REVOKE. For
+        ``max_concurrent_builds`` it is a deploy-order guard: a coord
+        predating the Option-typed relay reads the field as ``u32`` with a
+        serde default, so an absent key falls back to that default while a
+        ``null`` fails the whole deserialize and every CI-node save is
+        refused. A coord that does accept ``Option<u32>`` reads an absent key
+        as ``None`` — "use the host's suggested capacity" — so omitting is
+        correct on both.
 
-        Scoped to those two fields on purpose: a blanket ``exclude_none``
+        Scoped to those three fields on purpose: a blanket ``exclude_none``
         would silently start dropping any nullable field a later edit adds.
         """
         body = self.model_dump(mode="json")
-        for key in ("max_concurrent_builds", "model_access"):
+        for key in ("max_concurrent_builds", "model_access", "canonical_converge"):
             if body.get(key) is None:
                 body.pop(key, None)
         return body
@@ -543,14 +574,21 @@ class CiNodeConfigResponse(BaseSchema):
     now" is named for what it actually is. Web has no read-back channel for the
     runner's settings file, so it reports what was requested, when it was
     handed to coord, and whether coord could even reach the device — and never
-    asserts that the device applied it.
+    asserts that the device applied it. So ``requested.model_access`` and
+    ``requested.canonical_converge`` reading ``None`` mean the latest save here
+    did not set them (nothing was ever saved, or the owner chose to leave them
+    as set on the machine), not that the device holds no consent or grant.
     """
 
     machine_id: UUID
     coord_device_id: UUID | None = None
     # The desired config. For a never-configured machine this is the runner's
     # own defaults (off, empty allowlist), NOT an empty object — the form has
-    # to render something and it must be the honest posture.
+    # to render something and it must be the honest posture. The consent and
+    # grant fields (``model_access``, ``canonical_converge``) are the
+    # exception: they read ``None``, "not set by the latest save here",
+    # because the device's own value cannot be read back and must not be
+    # guessed.
     requested: CiNodeConfig
     # False when this surface has never saved a config for the machine. Lets
     # the UI distinguish "explicitly turned off here" from "never touched
@@ -576,8 +614,15 @@ class CiNodeConfigResponse(BaseSchema):
     #   when there was no answer to have (nothing paired; coord unreachable).
     # * ``dispatch_error``  — coord's machine-readable code from the ``error``
     #   key (e.g. ``repo_allowlist_wildcard``,
-    #   ``device_not_found_in_tenant``). The UI keys refusal CLASS off this +
-    #   the status, never off prose.
+    #   ``device_not_found_in_tenant``), or a web-owned code for a 2xx that is
+    #   still not a delivery (``stored_for_next_connect``,
+    #   ``superseded_by_newer``, ``coord_not_dispatched``, and the consent
+    #   relay codes ``coord_predates_<field>`` / ``<field>_unconfirmed`` /
+    #   ``<field>_echo_mismatch`` for ``model_access`` and
+    #   ``canonical_converge``). One code per answer: when both consent fields
+    #   are unconfirmed it names the first, ``consent_relay_errors`` lists
+    #   both, and ``dispatch_detail`` names both. The UI keys refusal CLASS off
+    #   this + the status, never off prose.
     # * ``dispatch_detail`` — the human sentence, coord's ``message`` verbatim
     #   when it sent one. This is what the panel shows the user.
     #
@@ -586,6 +631,12 @@ class CiNodeConfigResponse(BaseSchema):
     dispatch_status: int | None = None
     dispatch_error: str | None = None
     dispatch_detail: str | None = None
+    # Every consent-relay code this answer produced, in field order
+    # (``model_access`` first), so a client can name EVERY consent or grant
+    # choice that did not arrive as chosen, not only the first. When set,
+    # ``dispatch_error`` is its first entry. ``None`` on a read and on any
+    # outcome other than a consent-relay problem.
+    consent_relay_errors: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------

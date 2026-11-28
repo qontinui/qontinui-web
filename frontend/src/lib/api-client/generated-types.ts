@@ -32037,9 +32037,10 @@ export interface components {
          * CiNodeConfig
          * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
          *
-         *     ``model_access`` is the exception: its default is ``None`` ("not set
-         *     here"), not the runner's ``True``, because an absent value must leave the
-         *     runner's stored consent alone rather than overwrite it.
+         *     ``model_access`` and ``canonical_converge`` are the exceptions: their
+         *     default is ``None`` ("not set here"), not the runner's own value, because
+         *     an absent value must leave the runner's stored consent or grant alone
+         *     rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -32048,6 +32049,8 @@ export interface components {
          *     from the host — not a fixed number.
          */
         CiNodeConfig: {
+            /** Canonical Converge */
+            canonical_converge?: boolean | null;
             /**
              * Enabled
              * @default false
@@ -32073,7 +32076,10 @@ export interface components {
          *     now" is named for what it actually is. Web has no read-back channel for the
          *     runner's settings file, so it reports what was requested, when it was
          *     handed to coord, and whether coord could even reach the device — and never
-         *     asserts that the device applied it.
+         *     asserts that the device applied it. So ``requested.model_access`` and
+         *     ``requested.canonical_converge`` reading ``None`` mean the latest save here
+         *     did not set them (nothing was ever saved, or the owner chose to leave them
+         *     as set on the machine), not that the device holds no consent or grant.
          */
         CiNodeConfigResponse: {
             /**
@@ -32081,6 +32087,8 @@ export interface components {
              * @default false
              */
             configured: boolean;
+            /** Consent Relay Errors */
+            consent_relay_errors?: string[] | null;
             /** Coord Device Id */
             coord_device_id?: string | null;
             /** Dispatch Detail */

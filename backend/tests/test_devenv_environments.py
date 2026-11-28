@@ -3986,6 +3986,577 @@ class TestCiNodeModelAccessRoundTrip:
             assert r.json()["requested"]["model_access"] is None
 
 
+def _coord_echoing_without(captured: dict, *dropped: str):
+    """A coord double whose 2xx echoes the published directive as ``applied``,
+    minus ``dropped`` — i.e. a coord that predates those fields and silently
+    ignores them (its ``CiNodeDirective`` is lenient: no ``deny_unknown_fields``
+    on the operator door)."""
+
+    async def _fake_post(path, *, headers, json_body, log_event, **kw):
+        captured[path] = {"headers": headers, "body": json_body}
+        if "ci_node" not in json_body:  # the enroll dispatch
+            return httpx.Response(200, json={"dispatched": True})
+        applied = {k: v for k, v in json_body["ci_node"].items() if k not in dropped}
+        return httpx.Response(200, json={"dispatched": True, "applied": applied})
+
+    return _fake_post
+
+
+def _applied(**fields: object) -> httpx.Response:
+    return httpx.Response(200, json={"dispatched": True, "applied": fields})
+
+
+_GRANT_DROPPED_NOTE = (
+    "A runner that does not yet keep a toolchain-convergence grant nothing was "
+    "sent for reads its absence as a revoke, so on such a runner the settings "
+    "that did arrive turned toolchain convergence off."
+)
+
+
+class TestConsentRelayProblem:
+    """``_consent_relay_problem`` — whether a save's consent/grant choices
+    (``model_access``, ``canonical_converge``) can be counted as delivered,
+    judged from coord's ``applied`` echo. Unit-level, so every arm of both
+    fields is pinned without a database; the endpoint tests below enter
+    through the PUT."""
+
+    @staticmethod
+    def _problem(resp: httpx.Response, **cfg: object):
+        from app.api.v1.endpoints.devenv import _consent_relay_problem
+        from app.schemas.devenv import CiNodeConfig
+
+        return _consent_relay_problem(CiNodeConfig(enabled=True, **cfg), resp)
+
+    @pytest.mark.parametrize(
+        "resp",
+        [
+            httpx.Response(200, content=b"<html>proxy page</html>"),
+            httpx.Response(200, json={"dispatched": True}),
+            _applied(enabled=True),
+        ],
+        ids=["unparseable", "no_applied", "applied_without_either"],
+    )
+    def test_a_save_that_set_neither_has_nothing_to_confirm(
+        self, resp: httpx.Response
+    ) -> None:
+        assert self._problem(resp) is None
+
+    @pytest.mark.parametrize("field", ["model_access", "canonical_converge"])
+    @pytest.mark.parametrize("value", [True, False])
+    def test_an_echoed_value_is_delivered(self, field: str, value: bool) -> None:
+        assert self._problem(_applied(**{field: value}), **{field: value}) is None
+
+    def test_both_echoed_is_delivered(self) -> None:
+        resp = _applied(model_access=False, canonical_converge=True)
+        assert self._problem(resp, model_access=False, canonical_converge=True) is None
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_grant_an_older_coord_dropped_is_not_relayed(self, value: bool) -> None:
+        """The realistic deploy order: coord already carries ``model_access``
+        but predates ``canonical_converge``, so its echo lacks only the grant.
+
+        The detail must not stop at "did not reach the machine": the directive
+        coord DID publish carries no grant, and a runner predating the
+        keep-an-unstated-grant fix reads that as a revoke."""
+        problem = self._problem(
+            _applied(model_access=True),
+            model_access=True,
+            canonical_converge=value,
+        )
+        assert problem is not None
+        assert problem.code == "coord_predates_canonical_converge"
+        assert problem.codes == ["coord_predates_canonical_converge"]
+        assert problem.detail == (
+            "The coordinator accepted the other settings, but it does not yet carry "
+            "the toolchain-convergence grant, so that choice did not reach the "
+            f"machine. {_GRANT_DROPPED_NOTE} It is saved here; apply again once the "
+            "coordinator is updated."
+        )
+
+    @pytest.mark.parametrize(
+        ("field", "sent", "echoed"),
+        [
+            ("canonical_converge", True, False),
+            ("canonical_converge", False, True),
+            ("canonical_converge", True, None),
+            ("model_access", False, True),
+        ],
+        ids=[
+            "grant_true_echo_false",
+            "grant_false_echo_true",
+            "grant_echo_null",
+            "model_access",
+        ],
+    )
+    def test_an_echo_carrying_a_different_value_is_an_echo_mismatch(
+        self, field: str, sent: bool, echoed: bool | None
+    ) -> None:
+        """A coord whose echo CARRIES the key knows the field, so calling it
+        older would misname it: a different value is its own code, for both
+        fields alike."""
+        problem = self._problem(_applied(**{field: echoed}), **{field: sent})
+        assert problem is not None
+        assert problem.code == f"{field}_echo_mismatch"
+        assert problem.codes == [f"{field}_echo_mismatch"]
+        assert "with a different value than this save sent" in problem.detail
+        assert "does not yet carry" not in problem.detail
+        # The coordinator already carries the field, so "once the coordinator
+        # is updated" would be the wrong advice.
+        assert "once the coordinator is updated" not in problem.detail
+        assert problem.detail.endswith(
+            "It is saved here; the coordinator carries that choice but changed it, "
+            "so apply again; if it still differs, the coordinator is changing it — "
+            "report this to support@qontinui.io."
+        )
+
+    @pytest.mark.parametrize(
+        "resp",
+        [
+            httpx.Response(200, content=b"<html>proxy page</html>"),
+            httpx.Response(200, json={"dispatched": True}),
+            httpx.Response(200, json={"dispatched": True, "applied": "yes"}),
+            httpx.Response(200, json=[{"applied": {"canonical_converge": True}}]),
+        ],
+        ids=["unparseable", "no_applied", "applied_not_object", "non_object_body"],
+    )
+    def test_an_answer_that_cannot_confirm_the_grant_is_unconfirmed(
+        self, resp: httpx.Response
+    ) -> None:
+        problem = self._problem(resp, canonical_converge=True)
+        assert problem is not None
+        assert problem.code == "canonical_converge_unconfirmed"
+        assert problem.codes == ["canonical_converge_unconfirmed"]
+        assert (
+            "whether the toolchain-convergence grant reached the machine is unknown"
+            in problem.detail
+        )
+        # It may have been dropped, so the possible revoke is said too.
+        assert (
+            "If it was dropped, a runner that does not yet keep a "
+            "toolchain-convergence grant nothing was sent for read its absence as "
+            "a revoke and turned toolchain convergence off." in problem.detail
+        )
+
+    def test_model_access_codes_and_sentences_are_unchanged(self) -> None:
+        """The generalisation must not move the codes the panel matches on, nor
+        the sentences an owner already reads, for a model-access-only save.
+
+        The one intentional change to model-access codes and sentences is the
+        echo-mismatch edge: an echo carrying ``model_access`` with another
+        value now reads ``model_access_echo_mismatch`` instead of
+        ``coord_predates_model_access``, which misnamed a coord that does carry
+        the field. Every other code and sentence below is byte-identical.
+
+        Separately, and not a code or sentence change: model-access INPUT is
+        now ``StrictBool``, so a body carrying ``"true"`` or ``1`` is a 422
+        where lax ``bool`` read it as ``True`` (pinned by
+        ``test_model_access_accepts_only_a_real_boolean`` and the route's
+        ``test_a_non_boolean_choice_is_refused_by_the_route``)."""
+        not_relayed = self._problem(_applied(), model_access=False)
+        assert not_relayed is not None
+        assert (not_relayed.code, not_relayed.detail) == (
+            "coord_predates_model_access",
+            "The coordinator accepted the other settings, but it does not yet carry "
+            "the model-access choice, so that choice did not reach the machine. It is "
+            "saved here; apply again once the coordinator is updated.",
+        )
+        unconfirmed = self._problem(
+            httpx.Response(200, json={"dispatched": True}), model_access=False
+        )
+        assert unconfirmed is not None
+        assert (unconfirmed.code, unconfirmed.detail) == (
+            "model_access_unconfirmed",
+            "The coordinator accepted the settings, but its answer did not say what it "
+            "sent, so whether the model-access choice reached the machine is unknown. "
+            "It is saved here; apply again to retry.",
+        )
+        mismatch = self._problem(_applied(model_access=True), model_access=False)
+        assert mismatch is not None
+        assert mismatch.code == "model_access_echo_mismatch"
+
+    def test_two_dropped_choices_report_the_first_code_and_name_both(self) -> None:
+        """One ``dispatch_error`` slot: it carries the first problem in field
+        order (a joined value would break the exact match clients key on);
+        ``codes`` lists both, and the detail — what the owner reads — names
+        BOTH, so neither is lost."""
+        problem = self._problem(_applied(), model_access=False, canonical_converge=True)
+        assert problem is not None
+        assert problem.code == "coord_predates_model_access"
+        assert problem.codes == [
+            "coord_predates_model_access",
+            "coord_predates_canonical_converge",
+        ]
+        assert (
+            "the model-access choice and the toolchain-convergence grant"
+            in problem.detail
+        )
+        assert "those choices did not reach the machine." in problem.detail
+        assert _GRANT_DROPPED_NOTE in problem.detail
+        assert problem.detail.endswith(
+            "They are saved here; apply again once the coordinator is updated."
+        )
+
+    def test_a_dropped_and_a_mismatched_choice_are_both_named(self) -> None:
+        problem = self._problem(
+            _applied(canonical_converge=False),
+            model_access=True,
+            canonical_converge=True,
+        )
+        assert problem is not None
+        assert problem.code == "coord_predates_model_access"
+        assert problem.codes == [
+            "coord_predates_model_access",
+            "canonical_converge_echo_mismatch",
+        ]
+        assert "does not yet carry the model-access choice" in problem.detail
+        assert (
+            "Its answer also carried the toolchain-convergence grant with a different "
+            "value than this save sent" in problem.detail
+        )
+        # The grant was CARRIED (with another value), so no "dropped" note.
+        assert _GRANT_DROPPED_NOTE not in problem.detail
+        # Closing advice per kind: the dropped choice waits on a coordinator
+        # update; the changed one is carried already, so updating is not the
+        # remedy; an owner cannot inspect the coordinator, so the advice is to
+        # apply again and report a choice that still differs.
+        assert problem.detail.endswith(
+            "They are saved here. Apply again for the model-access choice once the "
+            "coordinator is updated; the coordinator carries the "
+            "toolchain-convergence grant but changed it, so apply again; if it still "
+            "differs, the coordinator is changing it — report this to support@qontinui.io."
+        )
+
+    def test_two_mismatched_choices_close_with_the_plural_advice(self) -> None:
+        """Both choices carried, both changed: the plural closing, with no
+        "once the coordinator is updated" (the coordinator knows both
+        fields)."""
+        problem = self._problem(
+            _applied(model_access=True, canonical_converge=False),
+            model_access=False,
+            canonical_converge=True,
+        )
+        assert problem is not None
+        assert problem.code == "model_access_echo_mismatch"
+        assert problem.codes == [
+            "model_access_echo_mismatch",
+            "canonical_converge_echo_mismatch",
+        ]
+        assert "once the coordinator is updated" not in problem.detail
+        assert problem.detail.endswith(
+            "They are saved here; the coordinator carries those choices but changed "
+            "them, so apply again; if they still differ, the coordinator is changing "
+            "them — report this to support@qontinui.io."
+        )
+
+    def test_two_unconfirmed_choices_report_the_first_code_and_name_both(self) -> None:
+        problem = self._problem(
+            httpx.Response(200, content=b"accepted"),
+            model_access=True,
+            canonical_converge=False,
+        )
+        assert problem is not None
+        assert problem.code == "model_access_unconfirmed"
+        assert problem.codes == [
+            "model_access_unconfirmed",
+            "canonical_converge_unconfirmed",
+        ]
+        assert (
+            "whether the model-access choice and the toolchain-convergence grant "
+            "reached the machine is unknown."
+        ) in problem.detail
+        assert problem.detail.endswith("They are saved here; apply again to retry.")
+
+
+class TestCiNodeCanonicalConvergeRoundTrip:
+    """``canonical_converge`` — the device's toolchain-convergence grant —
+    through the route the panel uses, ``PUT /devenv/machines/{id}/ci-node``
+    (plan ``2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant``
+    Phase 3). A save carries the key only when the owner chose Grant or
+    Revoke; "Leave as set on the machine" carries none, so a runner carrying
+    that plan's Phase 1 keeps the grant it holds."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_a_grant_is_forwarded_delivered_and_read_back(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The arming check: Grant answers ``dispatched: true`` with no
+        ``coord_predates_canonical_converge``, against a coord that echoes the
+        key back. Revoke then travels as an explicit false."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            _coord_echoing_without(captured),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "grant-box")
+            # The mount prefix is spelled out (not built from API_PREFIX) so the
+            # request is visibly the route the panel calls: PUT /devenv/machines/{id}/ci-node.
+            url = f"/api/v1/devenv/machines/{machine_id}/ci-node"
+            assert url.startswith(API_PREFIX)
+            r = await client.put(
+                url, json={"enabled": True, "canonical_converge": True}
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["dispatched"] is True
+            assert body["dispatch_error"] is None
+            assert body["consent_relay_errors"] is None
+            assert body["dispatched_at"] is not None
+            assert body["requested"]["canonical_converge"] is True
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["canonical_converge"] is True
+            # The grant rides alone: an unset model-access choice still sends
+            # no key of its own.
+            assert "model_access" not in ci_node
+
+            r = await client.get(url)
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["canonical_converge"] is True
+
+            r = await client.put(
+                url, json={"enabled": True, "canonical_converge": False}
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["dispatched"] is True
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["canonical_converge"] is False
+            r = await client.get(url)
+            assert r.json()["requested"]["canonical_converge"] is False
+
+    @pytest.mark.asyncio
+    async def test_leave_as_set_on_the_machine_sends_no_key(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The other half of the arming check: a save that never chose sends
+        no key — so a runner carrying Phase 1 KEEPS its grant — and needs no
+        echo, even from a coord that predates the field."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            _coord_echoing_without(captured, "canonical_converge"),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "leave-grant-box")
+            # The mount prefix is spelled out (not built from API_PREFIX) so the
+            # request is visibly the route the panel calls: PUT /devenv/machines/{id}/ci-node.
+            url = f"/api/v1/devenv/machines/{machine_id}/ci-node"
+            assert url.startswith(API_PREFIX)
+            r = await client.get(url)
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["canonical_converge"] is None
+
+            r = await client.put(url, json={"enabled": True})
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert "canonical_converge" not in ci_node
+            assert r.json()["dispatched"] is True
+            assert r.json()["requested"]["canonical_converge"] is None
+
+            # An explicit JSON null is the same "not set here".
+            r = await client.put(
+                url, json={"enabled": True, "canonical_converge": None}
+            )
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert "canonical_converge" not in ci_node
+            assert r.json()["dispatched"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_coord_predating_the_grant_is_not_reported_as_delivered(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A coord that already carries ``model_access`` but predates
+        ``canonical_converge`` drops the grant with a 2xx. The owner's Grant
+        must not read as delivered; the other settings were still handed off,
+        so ``dispatched_at`` moves."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            _coord_echoing_without(captured, "canonical_converge"),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "old-coord-grant-box")
+            r = await client.put(
+                # The route the panel calls, spelled out: PUT /devenv/machines/{id}/ci-node.
+                f"/api/v1/devenv/machines/{machine_id}/ci-node",
+                json={
+                    "enabled": True,
+                    "model_access": True,
+                    "canonical_converge": True,
+                },
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 200
+        assert body["dispatch_error"] == "coord_predates_canonical_converge"
+        assert body["consent_relay_errors"] == ["coord_predates_canonical_converge"]
+        assert "toolchain-convergence grant" in body["dispatch_detail"]
+        assert "model-access" not in body["dispatch_detail"]
+        # The directive that DID arrive carried no grant: on an older runner
+        # that revoked it, and the owner is told so.
+        assert _GRANT_DROPPED_NOTE in body["dispatch_detail"]
+        assert body["dispatched_at"] is not None
+        assert body["requested"]["canonical_converge"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            httpx.Response(200, content=b"<html>proxy page</html>"),
+            httpx.Response(200, json={"dispatched": True}),
+        ],
+        ids=["unparseable_body", "no_applied_object"],
+    )
+    async def test_an_answer_that_cannot_confirm_the_grant_is_unconfirmed(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        answer: httpx.Response,
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            if "ci_node" not in json_body:  # the enroll dispatch
+                return httpx.Response(200, json={"dispatched": True})
+            return answer
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "unconfirmed-grant-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "canonical_converge": False},
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "canonical_converge_unconfirmed"
+        assert body["consent_relay_errors"] == ["canonical_converge_unconfirmed"]
+        assert "unknown" in body["dispatch_detail"]
+        assert "turned toolchain convergence off" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    async def test_two_dropped_choices_are_both_named(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A coord predating both fields: the one code slot carries the first
+        (``model_access``, byte-identical to before), ``consent_relay_errors``
+        lists both, and the detail the owner reads names the grant too."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            _coord_echoing_without(captured, "model_access", "canonical_converge"),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "both-dropped-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={
+                    "enabled": True,
+                    "model_access": False,
+                    "canonical_converge": True,
+                },
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "coord_predates_model_access"
+        assert body["consent_relay_errors"] == [
+            "coord_predates_model_access",
+            "coord_predates_canonical_converge",
+        ]
+        assert "model-access choice" in body["dispatch_detail"]
+        assert "toolchain-convergence grant" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    async def test_a_coord_echoing_another_grant_is_an_echo_mismatch(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A coord that carries the field but echoes another value is not an
+        older coord, and is not called one."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            if "ci_node" not in json_body:  # the enroll dispatch
+                return httpx.Response(200, json={"dispatched": True})
+            applied = dict(json_body["ci_node"], canonical_converge=False)
+            return httpx.Response(200, json={"dispatched": True, "applied": applied})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "echo-mismatch-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "canonical_converge": True},
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "canonical_converge_echo_mismatch"
+        assert body["consent_relay_errors"] == ["canonical_converge_echo_mismatch"]
+        assert "with a different value than this save sent" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("field", ["canonical_converge", "model_access"])
+    @pytest.mark.parametrize(
+        "value",
+        ["yes", "on", "1", 1, "true"],
+        ids=["yes", "on", "str1", "int1", "true"],
+    )
+    async def test_a_non_boolean_choice_is_refused_by_the_route(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        field: str,
+        value: object,
+    ) -> None:
+        """A consent or grant is a JSON boolean and nothing else: the lax
+        coercion that read ``"yes"`` as a grant is refused with a 422, nothing
+        is saved and nothing reaches coord."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, f"strict-{field}-box")
+            url = f"{API_PREFIX}/machines/{machine_id}/ci-node"
+            r = await client.put(url, json={"enabled": True, field: value})
+            assert r.status_code == 422, r.text
+            assert "/devenv/ci-node-dispatch" not in captured
+            r = await client.get(url)
+            assert r.json()["configured"] is False
+
+
 class _CiNodeCoordTransport:
     """Stands in for ``httpx.AsyncClient`` UNDER ``post_to_coord``.
 

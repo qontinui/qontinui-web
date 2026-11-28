@@ -28,6 +28,7 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 import {
   CiNodeConfigPanel,
   configsEqual,
+  consentRelayHeadline,
   dispatchRefusalCopy,
   parseConcurrencyInput,
   reachabilityCopy,
@@ -670,6 +671,8 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(label.textContent).toMatch(
       /keeps the last value it received, from here or set on the machine/
     );
+    // Nothing is sent for "leave as set", so there is no re-send to warn of.
+    expect(label.textContent).not.toMatch(/sends this choice again/);
 
     fireEvent.click(screen.getByTestId("ci-node-enabled"));
     expect((await saveAndReadBody()).model_access ?? null).toBeNull();
@@ -708,6 +711,33 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
     expect((await saveAndReadBody()).model_access).toBe(false);
   });
+
+  it.each([
+    ["on", true],
+    ["off", false],
+  ] as const)(
+    "an explicit model-access %s says every later save re-sends it, and that Leave as set stops that",
+    async (choice, stored) => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          state({
+            requested: { ...state().requested, model_access: stored },
+            configured: true,
+          })
+        )
+      );
+      render(<CiNodeConfigPanel machine={MACHINE} />);
+      await screen.findByTestId("ci-node-panel");
+      expect(pressed(choice)).toBe("true");
+      const label = screen.getByTestId("ci-node-model-access-state");
+      expect(label.textContent).toMatch(
+        /Every save from this panel sends this choice again, overriding a change made on the machine since; choose Leave as set on the machine to stop sending it\./
+      );
+      // And it is true: an unrelated edit re-sends the stored choice.
+      fireEvent.click(screen.getByTestId("ci-node-enabled"));
+      expect((await saveAndReadBody()).model_access).toBe(stored);
+    }
+  );
 
   it("a stored false reads back as Off; choosing On saves an explicit true", async () => {
     fetchMock.mockResolvedValueOnce(
@@ -970,5 +1000,377 @@ describe("CiNodeConfigPanel — model access", () => {
     delete legacy.model_access;
     expect(configsEqual({ ...base, model_access: null }, legacy)).toBe(true);
     expect(configsEqual({ ...base, model_access: false }, legacy)).toBe(false);
+  });
+});
+
+/**
+ * "Let CI dispatches converge this machine's toolchains" — the device's
+ * canonical-convergence grant (plan
+ * `2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant`
+ * Phase 3). Three choices; "Leave as set on the machine" is the default and
+ * sends nothing, because this page cannot see the machine's current grant.
+ */
+describe("CiNodeConfigPanel — toolchain-convergence grant", () => {
+  function putBody(call = 1): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[call] as [string, RequestInit];
+    expect(init.method).toBe("PUT");
+    return JSON.parse(String(init.body));
+  }
+
+  function pressed(choice: string): string | null {
+    return screen
+      .getByTestId(`ci-node-canonical-converge-${choice}`)
+      .getAttribute("aria-pressed");
+  }
+
+  async function saveAndReadBody(): Promise<Record<string, unknown>> {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    return putBody();
+  }
+
+  it("renders three choices, says what the grant does before the control, and defaults to leaving it as set", async () => {
+    // The real backend's GET shape: the field present, as null.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, canonical_converge: null },
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const field = await screen.findByTestId("ci-node-canonical-converge");
+
+    expect(
+      within(field).getByTestId("ci-node-canonical-converge-machine")
+        .textContent
+    ).toBe("Leave as set on the machine");
+    expect(
+      within(field).getByTestId("ci-node-canonical-converge-on").textContent
+    ).toBe("Grant");
+    expect(
+      within(field).getByTestId("ci-node-canonical-converge-off").textContent
+    ).toBe("Revoke");
+    expect(pressed("machine")).toBe("true");
+    expect(pressed("on")).toBe("false");
+    expect(pressed("off")).toBe("false");
+
+    // What it does on this machine, stated before the control.
+    const residual = within(field).getByTestId(
+      "ci-node-canonical-converge-residual"
+    );
+    expect(field.textContent).toMatch(/\[canonical\]/);
+    expect(field.textContent).toMatch(/rustup, volta, pyenv/);
+    expect(field.textContent).toMatch(/refused with the drift named/);
+    expect(residual.textContent).toMatch(/not one per repository/);
+    expect(
+      residual.compareDocumentPosition(
+        within(field).getByTestId("ci-node-canonical-converge-on")
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // "Leave as set" says the page cannot see the machine's value.
+    const label = screen.getByTestId("ci-node-canonical-converge-state");
+    expect(label).toHaveAttribute("data-state", "machine");
+    expect(label.textContent).toMatch(
+      /cannot see whether this machine holds the grant right now/
+    );
+    expect(label.textContent).toMatch(/sends nothing for it/);
+    // A runner predating the keep-on-absent change revokes a grant nothing
+    // was sent for; the copy must not promise "kept" there.
+    expect(label.textContent).toMatch(
+      /older runner .* turns it off on any settings change; choose Grant to keep it on there/
+    );
+    // ...and Grant only keeps it on there once the coordinator carries the
+    // grant: an older coordinator drops it and the older runner revokes
+    // anyway, which the save then reports. The copy promises no more.
+    expect(label.textContent).toMatch(
+      /choose Grant to keep it on there once the coordinator carries the grant — until then, a save with Grant reports that the grant did not reach the machine\.$/
+    );
+
+    // The model-access field is still its own control, unchanged.
+    expect(screen.getByTestId("ci-node-model-access-machine")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  });
+
+  it("a grant-only change enables Apply, and Grant saves an explicit true", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("ci-node-canonical-converge-on"));
+    expect(pressed("on")).toBe("true");
+    expect(
+      screen.getByTestId("ci-node-canonical-converge-state")
+    ).toHaveAttribute("data-state", "on");
+    expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
+
+    const body = await saveAndReadBody();
+    expect(body.canonical_converge).toBe(true);
+    // The grant does not speak for the other consent.
+    expect(body.model_access ?? null).toBeNull();
+  });
+
+  it("Revoke saves an explicit false", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    fireEvent.click(screen.getByTestId("ci-node-canonical-converge-off"));
+    expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
+    expect((await saveAndReadBody()).canonical_converge).toBe(false);
+  });
+
+  it.each([
+    ["on", true],
+    ["off", false],
+  ] as const)(
+    "an explicit %s says every later save re-sends it, and that Leave as set stops that",
+    async (choice, stored) => {
+      // A delivered choice is stored, so the next save of ANY setting sends
+      // it again — overriding whatever was set on the machine since.
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          state({
+            requested: { ...state().requested, canonical_converge: stored },
+            configured: true,
+          })
+        )
+      );
+      render(<CiNodeConfigPanel machine={MACHINE} />);
+      await screen.findByTestId("ci-node-panel");
+      expect(pressed(choice)).toBe("true");
+      const label = screen.getByTestId("ci-node-canonical-converge-state");
+      expect(label).toHaveAttribute("data-state", choice);
+      expect(label.textContent).toMatch(
+        /Every save from this panel sends this choice again, overriding a change made on the machine since; choose Leave as set on the machine to stop sending it\./
+      );
+
+      // And it is true: an unrelated edit re-sends the stored choice.
+      fireEvent.click(screen.getByTestId("ci-node-enabled"));
+      expect((await saveAndReadBody()).canonical_converge).toBe(stored);
+    }
+  );
+
+  it("Leave as set does not claim a re-send it does not make", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(
+      screen.getByTestId("ci-node-canonical-converge-state").textContent
+    ).not.toMatch(/sends this choice again/);
+  });
+
+  it("returning to Leave as set disables Apply again, and a save left there sends nothing for the grant", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    fireEvent.click(screen.getByTestId("ci-node-canonical-converge-on"));
+    fireEvent.click(screen.getByTestId("ci-node-canonical-converge-machine"));
+    expect(pressed("machine")).toBe("true");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    // An unrelated save must not grant or revoke.
+    fireEvent.click(screen.getByTestId("ci-node-enabled"));
+    expect((await saveAndReadBody()).canonical_converge ?? null).toBeNull();
+  });
+
+  it("a stored grant reads back as Grant; choosing Leave as set from it is a change that sends nothing", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, canonical_converge: true },
+          configured: true,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(pressed("on")).toBe("true");
+
+    fireEvent.click(screen.getByTestId("ci-node-canonical-converge-machine"));
+    expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
+    expect((await saveAndReadBody()).canonical_converge ?? null).toBeNull();
+  });
+
+  it("a coordinator that predates the grant is reported as not delivered, and Apply can re-send", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, canonical_converge: true },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "coord_predates_canonical_converge",
+          dispatch_detail:
+            "The coordinator accepted the other settings, but it does not yet carry the toolchain-convergence grant, so that choice did not reach the machine.",
+          requested_at: "2026-11-28T12:00:00Z",
+          dispatched_at: "2026-11-28T12:00:01Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    const headline = refusal.querySelector("p.font-medium")?.textContent;
+    expect(headline).toMatch(
+      /does not carry the toolchain-convergence grant yet/
+    );
+    // The directive that did arrive carried no grant, which an older runner
+    // reads as a revoke: "did not reach the machine" alone would hide that.
+    expect(headline).toMatch(
+      /on an older runner the settings that did arrive turned toolchain convergence off/
+    );
+    expect(refusal).toHaveAttribute("data-fixable-here", "false");
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("an answer that could not confirm the grant is UNKNOWN, not 'older coordinator', and Apply can re-send", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, canonical_converge: false },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "canonical_converge_unconfirmed",
+          dispatch_detail:
+            "whether the toolchain-convergence grant reached the machine is unknown",
+          requested_at: "2026-11-28T12:00:00Z",
+          dispatched_at: "2026-11-28T12:00:01Z",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    const headline = refusal.querySelector("p.font-medium")?.textContent;
+    expect(headline).toMatch(/did not confirm the toolchain-convergence grant/);
+    expect(headline).toMatch(
+      /if it did not, an older runner turned toolchain convergence off/
+    );
+    expect(refusal.textContent).not.toMatch(/does not carry/);
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("when both choices failed to arrive, the headline names both and so does the detail", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: {
+            ...state().requested,
+            model_access: false,
+            canonical_converge: true,
+          },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "coord_predates_model_access",
+          consent_relay_errors: [
+            "coord_predates_model_access",
+            "coord_predates_canonical_converge",
+          ],
+          dispatch_detail:
+            "The coordinator accepted the other settings, but it does not yet carry the model-access choice and the toolchain-convergence grant, so those choices did not reach the machine. They are saved here; apply again once the coordinator is updated.",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(refusal.querySelector("p.font-medium")?.textContent).toBe(
+      "Sent, but the coordinator does not carry the model-access choice and the toolchain-convergence grant yet, so those choices did not reach the machine. On an older runner the settings that did arrive turned toolchain convergence off."
+    );
+    expect(screen.getByTestId("ci-node-dispatch-detail").textContent).toMatch(
+      /the model-access choice and the toolchain-convergence grant/
+    );
+    expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+  });
+
+  it("a backend that sends only the first code still gets that code's own headline", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "coord_predates_model_access",
+          dispatch_detail: "detail",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(refusal.querySelector("p.font-medium")?.textContent).toBe(
+      "Sent, but the coordinator does not carry the model-access choice yet, so that choice did not reach the machine."
+    );
+  });
+
+  it.each([
+    ["model_access_echo_mismatch", "model-access choice"],
+    ["canonical_converge_echo_mismatch", "toolchain-convergence grant"],
+  ])(
+    "an echo carrying another value (%s) is said as such, not as an older coordinator, and can be re-sent",
+    async (code, noun) => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          state({
+            configured: true,
+            dispatched: false,
+            dispatch_status: 200,
+            dispatch_error: code,
+            consent_relay_errors: [code],
+            dispatch_detail: "detail",
+            requested_at: "2026-11-28T12:00:00Z",
+            dispatched_at: "2026-11-28T12:00:01Z",
+          })
+        )
+      );
+      render(<CiNodeConfigPanel machine={MACHINE} />);
+      const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+      const headline = refusal.querySelector("p.font-medium")?.textContent;
+      expect(headline).toBe(
+        `Sent, but the coordinator answered with a different ${noun} than this save sent, so the machine may hold a choice you did not make.`
+      );
+      expect(headline).not.toMatch(/does not carry/);
+      expect(screen.getByTestId("ci-node-apply")).not.toBeDisabled();
+    }
+  );
+
+  it("consentRelayHeadline names every choice for mixed or all-unconfirmed codes", () => {
+    expect(
+      consentRelayHeadline([
+        "model_access_unconfirmed",
+        "canonical_converge_unconfirmed",
+      ])
+    ).toBe(
+      "Sent, but the coordinator's answer did not confirm the model-access choice and the toolchain-convergence grant, so whether those choices reached the machine is unknown. If the grant was dropped, an older runner turned toolchain convergence off."
+    );
+    expect(
+      consentRelayHeadline([
+        "coord_predates_model_access",
+        "canonical_converge_echo_mismatch",
+      ])
+    ).toBe(
+      "Sent, but the model-access choice and the toolchain-convergence grant did not reach the machine as chosen."
+    );
+    expect(consentRelayHeadline(["not_a_relay_code"])).toBeUndefined();
+  });
+
+  it("configsEqual treats a config predating the grant as unset, not as a change", () => {
+    const base = state().requested;
+    const legacy = { ...base };
+    delete legacy.canonical_converge;
+    expect(configsEqual({ ...base, canonical_converge: null }, legacy)).toBe(
+      true
+    );
+    expect(configsEqual({ ...base, canonical_converge: true }, legacy)).toBe(
+      false
+    );
+    expect(configsEqual({ ...base, canonical_converge: false }, legacy)).toBe(
+      false
+    );
   });
 });

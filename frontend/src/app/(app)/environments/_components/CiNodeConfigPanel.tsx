@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -248,25 +248,23 @@ export function dispatchRefusalCopy(
       notRefused: true,
     };
   }
-  if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
-    // Coord answered 2xx and published the other settings, but it predates
-    // the model-access field, so the owner's choice never left it.
-    return {
-      headline:
-        "Sent, but the coordinator does not carry the model-access choice yet, so that choice did not reach the machine.",
-      fixableHere: false,
-      detail,
-    };
-  }
-  if (state.dispatch_error === MODEL_ACCESS_UNCONFIRMED) {
-    // Coord answered 2xx but did not say what it sent: unknown, not a refusal
-    // and not evidence of an older coordinator.
-    return {
-      headline:
-        "Sent, but the coordinator's answer did not confirm the model-access choice, so whether it reached the machine is unknown.",
-      fixableHere: false,
-      detail,
-    };
+  const relayHeadline = isConsentRelayCode(state.dispatch_error)
+    ? (consentRelayHeadline(
+        state.consent_relay_errors?.length
+          ? state.consent_relay_errors
+          : [state.dispatch_error]
+      ) ?? consentRelayHeadline([state.dispatch_error]))
+    : undefined;
+  if (relayHeadline !== undefined) {
+    // Coord answered 2xx and published the other settings, but a consent or
+    // grant choice is not confirmed: the coordinator predates that field (the
+    // choice never left it), its answer carried another value, or its answer
+    // did not say what it sent (unknown — not a refusal, and not evidence of
+    // an older coordinator). `dispatch_error` names the first such choice;
+    // `consent_relay_errors` names every one, so the headline can too, and a
+    // second is never lost behind the first. A backend predating that field
+    // sends only the code, which still gets its own headline.
+    return { headline: relayHeadline, fixableHere: false, detail };
   }
   if (status === 400 || status === 422) {
     return {
@@ -314,6 +312,141 @@ export const NOT_DISPATCHED = "coord_not_dispatched";
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
 export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
+/** The backend's `dispatch_error` when coord echoed `model_access` back with
+ *  a different value than the save sent. */
+export const MODEL_ACCESS_ECHO_MISMATCH = "model_access_echo_mismatch";
+/** The same three outcomes for the toolchain-convergence grant. */
+export const CANONICAL_CONVERGE_NOT_RELAYED =
+  "coord_predates_canonical_converge";
+export const CANONICAL_CONVERGE_UNCONFIRMED = "canonical_converge_unconfirmed";
+export const CANONICAL_CONVERGE_ECHO_MISMATCH =
+  "canonical_converge_echo_mismatch";
+
+type ConsentRelayKind = "not_relayed" | "unconfirmed" | "echo_mismatch";
+
+interface ConsentRelayCode {
+  /** The choice it is about, article included, for a combined headline. */
+  noun: string;
+  kind: ConsentRelayKind;
+  /** The headline when this is the only consent-relay problem. */
+  headline: string;
+  /**
+   * What this outcome did on a runner that reads a missing grant as a revoke
+   * (one predating the keep-an-unstated-grant fix), for a combined headline.
+   * Absent when a missing key leaves the runner's value alone.
+   */
+  olderRunnerNote?: string;
+}
+
+const GRANT_DROPPED_NOTE =
+  "On an older runner the settings that did arrive turned toolchain convergence off.";
+const GRANT_MAYBE_DROPPED_NOTE =
+  "If the grant was dropped, an older runner turned toolchain convergence off.";
+
+/**
+ * The consent-relay codes — a 2xx whose echo does not confirm a consent or
+ * grant choice the save made — and how each is told. One table, so a code
+ * that {@link dispatchRefusalCopy} names is exactly a code that
+ * {@link canResendUnchanged} lets the owner re-send.
+ *
+ * The grant's not-carried and unconfirmed headlines say what happened on the
+ * machine, not only what did not: the directive that DID arrive carried no
+ * grant, and a runner predating the keep-an-unstated-grant fix reads a
+ * missing grant as a revoke.
+ */
+const CONSENT_RELAY_CODES: ReadonlyMap<string, ConsentRelayCode> = new Map([
+  [
+    MODEL_ACCESS_NOT_RELAYED,
+    {
+      noun: "the model-access choice",
+      kind: "not_relayed",
+      headline:
+        "Sent, but the coordinator does not carry the model-access choice yet, so that choice did not reach the machine.",
+    },
+  ],
+  [
+    MODEL_ACCESS_UNCONFIRMED,
+    {
+      noun: "the model-access choice",
+      kind: "unconfirmed",
+      headline:
+        "Sent, but the coordinator's answer did not confirm the model-access choice, so whether it reached the machine is unknown.",
+    },
+  ],
+  [
+    MODEL_ACCESS_ECHO_MISMATCH,
+    {
+      noun: "the model-access choice",
+      kind: "echo_mismatch",
+      headline:
+        "Sent, but the coordinator answered with a different model-access choice than this save sent, so the machine may hold a choice you did not make.",
+    },
+  ],
+  [
+    CANONICAL_CONVERGE_NOT_RELAYED,
+    {
+      noun: "the toolchain-convergence grant",
+      kind: "not_relayed",
+      headline:
+        "Sent, but the coordinator does not carry the toolchain-convergence grant yet, so that choice did not reach the machine — and on an older runner the settings that did arrive turned toolchain convergence off.",
+      olderRunnerNote: GRANT_DROPPED_NOTE,
+    },
+  ],
+  [
+    CANONICAL_CONVERGE_UNCONFIRMED,
+    {
+      noun: "the toolchain-convergence grant",
+      kind: "unconfirmed",
+      headline:
+        "Sent, but the coordinator's answer did not confirm the toolchain-convergence grant, so whether it reached the machine is unknown — and if it did not, an older runner turned toolchain convergence off.",
+      olderRunnerNote: GRANT_MAYBE_DROPPED_NOTE,
+    },
+  ],
+  [
+    CANONICAL_CONVERGE_ECHO_MISMATCH,
+    {
+      noun: "the toolchain-convergence grant",
+      kind: "echo_mismatch",
+      headline:
+        "Sent, but the coordinator answered with a different toolchain-convergence grant than this save sent, so the machine may hold a choice you did not make.",
+    },
+  ],
+]);
+
+/** Whether `code` is one of the consent-relay codes in {@link CONSENT_RELAY_CODES}. */
+function isConsentRelayCode(code: string | null): code is string {
+  return code !== null && CONSENT_RELAY_CODES.has(code);
+}
+
+/**
+ * The headline for one answer's consent-relay codes (`consent_relay_errors`,
+ * in field order). One code gets its own headline; several get one that
+ * names every choice, so the headline never names only the first of two
+ * choices that both failed to arrive. Unknown codes are ignored; `undefined`
+ * when none is known.
+ */
+export function consentRelayHeadline(codes: string[]): string | undefined {
+  const known = codes
+    .map((code) => CONSENT_RELAY_CODES.get(code))
+    .filter((entry): entry is ConsentRelayCode => entry !== undefined);
+  const [first] = known;
+  if (first === undefined) return undefined;
+  if (known.length === 1) return first.headline;
+  const nouns = known.map((entry) => entry.noun).join(" and ");
+  const kinds = new Set(known.map((entry) => entry.kind));
+  let lead: string;
+  if (kinds.size === 1 && kinds.has("not_relayed")) {
+    lead = `Sent, but the coordinator does not carry ${nouns} yet, so those choices did not reach the machine.`;
+  } else if (kinds.size === 1 && kinds.has("unconfirmed")) {
+    lead = `Sent, but the coordinator's answer did not confirm ${nouns}, so whether those choices reached the machine is unknown.`;
+  } else {
+    lead = `Sent, but ${nouns} did not reach the machine as chosen.`;
+  }
+  const notes = known.flatMap((entry) =>
+    entry.olderRunnerNote ? [entry.olderRunnerNote] : []
+  );
+  return [lead, ...notes].join(" ");
+}
 
 /**
  * True when the saved settings have not been sent since they were last saved:
@@ -329,8 +462,9 @@ export function savedButUnsent(state: CiNodeConfigState): boolean {
 
 /**
  * Whether Apply may re-send the saved settings unchanged. Yes when the panel's
- * own copy tells the owner to apply again: a deferred delivery, the two
- * model-access outcomes, a transport failure (coord never answered, so
+ * own copy tells the owner to apply again: a deferred delivery, the
+ * consent-relay outcomes (model access and the toolchain-convergence grant,
+ * not carried or not confirmed), a transport failure (coord never answered, so
  * `dispatch_status` is null and the copy says to try again shortly), or — read
  * (`dispatched === null`, after a reload) — settings saved but not sent since.
  * Also for a save coord accepted but did not send for no named reason
@@ -345,12 +479,7 @@ export function canResendUnchanged(state: CiNodeConfigState): boolean {
   // Accepted but not sent for no named reason: no newer change is known to
   // exist, so an unchanged re-send is not known to undo one.
   if (state.dispatch_error === NOT_DISPATCHED) return true;
-  if (
-    state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
-    state.dispatch_error === MODEL_ACCESS_UNCONFIRMED
-  ) {
-    return true;
-  }
+  if (isConsentRelayCode(state.dispatch_error)) return true;
   if (state.dispatched === false && state.dispatch_status === null) return true;
   return state.dispatched === null && savedButUnsent(state);
 }
@@ -391,34 +520,59 @@ export function configsEqual(a: CiNodeConfig, b: CiNodeConfig): boolean {
     // change nobody made.
     (a.max_concurrent_builds ?? null) === (b.max_concurrent_builds ?? null) &&
     a.min_free_disk_gb === b.min_free_disk_gb &&
-    // Same normalisation: a stored config predating `model_access` reads as
-    // "not set here", not as a change.
+    // Same normalisation: a stored config predating `model_access` or
+    // `canonical_converge` reads as "not set here", not as a change — and a
+    // grant-only change still enables Apply.
     (a.model_access ?? null) === (b.model_access ?? null) &&
+    (a.canonical_converge ?? null) === (b.canonical_converge ?? null) &&
     a.repo_allowlist.length === b.repo_allowlist.length &&
     a.repo_allowlist.every((r, i) => r === b.repo_allowlist[i])
   );
 }
 
-/** The model-access control's three choices. `machine` is `null` on the wire. */
-export type ModelAccessChoice = "machine" | "on" | "off";
+/**
+ * A consent or grant control's three choices. `machine` is `null` on the
+ * wire: qontinui.io sends nothing for it, and a runner that keeps an unstated
+ * value keeps what it holds.
+ */
+export type ConsentChoice = "machine" | "on" | "off";
 
-export function modelAccessChoice(value: boolean | null): ModelAccessChoice {
+export function consentChoice(value: boolean | null): ConsentChoice {
   if (value === true) return "on";
   if (value === false) return "off";
   return "machine";
 }
 
-const MODEL_ACCESS_CHOICE_VALUE: Record<ModelAccessChoice, boolean | null> = {
+const CONSENT_CHOICE_VALUE: Record<ConsentChoice, boolean | null> = {
   machine: null,
   on: true,
   off: false,
 };
 
-const MODEL_ACCESS_CHOICE_LABEL: Record<ModelAccessChoice, string> = {
+const CONSENT_CHOICES: readonly ConsentChoice[] = ["machine", "on", "off"];
+
+const MODEL_ACCESS_CHOICE_LABEL: Record<ConsentChoice, string> = {
   machine: "Leave as set on the machine",
   on: "On",
   off: "Off",
 };
+
+const CANONICAL_CONVERGE_CHOICE_LABEL: Record<ConsentChoice, string> = {
+  machine: "Leave as set on the machine",
+  on: "Grant",
+  off: "Revoke",
+};
+
+/**
+ * Said under an explicit choice of either consent or grant (On/Off, Grant/
+ * Revoke). The choice is stored with the settings, so it rides along with
+ * EVERY later save from this panel — an unrelated edit re-sends it and
+ * overrides whatever was set on the machine since. "Leave as set on the
+ * machine" is the only way to stop that, so the copy says so where the
+ * choice is made.
+ */
+const CONSENT_RESENT_NOTE =
+  "Every save from this panel sends this choice again, overriding a change made on the machine since; choose Leave as set on the machine to stop sending it.";
 
 /**
  * What the current choice means. `null` is NEVER drawn as "on": qontinui.io
@@ -428,10 +582,114 @@ const MODEL_ACCESS_CHOICE_LABEL: Record<ModelAccessChoice, string> = {
  * on by default.
  */
 export function modelAccessStateText(value: boolean | null): string {
-  if (value === true) return "On: qontinui.io tells the machine to allow it.";
+  if (value === true)
+    return `On: qontinui.io tells the machine to allow it. ${CONSENT_RESENT_NOTE}`;
   if (value === false)
-    return "Off: qontinui.io tells the machine to refuse it.";
+    return `Off: qontinui.io tells the machine to refuse it. ${CONSENT_RESENT_NOTE}`;
   return "Left as set on the machine: qontinui.io sends nothing for this, so the runner keeps the last value it received, from here or set on the machine (on, if it never received one).";
+}
+
+/**
+ * What the current grant choice means. `null` is NEVER drawn as granted or as
+ * revoked: qontinui.io cannot read this machine's grant back, sends nothing
+ * for it, and the runner keeps whatever it holds — so the copy says the page
+ * does not know, rather than guessing either way. "Keeps" is the runner half
+ * of the plan (Phase 1); a runner predating it reads a missing grant as a
+ * revoke, and the copy says that too, because an explicit Grant is the one
+ * choice that keeps the grant on such a machine — but only once the
+ * coordinator carries the grant (plan Phase 2). A coordinator predating it
+ * drops the Grant, the older runner revokes anyway, and the save says so
+ * (`coord_predates_canonical_converge`), so the copy does not promise more.
+ */
+export function canonicalConvergeStateText(value: boolean | null): string {
+  if (value === true)
+    return `Grant: qontinui.io tells the machine a dispatch may converge its toolchains. ${CONSENT_RESENT_NOTE}`;
+  if (value === false)
+    return `Revoke: qontinui.io tells the machine not to, so such dispatches are refused. ${CONSENT_RESENT_NOTE}`;
+  return "Left as set on the machine: qontinui.io cannot see whether this machine holds the grant right now, and sends nothing for it, so the runner keeps whatever it holds — from an earlier save here or set on the machine (off, if it was never set). An older runner cannot keep a grant nothing was sent for and turns it off on any settings change; choose Grant to keep it on there once the coordinator carries the grant — until then, a save with Grant reports that the grant did not reach the machine.";
+}
+
+interface ConsentChoiceFieldProps {
+  /** The control's name: its heading and its button group's label. */
+  label: string;
+  /** What the choice does on this machine, stated BEFORE the control. */
+  body: ReactNode;
+  /** What the choice does not stop or limit, also before the control. */
+  residual: ReactNode;
+  /** Button text for each of the three choices. */
+  choiceLabels: Record<ConsentChoice, string>;
+  /** The sentence under the control saying what the current choice means. */
+  stateText: (value: boolean | null) => string;
+  value: boolean | null;
+  onChange: (next: boolean | null) => void;
+  /**
+   * `data-testid` prefix: the field is `<prefix>`, its residual
+   * `<prefix>-residual`, each choice `<prefix>-<choice>` and the state line
+   * `<prefix>-state` (carrying `data-state`).
+   */
+  testIdPrefix: string;
+}
+
+/**
+ * A consent or grant this surface may set on the machine, as three choices
+ * rather than a switch. A two-state switch has to draw "not set here" as one
+ * of on/off, and once toggled it cannot return to "not set", so an unrelated
+ * save would then send an explicit value — and could re-enable, or revoke,
+ * something the owner set on the machine itself. The consequence, including
+ * what the choice does NOT stop, is stated before the control, as for
+ * `enabled`.
+ */
+function ConsentChoiceField({
+  label,
+  body,
+  residual,
+  choiceLabels,
+  stateText,
+  value,
+  onChange,
+  testIdPrefix,
+}: ConsentChoiceFieldProps) {
+  const current = consentChoice(value);
+  return (
+    <div className="space-y-2" data-testid={testIdPrefix}>
+      <div className="space-y-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm text-muted-foreground">{body}</p>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid={`${testIdPrefix}-residual`}
+        >
+          {residual}
+        </p>
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label={label}
+      >
+        {CONSENT_CHOICES.map((choice) => (
+          <Button
+            key={choice}
+            type="button"
+            size="sm"
+            variant={current === choice ? "default" : "outline"}
+            aria-pressed={current === choice}
+            data-testid={`${testIdPrefix}-${choice}`}
+            onClick={() => onChange(CONSENT_CHOICE_VALUE[choice])}
+          >
+            {choiceLabels[choice]}
+          </Button>
+        ))}
+      </div>
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid={`${testIdPrefix}-state`}
+        data-state={current}
+      >
+        {stateText(value)}
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -439,12 +697,7 @@ export function modelAccessStateText(value: boolean | null): string {
  * CI model-access off-switches (plan
  * `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6; the tenant and repo
  * scopes live on Dev Ops ▸ CI). The consequence — including what off does NOT
- * stop (D11) — is stated before the control, as for `enabled`.
- *
- * Three choices, not a switch: a two-state switch has to draw "not set here"
- * as one of on/off, and once toggled it cannot return to "not set", so an
- * unrelated save would then send an explicit value and could re-enable a
- * machine its owner switched off on the machine.
+ * stop (D11) — is stated before the control.
  */
 function ModelAccessField({
   value,
@@ -453,14 +706,11 @@ function ModelAccessField({
   value: boolean | null;
   onChange: (next: boolean | null) => void;
 }) {
-  const current = modelAccessChoice(value);
   return (
-    <div className="space-y-2" data-testid="ci-node-model-access">
-      <div className="space-y-1">
-        <p className="text-sm font-medium">
-          Let CI steps use this machine&apos;s Claude accounts
-        </p>
-        <p className="text-sm text-muted-foreground">
+    <ConsentChoiceField
+      label="Let CI steps use this machine's Claude accounts"
+      body={
+        <>
           A repository can mark CI steps that call a model (its{" "}
           <code className="font-mono text-xs">.qontinui/ci.toml</code> declares{" "}
           <code className="font-mono text-xs">[model]</code>). On this machine
@@ -468,44 +718,72 @@ function ModelAccessField({
           the budget the repository declares; the step itself is never given a
           login. The runner allows it unless it is turned off. Turned off, those
           steps still run, without model access, and their results read UNKNOWN.
-        </p>
-        <p
-          className="text-sm text-muted-foreground"
-          data-testid="ci-node-model-access-residual"
-        >
+        </>
+      }
+      residual={
+        <>
           What off does not stop: CI steps run as your user, so a step that
           deliberately points <code className="font-mono text-xs">claude</code>{" "}
           at this machine&apos;s account files can still use them. Only allow
           repositories you trust.
-        </p>
-      </div>
-      <div
-        className="flex flex-wrap items-center gap-2"
-        role="group"
-        aria-label="Let CI steps use this machine's Claude accounts"
-      >
-        {(["machine", "on", "off"] as const).map((choice) => (
-          <Button
-            key={choice}
-            type="button"
-            size="sm"
-            variant={current === choice ? "default" : "outline"}
-            aria-pressed={current === choice}
-            data-testid={`ci-node-model-access-${choice}`}
-            onClick={() => onChange(MODEL_ACCESS_CHOICE_VALUE[choice])}
-          >
-            {MODEL_ACCESS_CHOICE_LABEL[choice]}
-          </Button>
-        ))}
-      </div>
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid="ci-node-model-access-state"
-        data-state={current}
-      >
-        {modelAccessStateText(value)}
-      </p>
-    </div>
+        </>
+      }
+      choiceLabels={MODEL_ACCESS_CHOICE_LABEL}
+      stateText={modelAccessStateText}
+      value={value}
+      onChange={onChange}
+      testIdPrefix="ci-node-model-access"
+    />
+  );
+}
+
+/**
+ * "Let CI dispatches converge this machine's toolchains" — the device's
+ * canonical-convergence GRANT (plan
+ * `2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant`
+ * Phase 3). Before it, a remote settings change could not carry the grant at
+ * all, and every one revoked it as a side effect. "Leave as set" is the
+ * default and sends nothing, because this page cannot see the machine's
+ * current grant.
+ */
+function CanonicalConvergeField({
+  value,
+  onChange,
+}: {
+  value: boolean | null;
+  onChange: (next: boolean | null) => void;
+}) {
+  return (
+    <ConsentChoiceField
+      label="Let CI dispatches converge this machine's toolchains"
+      body={
+        <>
+          A repository can require that its builds run at the canonical
+          toolchain versions (its{" "}
+          <code className="font-mono text-xs">.qontinui/ci.toml</code> declares{" "}
+          <code className="font-mono text-xs">[canonical]</code>). With the
+          grant, a dispatch from such a repository may install or switch this
+          machine&apos;s global toolchains — rustup, volta, pyenv — toward the
+          canonical versions before it builds. Without it, such a dispatch is
+          refused with the drift named, and the toolchains are left alone. The
+          runner ships with the grant off.
+        </>
+      }
+      residual={
+        <>
+          What the grant does not limit: it is one grant for this machine, not
+          one per repository — any repository on the list above that declares{" "}
+          <code className="font-mono text-xs">[canonical]</code> may use it —
+          and the toolchains it changes are the ones everything else on this
+          machine uses too, not a copy kept for CI.
+        </>
+      }
+      choiceLabels={CANONICAL_CONVERGE_CHOICE_LABEL}
+      stateText={canonicalConvergeStateText}
+      value={value}
+      onChange={onChange}
+      testIdPrefix="ci-node-canonical-converge"
+    />
   );
 }
 
@@ -874,6 +1152,13 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
       <ModelAccessField
         value={draft.model_access ?? null}
         onChange={(next) => setDraft((d) => ({ ...d, model_access: next }))}
+      />
+
+      <CanonicalConvergeField
+        value={draft.canonical_converge ?? null}
+        onChange={(next) =>
+          setDraft((d) => ({ ...d, canonical_converge: next }))
+        }
       />
 
       {/* The delivery record. Deliberately worded as "requested"/"sent", never

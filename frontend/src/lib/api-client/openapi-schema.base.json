@@ -9485,8 +9485,19 @@
         "type": "object"
       },
       "CiNodeConfig": {
-        "description": "The ``CiNodeSettings`` fields, with the runner's own defaults.\n\n``model_access`` is the exception: its default is ``None`` (\"not set\nhere\"), not the runner's ``True``, because an absent value must leave the\nrunner's stored consent alone rather than overwrite it.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
+        "description": "The ``CiNodeSettings`` fields, with the runner's own defaults.\n\n``model_access`` and ``canonical_converge`` are the exceptions: their\ndefault is ``None`` (\"not set here\"), not the runner's own value, because\nan absent value must leave the runner's stored consent or grant alone\nrather than overwrite it.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
+          "canonical_converge": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Converge"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -9536,12 +9547,26 @@
         "type": "object"
       },
       "CiNodeConfigResponse": {
-        "description": "A machine's DESIRED CI-node configuration and how far it has travelled.\n\nEvery field that could be mistaken for \"what the runner is running right\nnow\" is named for what it actually is. Web has no read-back channel for the\nrunner's settings file, so it reports what was requested, when it was\nhanded to coord, and whether coord could even reach the device \u2014 and never\nasserts that the device applied it.",
+        "description": "A machine's DESIRED CI-node configuration and how far it has travelled.\n\nEvery field that could be mistaken for \"what the runner is running right\nnow\" is named for what it actually is. Web has no read-back channel for the\nrunner's settings file, so it reports what was requested, when it was\nhanded to coord, and whether coord could even reach the device \u2014 and never\nasserts that the device applied it. So ``requested.model_access`` and\n``requested.canonical_converge`` reading ``None`` mean the latest save here\ndid not set them (nothing was ever saved, or the owner chose to leave them\nas set on the machine), not that the device holds no consent or grant.",
         "properties": {
           "configured": {
             "default": false,
             "title": "Configured",
             "type": "boolean"
+          },
+          "consent_relay_errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent Relay Errors"
           },
           "coord_device_id": {
             "anyOf": [
