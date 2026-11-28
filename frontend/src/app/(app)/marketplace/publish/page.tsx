@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Eye } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePublishForm } from "./_hooks/usePublishForm";
-import { useSecurityScan } from "./_hooks/useSecurityScan";
+import { usePublishPreCheck } from "./_hooks/usePublishPreCheck";
 import { PublishHeader } from "./_components/PublishHeader";
 import { DetailsTab } from "./_components/DetailsTab";
 import { CodeTab } from "./_components/CodeTab";
@@ -27,8 +27,7 @@ export default function PublishPackagePage() {
     isPublishing,
   } = usePublishForm();
 
-  const { showSecurityScan, securityScanPassed, handleSecurityScan } =
-    useSecurityScan();
+  const { preCheckResult, runPreCheck } = usePublishPreCheck(formState.code);
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
@@ -110,11 +109,10 @@ export default function PublishPackagePage() {
 
           <PublishSidebar
             code={formState.code}
-            showSecurityScan={showSecurityScan}
-            securityScanPassed={securityScanPassed}
+            preCheckResult={preCheckResult}
             isFormValid={!!isFormValid()}
             isPublishing={isPublishing}
-            onSecurityScan={() => handleSecurityScan(formState.code)}
+            onPreCheck={runPreCheck}
             onPublish={handlePublish}
           />
         </div>

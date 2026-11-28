@@ -2,21 +2,34 @@ import { ArrowLeft, Download, Shield, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
+import {
+  SCAN_STATUS_BRIDGE_ID,
+  SCAN_TONE_SURFACE,
+  SCAN_TONE_TEXT,
+  ScanIcon,
+} from "@/components/marketplace/ScanStatus";
+import { scanDisplay } from "@/types/code-packages";
 import type { CodePackage } from "@/types/code-packages";
 
 interface PackageHeaderProps {
   pkg: CodePackage;
-  hasSecurityIssues: boolean;
   onBack: () => void;
   onInstallClick: () => void;
 }
 
+/**
+ * The package page header. It shows the latest version's served scan status
+ * but does not gate Install on it: the install dialog's per-version guard
+ * does, as the server does per version.
+ */
 export function PackageHeader({
   pkg,
-  hasSecurityIssues,
   onBack,
   onInstallClick,
 }: PackageHeaderProps) {
+  const latest = pkg.latest_version ?? null;
+  const scan = latest ? scanDisplay(latest.security_scan) : null;
   return (
     <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
       <div className="flex items-center gap-3">
@@ -49,17 +62,24 @@ export function PackageHeader({
             </AlertDescription>
           </Alert>
         )}
-        {hasSecurityIssues && (
-          <Alert variant="destructive" className="py-1 px-3">
-            <AlertDescription className="text-sm">
-              <AlertTriangle className="w-3 h-3 inline mr-1" />
-              Security issues detected
-            </AlertDescription>
-          </Alert>
+        {scan ? (
+          <div
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border py-1 px-3 text-sm",
+              SCAN_TONE_SURFACE[scan.tone]
+            )}
+            data-ui-bridge-id={SCAN_STATUS_BRIDGE_ID}
+            data-scan-status={scan.status}
+          >
+            <ScanIcon display={scan} className="w-3 h-3" />
+            <span className={SCAN_TONE_TEXT[scan.tone]}>{scan.label}</span>
+          </div>
+        ) : (
+          <Badge variant="outline">No published version</Badge>
         )}
         <Button
           onClick={onInstallClick}
-          disabled={pkg.deprecated || hasSecurityIssues}
+          disabled={pkg.deprecated || !latest}
           className="bg-primary"
         >
           <Download className="w-4 h-4 mr-2" />

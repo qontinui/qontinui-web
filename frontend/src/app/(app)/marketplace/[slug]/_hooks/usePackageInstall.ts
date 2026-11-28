@@ -46,6 +46,7 @@ export function usePackageInstall(packageId: string | undefined) {
     setInstallDialogOpen,
     installStatus,
     installProgress,
+    installError: installPackageMutation.error?.message,
     handleInstallClick,
     handleInstall,
   };

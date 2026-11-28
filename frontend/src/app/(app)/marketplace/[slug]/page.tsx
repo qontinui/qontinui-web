@@ -38,6 +38,7 @@ export default function PackageDetailsPage() {
     setInstallDialogOpen,
     installStatus,
     installProgress,
+    installError,
     handleInstallClick,
     handleInstall,
   } = usePackageInstall(pkg?.id);
@@ -68,15 +69,10 @@ export default function PackageDetailsPage() {
     return <PackageNotFound onBack={handleBack} />;
   }
 
-  const hasSecurityIssues =
-    pkg.latest_version.security_scan.scanned &&
-    !pkg.latest_version.security_scan.passed;
-
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       <PackageHeader
         pkg={pkg}
-        hasSecurityIssues={hasSecurityIssues}
         onBack={handleBack}
         onInstallClick={handleInstallClick}
       />
@@ -121,6 +117,7 @@ export default function PackageDetailsPage() {
         onInstall={handleInstall}
         installStatus={installStatus}
         installProgress={installProgress}
+        error={installError}
       />
     </div>
   );

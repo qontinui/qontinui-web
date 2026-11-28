@@ -37,6 +37,7 @@ import type {
   PackageSearchResult,
   PackageInstallation,
   PackageRating,
+  PackageVersion,
   CreatePackageRequest,
   UpdatePackageRequest,
   PublishVersionRequest,
@@ -51,14 +52,22 @@ export const packageKeys = {
   lists: () => [...packageKeys.all, "list"] as const,
   list: (filters?: SearchFilters) =>
     [...packageKeys.lists(), { filters }] as const,
+  /**
+   * Every detail entry. A detail is cached under whatever the page fetched it
+   * by — the marketplace page uses the URL slug — while mutations know only
+   * the numeric id, so a mutation invalidates this prefix rather than
+   * `detail(id)`, which would miss the slug-keyed entry.
+   */
   details: () => [...packageKeys.all, "detail"] as const,
-  detail: (id: string) => [...packageKeys.details(), id] as const,
+  detail: (idOrSlug: string) => [...packageKeys.details(), idOrSlug] as const,
   popular: () => [...packageKeys.all, "popular"] as const,
   myPackages: () => [...packageKeys.all, "my-packages"] as const,
   installed: (projectId: string) =>
     [...packageKeys.all, "installed", projectId] as const,
   ratings: (packageId: string) =>
     [...packageKeys.all, "ratings", packageId] as const,
+  versions: (packageId: string) =>
+    [...packageKeys.all, "versions", packageId] as const,
 };
 
 // API service adapter - uses CodePackageService
@@ -69,6 +78,10 @@ const packageApi = {
 
   async getPackage(id: string): Promise<CodePackage> {
     return codePackageService.getPackage(id);
+  },
+
+  async getPackageVersions(packageId: string): Promise<PackageVersion[]> {
+    return codePackageService.getPackageVersions(packageId);
   },
 
   async getPopularPackages(): Promise<CodePackage[]> {
@@ -150,9 +163,9 @@ export function usePackages(filters?: SearchFilters) {
 }
 
 /**
- * Hook to fetch a single package by ID
+ * Hook to fetch a single package
  *
- * @param id - Package ID to fetch
+ * @param id - The package's URL slug (what `getPackage` resolves)
  * @param enabled - Whether to run the query (defaults to true)
  */
 export function usePackageDetails(id: string, enabled = true) {
@@ -230,6 +243,22 @@ export function usePackageRatings(packageId: string, enabled = true) {
 }
 
 /**
+ * Hook to fetch every published version of a package, newest first, each
+ * carrying the security scan status the API served for it
+ *
+ * @param packageId - Numeric package ID (as a string)
+ * @param enabled - Whether to run the query
+ */
+export function usePackageVersions(packageId: string, enabled = true) {
+  return useQuery({
+    queryKey: packageKeys.versions(packageId),
+    queryFn: () => packageApi.getPackageVersions(packageId),
+    enabled: enabled && !!packageId,
+    staleTime: 60000,
+  });
+}
+
+/**
  * Hook to create a new package
  *
  * Features:
@@ -241,23 +270,23 @@ export function useCreatePackage() {
 
   return useMutation({
     mutationFn: (data: CreatePackageRequest) => packageApi.createPackage(data),
-    onSuccess: (newPackage) => {
+    onSuccess: () => {
       // Invalidate lists to show new package
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
-
-      // Set the new package in cache
-      queryClient.setQueryData(packageKeys.detail(newPackage.id), newPackage);
+      // The create response names no latest version, so it is not seeded as
+      // a detail entry; any cached detail is refetched instead.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }
 
 /**
- * Hook to update an existing package
+ * Hook to update an existing package.
  *
- * Features:
- * - Optimistic updates for immediate UI feedback
- * - Automatic rollback on error
+ * No optimistic cache write: the detail page caches under the slug, not the
+ * id this mutation is given, so a write keyed by id would land nowhere. The
+ * whole detail prefix is invalidated on success instead.
  */
 export function useUpdatePackage() {
   const queryClient = useQueryClient();
@@ -265,37 +294,10 @@ export function useUpdatePackage() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePackageRequest }) =>
       packageApi.updatePackage(id, data),
-    onMutate: async ({ id, data }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: packageKeys.detail(id) });
-
-      // Snapshot previous value
-      const previousPackage = queryClient.getQueryData<CodePackage>(
-        packageKeys.detail(id)
-      );
-
-      // Optimistically update
-      if (previousPackage) {
-        queryClient.setQueryData<CodePackage>(packageKeys.detail(id), {
-          ...previousPackage,
-          ...data,
-        });
-      }
-
-      return { previousPackage, id };
-    },
-    onError: (_err, _variables, context) => {
-      // Rollback on error
-      if (context?.previousPackage) {
-        queryClient.setQueryData(
-          packageKeys.detail(context.id),
-          context.previousPackage
-        );
-      }
-    },
-    onSuccess: (_data, { id }) => {
-      // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: packageKeys.detail(id) });
+    onSuccess: () => {
+      // Refetch to ensure consistency — the whole detail prefix, since the
+      // detail page caches under the slug, not this id.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
@@ -320,9 +322,13 @@ export function usePublishVersion() {
       packageId: string;
       data: PublishVersionRequest;
     }) => packageApi.publishVersion(packageId, data),
-    onSuccess: (updatedPackage, { packageId }) => {
-      // Update package details with new version
-      queryClient.setQueryData(packageKeys.detail(packageId), updatedPackage);
+    onSuccess: (_updatedPackage, { packageId }) => {
+      // Refetch every detail entry (the page caches under the slug, not this
+      // id) so the new version and its scan are read from the server.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.versions(packageId),
+      });
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
@@ -349,9 +355,11 @@ export function useInstallPackage() {
         queryKey: packageKeys.installed(variables.project_id),
       });
 
-      // Update package stats (download count)
+      // Update package stats (download count). The detail page caches
+      // under the slug, so the whole detail prefix is invalidated.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
       queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.package_id),
+        queryKey: packageKeys.versions(variables.package_id),
       });
     },
   });
@@ -381,9 +389,7 @@ export function useUninstallPackage() {
         queryKey: packageKeys.installed(variables.projectId),
       });
       // Also invalidate package details to update install count if shown
-      queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.packageId),
-      });
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }
@@ -407,9 +413,7 @@ export function useRatePackage() {
       });
 
       // Invalidate package details to update average rating
-      queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.package_id),
-      });
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }
