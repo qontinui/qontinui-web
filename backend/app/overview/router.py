@@ -17,9 +17,13 @@ Only the verbs a spec lists are routed.
 
 The contract, uniformly
 -----------------------
-* **Reads are open to any member of the ACTIVE project; writes follow the
-  spec's permission rule**, resolved by :mod:`app.overview.permissions` — the
-  same function whose answer every read serves as ``can_edit``.
+* **Reads are open to any member of the ACTIVE project holding a team role;
+  writes follow the spec's permission rule**, resolved by
+  :mod:`app.overview.permissions` — the same function whose answer every read
+  serves as ``can_edit``. A member without a team role is refused with 403
+  ``not_shared_with_you`` everywhere except a resource declaring
+  ``outside_read="marked"``, whose store serves only what is marked for them
+  and says ``withheld`` when it left something out.
 * **Never last-write-wins.** A write without ``If-Match`` is ``428``; a stale
   one is ``409`` whose body carries the server's current copy, so a client can
   show both sides instead of only saying "somebody else saved".
@@ -57,6 +61,7 @@ from app.overview.permissions import (
     refuse_device_on_operator_only,
     require_edit,
     require_read,
+    resolve_overview_access,
 )
 from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
@@ -106,6 +111,11 @@ class ResourceDescriptor(BaseModel):
     #: Whether the CALLER may write this resource in the ACTIVE project —
     #: the same answer the write routes enforce.
     can_edit: bool
+    #: Whether the CALLER may read this resource at all — the same answer the
+    #: read routes enforce. ``False`` only for a caller without a team role on
+    #: a resource that declares no outside read (``outside_read="none"``); a
+    #: ``marked`` resource is readable and filtered per record.
+    can_read: bool
     #: JSON Schemas of the read shape and of each write body the resource
     #: takes. The editing kit validates a form against these, so the form and
     #: the API apply one set of rules.
@@ -132,13 +142,17 @@ def _descriptor(spec: ResourceSpec, access: OverviewAccess) -> ResourceDescripto
         description=spec.description,
         operations=sorted(spec.operations),
         can_edit=access.can_edit(spec.permission),
+        can_read=access.can_read(spec.outside_read),
         schemas=schemas,
     )
 
 
 @router.get("/resources", response_model=ResourceCatalog)
 async def read_catalog(
-    access: OverviewAccess = Depends(get_overview_access),
+    # Not refused for a caller without a team role: the catalog holds no
+    # project content, and it is how such a caller learns what it may read
+    # (`can_read`), from the same answer the read routes enforce.
+    access: OverviewAccess = Depends(resolve_overview_access),
 ) -> ResourceCatalog:
     """Every overview resource, with what the caller may do in this project."""
     return ResourceCatalog(
@@ -203,7 +217,11 @@ async def read_change_log(
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> ChangeLogPage:
-    """Newest first. Readable by any member, like the records it describes."""
+    """Newest first. Readable by any member holding a team role. A caller
+    without one is refused (403 ``not_shared_with_you``, by
+    :func:`get_overview_access`) for every resource, ``marked`` ones too:
+    each row carries a write's before and after values, which would show an
+    unshared document's text."""
     if resource not in REGISTRY:
         raise HTTPException(status_code=404, detail="unknown_resource")
     rows = await change_log.history(
@@ -252,6 +270,7 @@ def _envelopes(spec: ResourceSpec) -> tuple[type[BaseModel], type[BaseModel]]:
         total=(int, ...),
         can_edit=(bool, ...),
         degraded=(str | None, None),
+        withheld=(bool, False),
     )
     item_model = create_model(
         f"{stem}Item",
@@ -294,7 +313,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
 
         async def list_records(
             request: Request,
-            access: OverviewAccess = Depends(require_read(spec.permission)),
+            access: OverviewAccess = Depends(
+                require_read(spec.permission, spec.outside_read)
+            ),
             db: AsyncSession = Depends(get_async_db),
             store: Any = Depends(store_dep),
         ) -> Any:
@@ -305,6 +326,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 total=len(result.items),
                 can_edit=access.can_edit(spec.permission),
                 degraded=result.degraded,
+                withheld=result.withheld,
             )
 
         router.add_api_route(
@@ -322,7 +344,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             record_id: str,
             request: Request,
             response: Response,
-            access: OverviewAccess = Depends(require_read(spec.permission)),
+            access: OverviewAccess = Depends(
+                require_read(spec.permission, spec.outside_read)
+            ),
             db: AsyncSession = Depends(get_async_db),
             store: Any = Depends(store_dep),
         ) -> Any:

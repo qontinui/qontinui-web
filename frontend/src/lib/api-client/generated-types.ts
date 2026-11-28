@@ -19010,7 +19010,11 @@ export interface paths {
         };
         /**
          * Read Change Log
-         * @description Newest first. Readable by any member, like the records it describes.
+         * @description Newest first. Readable by any member holding a team role. A caller
+         *     without one is refused (403 ``not_shared_with_you``, by
+         *     :func:`get_overview_access`) for every resource, ``marked`` ones too:
+         *     each row carries a write's before and after values, which would show an
+         *     unshared document's text.
          */
         get: operations["api_v1_overview_change_log_get"];
         put?: never;
@@ -33913,6 +33917,11 @@ export interface components {
             items: components["schemas"]["CostCategoryRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /** CostCategoryCreate */
         CostCategoryCreate: {
@@ -33992,6 +34001,11 @@ export interface components {
             items: components["schemas"]["CostEntryRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /** CostEntryCreate */
         CostEntryCreate: {
@@ -38478,6 +38492,11 @@ export interface components {
             items: components["schemas"]["EstimateRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * EvaluationDatasetCreate
@@ -40605,6 +40624,11 @@ export interface components {
             items: components["schemas"]["FileRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * FilterNarrowing
@@ -42603,6 +42627,12 @@ export interface components {
             /** Version */
             version: number;
             /**
+             * Visibility
+             * @default internal
+             * @enum {string}
+             */
+            visibility: "internal" | "shared";
+            /**
              * Withdrawn
              * @default false
              */
@@ -42612,12 +42642,16 @@ export interface components {
          * IntentDocumentUpdate
          * @description Absent fields are left alone. ``overview_order: null`` returns the
          *     document to the page's default order; ``body`` cannot be cleared.
+         *     ``visibility`` sets the frontmatter's ``visibility:`` key and nothing else
+         *     in the block; ``visibility: null`` leaves it alone, like an absent field.
          */
         IntentDocumentUpdate: {
             /** Body */
             body?: string | null;
             /** Overview Order */
             overview_order?: number | null;
+            /** Visibility */
+            visibility?: ("internal" | "shared") | null;
         };
         /** IntentDocumentsItem */
         IntentDocumentsItem: {
@@ -42635,6 +42669,11 @@ export interface components {
             items: components["schemas"]["IntentDocumentRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * InvitationAccept
@@ -45221,6 +45260,11 @@ export interface components {
             items: components["schemas"]["MilestoneRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /** MilestonesSection */
         MilestonesSection: {
@@ -46921,6 +46965,11 @@ export interface components {
             items: components["schemas"]["PageRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * PaginatedAnnotationsResponse
@@ -47477,6 +47526,11 @@ export interface components {
             items: components["schemas"]["PhaseProgressRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * PhaseProgressRead
@@ -50362,6 +50416,11 @@ export interface components {
             items: components["schemas"]["RecurringCostRead"][];
             /** Total */
             total: number;
+            /**
+             * Withheld
+             * @default false
+             */
+            withheld: boolean;
         };
         /**
          * RecurringPeriod
@@ -51434,6 +51493,8 @@ export interface components {
         ResourceDescriptor: {
             /** Can Edit */
             can_edit: boolean;
+            /** Can Read */
+            can_read: boolean;
             /** Description */
             description: string;
             /** Name */

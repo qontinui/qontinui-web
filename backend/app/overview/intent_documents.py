@@ -38,6 +38,20 @@ What the adapter adds on top of coord's own prompt-document routes:
 * **One permission answer.** Coord accepts a prompt-document write only from
   an admin of the tenant, so this resource's rule is ``coord_admin`` — the
   project's ``editing_roles`` cannot widen a store that does not read it.
+
+* **Who outside the team may read it: the ``visibility:`` mark.** Plan
+  ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+  Phase 5 (D5). A document's frontmatter key ``visibility: shared`` or
+  ``internal`` is served as ``visibility``; no frontmatter, no key, a value
+  this module does not know, or the key twice reads ``internal`` — fail
+  closed. A caller WITHOUT a team role (``OverviewAccess.team_role``) is
+  served only ``shared`` documents: the list leaves the rest out and says
+  ``withheld`` (never how many or which), and a get of one answers 404, as for
+  a document that does not exist, so its name is not confirmed either. A team
+  role reads everything, as before. Coord filters the same way for that
+  caller at its own doors (Phase 10); this is the second line. A tenant admin
+  sets the mark with ``visibility`` on an update, which splices that one key
+  into the stored frontmatter and leaves every other byte as stored.
 """
 
 from __future__ import annotations
@@ -49,6 +63,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+import yaml  # type: ignore[import-untyped]
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -85,6 +100,11 @@ IntentKind = Literal[
     "decision_record",
 ]
 IntentState = Literal["authored", "skeleton", "unknown", "unreadable"]
+#: Who may read a document. ``internal``: the operator's team only.
+#: ``shared``: also a member holding only an outside role. Absent means
+#: internal.
+Visibility = Literal["internal", "shared"]
+VISIBILITY_KEY = "visibility"
 
 #: Coord's own name rule for a hand-authored document.
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -109,11 +129,285 @@ def split_frontmatter(raw: str) -> tuple[str | None, str]:
     return match.group(0), raw[match.end() :].lstrip()
 
 
-def join_frontmatter(frontmatter: str | None, prose: str) -> str:
+#: A frontmatter block split into its three parts: the opening delimiter line
+#: (an optional BOM included), the YAML between the delimiters, and the closing
+#: delimiter with the line ending before it. The block is
+#: ``opening + inner + closing``; ``inner`` has no line ending of its own on
+#: its last line, because that ending belongs to ``closing``.
+_BLOCK_PARTS = re.compile(
+    r"\A(?P<opening>\ufeff?---[ \t]*(?P<nl>\r?\n))(?P<inner>[\s\S]*?)"
+    r"(?P<closing>\r?\n---[ \t]*(?:\r?\n)?)\Z"
+)
+
+_STR_TAG = "tag:yaml.org,2002:str"
+
+#: The longest frontmatter block the parser is asked to read. Real blocks are
+#: a few hundred bytes; anything past this reads ``internal`` and is not
+#: spliced, so one oversized document cannot cost every list read a parse of
+#: it. (Nesting depth is bounded separately: see ``RecursionError`` below.)
+MAX_FRONTMATTER_CHARS = 16_000
+
+
+#: The refusal when no splice both parses and reads back.
+NOT_EDITABLE_HERE = (
+    "the visibility line cannot be placed in this frontmatter without breaking "
+    "it — edit it by hand in the console"
+)
+#: The refusal for a block the parser is not asked to read, or cannot.
+TOO_LARGE_OR_DEEP = "frontmatter too large or deeply nested to edit here"
+
+
+class FrontmatterNotEditable(ValueError):
+    """The frontmatter cannot take a ``visibility:`` key without risk of
+    corrupting it: it does not parse as YAML, or it is not a block-style
+    mapping. Served as 422, never written around."""
+
+
+def _top_level_mapping(inner: str) -> yaml.MappingNode | None:
+    """The block's YAML as a node tree, read by the YAML parser itself — so a
+    ``visibility:`` that is really the second line of a multi-line quoted
+    scalar is not mistaken for a key. ``None`` for an empty block (or one of
+    comments only). Raises :class:`FrontmatterNotEditable` for anything that
+    is not a block-style mapping, or does not parse."""
+    if len(inner) > MAX_FRONTMATTER_CHARS:
+        raise FrontmatterNotEditable(TOO_LARGE_OR_DEEP)
+    try:
+        root = yaml.compose(inner, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as exc:
+        raise FrontmatterNotEditable(
+            f"the frontmatter is not valid YAML: {exc}"
+        ) from exc
+    except RecursionError as exc:
+        # PyYAML's composer recurses once per nesting level, so a block nested
+        # a few hundred deep exhausts the stack. That is not a YAMLError, and
+        # left uncaught it would 500 every list read of the tenant.
+        raise FrontmatterNotEditable(TOO_LARGE_OR_DEEP) from exc
+    if root is None:
+        return None
+    if not isinstance(root, yaml.MappingNode) or root.flow_style:
+        raise FrontmatterNotEditable(
+            "the frontmatter is not a block-style mapping of keys"
+        )
+    return root
+
+
+def _visibility_entries(
+    root: yaml.MappingNode | None,
+) -> list[tuple[yaml.Node, yaml.Node]]:
+    """Every TOP-LEVEL ``visibility`` key of the mapping, with its value node.
+    Merge keys (``<<: *base``) are not expanded, so a ``visibility`` that only
+    arrives through one does not count; coord's serde_yaml agrees."""
+    if root is None:
+        return []
+    return [
+        (key, value)
+        for key, value in root.value
+        if isinstance(key, yaml.ScalarNode)
+        and key.tag == _STR_TAG
+        and key.value == VISIBILITY_KEY
+    ]
+
+
+def _stored_visibility(frontmatter: str | None) -> tuple[int, str | None]:
+    """``(how many top-level visibility keys, the value when exactly one is a
+    plain string)``. An unparseable block reads as ``(0, None)`` here — the
+    read fails closed; the write refuses separately."""
+    if not frontmatter:
+        return 0, None
+    parts = _BLOCK_PARTS.match(frontmatter)
+    if parts is None:
+        return 0, None
+    try:
+        entries = _visibility_entries(_top_level_mapping(parts.group("inner")))
+    except FrontmatterNotEditable:
+        return 0, None
+    if len(entries) != 1:
+        return len(entries), None
+    value = entries[0][1]
+    if isinstance(value, yaml.ScalarNode) and value.tag == _STR_TAG:
+        return 1, value.value
+    return 1, None
+
+
+def visibility_of(frontmatter: str | None) -> Visibility:
+    """``shared`` only when the block parses as a YAML mapping with exactly one
+    top-level ``visibility`` key whose value is the string ``shared``;
+    ``internal`` otherwise — no block, a block that does not parse, no key, the
+    key twice, an empty or unknown value (fail closed)."""
+    count, value = _stored_visibility(frontmatter)
+    return "shared" if count == 1 and value == "shared" else "internal"
+
+
+def _line_span(lines: list[str], key: yaml.Node, value: yaml.Node) -> tuple[int, int]:
+    """The ``[first, last)`` line indexes a top-level entry occupies: from its
+    key's line through the line its value ends on, indented children of a
+    nested value included. A value ending at column 0 ended on the line
+    before (the mark sits at the start of the next line).
+
+    For a nested or block-scalar value the parser's end mark lies on the NEXT
+    token's line, so blank lines and comment lines between the value and the
+    next key would fall inside the span. They belong to what follows, so the
+    span is walked back past them and they are kept."""
+    first = key.start_mark.line
+    end = value.end_mark
+    last = end.line if end.column == 0 and end.line > first else end.line + 1
+    # An alias value (`visibility: *s`) is the anchored node itself, whose
+    # marks lie where the anchor was: never less than the key's own line.
+    last = min(max(last, first + 1), len(lines))
+    while last - 1 > first:
+        text = lines[last - 1].strip()
+        if text and not text.startswith("#"):
+            break
+        last -= 1
+    return first, last
+
+
+def splice_visibility(
+    frontmatter: str | None, value: Visibility, nl: str = "\n"
+) -> str:
+    """The frontmatter block with exactly one top-level ``visibility: <value>``
+    line, every other byte as it was.
+
+    * One or more existing top-level ``visibility`` entries: the FIRST entry's
+      whole span (its line, and any indented children of a nested value) is
+      replaced by the one line; every further duplicate is removed.
+    * None: the line is added before the closing delimiter, in the block's own
+      line ending.
+    * No block at all: a new block holding only that key, in ``nl``.
+
+    Un-sharing whose one-line splice does not take falls back to removing the
+    key. Raises :class:`FrontmatterNotEditable` when the block does not parse
+    as a block-style mapping, or no result both parses and reads back as
+    ``value`` — e.g. the key is anchored, aliased or indented."""
+    if not frontmatter:
+        return f"---{nl}{VISIBILITY_KEY}: {value}{nl}---{nl}"
+    parts = _BLOCK_PARTS.match(frontmatter)
+    if parts is None:  # pragma: no cover — split_frontmatter only yields closed blocks
+        raise FrontmatterNotEditable("the frontmatter block has no closing delimiter")
+    newline = parts.group("nl")
+    inner = parts.group("inner")
+    closing = parts.group("closing")
+    entries = _visibility_entries(_top_level_mapping(inner))
+    line = f"{VISIBILITY_KEY}: {value}"
+    # The inner lines WITH their endings: the last one borrows the newline
+    # that opens the closing delimiter, which is given back below.
+    closing_nl = "\r\n" if closing.startswith("\r\n") else "\n"
+    lines = (inner + closing_nl).splitlines(keepends=True) if inner else []
+    # Canonical fences on every written block: coord reads frontmatter only
+    # when line 1 is exactly `---` and the closing line is exactly `---`, so a
+    # BOM before the opening fence and trailing blanks on either fence go.
+    opening = "---" + newline
+    # The line ending after the closing fence is the fence's own, as stored.
+    after_fence = closing[len(closing.rstrip("\r\n")) :]
+    canonical_closing = closing_nl + "---" + after_fence
+
+    def assemble(replacement: str | None) -> str:
+        """The block with every visibility entry removed and, when
+        ``replacement`` is given, that one line in the first entry's place
+        (or before the closing delimiter when there was none)."""
+        if entries:
+            spans = [_line_span(lines, k, v) for k, v in entries]
+            first_start, first_end = spans[0]
+            last_line = lines[first_end - 1]
+            ending = last_line[len(last_line.rstrip("\r\n")) :] or newline
+            drop: set[int] = set()
+            for start, end in spans:
+                drop.update(range(start, end))
+            rebuilt: list[str] = []
+            for index, text in enumerate(lines):
+                if index == first_start and replacement is not None:
+                    rebuilt.append(replacement + ending)
+                if index not in drop:
+                    rebuilt.append(text)
+            body = "".join(rebuilt)
+        else:
+            body = "".join(lines) + (
+                replacement + closing_nl if replacement is not None else ""
+            )
+        trimmed = body[: -len(closing_nl)] if body.endswith(closing_nl) else body
+        return opening + trimmed + canonical_closing
+
+    result = assemble(line)
+    if _parses(result) and visibility_of(result) == value:
+        if _stored_visibility(result)[0] == 1:
+            return result
+    if value == "internal" and entries:
+        # Un-sharing: when the one line does not take, remove the key (absent
+        # reads internal) — but only into a block that still parses.
+        removed = assemble(None)
+        if _parses(removed) and visibility_of(removed) == "internal":
+            return removed
+    # Never a doubled key, never a block that does not parse: coord's own
+    # YAML reader refuses a duplicate key on some kinds, and a doubled block
+    # would grow by one key on every write.
+    raise FrontmatterNotEditable(NOT_EDITABLE_HERE)
+
+
+def _parses(block: str) -> bool:
+    """Whether a frontmatter block reads as a block-style mapping (or is
+    empty).
+
+    This is PyYAML, i.e. YAML 1.1. Coord reads with serde_yaml 0.9 (YAML 1.2,
+    duplicate keys refused), so it can still refuse a body this passes — `on`
+    against `"on"`, say — and that refusal surfaces as 422
+    ``rejected_by_store``."""
+    parts = _BLOCK_PARTS.match(block)
+    if parts is None:
+        return False
+    try:
+        _top_level_mapping(parts.group("inner"))
+    except FrontmatterNotEditable:
+        return False
+    return True
+
+
+def check_editable(frontmatter: str | None) -> None:
+    """Raise :class:`FrontmatterNotEditable` when a stored block cannot take a
+    visibility write at all — it is oversized, nested too deeply, or does not
+    parse. Such a block reads ``internal``, and a write of EITHER value on it
+    is a 422, never a silent no-op."""
+    if not frontmatter:
+        return
+    parts = _BLOCK_PARTS.match(frontmatter)
+    if parts is None:  # pragma: no cover — split_frontmatter only yields closed blocks
+        raise FrontmatterNotEditable("the frontmatter block has no closing delimiter")
+    _top_level_mapping(parts.group("inner"))
+
+
+def _newline_of(raw: str) -> str:
+    return "\r\n" if "\r\n" in raw else "\n"
+
+
+def splice_visibility_into_body(raw: str, value: Visibility) -> str:
+    """A stored document body with its frontmatter's ``visibility:`` set:
+    the block is spliced (:func:`splice_visibility`) and everything after it
+    is kept byte for byte. A body with no block gets one, in the body's own
+    line ending, followed by a blank line, as :func:`join_frontmatter` writes
+    it. The block must open the body — coord reads frontmatter only when the
+    first line is exactly ``---`` — so a leading BOM is dropped: before or
+    after a fence it means nothing."""
+    match = _FRONTMATTER.match(raw)
+    if not match:
+        nl = _newline_of(raw)
+        rest = raw[1:] if raw.startswith("\ufeff") else raw
+        return f"{splice_visibility(None, value, nl)}{nl}{rest}"
+    block = match.group(0)
+    return splice_visibility(block, value) + raw[match.end() :]
+
+
+def join_frontmatter(frontmatter: str | None, prose: str, nl: str | None = None) -> str:
+    """The block, a blank line, then the prose. ``nl`` is the line ending the
+    join writes (default: the block's own). A BOM at the start of the prose is
+    dropped: after a fence it means nothing, and in front of the block it
+    would hide the frontmatter from coord, which reads it only when the first
+    line is exactly ``---``."""
     if not frontmatter:
         return prose
-    block = frontmatter if frontmatter.endswith("\n") else frontmatter + "\n"
-    return f"{block}\n{prose}"
+    nl = nl or _newline_of(frontmatter)
+    if prose.startswith("\ufeff"):
+        prose = prose[1:]
+    block = frontmatter if frontmatter.endswith("\n") else frontmatter + nl
+    return f"{block}{nl}{prose}"
 
 
 def record_id(kind: str, name: str) -> str:
@@ -146,6 +440,11 @@ class IntentDocumentRead(BaseModel):
     body: str
     #: The YAML block agents read, verbatim; read-only here.
     frontmatter: str | None
+    #: Who may read it, from the frontmatter's ``visibility:`` key. Absent,
+    #: unknown or repeated reads ``internal`` (:func:`visibility_of`). A
+    #: skeleton or unreadable document on a list read reads ``internal``,
+    #: since its frontmatter was not read.
+    visibility: Visibility = "internal"
     #: The document's position in its section, 1-based. ``None``: the page's
     #: default order.
     overview_order: int | None
@@ -188,15 +487,19 @@ class IntentDocumentCreate(BaseModel):
 
 class IntentDocumentUpdate(BaseModel):
     """Absent fields are left alone. ``overview_order: null`` returns the
-    document to the page's default order; ``body`` cannot be cleared."""
+    document to the page's default order; ``body`` cannot be cleared.
+    ``visibility`` sets the frontmatter's ``visibility:`` key and nothing else
+    in the block; ``visibility: null`` leaves it alone, like an absent field."""
 
     body: str | None = Field(default=None, min_length=1, max_length=MAX_BODY_CHARS)
     overview_order: int | None = Field(default=None, ge=1, le=MAX_ORDER)
+    visibility: Visibility | None = None
 
     @model_validator(mode="after")
     def _something_and_no_blank_body(self) -> IntentDocumentUpdate:
-        if not self.model_fields_set & {"body", "overview_order"}:
-            raise ValueError("give body, overview_order, or both")
+        meaningful = self.model_fields_set & {"body", "overview_order"}
+        if not meaningful and self.visibility is None:
+            raise ValueError("give body, overview_order, visibility, or several")
         if "body" in self.model_fields_set and (
             self.body is None or not self.body.strip()
         ):
@@ -304,6 +607,7 @@ def to_read(
         description=doc.get("description"),
         body=prose,
         frontmatter=frontmatter,
+        visibility=visibility_of(frontmatter),
         overview_order=_order(doc),
         state=resolved,
         error=error,
@@ -334,6 +638,34 @@ def _coord_error(exc: HTTPException, record: str) -> Exception:
     if exc.status_code in (400, 422):
         return StoreRefused(422, "rejected_by_store", detail)
     return exc
+
+
+def _visibility_changes(frontmatter: str | None, value: Visibility) -> bool:
+    """Whether setting ``value`` changes what is stored. Already exactly one
+    top-level key holding that string: no. ``internal`` on a document with no
+    key: no — absent already reads internal, and a write would only move the
+    version. Anything else (duplicates, an empty or unknown value): yes, so the
+    splice leaves exactly one key. A ``shared`` mark behind non-canonical
+    fences is rewritten too: coord's ``frontmatter_span`` (the reader its
+    prompt-document validation uses) does not see such a block, so the
+    rewrite puts the block where coord sees it."""
+    count, stored = _stored_visibility(frontmatter)
+    if count == 1 and stored == value:
+        return value == "shared" and not _fences_canonical(frontmatter)
+    return not (value == "internal" and count == 0)
+
+
+#: The fences exactly as coord reads them: no BOM, nothing after `---`.
+_CANONICAL_CLOSING = re.compile(r"\r?\n---(?:\r?\n)?")
+
+
+def _fences_canonical(frontmatter: str | None) -> bool:
+    parts = _BLOCK_PARTS.match(frontmatter or "")
+    if parts is None:
+        return False
+    return parts.group("opening") in ("---\n", "---\r\n") and bool(
+        _CANONICAL_CLOSING.fullmatch(parts.group("closing"))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -388,12 +720,19 @@ class IntentDocumentStore:
     ) -> ListResult:
         wanted_kinds = [k for k in filters.get("kind", []) if k in INTENT_KINDS]
         kinds = set(wanted_kinds) if filters.get("kind") else set(INTENT_KINDS)
+        team = ctx.access.team_role
         listing = await self.coord.list(ctx.access.tenant_id)
-        rows = [
+        intent_rows = [
             d
             for d in listing.get("documents") or []
-            if isinstance(d, dict) and d.get("kind") in kinds
+            if isinstance(d, dict) and d.get("kind") in INTENT_KINDS
         ]
+        rows = [d for d in intent_rows if d.get("kind") in kinds]
+        # For a caller without a team role, `withheld` is judged over EVERY
+        # intent kind, not just the kinds asked for: it is then one answer for
+        # the tenant, so filtering by kind cannot reveal which kinds hold
+        # documents that are not shared with them.
+        other_rows = [d for d in intent_rows if d.get("kind") not in kinds]
         gate = asyncio.Semaphore(LIST_CONCURRENCY)
 
         async def one(row: dict[str, Any]) -> IntentDocumentRead:
@@ -413,13 +752,37 @@ class IntentDocumentStore:
                     error=str(exc) or "unreadable",
                 )
 
-        items = await asyncio.gather(*(one(r) for r in rows))
+        items = list(await asyncio.gather(*(one(r) for r in rows)))
         degraded = listing.get("degraded")
-        return ListResult(items=list(items), degraded=degraded if degraded else None)
+        withheld = False
+        if not team:
+            # A caller without a team role sees only what is marked for them.
+            # A skeleton or an unreadable document reads internal (its
+            # frontmatter was not read), so it is withheld too — never shown
+            # as "not written" to someone who could not have seen it anyway.
+            shared = [d for d in items if d.visibility == "shared"]
+            withheld = len(shared) != len(items)
+            items = shared
+            # The other kinds count too. Every one of their rows is read,
+            # concurrently under the same `gate` (LIST_CONCURRENCY) as the
+            # list itself, with no early exit, so the answer's timing does not
+            # depend on where an unshared document sits.
+            if other_rows:
+                others = await asyncio.gather(*(one(r) for r in other_rows))
+                withheld = withheld or any(d.visibility != "shared" for d in others)
+        served: list[BaseModel] = list(items)
+        return ListResult(
+            items=served, degraded=degraded if degraded else None, withheld=withheld
+        )
 
     async def get(self, ctx: StoreContext, record: str) -> IntentDocumentRead:
         kind, name = parse_record_id(record)
-        return to_read(await self._get_raw(ctx, kind, name))
+        document = to_read(await self._get_raw(ctx, kind, name))
+        if not ctx.access.team_role and document.visibility != "shared":
+            # 404, as for a document that does not exist: a 403 would confirm
+            # the name to someone it is not shared with.
+            raise RecordNotFound(record)
+        return document
 
     async def _place(
         self, ctx: StoreContext, doc: dict[str, Any], order: int | None
@@ -533,6 +896,42 @@ class IntentDocumentStore:
             else:
                 attrs["overview_order"] = payload.overview_order
             patch["attrs"] = attrs
+        if "visibility" in fields and payload.visibility is not None:
+            # A block the parser cannot read (oversized, nested too deeply,
+            # not YAML) reads internal; a write of EITHER value on it is a
+            # 422, never a silent no-op that looks like it landed.
+            try:
+                check_editable(before.frontmatter)
+            except FrontmatterNotEditable as exc:
+                raise StoreRefused(422, "frontmatter_not_editable", str(exc)) from exc
+        if (
+            "visibility" in fields
+            and payload.visibility is not None
+            and _visibility_changes(before.frontmatter, payload.visibility)
+        ):
+            # The line ending the stored document uses, else the new prose's.
+            stored = current.get("body") or ""
+            nl = _newline_of(stored if "\n" in stored else payload.body or "")
+            try:
+                if "body" in patch:
+                    # The prose changes too: re-join it to the spliced block.
+                    patch["body"] = join_frontmatter(
+                        splice_visibility(before.frontmatter, payload.visibility, nl),
+                        payload.body or "",
+                        nl,
+                    )
+                else:
+                    # Only the mark changes: splice into the body AS STORED,
+                    # so every byte outside that one key is kept.
+                    patch["body"] = splice_visibility_into_body(
+                        current.get("body") or "", payload.visibility
+                    )
+            except FrontmatterNotEditable as exc:
+                raise StoreRefused(422, "frontmatter_not_editable", str(exc)) from exc
+            patch["change_description"] = (
+                patch.get("change_description", "Edited on the Project Overview")
+                + f"; visibility set to {payload.visibility}"
+            )
         if "body" not in patch and "attrs" not in patch:
             return before, before  # nothing changed; no write, no version move
 

@@ -178,7 +178,12 @@ def coord(monkeypatch: pytest.MonkeyPatch, owner) -> FakeCoord:
     fake = FakeCoord()
     fake.user_id = str(owner.id)
     fake.memberships[ADMIN_TOKEN] = [(TENANT_T, ["admin"])]
-    fake.memberships[VIEWER_TOKEN] = [(TENANT_T, ["viewer"])]
+    # A member who may read but not edit. Coord has no ``viewer`` role: the
+    # members page's "Viewer" is the coord role ``operator`` (a team role), and
+    # a role outside the team is refused every read here except a marked one
+    # (plan 2026-11-26-questions-only-another-party-can-answer-have-no-queue-
+    # no-answerer-and-no-visibility, Phase 5; tests/test_overview_outside_read.py).
+    fake.memberships[VIEWER_TOKEN] = [(TENANT_T, ["operator"])]
     fake.memberships[UNLINKED_TOKEN] = (403, "no_linked_operator")
     fake.memberships[OPERATOR_TOKEN] = [(TENANT_T, ["operator"])]
     fake.device_tokens.update(fake.memberships)

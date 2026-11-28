@@ -1304,7 +1304,11 @@ def _app(
 
     app.dependency_overrides[get_async_db] = _db
     app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
-        tenant_id=tenant, roles=("viewer",)
+        # A plain team member (coord has no ``viewer`` role; the members
+        # page's "Viewer" is ``operator``). A role outside the team is refused
+        # the schedule (403 not_shared_with_you, tests/test_overview_outside_read.py).
+        tenant_id=tenant,
+        roles=("operator",),
     )
     if kind == "device":
         app.dependency_overrides[get_overview_principal] = lambda: OverviewPrincipal(

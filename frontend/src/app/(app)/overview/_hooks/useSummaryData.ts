@@ -36,6 +36,7 @@ import {
   type IntentDocument,
   type IntentEntry,
   type SummaryIntentKind,
+  type Visibility,
 } from "../_lib/intent";
 import { parseProjectState } from "@/components/admin/coord/coordHomeStatus";
 import {
@@ -66,6 +67,12 @@ export interface IntentData {
    * then means "cannot see", not "nothing written".
    */
   degraded: string | null;
+  /**
+   * The server left out documents that are not shared with this reader (a
+   * member without a team role). The page says so, with no count and no
+   * titles, so a shorter list is never read as "that is all there is".
+   */
+  withheld: boolean;
 }
 
 function errorMessage(err: unknown): string {
@@ -168,6 +175,7 @@ export function useSummaryData(tenantId: string | null, hold: boolean) {
       state: "ready",
       entries: arrange(list.items),
       degraded: list.degraded,
+      withheld: list.withheld === true,
     };
   }, [documents.list]);
 
@@ -234,11 +242,31 @@ export function useSummaryData(tenantId: string | null, hold: boolean) {
     [findDoc, update]
   );
 
+  /** Set who may read a document: the server splices the one frontmatter
+   *  key and leaves the rest of the block as stored. Answers a sentence the
+   *  reader can act on, or null once saved. */
+  const setVisibility = useCallback(
+    async (id: string, visibility: Visibility): Promise<string | null> => {
+      const current = findDoc(id);
+      if (!current) return "This document is no longer here.";
+      const result = await update(
+        current,
+        { visibility },
+        { optimistic: (doc) => ({ ...doc, visibility }) }
+      );
+      if (result.ok) return null;
+      return "conflict" in result
+        ? "Somebody else changed this document just now. Try again."
+        : result.error;
+    },
+    [findDoc, update]
+  );
+
   const createDocument = useCallback(
     (kind: SummaryIntentKind, name: string, body: string) =>
       create({ kind, name, body }),
     [create]
   );
 
-  return { intent, progress, saveBody, move, createDocument };
+  return { intent, progress, saveBody, move, setVisibility, createDocument };
 }

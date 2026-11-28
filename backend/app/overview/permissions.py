@@ -33,6 +33,24 @@ refuse a device outright, reads included (:data:`DEVICE_REFUSALS`): a
 ``coord_admin`` resource, because coord stores those behind operator routes
 that reject a device JWT; and ``project_admin``, because those settings decide
 who else may edit, and a device acts for its user with nobody watching.
+
+Who may READ: a team role, or a resource that declared it (plan
+``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+Phase 5, D5). A caller whose roles in this tenant hold a TEAM role
+(:data:`TEAM_ROLES`, coord ``rbac.rs``'s operator hierarchy) or who is qontinui
+staff reads every resource, as before. Anyone else — a member holding only an
+outside role — is refused with 403 ``not_shared_with_you``
+(:data:`NOT_SHARED_WITH_YOU`) on every overview read, unless the resource
+declares ``outside_read="marked"`` on its :class:`ResourceSpec`, and then the
+store serves only what is marked for them. It fails CLOSED by construction:
+:func:`get_overview_access` refuses such a caller, so a route added later
+refuses them too until it opts in through :func:`resolve_overview_access`.
+
+Today no such caller reaches this module in production: web resolves a person
+through coord ``/admin/coord/me``, which refuses a member without the
+``operator`` role (``tenant_not_resolved``). The rule is built now so the
+stakeholder role (that plan's Phases 10–11) meets it, and it is proved with
+injected roles (``tests/test_overview_outside_read.py``).
 """
 
 from __future__ import annotations
@@ -67,6 +85,22 @@ from app.services.coord_jwks import kid_outside_coord_family
 
 PermissionRule = Literal["editing_roles", "project_admin", "coord_admin"]
 
+#: How a caller WITHOUT a team role reads a resource. ``none`` — not at all
+#: (403 :data:`NOT_SHARED_WITH_YOU`); the default, so a resource that never
+#: declared one fails closed. ``marked`` — only the records marked for them;
+#: the store filters (``intent_documents`` serves only ``visibility: shared``).
+OutsideRead = Literal["none", "marked"]
+
+#: Coord's operator hierarchy (coord ``crates/coord/src/rbac.rs``): the roles
+#: of the operator's TEAM, plus ``owner``: coord counts owner as admin-class
+#: (``principal_headers.rs`` ADMIN_ROLES), and qontinui-coord PR #4627 (open,
+#: not yet on coord's main) admits owner at its ``TenantId`` team-role floor.
+#: Any other role a tenant grants
+#: (``helper`` today, ``stakeholder`` once it ships) is an OUTSIDE role.
+TEAM_ROLES: frozenset[str] = frozenset(
+    {"operator", "agent_supervisor", "admin", "owner"}
+)
+
 #: Which credential proved the caller. ``user`` — a Cognito user JWT (a person
 #: in a browser, or anything holding their token). ``device`` — a coord device
 #: JWT, acting as the device's owning user (plan
@@ -79,6 +113,26 @@ TENANT_NOT_BOUND = "tenant_not_bound"
 DEVICE_NOT_SUPPORTED_FOR_COORD_BACKED = "device_not_supported_for_coord_backed_resource"
 DEVICE_NOT_SUPPORTED_FOR_PROJECT_ADMIN = "device_not_supported_for_project_admin"
 NOT_A_DEVICE_PRINCIPAL = "not_a_device_principal"
+#: A caller without a team role asked for something not shared with them.
+NOT_SHARED_WITH_YOU = "not_shared_with_you"
+
+
+def holds_team_role(roles: tuple[str, ...] | list[str], *, staff: bool) -> bool:
+    """True when ``roles`` (the caller's roles in ONE tenant) include a team
+    role, or the caller is qontinui staff. An empty or unknown role set is not
+    a team role: an unknown answer must not widen a read."""
+    return staff or any(role in TEAM_ROLES for role in roles)
+
+
+def not_shared_refusal() -> HTTPException:
+    """The 403 every overview read gives a caller without a team role when
+    nothing there is marked for them. Says nothing about what exists."""
+    return _refusal(
+        403,
+        NOT_SHARED_WITH_YOU,
+        "This part of the project's overview has not been shared with you.",
+    )
+
 
 #: The rules a device principal is refused on OUTRIGHT, reads as well as
 #: writes and before any store runs, with the code and message each refusal
@@ -276,8 +330,23 @@ class OverviewAccess:
     via_device: UUID | None
     #: See :attr:`OverviewCaller.named_project_degraded`.
     named_project_degraded: bool = False
+    #: The caller holds a team role in THIS tenant (:data:`TEAM_ROLES`) or is
+    #: qontinui staff (:func:`holds_team_role`). A device keeps its user's
+    #: roles, so a device of a team member is a team caller. ``False`` is the
+    #: default, so an access built without the answer reads as outside.
+    team_role: bool = False
+
+    def can_read(self, outside_read: OutsideRead) -> bool:
+        """Whether the caller may read a resource declaring ``outside_read``
+        at all — the same answer :func:`require_read` enforces. ``marked``
+        still filters per record in the store."""
+        return self.team_role or outside_read == "marked"
 
     def can_edit(self, rule: PermissionRule) -> bool:
+        if not self.team_role:
+            # Every write path refuses a caller without a team role
+            # (:func:`get_overview_access`), so no edit is offered either.
+            return False
         if rule in DEVICE_REFUSALS and self.via_device is not None:
             # A rule only a person may exercise (see DEVICE_REFUSALS): the
             # catalog says so rather than offering an edit the door refuses.
@@ -414,15 +483,23 @@ async def get_overview_caller(
     return await _operator_caller(request)
 
 
-async def get_overview_access(
+async def resolve_overview_access(
     caller: OverviewCaller = Depends(get_overview_caller),
     principal: OverviewPrincipal = Depends(get_overview_principal),
     db: AsyncSession = Depends(get_async_db),
 ) -> OverviewAccess:
     """The caller plus the project's ``editing_roles`` — everything
-    :meth:`OverviewAccess.can_edit` needs."""
+    :meth:`OverviewAccess.can_edit` needs — WITHOUT the team-role refusal.
+
+    Only for a route that serves a caller without a team role on purpose: a
+    resource declaring ``outside_read="marked"`` (through :func:`require_read`)
+    and the resource catalog, which tells such a caller what it may read.
+    Everything else depends on :func:`get_overview_access`."""
     settings = await db.get(OverviewSettings, caller.tenant_id)
     user = principal.user
+    # Staff's cross-project edit is a person's: a device acting for a
+    # superuser gets only the roles its tenant binding gives it.
+    staff = principal.kind != "device" and bool(getattr(user, "is_superuser", False))
     access = OverviewAccess(
         tenant_id=caller.tenant_id,
         roles=caller.roles,
@@ -432,15 +509,12 @@ async def get_overview_access(
             if settings is not None and settings.editing_roles is not None
             else ("admin",)
         ),
-        # Staff's cross-project edit is a person's: a device acting for a
-        # superuser gets only the roles its tenant binding gives it.
-        qontinui_staff=(
-            principal.kind != "device" and bool(getattr(user, "is_superuser", False))
-        ),
+        qontinui_staff=staff,
         user_id=getattr(user, "id", None),
         actor=(user.email or str(user.id)) if user is not None else None,
         kind=principal.kind,
         via_device=principal.device_id,
+        team_role=holds_team_role(caller.roles, staff=staff),
     )
     # End the read transaction here. Several resources then call another
     # service (coord) before touching this database again, and an open
@@ -453,6 +527,22 @@ async def get_overview_access(
     # `editing_roles` change landing between this read and that write does
     # not stop a write already past this gate.
     await db.commit()
+    return access
+
+
+async def get_overview_access(
+    access: OverviewAccess = Depends(resolve_overview_access),
+) -> OverviewAccess:
+    """:func:`resolve_overview_access`, refusing a caller without a team role
+    with 403 ``not_shared_with_you``.
+
+    The default for every overview route, reads and writes alike, so a route
+    that never declared how outside roles read it fails closed (plan
+    ``2026-11-26-questions-only-another-party-can-answer-have-no-queue-no-answerer-and-no-visibility``
+    D5): the change log (which carries every write's before and after), an
+    estimate's rollup, a page's versions, a file's bytes, the schedule."""
+    if not access.team_role:
+        raise not_shared_refusal()
     return access
 
 
@@ -503,9 +593,23 @@ def device_gate(rule: PermissionRule):
     return dependency
 
 
-def require_read(rule: PermissionRule):
+def require_read(rule: PermissionRule, outside_read: OutsideRead = "none"):
     """A dependency for a resource's READ routes: any member of the active
-    project, except a device on a rule in :data:`DEVICE_REFUSALS`."""
+    project with a team role, except a device on a rule in
+    :data:`DEVICE_REFUSALS`.
+
+    A caller without a team role is refused with 403 ``not_shared_with_you``
+    unless the resource declares ``outside_read="marked"``; then it is let
+    through and the store serves only the records marked for them."""
+    if outside_read == "marked":
+
+        async def marked(
+            _gate: None = Depends(device_gate(rule)),
+            access: OverviewAccess = Depends(resolve_overview_access),
+        ) -> OverviewAccess:
+            return access
+
+        return marked
 
     async def dependency(
         _gate: None = Depends(device_gate(rule)),
