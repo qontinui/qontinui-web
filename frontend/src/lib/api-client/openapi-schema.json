@@ -5315,7 +5315,7 @@
       },
       "BlobAnchor": {
         "additionalProperties": false,
-        "description": "A file at a known content revision.\n\n``sha`` is the GIT BLOB sha \u2014 exactly what\n``GET /repos/{repo}/contents/{path}`` returns, so resolving this\nanchor costs the watcher one call it already makes and no separate\nsha lookup.",
+        "description": "A file at a known content revision.\n\n``sha`` is the GIT BLOB sha \u2014 exactly what\n``GET /repos/{repo}/contents/{path}`` returns, so resolving this\nanchor costs the watcher one call it already makes and no separate\nsha lookup. It is OPTIONAL, as in coord's parser: without it the\nanchor asserts only that the path exists. Omitted, it is omitted from\nthe stored object; present, it must be non-empty (coord would read an\nempty ``sha`` as absent, silently dropping what the writer typed).",
         "properties": {
           "path": {
             "maxLength": 1024,
@@ -5330,10 +5330,17 @@
             "type": "string"
           },
           "sha": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Sha",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
           },
           "type": {
             "const": "blob",
@@ -5344,8 +5351,7 @@
         "required": [
           "type",
           "repo",
-          "path",
-          "sha"
+          "path"
         ],
         "title": "BlobAnchor",
         "type": "object"
@@ -13042,6 +13048,55 @@
           "resolved_conflicts"
         ],
         "title": "ConflictSummary",
+        "type": "object"
+      },
+      "ContentAnchor": {
+        "additionalProperties": false,
+        "description": "A regex over a file's contents \u2014 coord's ``content_matches`` shape.\n\nSymbol-anchored by construction: a pattern does not rot when the file\ngrows above it, which is the failure a line-number citation has.\n``pattern`` is compiled by coord (Rust ``regex``, multi-line), so it is\nNOT checked here beyond its byte cap \u2014 Python's ``re`` is a different\ndialect and would refuse or admit the wrong patterns. ``on_ref``\nfollows ``region``'s defaulting, but coord holds it to no ref grammar\nhere (it is percent-encoded into the contents API query), so neither\ndoes this door.",
+        "properties": {
+          "on_ref": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Ref"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "pattern": {
+            "minLength": 1,
+            "title": "Pattern",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
+          "type": {
+            "const": "content",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "repo",
+          "path",
+          "pattern"
+        ],
+        "title": "ContentAnchor",
         "type": "object"
       },
       "ContextConfirm": {
@@ -28827,6 +28882,48 @@
         "title": "FlagAnchor",
         "type": "object"
       },
+      "FlagStateAnchor": {
+        "additionalProperties": false,
+        "description": "A catalogued flag's STATE \u2014 the half ``flag`` (existence) cannot see.\n\n``expect.armed`` is part of the anchor's identity: two claims asserting\nopposite states of one flag are two anchors.",
+        "properties": {
+          "expect": {
+            "$ref": "#/components/schemas/FlagStateExpectation"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "flag_state",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "expect"
+        ],
+        "title": "FlagStateAnchor",
+        "type": "object"
+      },
+      "FlagStateExpectation": {
+        "additionalProperties": false,
+        "description": "The asserted state of a ``flag_state`` anchor's flag.\n\n``armed`` is the state of the BEHAVIOUR the flag governs, not the\ntruthiness of its env var: an unset ``*_DISABLED`` kill switch is\n``armed: true``. Required and a real boolean \u2014 a block that names a\nflag but asserts nothing about it has no falsifier.",
+        "properties": {
+          "armed": {
+            "title": "Armed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "armed"
+        ],
+        "title": "FlagStateExpectation",
+        "type": "object"
+      },
       "FleetDeferredQuestionListResponse": {
         "description": "Envelope for the fleet-wide deferred-question read.\n\nDeliberately an envelope rather than a bare list: an empty ``questions``\narray is then unambiguously \"nothing is pending\", distinguishable from a\ntransport failure at the client. Same reason\n``GET /task-runs/running`` carries its ``scope``.",
         "properties": {
@@ -37325,9 +37422,14 @@
               "discriminator": {
                 "mapping": {
                   "blob": "#/components/schemas/BlobAnchor",
+                  "content": "#/components/schemas/ContentAnchor",
                   "flag": "#/components/schemas/FlagAnchor",
+                  "flag_state": "#/components/schemas/FlagStateAnchor",
                   "migration": "#/components/schemas/MigrationAnchor",
                   "pr": "#/components/schemas/PRAnchor",
+                  "publication": "#/components/schemas/PublicationAnchor",
+                  "region": "#/components/schemas/RegionAnchor",
+                  "run_outcome": "#/components/schemas/RunOutcomeAnchor",
                   "schema": "#/components/schemas/SchemaAnchor"
                 },
                 "propertyName": "type"
@@ -37335,6 +37437,9 @@
               "oneOf": [
                 {
                   "$ref": "#/components/schemas/BlobAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/RegionAnchor"
                 },
                 {
                   "$ref": "#/components/schemas/PRAnchor"
@@ -37347,6 +37452,18 @@
                 },
                 {
                   "$ref": "#/components/schemas/FlagAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/FlagStateAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/ContentAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/RunOutcomeAnchor"
+                },
+                {
+                  "$ref": "#/components/schemas/PublicationAnchor"
                 }
               ]
             },
@@ -40583,6 +40700,7 @@
         "description": "A pull request, resolved against coord's PR twin.",
         "properties": {
           "number": {
+            "maximum": 2147483647.0,
             "minimum": 1.0,
             "title": "Number",
             "type": "integer"
@@ -47908,6 +48026,50 @@
         "title": "PublicBuildRecord",
         "type": "object"
       },
+      "PublicationAnchor": {
+        "additionalProperties": false,
+        "description": "A prompt document published at ``min_version`` or later, intact.\n\nResolved against coord's ``coord.prompt_document_publications``\nchannel: confirmed iff the LATEST publication of ``(kind, name)`` has\n``publication_version >= min_version`` and its stored digest matches\nits stored body. Fleet-scoped \u2014 publications are readable by every\ntenant by design.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "policy",
+              "response_prompt",
+              "continuation_rules",
+              "agent_playbook",
+              "prompt_template",
+              "session_briefing",
+              "claude_settings"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "min_version": {
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Min Version",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "publication",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "kind",
+          "name",
+          "min_version"
+        ],
+        "title": "PublicationAnchor",
+        "type": "object"
+      },
       "PushDeviceRegister": {
         "description": "Schema for registering a push device token.",
         "properties": {
@@ -50329,6 +50491,67 @@
           "alert_level"
         ],
         "title": "RedisHealth",
+        "type": "object"
+      },
+      "RegionAnchor": {
+        "additionalProperties": false,
+        "description": "A line span of a file, pinned by a digest of its normalized content.\n\n``digest`` is sha256 over the region with trailing whitespace stripped\nper line, line endings normalized to ``\\n`` and the line numbers\nexcluded \u2014 64 lowercase hex characters, optionally ``sha256:``-prefixed.\nLine numbers are absolute and 1-based, and they drift; coord's bounded\nre-anchor search finds a region that moved without changing. A\nmalformed digest can never equal a live one, so it would read ``moved``\nforever, and is refused here instead.\n\n``on_ref`` is optional: omitted, the region resolves against the repo's\ndefault-branch head; present, against exactly that ref.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "end_line": {
+            "maximum": 4294967295.0,
+            "minimum": 1.0,
+            "title": "End Line",
+            "type": "integer"
+          },
+          "on_ref": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Ref"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
+          "start_line": {
+            "maximum": 4294967295.0,
+            "minimum": 1.0,
+            "title": "Start Line",
+            "type": "integer"
+          },
+          "type": {
+            "const": "region",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "repo",
+          "path",
+          "start_line",
+          "end_line",
+          "digest"
+        ],
+        "title": "RegionAnchor",
         "type": "object"
       },
       "RegisteredRunner": {
@@ -52977,6 +53200,125 @@
         ],
         "title": "RoleWrite",
         "type": "object"
+      },
+      "RunConclusionAnchor": {
+        "additionalProperties": false,
+        "description": "``run_outcome``, CONCLUSION arm: this workflow ran on this ref and concluded X.\n\nResolved from coord's CI twin. ``ref`` is a full 40-hex sha or a branch\n(``refs/heads/`` optional); an abbreviated sha is refused. The NEWEST\nrun of the workflow on the ref decides.",
+        "properties": {
+          "expect": {
+            "enum": [
+              "success",
+              "failure",
+              "cancelled",
+              "skipped",
+              "neutral",
+              "timed_out",
+              "action_required",
+              "stale"
+            ],
+            "title": "Expect",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
+          "type": {
+            "const": "run_outcome",
+            "title": "Type",
+            "type": "string"
+          },
+          "workflow": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Workflow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "repo",
+          "workflow",
+          "ref",
+          "expect"
+        ],
+        "title": "RunConclusionAnchor",
+        "type": "object"
+      },
+      "RunMetricAnchor": {
+        "additionalProperties": false,
+        "description": "``run_outcome``, METRIC arm: the latest run of a task scored at least X.\n\nResolved against the latest ``coord.run_outcomes`` row for\n``(tenant, source, subject, task)`` \u2014 the tenant is the citing record's\nown, bound by coord's memory pass and never read from the JSON, so a\nclaim cannot name another tenant's runs. Confirmed iff ``metric`` is\n``>= at_least`` AND the run executed ``>= min_cases`` cases;\n``min_cases`` is at least 1, because a floor of 0 is confirmed by a\nrun that executed nothing. ``ref``, when present, must be a full sha:\nan outcome row records the commit its dispatch ran, never a branch.",
+        "properties": {
+          "at_least": {
+            "title": "At Least",
+            "type": "number"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "min_cases": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 1.0,
+            "title": "Min Cases",
+            "type": "integer"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "subject": {
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          },
+          "task": {
+            "minLength": 1,
+            "title": "Task",
+            "type": "string"
+          },
+          "type": {
+            "const": "run_outcome",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "source",
+          "subject",
+          "task",
+          "metric",
+          "at_least",
+          "min_cases"
+        ],
+        "title": "RunMetricAnchor",
+        "type": "object"
+      },
+      "RunOutcomeAnchor": {
+        "description": "``run_outcome`` \u2014 ONE ``type`` tag over two mutually exclusive arms.\n\nA root model rather than two members of :data:`Anchor`'s union: the\nouter union discriminates on ``type`` and ``run_outcome`` is a single\ntag, so the arm is a second, key-driven choice made INSIDE it. A root\nmodel also gives the OpenAPI discriminator mapping a named schema to\npoint at (``oneOf`` the two arms); a bare nested union there is an\nobject where the mapping requires a string, and FastAPI refuses to\nbuild the document at all.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RunConclusionAnchor"
+          },
+          {
+            "$ref": "#/components/schemas/RunMetricAnchor"
+          }
+        ],
+        "title": "RunOutcomeAnchor"
       },
       "RunStatus": {
         "description": "Status of an execution run.",
@@ -63069,9 +63411,14 @@
                   "discriminator": {
                     "mapping": {
                       "blob": "#/components/schemas/BlobAnchor",
+                      "content": "#/components/schemas/ContentAnchor",
                       "flag": "#/components/schemas/FlagAnchor",
+                      "flag_state": "#/components/schemas/FlagStateAnchor",
                       "migration": "#/components/schemas/MigrationAnchor",
                       "pr": "#/components/schemas/PRAnchor",
+                      "publication": "#/components/schemas/PublicationAnchor",
+                      "region": "#/components/schemas/RegionAnchor",
+                      "run_outcome": "#/components/schemas/RunOutcomeAnchor",
                       "schema": "#/components/schemas/SchemaAnchor"
                     },
                     "propertyName": "type"
@@ -63079,6 +63426,9 @@
                   "oneOf": [
                     {
                       "$ref": "#/components/schemas/BlobAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RegionAnchor"
                     },
                     {
                       "$ref": "#/components/schemas/PRAnchor"
@@ -63091,6 +63441,18 @@
                     },
                     {
                       "$ref": "#/components/schemas/FlagAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FlagStateAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ContentAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunOutcomeAnchor"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PublicationAnchor"
                     }
                   ]
                 },

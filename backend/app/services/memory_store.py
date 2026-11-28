@@ -1833,10 +1833,13 @@ async def anchored_search(
        narrowing the corpus to rows anchored in those repos.
     2. The glob is applied AFTER, over the narrowed rows only, by
        expanding each row's array with ``jsonb_array_elements`` and
-       matching ``path`` against the translated regex. Anchor types with
-       no ``path`` (``pr`` / ``migration`` / ``schema`` / ``flag``) yield
-       SQL NULL there and therefore never match — a ``pr`` anchor on the
-       right repo is correctly not a path hit.
+       matching ``path`` against the translated regex. The path-bearing
+       types — ``blob``, ``region`` and ``content``, each of which names a
+       file — match. Anchor types with no ``path`` (``pr`` / ``migration``
+       / ``schema`` / ``flag`` / ``flag_state`` / ``run_outcome`` /
+       ``publication``) yield SQL NULL there and therefore never match —
+       a ``pr`` or ``run_outcome`` anchor on the right repo is correctly
+       not a path hit.
 
     Both stages must pass on the SAME anchor object, which is why stage 2
     re-checks ``repo``: without it, a record anchored to ``repo A/path X``
