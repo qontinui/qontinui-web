@@ -225,13 +225,33 @@ export interface CiNodeConfig {
    * off-switch for CI model calls (plan
    * `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6).
    *
-   * `null` (or absent, from a backend predating the field) means qontinui.io
-   * has never set it: the save does not send it, and the runner keeps its own
-   * value — on unless changed on the machine. Only an explicit `true` /
-   * `false` travels, so saving other settings can neither re-enable a machine
-   * switched off on the machine itself nor disable a fresh one.
+   * `null` (or absent, from a backend predating the field) means the latest
+   * save from qontinui.io did not set it: the save does not send it, and the
+   * runner keeps its own value — on unless changed on the machine. Only an
+   * explicit `true` / `false` travels, so saving other settings can neither
+   * re-enable a machine switched off on the machine itself nor disable a
+   * fresh one.
    */
   model_access?: boolean | null;
+  /**
+   * "Let CI dispatches converge this machine's toolchains" — the device's
+   * canonical-convergence GRANT (plan
+   * `2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant`
+   * Phase 3). With it, a dispatch whose repository manifest declares a
+   * `[canonical]` block may move this machine's global toolchains
+   * (rustup/volta/pyenv) toward the canonical versions; without it such a
+   * dispatch is refused with the drift named. The runner ships it off.
+   *
+   * Same shape as `model_access`: `null` (or absent, from a backend predating
+   * the field) means the latest save from qontinui.io did not set it (it never
+   * did, or the owner chose to leave it as set on the machine), the save does
+   * not send it,
+   * and a runner carrying that plan's Phase 1 KEEPS the grant it holds (an
+   * older runner reads the missing key as a revoke). qontinui.io cannot read
+   * that value back, so `null` is never drawn as granted or revoked. Only an
+   * explicit `true` (grant) / `false` (revoke) travels.
+   */
+  canonical_converge?: boolean | null;
 }
 
 /**
@@ -278,6 +298,13 @@ export interface CiNodeConfigState {
   dispatch_error: string | null;
   /** The human sentence — coord's own `message` when it sent one. */
   dispatch_detail: string | null;
+  /**
+   * Every consent-relay code this answer produced, in field order
+   * (`model_access` first), so the panel can name EVERY consent or grant
+   * choice that did not arrive as chosen. `dispatch_error` is its first entry.
+   * Null (or absent, from a backend predating the field) otherwise.
+   */
+  consent_relay_errors?: string[] | null;
 }
 
 /**
@@ -285,6 +312,9 @@ export interface CiNodeConfigState {
  * A machine nobody has configured must render as the posture the runner
  * actually ships with — off, with an empty allowlist, capacity derived from
  * the host — never a friendlier one, and never a number qontinui.io invented.
+ * The consent and grant fields (`model_access`, `canonical_converge`) are
+ * `null` instead — "not set here" — because the machine's own value cannot be
+ * read back and must not be guessed.
  */
 export const CI_NODE_DEFAULTS: CiNodeConfig = {
   enabled: false,
@@ -292,6 +322,7 @@ export const CI_NODE_DEFAULTS: CiNodeConfig = {
   repo_allowlist: [],
   min_free_disk_gb: 20,
   model_access: null,
+  canonical_converge: null,
 };
 
 export function getCiNodeConfig(machineId: string): Promise<CiNodeConfigState> {

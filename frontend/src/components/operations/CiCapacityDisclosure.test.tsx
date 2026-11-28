@@ -279,6 +279,9 @@ describe("consent UX at the Dev Ops mount", () => {
       min_free_disk_gb: 20,
       // Model access is unset (the machine expresses no opinion), never on.
       model_access: null,
+      // The toolchain-convergence grant is unset too: this surface cannot see
+      // the machine's grant, so it neither grants nor revokes by default.
+      canonical_converge: null,
     });
     expect(screen.getByTestId("ci-node-enabled")).toHaveAttribute(
       "data-state",

@@ -115,8 +115,10 @@ def test_coord_payload_carries_an_explicit_concurrency() -> None:
     body = CiNodeConfig(max_concurrent_builds=4).coord_payload()
     assert body["max_concurrent_builds"] == 4
     expected = CiNodeConfig(max_concurrent_builds=4).model_dump(mode="json")
-    # An unset ``model_access`` is omitted too — see its own tests below.
+    # An unset ``model_access`` / ``canonical_converge`` is omitted too — see
+    # their own tests below.
     expected.pop("model_access")
+    expected.pop("canonical_converge")
     assert body == expected
 
 
@@ -198,6 +200,87 @@ def test_a_row_saved_before_the_switch_reads_as_not_set() -> None:
     assert "model_access" not in cfg.coord_payload()
 
 
-def test_model_access_is_not_coerced_from_a_string() -> None:
+# Values pydantic's LAX ``bool`` would read as a boolean. A consent or grant
+# arriving as one of these is refused rather than forwarded as an explicit
+# choice nobody made as a boolean (measured before ``StrictBool``:
+# ``{"canonical_converge": "yes"}`` reached ``coord_payload`` as ``True``).
+_LAX_BOOLEANS = ["yes", "on", "1", 1, "true", "no", "off", "0", 0, "false"]
+
+
+@pytest.mark.parametrize("value", [*_LAX_BOOLEANS, "sometimes"])
+def test_model_access_accepts_only_a_real_boolean(value: object) -> None:
     with pytest.raises(ValidationError):
-        CiNodeConfig(model_access="sometimes")  # type: ignore[arg-type]
+        CiNodeConfig(model_access=value)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# canonical_converge — the device's toolchain-convergence GRANT (plan
+# ``2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant``
+# Phase 3). Absent means KEEP the device's current grant; only an explicit
+# ``True`` (grant) / ``False`` (revoke) travels.
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_converge_defaults_to_not_set_here() -> None:
+    """``None`` is "this surface never spoke", NOT the runner's ``False``: an
+    absent value must leave the grant the device holds alone, whichever way
+    it was set."""
+    assert CiNodeConfig().canonical_converge is None
+
+
+def test_coord_payload_omits_an_unset_canonical_converge() -> None:
+    """An absent key is KEEP on the runner, so a save that never touched the
+    grant can neither revoke one its owner set on the machine nor grant one."""
+    body = CiNodeConfig(enabled=True, model_access=True).coord_payload()
+    assert "canonical_converge" not in body
+    # Only the grant is dropped: the other consent still travels.
+    assert body["model_access"] is True
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_coord_payload_carries_an_explicit_canonical_converge(value: bool) -> None:
+    body = CiNodeConfig(canonical_converge=value).coord_payload()
+    assert body["canonical_converge"] is value
+
+
+@pytest.mark.parametrize("value", [True, False, None])
+def test_canonical_converge_round_trips_through_the_stored_json_envelope(
+    value: bool | None,
+) -> None:
+    original = CiNodeConfig(enabled=True, canonical_converge=value)
+    stored = original.model_dump(mode="json")
+    assert stored["canonical_converge"] is value
+    restored = CiNodeConfig.model_validate(stored)
+    assert restored == original
+    assert restored.canonical_converge is value
+
+
+def test_a_row_saved_before_the_grant_reads_as_not_set() -> None:
+    """A JSONB envelope written before the field existed has no such key, and
+    must forward none — never a revoke the owner did not make."""
+    cfg = CiNodeConfig.model_validate(
+        {
+            "enabled": True,
+            "repo_allowlist": [],
+            "min_free_disk_gb": 20,
+            "model_access": False,
+        }
+    )
+    assert cfg.canonical_converge is None
+    assert "canonical_converge" not in cfg.coord_payload()
+
+
+@pytest.mark.parametrize("value", [*_LAX_BOOLEANS, "sometimes"])
+def test_canonical_converge_accepts_only_a_real_boolean(value: object) -> None:
+    with pytest.raises(ValidationError):
+        CiNodeConfig(canonical_converge=value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("field", ["model_access", "canonical_converge"])
+def test_a_json_boolean_still_parses(field: str) -> None:
+    """Strictness refuses look-alikes, not booleans: a JSON body (the route's
+    input) and a stored JSONB envelope (``model_validate``) both still load."""
+    assert (
+        getattr(CiNodeConfig.model_validate_json(f'{{"{field}": true}}'), field) is True
+    )
+    assert getattr(CiNodeConfig.model_validate({field: False}), field) is False

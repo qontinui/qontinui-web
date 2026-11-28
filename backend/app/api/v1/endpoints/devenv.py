@@ -35,6 +35,7 @@ Mounted under ``/api/v1/devenv``. Endpoints:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
@@ -1080,51 +1081,227 @@ CI_NODE_MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access"
 #: ``applied`` object, so whether ``model_access`` travelled cannot be told.
 #: That is NOT evidence of an older coord, and is not reported as one.
 CI_NODE_MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed"
+#: ``dispatch_error`` when coord's ``applied`` echo CARRIES ``model_access``
+#: but with a different value than this save sent: that coord knows the field,
+#: so calling it older would misname it.
+CI_NODE_MODEL_ACCESS_ECHO_MISMATCH = "model_access_echo_mismatch"
+#: The same three outcomes for the canonical-convergence grant (plan
+#: ``2026-11-28-a-coord-relayed-ci-node-directive-revokes-the-canonical-convergence-grant``
+#: Phase 3): a coord predating ``CiNodeDirective.canonical_converge`` drops the
+#: key with a 2xx, an answer that cannot be read confirms nothing, and an echo
+#: carrying another value contradicts this save.
+CI_NODE_CANONICAL_CONVERGE_NOT_RELAYED = "coord_predates_canonical_converge"
+CI_NODE_CANONICAL_CONVERGE_UNCONFIRMED = "canonical_converge_unconfirmed"
+CI_NODE_CANONICAL_CONVERGE_ECHO_MISMATCH = "canonical_converge_echo_mismatch"
 
-_MODEL_ACCESS_NOT_RELAYED_DETAIL = (
-    "The coordinator accepted the other settings, but it does not yet carry "
-    "the model-access choice, so that choice did not reach the machine. It is "
-    "saved here; apply again once the coordinator is updated."
+#: What a directive WITHOUT the grant does on a runner built before that plan's
+#: Phase 1: its ``CiSettingsDirective::canonical_converge`` is a plain ``bool``
+#: with ``#[serde(default)]``, so a missing key reads as ``false`` and the
+#: settings that did arrive revoked the grant. Said whenever the grant may have
+#: been dropped, because "it did not reach the machine" alone would hide that.
+_CANONICAL_CONVERGE_NOT_RELAYED_NOTE = (
+    "A runner that does not yet keep a toolchain-convergence grant nothing was "
+    "sent for reads its absence as a revoke, so on such a runner the settings "
+    "that did arrive turned toolchain convergence off."
 )
-_MODEL_ACCESS_UNCONFIRMED_DETAIL = (
-    "The coordinator accepted the settings, but its answer did not say what it "
-    "sent, so whether the model-access choice reached the machine is unknown. "
-    "It is saved here; apply again to retry."
+_CANONICAL_CONVERGE_UNCONFIRMED_NOTE = (
+    "If it was dropped, a runner that does not yet keep a toolchain-convergence "
+    "grant nothing was sent for read its absence as a revoke and turned "
+    "toolchain convergence off."
 )
 
 
-def _model_access_relay_problem(
-    payload: CiNodeConfig, resp: httpx.Response
-) -> str | None:
-    """Why this save's ``model_access`` cannot be counted as delivered, or None.
+@dataclass(frozen=True)
+class _ConsentRelayField:
+    """A ``CiNodeConfig`` field whose explicit value is a consent or a grant,
+    so a save that set it counts as delivered only once coord's ``applied``
+    echo carries the same value back."""
 
-    Coord's 2xx body echoes what it published as ``applied``. Three outcomes
-    when a value was sent:
+    field: str
+    #: How a ``dispatch_detail`` sentence names it, article included.
+    noun: str
+    #: ``dispatch_error`` when coord's ``applied`` object lacks the key.
+    not_relayed: str
+    #: ``dispatch_error`` when coord's answer could not confirm it either way.
+    unconfirmed: str
+    #: ``dispatch_error`` when ``applied`` carries the key with another value.
+    echo_mismatch: str
+    #: What the directive that DID arrive did to this choice on a runner that
+    #: reads a missing key as a value, when the key was dropped / may have been.
+    #: ``None`` when a missing key leaves the runner's value alone.
+    not_relayed_note: str | None = None
+    unconfirmed_note: str | None = None
 
-    * ``applied`` is an object carrying the same value — delivered (None).
-    * ``applied`` is an object WITHOUT it — the coord predates the field
-      (serde ignores unknown keys): ``CI_NODE_MODEL_ACCESS_NOT_RELAYED``.
-    * the body is unparseable or has no ``applied`` object — nothing can be
-      told either way: ``CI_NODE_MODEL_ACCESS_UNCONFIRMED``.
 
-    A save that sent no value (``None``) has nothing to confirm.
+#: Checked in this order, which is also the order ``dispatch_error`` reports
+#: them in when more than one is unconfirmed (see ``_consent_relay_problem``).
+_CONSENT_RELAY_FIELDS: tuple[_ConsentRelayField, ...] = (
+    _ConsentRelayField(
+        field="model_access",
+        noun="the model-access choice",
+        not_relayed=CI_NODE_MODEL_ACCESS_NOT_RELAYED,
+        unconfirmed=CI_NODE_MODEL_ACCESS_UNCONFIRMED,
+        echo_mismatch=CI_NODE_MODEL_ACCESS_ECHO_MISMATCH,
+    ),
+    _ConsentRelayField(
+        field="canonical_converge",
+        noun="the toolchain-convergence grant",
+        not_relayed=CI_NODE_CANONICAL_CONVERGE_NOT_RELAYED,
+        unconfirmed=CI_NODE_CANONICAL_CONVERGE_UNCONFIRMED,
+        echo_mismatch=CI_NODE_CANONICAL_CONVERGE_ECHO_MISMATCH,
+        not_relayed_note=_CANONICAL_CONVERGE_NOT_RELAYED_NOTE,
+        unconfirmed_note=_CANONICAL_CONVERGE_UNCONFIRMED_NOTE,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class _ConsentRelayProblem:
+    """Why a save's consent/grant choices cannot be counted as delivered."""
+
+    #: The FIRST problem's code, in ``_CONSENT_RELAY_FIELDS`` order — what
+    #: ``dispatch_error`` carries.
+    code: str
+    #: Every problem's code, in the same order; ``codes[0] == code``.
+    codes: list[str]
+    #: One sentence group naming every choice that did not arrive as chosen.
+    detail: str
+
+
+def _relay_nouns(fields: list[_ConsentRelayField]) -> str:
+    return " and ".join(f.noun for f in fields)
+
+
+def _saved_here(count: int, retry: str) -> str:
+    return f"{'It is' if count == 1 else 'They are'} saved here; apply again {retry}."
+
+
+def _unconfirmed_detail(fields: list[_ConsentRelayField]) -> str:
+    parts = [
+        "The coordinator accepted the settings, but its answer did not say what it "
+        f"sent, so whether {_relay_nouns(fields)} reached the machine is unknown."
+    ]
+    parts += [f.unconfirmed_note for f in fields if f.unconfirmed_note]
+    parts.append(_saved_here(len(fields), "to retry"))
+    return " ".join(parts)
+
+
+def _echo_detail(
+    dropped: list[_ConsentRelayField], mismatched: list[_ConsentRelayField]
+) -> str:
+    parts: list[str] = []
+    if dropped:
+        parts.append(
+            "The coordinator accepted the other settings, but it does not yet carry "
+            f"{_relay_nouns(dropped)}, so "
+            f"{'that choice' if len(dropped) == 1 else 'those choices'} did not "
+            "reach the machine."
+        )
+        parts += [f.not_relayed_note for f in dropped if f.not_relayed_note]
+    if mismatched:
+        lead = (
+            "Its answer also carried"
+            if dropped
+            else "The coordinator accepted the settings, but its answer carried"
+        )
+        parts.append(
+            f"{lead} {_relay_nouns(mismatched)} with a different value than this "
+            "save sent, so the machine may hold "
+            f"{'a choice' if len(mismatched) == 1 else 'choices'} you did not make."
+        )
+    parts.append(_echo_closing(dropped, mismatched))
+    return " ".join(parts)
+
+
+def _echo_closing(
+    dropped: list[_ConsentRelayField], mismatched: list[_ConsentRelayField]
+) -> str:
+    """The closing advice, per kind of problem.
+
+    A DROPPED choice waits on the coordinator learning the field, so it says
+    to apply again once the coordinator is updated. A MISMATCHED choice is one
+    the coordinator already carries but changed, so updating it is not the
+    remedy: it says to apply again, and that a choice which still differs is
+    being changed by the coordinator and should be reported to support — no
+    page here shows what the coordinator published for this machine, so the
+    advice names only what the owner can do. A save with both kinds gets both pieces of advice, each naming its
+    own choice.
     """
-    if payload.model_access is None:
+    count = len(dropped) + len(mismatched)
+    if not mismatched:
+        return _saved_here(count, "once the coordinator is updated")
+    saved = "It is saved here" if count == 1 else "They are saved here"
+    one = len(mismatched) == 1
+    changed = (
+        f"but changed {'it' if one else 'them'}, so apply again; if "
+        f"{'it still differs' if one else 'they still differ'}, the coordinator is "
+        f"changing {'it' if one else 'them'} — report this to support@qontinui.io."
+    )
+    if not dropped:
+        choice = "that choice" if one else "those choices"
+        return f"{saved}; the coordinator carries {choice} {changed}"
+    return (
+        f"{saved}. Apply again for {_relay_nouns(dropped)} once the coordinator is "
+        f"updated; the coordinator carries {_relay_nouns(mismatched)} {changed}"
+    )
+
+
+def _consent_relay_problem(
+    payload: CiNodeConfig, resp: httpx.Response
+) -> _ConsentRelayProblem | None:
+    """Why this save's consent/grant choices cannot be counted as delivered,
+    or None when every one that was sent is confirmed.
+
+    Coord's 2xx body echoes what it published as ``applied``. For each field
+    in ``_CONSENT_RELAY_FIELDS`` that this save SET (not ``None``):
+
+    * ``applied`` is an object carrying the same value — delivered.
+    * ``applied`` is an object WITHOUT the key — the coord predates the field
+      (serde ignores unknown keys): the field's ``not_relayed`` code.
+    * ``applied`` carries the key with ANOTHER value — the coord knows the
+      field but published something else: the field's ``echo_mismatch`` code.
+    * the body is unparseable or has no ``applied`` object — nothing can be
+      told either way: the field's ``unconfirmed`` code. That verdict is about
+      the whole answer, so it covers every field the save set.
+
+    A field the save left unset has nothing to confirm.
+
+    **One code slot, every field named.** ``dispatch_error`` is a single
+    machine code the panel matches exactly, so it carries the FIRST problem in
+    ``_CONSENT_RELAY_FIELDS`` order — a join would break that match for the
+    codes clients already key on. The others are not dropped: ``codes`` (the
+    response's ``consent_relay_errors``) lists every one, and the detail
+    sentence, which the panel and its toast show the owner, names every
+    choice that did not arrive as chosen.
+    """
+    sent = [f for f in _CONSENT_RELAY_FIELDS if getattr(payload, f.field) is not None]
+    if not sent:
         return None
     try:
         body = resp.json()
     except ValueError:
-        return CI_NODE_MODEL_ACCESS_UNCONFIRMED
+        body = None
     applied = body.get("applied") if isinstance(body, dict) else None
     if not isinstance(applied, dict):
-        return CI_NODE_MODEL_ACCESS_UNCONFIRMED
-    if applied.get("model_access") is payload.model_access:
+        codes = [f.unconfirmed for f in sent]
+        return _ConsentRelayProblem(codes[0], codes, _unconfirmed_detail(sent))
+    dropped: list[_ConsentRelayField] = []
+    mismatched: list[_ConsentRelayField] = []
+    codes = []
+    for f in sent:
+        if f.field not in applied:
+            dropped.append(f)
+            codes.append(f.not_relayed)
+        elif applied[f.field] is not getattr(payload, f.field):
+            mismatched.append(f)
+            codes.append(f.echo_mismatch)
+    if not codes:
         return None
-    return CI_NODE_MODEL_ACCESS_NOT_RELAYED
+    return _ConsentRelayProblem(codes[0], codes, _echo_detail(dropped, mismatched))
 
 
 #: ``dispatch_error`` when coord STORED the directive but could not publish it.
-#: Web-owned, like the model-access codes above, so a client can tell this
+#: Web-owned, like the consent-relay codes above, so a client can tell this
 #: outcome from coord's ``directive_publish_failed`` refusal without reading
 #: prose.
 CI_NODE_STORED_FOR_NEXT_CONNECT = "stored_for_next_connect"
@@ -1271,6 +1448,7 @@ def _ci_node_response(
     dispatch_status: int | None = None,
     dispatch_error: str | None = None,
     dispatch_detail: str | None = None,
+    consent_relay_errors: list[str] | None = None,
 ) -> CiNodeConfigResponse:
     """Build the response from a machine row + a reachability verdict."""
     stored = machine.ci_node_config
@@ -1288,6 +1466,7 @@ def _ci_node_response(
         dispatch_status=dispatch_status,
         dispatch_error=dispatch_error,
         dispatch_detail=dispatch_detail,
+        consent_relay_errors=consent_relay_errors,
     )
 
 
@@ -1443,7 +1622,7 @@ async def set_ci_node_config(
         )
         # NOT PUBLISHED: coord accepted the call but sent nothing for it,
         # typically because a newer directive for this device won. Checked
-        # before the model-access relay check, whose "unconfirmed" reading
+        # before the consent relay check, whose "unconfirmed" reading
         # would otherwise mislabel it. ``dispatched_at`` does not move: this
         # request's settings never reached the machine.
         return _ci_node_response(
@@ -1464,23 +1643,21 @@ async def set_ci_node_config(
     )
     await db.commit()
     await db.refresh(machine)
-    relay_problem = _model_access_relay_problem(payload, resp)
+    relay_problem = _consent_relay_problem(payload, resp)
     if relay_problem is not None:
         # Coord accepted and published the directive — so the other settings
         # were handed off and ``dispatched_at`` moves — but the owner's
-        # model-access choice is not confirmed. Reporting that as delivered
-        # would hide exactly the switch this save was most likely made for.
+        # model-access or toolchain-convergence choice is not confirmed.
+        # Reporting that as delivered would hide exactly the switch this save
+        # was most likely made for.
         return _ci_node_response(
             machine,
             reachability,
             dispatched=False,
             dispatch_status=resp.status_code,
-            dispatch_error=relay_problem,
-            dispatch_detail=(
-                _MODEL_ACCESS_NOT_RELAYED_DETAIL
-                if relay_problem == CI_NODE_MODEL_ACCESS_NOT_RELAYED
-                else _MODEL_ACCESS_UNCONFIRMED_DETAIL
-            ),
+            dispatch_error=relay_problem.code,
+            dispatch_detail=relay_problem.detail,
+            consent_relay_errors=relay_problem.codes,
         )
     return _ci_node_response(machine, reachability, dispatched=True)
 
