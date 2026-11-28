@@ -78,7 +78,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_pr_events_merged_repo_created_idx"
-_PARENT_REVISION_ID = "cinode_06_ci_node_directives"
+_PARENT_REVISION_ID = "coord_wt_volume_read_only_01"
 _REVISION_FILENAME = f"{_REVISION_ID}.py"
 _INDEX_NAME = "idx_pr_events_merged_repo_created"
 _REPO = "o/merged-idx-test"
