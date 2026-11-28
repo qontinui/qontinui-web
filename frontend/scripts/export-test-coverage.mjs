@@ -12,6 +12,14 @@
  * test file, attribute its covered source files to it, and emit one observation
  * per test file with `test_id` = the repo-relative test file path.
  *
+ * Concurrency: files run COVERAGE_PRODUCER_CONCURRENCY at a time (default 1).
+ * Each file is its own vitest process writing into its own temp dir, so the
+ * runs share nothing but the read-only source tree; results are kept in
+ * discovery order whatever order they finish in. The serial loop stopped
+ * fitting its 45-min job cap once the suite passed ~800 files (2026-11-05:
+ * five consecutive main runs cancelled at 741/812, each delivering nothing,
+ * because every POST happens after the loop).
+ *
  * Cadence: this is a main-only, NON-gating job. Per-file vitest startup is slow
  * (~5-15s each) and there are ~70+ test files, so a full run is many minutes —
  * unacceptable for a PR gate but fine for a push-to-main producer whose output
@@ -34,7 +42,7 @@
  * node stdlib only.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   readFileSync,
   existsSync,
@@ -53,6 +61,12 @@ const DEFAULT_COORD_URL = "https://coord.qontinui.io";
 const OBSERVE_PATH = "/coord/test-coverage/observe";
 const RESULTS_PATH = "/coord/test-results/ingest";
 
+// One test file's vitest run is killed after this long, so a hung file costs
+// one worker this much instead of the whole job its cap. The slowest file in
+// the 2026-11-05 nawa run took 167s; the median 2.4s.
+const PER_FILE_TIMEOUT_MS =
+  (parseInt(process.env.COVERAGE_PRODUCER_FILE_TIMEOUT_SECS || "", 10) || 600) * 1000;
+
 const COORD_URL = (process.env.COORD_HTTP_URL || DEFAULT_COORD_URL).replace(/\/+$/, "");
 const HEAD_SHA = process.env.GITHUB_SHA || "";
 
@@ -65,7 +79,7 @@ function info(msg) {
 
 /** Parse simple CLI flags. */
 function parseArgs(argv) {
-  const args = { dryRun: false, limit: 0 };
+  const args = { dryRun: false, limit: 0, concurrency: 1 };
   for (const a of argv) {
     if (a === "--dry-run") args.dryRun = true;
     else if (a.startsWith("--limit=")) args.limit = parseInt(a.slice("--limit=".length), 10) || 0;
@@ -75,6 +89,10 @@ function parseArgs(argv) {
     args.limit = parseInt(process.env.COVERAGE_PRODUCER_LIMIT, 10) || args.limit;
   }
   if (process.env.COVERAGE_PRODUCER_DRY_RUN === "1") args.dryRun = true;
+  if (process.env.COVERAGE_PRODUCER_CONCURRENCY) {
+    args.concurrency = parseInt(process.env.COVERAGE_PRODUCER_CONCURRENCY, 10) || args.concurrency;
+  }
+  args.concurrency = Math.max(1, args.concurrency);
   return args;
 }
 
@@ -193,23 +211,32 @@ export function sweepStaleScratchDirs(maxAgeMs = STALE_SCRATCH_DIR_MS, now = Dat
  * that is RAM held for the life of the runner unit (plan
  * 2026-11-10-devops-coverage-producer-leaves-a-covprod-dir-per-test-file-in-ram-tmp).
  * @template T
- * @param {(dir: string) => T} fn
+ * @param {(dir: string) => T} fn  sync or async; an async fn's dir is removed once it settles
  * @returns {T}
  */
 export function withScratchDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), "covprod-"));
+  const cleanup = () => rmSync(dir, { recursive: true, force: true });
+  let result;
   try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    result = fn(dir);
+  } catch (e) {
+    cleanup();
+    throw e;
   }
+  // An async `fn` keeps using the dir until it settles, so remove it then.
+  if (result && typeof result.then === "function") {
+    return result.finally(cleanup);
+  }
+  cleanup();
+  return result;
 }
 
 /**
  * Run vitest once for a single test file, collecting v8 coverage JSON + JUnit.
- * @returns {{ filesTouched: string[], junitXml: string|null }}
+ * @returns {Promise<{ filesTouched: string[], junitXml: string|null }>}
  */
-function runOneFile(testFileRel, outDir) {
+async function runOneFile(testFileRel, outDir) {
   const junitPath = join(outDir, "junit.xml");
   // vitest 4 CLI: --coverage enables, --coverage.* configure the v8 provider.
   // --coverage.include is omitted on purpose: v8's default ("only files covered
@@ -226,15 +253,41 @@ function runOneFile(testFileRel, outDir) {
     `--outputFile=${junitPath}`,
     testFileRel,
   ];
-  const res = spawnSync("npx", cliArgs, {
-    encoding: "utf-8",
-    shell: process.platform === "win32",
-    stdio: ["ignore", "pipe", "pipe"],
+  /** @type {number|null} */
+  const status = await new Promise((resolve) => {
+    const child = spawn("npx", cliArgs, {
+      shell: process.platform === "win32",
+      // Its own process group, so a timeout kills npx AND the vitest it
+      // started rather than orphaning the latter.
+      detached: process.platform !== "win32",
+      // Output is discarded, as before: the junit + coverage files are the
+      // result. "ignore" rather than unread pipes, which would fill and stall
+      // a chatty test file.
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    const timer = setTimeout(() => {
+      warn(`vitest for ${testFileRel} exceeded ${PER_FILE_TIMEOUT_MS / 1000}s -- killing it`);
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    }, PER_FILE_TIMEOUT_MS);
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      warn(`failed to spawn vitest for ${testFileRel}: ${e}`);
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
   });
-  if (res.status !== 0) {
+  if (status !== 0) {
     // A failing/erroring test file still produces coverage+junit for what ran;
     // warn but proceed so one bad file doesn't sink the whole producer.
-    warn(`vitest exited ${res.status} for ${testFileRel} (continuing)`);
+    warn(`vitest exited ${status} for ${testFileRel} (continuing)`);
   }
 
   /** @type {string[]} */
@@ -354,19 +407,33 @@ async function main() {
     info(`limiting to first ${testFiles.length} test files`);
   }
 
+  info(`running ${testFiles.length} test files, ${args.concurrency} at a time`);
+
+  const swept = sweepStaleScratchDirs();
+  if (swept > 0) info(`removed ${swept} stale covprod-* dir(s) left by a killed run`);
+
+  /** @type {({ filesTouched: string[], junitXml: string|null } | undefined)[]} */
+  const results = new Array(testFiles.length);
+  let next = 0;
+  async function worker() {
+    while (next < testFiles.length) {
+      const i = next++;
+      const testFileRel = testFiles[i];
+      info(`running [${i + 1}/${testFiles.length}] ${testFileRel}`);
+      results[i] = await withScratchDir((outDir) => runOneFile(testFileRel, outDir));
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(args.concurrency, testFiles.length) }, () => worker())
+  );
+
   /** @type {object[]} */
   const observations = [];
   /** @type {string[]} */
   const junitDocs = [];
 
-  const swept = sweepStaleScratchDirs();
-  if (swept > 0) info(`removed ${swept} stale covprod-* dir(s) left by a killed run`);
-
-  for (const testFileRel of testFiles) {
-    info(`running ${testFileRel}`);
-    const { filesTouched, junitXml } = withScratchDir((outDir) =>
-      runOneFile(testFileRel, outDir),
-    );
+  for (const [i, testFileRel] of testFiles.entries()) {
+    const { filesTouched, junitXml } = results[i] ?? { filesTouched: [], junitXml: null };
 
     const testId = toRepoRelTestId(testFileRel);
     observations.push({
