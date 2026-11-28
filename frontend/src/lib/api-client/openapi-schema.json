@@ -9963,6 +9963,17 @@
               }
             ],
             "title": "Requested At"
+          },
+          "role_closes_ci_lane": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Closes Ci Lane"
           }
         },
         "required": [
@@ -114611,7 +114622,7 @@
     },
     "/api/v1/operations/fleet/dispatch-role": {
       "put": {
-        "description": "Set one machine's dispatch role (operator-only).\n\nAffects NEW dispatch only: sessions and CI jobs already placed on the\nmachine run to their end (\u00a7D9). The GitHub-label (Phase 4) and CI-node\nswitch (Phase 5) effects are coord's and web's later phases \u2014 nothing on\nthis path claims them.",
+        "description": "Set one machine's dispatch role (operator-only).\n\nAffects NEW dispatch only: sessions and CI jobs already placed on the\nmachine run to their end (\u00a7D9). The GitHub-label effect is coord's.\n\nThe CI-node switch is derived from the role (\u00a7D8): coord holds no copy of\nthe desired CI-node config, so after coord's PUT succeeds THIS hop\nre-publishes the STORED ``ci_node_config`` through the existing\n``/devenv/ci-node-dispatch`` path \u2014 ``enabled`` forced false when the new\nrole closes ``ci``, unchanged when it opens it. The stored row is never\nmodified, so the operator's allowlist survives any number of role changes.\nA failed re-publish never hides the successful role write: it is returned\nas ``ci_node_republish`` on the (200) response.",
         "operationId": "api_v1_operations_fleet_dispatch_role_put",
         "requestBody": {
           "content": {

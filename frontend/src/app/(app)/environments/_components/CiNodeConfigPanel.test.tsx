@@ -972,3 +972,90 @@ describe("CiNodeConfigPanel — model access", () => {
     expect(configsEqual({ ...base, model_access: false }, legacy)).toBe(false);
   });
 });
+
+describe("CiNodeConfigPanel — role-controlled switch", () => {
+  it("shows the switch off and disabled, with a link to the Roles panel, when the role closes ci", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          role_closes_ci_lane: true,
+          configured: true,
+          // The stored row may still say on; the role decides.
+          requested: {
+            enabled: true,
+            max_concurrent_builds: null,
+            repo_allowlist: ["qontinui/a"],
+            min_free_disk_gb: 20,
+          },
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+
+    const toggle = await screen.findByTestId("ci-node-enabled");
+    expect(toggle).toBeDisabled();
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByTestId("ci-node-role-controlled").textContent).toMatch(
+      /controlled by the role/i
+    );
+    expect(screen.getByTestId("ci-node-role-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/devops"
+    );
+    // Reading the panel is not an unsaved change.
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+  });
+
+  it("keeps the stored enabled flag when saving while the role is closed", async () => {
+    const stored = {
+      enabled: true,
+      max_concurrent_builds: null,
+      repo_allowlist: ["qontinui/a"],
+      min_free_disk_gb: 20,
+    };
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({ role_closes_ci_lane: true, configured: true, requested: stored })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-enabled");
+    fireEvent.change(screen.getByTestId("ci-node-repo-input"), {
+      target: { value: "qontinui/b" },
+    });
+    fireEvent.click(screen.getByTestId("ci-node-repo-add"));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          configured: true,
+          requested: { ...stored, repo_allowlist: ["qontinui/a", "qontinui/b"] },
+          dispatched: true,
+        })
+      )
+    );
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const sent = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(sent.enabled).toBe(true);
+    expect(sent.repo_allowlist).toEqual(["qontinui/a", "qontinui/b"]);
+  });
+
+  it("leaves the switch usable when the role opens ci", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(state({ role_closes_ci_lane: false }))
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const toggle = await screen.findByTestId("ci-node-enabled");
+    expect(toggle).not.toBeDisabled();
+    expect(screen.queryByTestId("ci-node-role-controlled")).toBeNull();
+  });
+
+  it("says the role is unknown, and does not claim it is open, when it could not be read", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(state({ role_closes_ci_lane: null }))
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    expect(await screen.findByTestId("ci-node-role-unknown")).toBeTruthy();
+    expect(screen.queryByTestId("ci-node-role-controlled")).toBeNull();
+  });
+});

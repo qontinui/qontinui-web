@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -577,8 +578,15 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
   // The draft with any pending concurrency text committed. Save sends THIS,
   // not `draft`: relying on the input's blur alone would let a typed value
   // show on the page while the old one saved.
-  const effectiveDraft: CiNodeConfig =
-    buildsDraft === null
+  //
+  // When the machine's dispatch role closes the CI lane the role, not this
+  // switch, decides whether it runs CI (plan fleet-machine-roles D8): the
+  // switch is shown off and disabled, but the STORED `enabled` is preserved
+  // by Apply (the server never publishes it as enabled while the role is
+  // closed), so reopening the role restores the owner's choice.
+  const roleClosed = state?.role_closes_ci_lane === true;
+  const effectiveDraft: CiNodeConfig = {
+    ...(buildsDraft === null
       ? draft
       : {
           ...draft,
@@ -586,12 +594,20 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             buildsDraft,
             draft.max_concurrent_builds
           ),
-        };
+        }),
+    ...(roleClosed && state ? { enabled: state.requested.enabled } : {}),
+  };
 
   const handleApply = async () => {
     setSaving(true);
     try {
-      const next = await setCiNodeConfig(machine.id, effectiveDraft);
+      const saved = await setCiNodeConfig(machine.id, effectiveDraft);
+      // The save response does not re-read the role; keep what the load said.
+      const next = {
+        ...saved,
+        role_closes_ci_lane:
+          saved.role_closes_ci_lane ?? state?.role_closes_ci_lane ?? null,
+      };
       setState(next);
       setDraft(next.requested);
       setBuildsDraft(null);
@@ -686,6 +702,34 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         </p>
       </div>
 
+      {roleClosed && (
+        <div
+          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+          data-testid="ci-node-role-controlled"
+        >
+          This machine&apos;s dispatch role does not run CI, so the switch below
+          is controlled by the role and is off. Your repository list and limits
+          are kept, and CI resumes under them if the role is changed back.{" "}
+          <Link
+            href="/admin/coord/devops"
+            className="underline"
+            data-testid="ci-node-role-link"
+          >
+            Change the role in the dev-ops Roles panel
+          </Link>
+          .
+        </div>
+      )}
+      {state.role_closes_ci_lane === null && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="ci-node-role-unknown"
+        >
+          This machine&apos;s dispatch role could not be read, so whether it
+          may run CI is unknown. Turning CI on is refused until it can be read.
+        </p>
+      )}
+
       <label
         className="flex items-center gap-3 rounded-md border border-border px-3 py-2"
         htmlFor={`ci-node-enabled-${machine.id}`}
@@ -693,15 +737,23 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         <Switch
           id={`ci-node-enabled-${machine.id}`}
           data-testid="ci-node-enabled"
-          checked={draft.enabled}
+          checked={roleClosed ? false : effectiveDraft.enabled}
+          disabled={roleClosed}
           onCheckedChange={(checked) =>
             setDraft((d) => ({ ...d, enabled: checked }))
           }
         />
         <span className="text-sm">
           Accept CI build jobs on this machine
-          {!draft.enabled && (
-            <span className="text-muted-foreground"> — currently off</span>
+          {roleClosed ? (
+            <span className="text-muted-foreground">
+              {" "}
+              — off, controlled by this machine&apos;s role
+            </span>
+          ) : (
+            !draft.enabled && (
+              <span className="text-muted-foreground"> — currently off</span>
+            )
           )}
         </span>
       </label>

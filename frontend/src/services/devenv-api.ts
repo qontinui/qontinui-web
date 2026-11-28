@@ -260,6 +260,12 @@ export interface CiNodeConfigState {
   /** When coord last ACCEPTED the directive. Handed off, never confirmed. */
   dispatched_at: string | null;
   reachability: CiNodeReachability;
+  /**
+   * True when the machine's dispatch role closes the `ci` lane, so the role —
+   * not this config — decides that CI is off. `null`/absent is UNKNOWN (never
+   * "open"). Populated on a read only.
+   */
+  role_closes_ci_lane?: boolean | null;
   /** Outcome of THIS request's dispatch; null on a read (nothing attempted). */
   dispatched: boolean | null;
   /**

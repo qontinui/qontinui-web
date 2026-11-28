@@ -1263,6 +1263,84 @@ def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
     return code, message
 
 
+async def _ci_lane_closed_by_role(
+    machine: Machine, token: str | None, active_tenant: str | None = None
+) -> bool | None:
+    """Does the machine's dispatch role close the ``ci`` lane?
+
+    ``False`` for a machine with no paired device (no role can apply yet).
+    Raises ``DispatchRoleUnreadable`` when the role cannot be established —
+    callers allowing something fail closed on it.
+    """
+    if machine.coord_device_id is None:
+        return False
+    # Lazy: the operations package is a sibling endpoint module.
+    from app.api.v1.endpoints.operations import read_ci_lane_closed_by_role
+
+    return await read_ci_lane_closed_by_role(
+        machine.coord_device_id, bearer=token, active_tenant=active_tenant
+    )
+
+
+async def republish_stored_ci_node_config(
+    machine: Machine, *, token: str | None, force_disabled: bool
+) -> dict[str, object]:
+    """Re-publish the STORED CI-node config (plan fleet-machine-roles D8).
+
+    Used by the role-write proxy after a dispatch role changes. Publishes the
+    stored row through the same ``/devenv/ci-node-dispatch`` path as
+    :func:`set_ci_node_config`, with ``enabled`` forced false when
+    ``force_disabled`` (the new role closes ``ci``) and as stored otherwise.
+    NEVER writes the row (no ``ci_node_config`` / ``ci_node_dispatched_at``
+    update), so the operator's allowlist survives any number of role changes.
+    Returns a typed outcome rather than raising.
+    """
+    stored = machine.ci_node_config
+    if not stored:
+        return {"status": "skipped", "reason": "no_stored_config"}
+    if machine.coord_device_id is None:
+        return {"status": "skipped", "reason": "machine_not_paired"}
+    cfg = CiNodeConfig.model_validate(stored)
+    if force_disabled:
+        cfg = cfg.model_copy(update={"enabled": False})
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    coord_body: dict[str, object] = {
+        "target_device_id": str(machine.coord_device_id),
+        "machine_id": str(machine.id),
+        "ci_node": cfg.coord_payload(),
+    }
+    outcome: dict[str, object] = {"enabled_published": cfg.enabled}
+    try:
+        resp = await post_to_coord(
+            _COORD_CI_NODE_DISPATCH_PATH,
+            headers=headers,
+            json_body=coord_body,
+            log_event="devenv_ci_node_role_republish",
+            accept_gateway_status=_coord_stored_directive,
+            machine_id=str(machine.id),
+            target_device_id=str(machine.coord_device_id),
+        )
+    except HTTPException as exc:
+        return {
+            **outcome,
+            "status": "failed",
+            "reason": "coord_unreachable",
+            "detail": _coord_transport_detail(exc),
+        }
+    if resp.status_code >= 400:
+        if _coord_stored_directive(resp):
+            return {**outcome, "status": "stored_unpublished"}
+        code, message = _coord_dispatch_refusal(resp)
+        return {
+            **outcome,
+            "status": "failed",
+            "reason": code or "coord_refused",
+            "coord_status": resp.status_code,
+            "detail": message,
+        }
+    return {**outcome, "status": "published"}
+
+
 def _ci_node_response(
     machine: Machine,
     reachability: CiNodeReachabilityT,
@@ -1311,7 +1389,19 @@ async def get_ci_node_config(
     reachability = await _ci_node_reachability(
         request, current_user, machine.coord_device_id
     )
-    return _ci_node_response(machine, reachability)
+    response = _ci_node_response(machine, reachability)
+    # ``None`` = UNKNOWN (coord could not say), never "open": the panel must
+    # not render a role-closed machine as freely switchable by guessing.
+    closed: bool | None
+    try:
+        closed = await _ci_lane_closed_by_role(
+            machine,
+            _extract_caller_token(request),
+            request.headers.get("X-Qontinui-Active-Tenant"),
+        )
+    except Exception:  # noqa: BLE001 - any failure to read is UNKNOWN
+        closed = None
+    return response.model_copy(update={"role_closes_ci_lane": closed})
 
 
 @router.put("/machines/{machine_id}/ci-node", response_model=CiNodeConfigResponse)
@@ -1336,6 +1426,58 @@ async def set_ci_node_config(
     )
     if machine is None:
         raise _not_found("machine")
+
+    role_closed = False
+    if payload.enabled:
+        # The dispatch role is the authority for whether a machine runs CI
+        # (plan fleet-machine-roles D8). Fail CLOSED: an unreadable role must
+        # not let `enabled: true` through.
+        from app.api.v1.endpoints.operations import (
+            DispatchRoleNotInRoster,
+            DispatchRoleUnreadable,
+        )
+
+        try:
+            role_closed = bool(
+                await _ci_lane_closed_by_role(
+                    machine,
+                    _extract_caller_token(request),
+                    request.headers.get("X-Qontinui-Active-Tenant"),
+                )
+            )
+        except DispatchRoleUnreadable as exc:
+            if isinstance(exc, DispatchRoleNotInRoster):
+                role_code = "role_not_in_roster"
+                role_msg = (
+                    "This machine is not in coord's dispatch-roles roster, so "
+                    "CI cannot be switched on. Assign it a role in the dev-ops "
+                    "Roles panel first."
+                )
+            else:
+                role_code = "role_unreadable"
+                role_msg = (
+                    "This machine's dispatch role could not be read, so CI "
+                    f"cannot be switched on right now. Try again shortly. ({exc})"
+                )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": role_code, "message": role_msg},
+            ) from exc
+        already_on = bool((machine.ci_node_config or {}).get("enabled"))
+        # Keeping a stored `true` unchanged is not a new enabling (the panel
+        # preserves it while the role is closed); turning one ON is refused.
+        if role_closed and not already_on:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "role_closes_ci_lane",
+                    "message": (
+                        "This machine's dispatch role does not run CI, so the "
+                        "CI-node switch cannot be turned on here. Change the "
+                        "machine's role in the dev-ops Roles panel first."
+                    ),
+                },
+            )
 
     now = utc_now()
     await machine_repo.update(
@@ -1371,7 +1513,10 @@ async def set_ci_node_config(
         "machine_id": str(machine.id),
         # NOT ``model_dump``: an unset capacity is omitted rather than sent as
         # ``null``, which a coord predating the Option-typed relay would refuse.
-        "ci_node": payload.coord_payload(),
+        # A closed role is never published as enabled, whatever is stored.
+        "ci_node": (
+            payload.model_copy(update={"enabled": False}) if role_closed else payload
+        ).coord_payload(),
     }
     try:
         resp = await post_to_coord(

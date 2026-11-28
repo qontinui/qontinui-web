@@ -561,6 +561,11 @@ class CiNodeConfigResponse(BaseSchema):
     # applied — the runner sends no ack for settings.
     dispatched_at: IsoDatetime | None = None
     reachability: CiNodeReachabilityT
+    # True when the machine's dispatch role closes the ``ci`` lane (the role,
+    # not this config, decides whether the machine runs CI — plan
+    # fleet-machine-roles D8). ``None`` = UNKNOWN (not read / coord could not
+    # say) and is NEVER rendered as "open". Populated on GET only.
+    role_closes_ci_lane: bool | None = None
     # Result of THIS request's dispatch attempt. ``None`` on a read (nothing
     # was attempted), so a UI can never mistake a GET for a successful push.
     dispatched: bool | None = None

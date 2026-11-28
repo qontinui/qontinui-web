@@ -13925,9 +13925,16 @@ export interface paths {
          * @description Set one machine's dispatch role (operator-only).
          *
          *     Affects NEW dispatch only: sessions and CI jobs already placed on the
-         *     machine run to their end (§D9). The GitHub-label (Phase 4) and CI-node
-         *     switch (Phase 5) effects are coord's and web's later phases — nothing on
-         *     this path claims them.
+         *     machine run to their end (§D9). The GitHub-label effect is coord's.
+         *
+         *     The CI-node switch is derived from the role (§D8): coord holds no copy of
+         *     the desired CI-node config, so after coord's PUT succeeds THIS hop
+         *     re-publishes the STORED ``ci_node_config`` through the existing
+         *     ``/devenv/ci-node-dispatch`` path — ``enabled`` forced false when the new
+         *     role closes ``ci``, unchanged when it opens it. The stored row is never
+         *     modified, so the operator's allowlist survives any number of role changes.
+         *     A failed re-publish never hides the successful role write: it is returned
+         *     as ``ci_node_republish`` on the (200) response.
          */
         put: operations["api_v1_operations_fleet_dispatch_role_put"];
         post?: never;
@@ -32106,6 +32113,8 @@ export interface components {
             requested: components["schemas"]["CiNodeConfig"];
             /** Requested At */
             requested_at?: string | null;
+            /** Role Closes Ci Lane */
+            role_closes_ci_lane?: boolean | null;
         };
         /**
          * CiStatusResponse
