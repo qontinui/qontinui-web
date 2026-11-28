@@ -176,6 +176,94 @@ describe("/admin/coord/computers", () => {
     ).toBe("stale");
   });
 
+  it("lists live devices on no computer and labels the count as reporting computers", async () => {
+    httpGet.mockResolvedValue(
+      listFx([computerFx()], {
+        unreported_devices: [
+          {
+            device_id: "bbbbbbbb-0000-4000-8000-000000000001",
+            hostname: "merytshost",
+            role: null,
+            state: "healthy",
+            last_seen_at: null,
+            served_git_sha: "32952dc570f8aaaa",
+            served_git_sha_at: null,
+          },
+          {
+            device_id: "bbbbbbbb-0000-4000-8000-000000000002",
+            hostname: "other",
+            role: "build",
+            state: "healthy",
+            last_seen_at: null,
+            served_git_sha: null,
+            served_git_sha_at: null,
+          },
+        ],
+      })
+    );
+    render(<CoordComputersPage />);
+    const rows = await screen.findAllByTestId("coord-computers-unreported-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("merytshost");
+    expect(rows[0].textContent).toContain("role not set");
+    expect(rows[0].textContent).toContain("32952dc57");
+    expect(rows[1].textContent).toContain("role build");
+    expect(rows[1].textContent).toContain("build not published");
+    expect(screen.getByTestId("coord-computers-count-label").textContent).toBe(
+      "1 computers reporting · 2 live devices on no computer"
+    );
+  });
+
+  it("renders no unreported devices as measured none", async () => {
+    httpGet.mockResolvedValue(listFx([computerFx()]));
+    render(<CoordComputersPage />);
+    expect(
+      await screen.findByTestId("coord-computers-unreported-none")
+    ).toBeTruthy();
+  });
+
+  it("reads `unreported_read_ok: false` and an absent field as UNKNOWN, not none", async () => {
+    httpGet.mockResolvedValue(
+      listFx([computerFx()], {
+        unreported_devices: null,
+        unreported_read_ok: false,
+      })
+    );
+    const { unmount: unmount2 } = render(<CoordComputersPage />);
+    expect(
+      await screen.findByTestId("coord-computers-unreported-unknown")
+    ).toBeTruthy();
+    expect(screen.queryByTestId("coord-computers-unreported-none")).toBeNull();
+    expect(
+      screen.getByTestId("coord-computers-count-label").textContent
+    ).toContain("UNKNOWN");
+
+    unmount2();
+    // A list present without an explicit `unreported_read_ok: true` is not a measurement.
+    httpGet.mockResolvedValue(
+      listFx([computerFx()], {
+        unreported_devices: [],
+        unreported_read_ok: false,
+      })
+    );
+    const { unmount: unmount3 } = render(<CoordComputersPage />);
+    expect(
+      await screen.findByTestId("coord-computers-unreported-unknown")
+    ).toBeTruthy();
+    unmount3();
+
+    // An older coord that omits both fields: still UNKNOWN, never an empty section.
+    const old = listFx([computerFx()]);
+    delete old.unreported_devices;
+    delete old.unreported_read_ok;
+    httpGet.mockResolvedValue(old);
+    render(<CoordComputersPage />);
+    expect(
+      await screen.findByTestId("coord-computers-unreported-unknown")
+    ).toBeTruthy();
+    expect(screen.queryByTestId("coord-computers-unreported-none")).toBeNull();
+  });
+
   it("lists unattributed CI runners instead of dropping them", async () => {
     httpGet.mockResolvedValue(
       listFx([computerFx()], {

@@ -190,6 +190,22 @@ export interface CiRunnerWire {
   attributed_by?: "runner_name" | "declared_host" | null;
 }
 
+/**
+ * Coord's `UnreportedDevice`: a live device of the tenant that no computer
+ * carries (typically a runner build predating computer reporting).
+ */
+export interface UnreportedDeviceWire {
+  device_id: string;
+  hostname: string;
+  /** Context only (last writer between runner and supervisor); `null` = not set. */
+  role: string | null;
+  state: string;
+  last_seen_at: string | null;
+  /** The build the device publishes; `null` = not published (UNKNOWN). */
+  served_git_sha: string | null;
+  served_git_sha_at: string | null;
+}
+
 /** Coord's `EventRow`. */
 export interface ComputerEventWire {
   event_id: string;
@@ -362,6 +378,13 @@ export interface ComputersListWire {
   ambiguous_ci_runners: AmbiguousCiRunnerWire[] | null;
   /** `false` = the registrar read failed: every runner list is `null` (UNKNOWN). */
   registrar_read_ok: boolean;
+  /**
+   * Live devices on no computer. `null` = coord's read failed or the field is
+   * absent (an older coord) — UNKNOWN, never "none".
+   */
+  unreported_devices?: UnreportedDeviceWire[] | null;
+  /** Only an explicit `true` makes `unreported_devices` a measurement. */
+  unreported_read_ok?: boolean;
   schema_pending: boolean;
   staleness: StalenessRulesWire;
 }

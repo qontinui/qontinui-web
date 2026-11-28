@@ -57,6 +57,7 @@ import {
   type CiRunnerWire,
   type ComputerRowModel,
   type NormalizedComputer,
+  type UnreportedDeviceWire,
 } from "./_lib/computerStatus";
 import { COMPUTERS_POLL_MS, useComputers } from "./_lib/useComputers";
 import {
@@ -285,6 +286,68 @@ function UnattributedRunners({
   );
 }
 
+function UnreportedDevices({
+  devices,
+  retained,
+}: {
+  devices: UnreportedDeviceWire[] | null;
+  /** The latest read failed; this is the last good read's answer. */
+  retained: boolean;
+}) {
+  if (devices === null) {
+    return (
+      <p
+        className="text-sm text-muted-foreground italic"
+        data-testid="coord-computers-unreported-unknown"
+      >
+        Coord did not say which live devices sit on no computer — unknown, not
+        none.
+      </p>
+    );
+  }
+  if (devices.length === 0) {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="coord-computers-unreported-none"
+      >
+        Every live device coord sees is carried by a reporting computer
+        {retained ? " at the last good read" : ""}.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1" data-testid="coord-computers-unreported-list">
+      {devices.map((d) => (
+        <li
+          key={d.device_id}
+          className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm rounded-md border border-border bg-card/30"
+          data-testid="coord-computers-unreported-row"
+        >
+          <span className="font-mono text-[11px]">{d.hostname}</span>
+          <span className="text-muted-foreground text-xs">
+            role {d.role ?? "not set"}
+          </span>
+          <span
+            className="text-muted-foreground text-xs font-mono"
+            data-testid="coord-computers-unreported-build"
+          >
+            {d.served_git_sha
+              ? d.served_git_sha.slice(0, 9)
+              : "build not published"}
+          </span>
+          <span
+            className="ml-auto text-xs text-muted-foreground"
+            title={absoluteTime(d.last_seen_at)}
+          >
+            seen {relativeTime(d.last_seen_at, { absent: "no heartbeat time" })}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function CoordComputersPage() {
   const read = useComputers();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -312,6 +375,13 @@ export default function CoordComputersPage() {
   const ambiguous: AmbiguousCiRunnerWire[] | null =
     read.data?.registrar_read_ok === true
       ? (read.data.ambiguous_ci_runners ?? null)
+      : null;
+  // Same rule as the registrar lists: a measurement only on an explicit
+  // `unreported_read_ok === true`; an older coord omits the field, which is
+  // UNKNOWN, never an empty section.
+  const unreported: UnreportedDeviceWire[] | null =
+    read.data?.unreported_read_ok === true
+      ? (read.data.unreported_devices ?? null)
       : null;
   const health = useMemo(
     () =>
@@ -365,6 +435,17 @@ export default function CoordComputersPage() {
           <Server className="h-4 w-4 text-muted-foreground" aria-hidden />
           Computers
         </h2>
+        {loaded && (
+          <p
+            className="text-xs text-muted-foreground m-0"
+            data-testid="coord-computers-count-label"
+          >
+            {rows.length} computers reporting ·{" "}
+            {unreported === null
+              ? "live devices on no computer UNKNOWN"
+              : `${unreported.length} live devices on no computer`}
+          </p>
+        )}
         <RecordList
           items={rows}
           itemKey={(r) => r.computer.computerId}
@@ -401,6 +482,32 @@ export default function CoordComputersPage() {
             />
           )}
         />
+      </section>
+
+      <section
+        className="space-y-2"
+        data-testid="coord-computers-unreported-section"
+      >
+        <h2 className="text-sm font-medium">Live devices on no computer</h2>
+        <p className="text-xs text-muted-foreground m-0">
+          Devices coord sees heartbeating that no reporting computer carries,
+          usually a runner build that predates computer reporting. They are
+          listed rather than dropped: their machine is missing from the list
+          above.
+        </p>
+        {loaded ? (
+          <UnreportedDevices
+            devices={unreported}
+            retained={read.issue !== null}
+          />
+        ) : (
+          <p
+            className="text-sm text-muted-foreground italic"
+            data-testid="coord-computers-unreported-unknown"
+          >
+            Not read yet — unknown.
+          </p>
+        )}
       </section>
 
       <section

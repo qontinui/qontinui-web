@@ -7494,7 +7494,13 @@ async def get_computers(
     ``last_event``, ``devices[]`` and ``ci_runners``. At list level:
     ``unattributed_ci_runners`` (registrar rows no computer claims),
     ``ambiguous_ci_runners`` (rows two or more computers claim, each with
-    ``claimed_by``), and ``registrar_read_ok``.
+    ``claimed_by``), ``registrar_read_ok``, and ``unreported_devices`` (live
+    devices of the tenant no computer carries, e.g. a runner build predating
+    computer reporting) with ``unreported_read_ok``. ``count`` covers
+    reporting computers only, not machines in the fleet.
+
+    When ``unreported_read_ok`` is false, ``unreported_devices`` is ``null``:
+    UNKNOWN, never "no unreported devices".
 
     When ``registrar_read_ok`` is false coord's registrar read failed, and
     every registrar-derived list — each computer's ``ci_runners``,
