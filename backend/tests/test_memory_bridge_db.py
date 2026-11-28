@@ -50,8 +50,14 @@ _VIEW_REVISION = load_revision_module(
 )
 
 # Mirrors alembic ``coord_memories`` (+ the tenant_id column from
-# ``coord_tenant_scope_columns``); the view is ``coordmem_01``'s.
+# ``coord_tenant_scope_columns``, and the per-tenant key from ``coordmem_02``);
+# the view is ``coordmem_01``'s. The mirror is dropped and re-created first:
+# ``CREATE TABLE IF NOT EXISTS`` would keep a table an earlier run left in the
+# shared test database with the old ``UNIQUE (name, version)``. Only this
+# module creates ``coord.memories`` there.
 _MEMORIES_SQL = [
+    "DROP VIEW IF EXISTS coord.memories_latest",
+    "DROP TABLE IF EXISTS coord.memories",
     """
     CREATE TABLE IF NOT EXISTS coord.memories (
         memory_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,7 +71,7 @@ _MEMORIES_SQL = [
         written_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
         is_tombstone       BOOLEAN NOT NULL DEFAULT FALSE,
         tenant_id          UUID,
-        UNIQUE (name, version)
+        UNIQUE (tenant_id, name, version)
     )
     """,
     "CREATE OR REPLACE VIEW coord.memories_latest AS "
@@ -349,8 +355,7 @@ class TestBridgeUpsert:
         The view ``coordmem_01`` replaced kept ONE row per name across all
         tenants, so tenant A's memory left the bridge's key set the moment
         tenant B wrote a higher version of the same name, and the bridge then
-        tombstoned A's record. (The versions differ only because this mirror
-        still carries the global ``UNIQUE (name, version)``.)
+        tombstoned A's record.
         """
         tenant_a, tenant_b = uuid4(), uuid4()
         _write_memory(db, tenant_a, "shared_name", 1, "tenant a body")
@@ -374,6 +379,29 @@ class TestBridgeUpsert:
             "tombstoned": 0,
             "enqueued": 0,
         }
+
+    def test_two_tenants_at_the_same_version_bridge_independently(
+        self, db: AsyncEngine
+    ) -> None:
+        """Both tenants hold version 1 of one name (``coordmem_02``'s key).
+
+        Under the old global ``UNIQUE (name, version)`` the second insert was a
+        ``unique_violation``; coord numbers versions per tenant, so every
+        tenant's first write of a name is version 1.
+        """
+        tenant_a, tenant_b = uuid4(), uuid4()
+        _write_memory(db, tenant_a, "shared_name", 1, "tenant a body")
+        _write_memory(db, tenant_b, "shared_name", 1, "tenant b body")
+
+        stats = _sync(db)
+        assert stats["upserted"] == 2
+        assert stats["tombstoned"] == 0
+        assert [(r["name"], r["version"]) for r in _bridged(db, tenant_a)] == [
+            ("shared_name", 1)
+        ]
+        assert [(r["name"], r["version"]) for r in _bridged(db, tenant_b)] == [
+            ("shared_name", 1)
+        ]
 
 
 class TestBridgeTombstone:
