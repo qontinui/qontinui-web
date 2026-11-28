@@ -37,13 +37,6 @@ vi.mock("@/components/operations", () => ({
   DevActionsTile: () => null,
 }));
 
-// The policies page also mounts a design-policies section. Its read is a
-// one-shot web-local load on mount (not a timer, not coord-proxied), so it is
-// out of D5's scope and would only add its own default-retry requests here.
-vi.mock("../policies/_components/DesignPoliciesSection", () => ({
-  DesignPoliciesSection: () => null,
-}));
-
 import { HttpClient } from "@/services/http-client";
 import CoordAgentsRecentPage from "../agents/page";
 import CoordAgentLogPage from "../agents/[agent_id]/page";

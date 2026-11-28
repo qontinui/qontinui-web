@@ -1,17 +1,10 @@
 "use client";
 
 /**
- * /admin/coord/policies — coordination + design policy surface.
- *
- * Two parts:
- *  - Design Policies (EDITABLE): tenant-scoped, user-authored UX/design
- *    policies backed by `project.design_policies` and read tool-agnostically
- *    by AI agents over `GET /api/v1/design-policies`. Writes gated server-side
- *    by tenant admin.
- *  - Autonomous next-step state (READ-ONLY): platform master-flag
- *    (master_enabled) + fleet table of tenants with non-default
- *    autonomy_level opt-ins. Plan `2026-05-30-decision-engine-tenant-ui.md`
- *    Phase 2 (§6.4).
+ * /admin/coord/policies — coordination policy surface: the autonomous
+ * next-step state (READ-ONLY), i.e. the platform master-flag
+ * (master_enabled) + fleet table of tenants with non-default autonomy_level
+ * opt-ins. Plan `2026-05-30-decision-engine-tenant-ui.md` Phase 2 (§6.4).
  *
  * Page gated by is_superuser via the coord admin layout.
  *
@@ -57,7 +50,6 @@ import {
 } from "@/lib/api/operations/coordSettings";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { DesignPoliciesSection } from "./_components/DesignPoliciesSection";
 import {
   HealthStrip,
   RecordDetail,
@@ -247,9 +239,6 @@ export default function CoordPoliciesPage() {
           />
         </div>
       ) : null}
-
-      {/* Design policies — user-editable, tool-agnostic source of truth */}
-      <DesignPoliciesSection />
 
       {/* Fleet table — R9: no Card wrapper. The count the CardTitle carried is
           on the health strip's badge cluster above. */}
