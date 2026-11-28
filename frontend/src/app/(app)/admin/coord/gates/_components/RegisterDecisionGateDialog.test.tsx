@@ -21,7 +21,10 @@ vi.mock("@/services/service-factory", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { RegisterDecisionGateDialog } from "./RegisterDecisionGateDialog";
+import {
+  RegisterDecisionGateDialog,
+  registrationNotice,
+} from "./RegisterDecisionGateDialog";
 
 function fill(testid: string, value: string) {
   fireEvent.change(screen.getByTestId(testid), { target: { value } });
@@ -38,7 +41,9 @@ describe("RegisterDecisionGateDialog", () => {
 
   it("posts the form to /gates/decision, and only there", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ gate_id: "g1" }), { status: 200 })
+      new Response(JSON.stringify({ gate_id: "g1", initial_verdict: "open" }), {
+        status: 200,
+      })
     );
     const onRegistered = vi.fn();
     const onOpenChange = vi.fn();
@@ -106,5 +111,68 @@ describe("RegisterDecisionGateDialog", () => {
     );
     expect(dialog).not.toMatch(/api\/v1\/overview/);
     expect(dialog).not.toMatch(/gate_class/);
+  });
+
+  it.each([
+    [{ gate_id: "g", initial_verdict: "open" }, false],
+    [
+      { gate_id: "g", initial_verdict: "open", warnings: ["class not stored"] },
+      true,
+    ],
+    [{ gate_id: "g" }, true],
+    [{ gate_id: "g", initial_verdict: null }, true],
+    [{ gate_id: "g", initial_verdict: "cleared" }, true],
+    [{ gate_id: "g", initial_verdict: "misconfigured" }, true],
+  ])(
+    "only an open verdict with no warnings is a plain success: %j",
+    (o, has) => {
+      expect(registrationNotice(o) !== null).toBe(has);
+    }
+  );
+
+  it("keeps the dialog open and shows coord's warnings when the gate is not plainly armed", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          gate_id: "g2",
+          initial_verdict: "open",
+          warnings: ["requested gate_class was not stored"],
+        }),
+        { status: 200 }
+      )
+    );
+    const onRegistered = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <RegisterDecisionGateDialog
+        open
+        onOpenChange={onOpenChange}
+        onRegistered={onRegistered}
+      />
+    );
+    fillAll();
+    fireEvent.click(screen.getByTestId("gates-register-decision-submit"));
+    const notice = await screen.findByTestId("gates-register-decision-notice");
+    expect(notice.textContent ?? "").toContain("was not stored");
+    expect(notice.textContent ?? "").toContain("g2");
+    expect(onRegistered).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("says UNKNOWN, not armed, when coord reports no verdict", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ gate_id: "g3" }), { status: 200 })
+    );
+    render(
+      <RegisterDecisionGateDialog
+        open
+        onOpenChange={vi.fn()}
+        onRegistered={vi.fn()}
+      />
+    );
+    fillAll();
+    fireEvent.click(screen.getByTestId("gates-register-decision-submit"));
+    const notice = await screen.findByTestId("gates-register-decision-notice");
+    expect(notice.textContent ?? "").toContain("did not report");
   });
 });

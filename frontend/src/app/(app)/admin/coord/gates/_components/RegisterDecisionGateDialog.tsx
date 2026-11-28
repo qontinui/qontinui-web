@@ -16,9 +16,45 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   registerDecisionGate,
+  type DecisionGateOutcome,
   type GateAudience,
 } from "@/lib/api/operations/coordGates";
 import { operationsErrorMessage } from "@/lib/api/operations/base";
+
+/**
+ * What a 200 from the register route actually says. Only `initial_verdict ===
+ * "open"` with no warnings is the plain "waiting for a decision" case; anything
+ * else is shown in the dialog (the gate WAS registered) instead of being
+ * reported as a clean success.
+ */
+export interface RegistrationNotice {
+  gateId: string;
+  /** Headline in plain words. */
+  headline: string;
+  reason: string | null;
+  warnings: string[];
+}
+
+export function registrationNotice(
+  outcome: DecisionGateOutcome
+): RegistrationNotice | null {
+  const warnings = outcome.warnings ?? [];
+  const verdict = outcome.initial_verdict ?? null;
+  const reason = outcome.initial_verdict_reason ?? null;
+  if (verdict === "open" && warnings.length === 0) return null;
+  let headline: string;
+  if (verdict === "open") {
+    headline = "Registered and waiting for a decision, with notes from coord";
+  } else if (verdict === null) {
+    headline =
+      "Registered, but coord did not report whether the gate is waiting for a decision";
+  } else if (verdict === "cleared") {
+    headline = "Registered, but coord already counts this gate as approved";
+  } else {
+    headline = `Registered, but coord reports the gate as ${verdict}: it is not waiting for a decision`;
+  }
+  return { gateId: outcome.gate_id, headline, reason, warnings };
+}
 
 interface RegisterDecisionGateDialogProps {
   open: boolean;
@@ -49,6 +85,7 @@ export function RegisterDecisionGateDialog({
   const [audience, setAudience] = useState<GateAudience>("operator");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<RegistrationNotice | null>(null);
 
   const canSubmit =
     slug.trim() !== "" && phase.trim() !== "" && prompt.trim() !== "";
@@ -59,6 +96,7 @@ export function RegisterDecisionGateDialog({
     if (!o && submitting) return;
     if (!o) {
       setError(null);
+      setNotice(null);
     }
     onOpenChange(o);
   }
@@ -67,19 +105,27 @@ export function RegisterDecisionGateDialog({
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
+    setNotice(null);
     try {
-      await registerDecisionGate({
+      const outcome = await registerDecisionGate({
         work_unit_slug: slug.trim(),
         phase_name: phase.trim(),
         prompt: prompt.trim(),
         clearance_audience: audience,
       });
-      toast.success("Decision gate registered");
       setSlug("");
       setPhase("");
       setPrompt("");
       setAudience("operator");
       onRegistered();
+      const n = registrationNotice(outcome);
+      if (n) {
+        // Registered, but not the plain armed case: keep the dialog open so
+        // the person reads what coord said instead of a success toast.
+        setNotice(n);
+        return;
+      }
+      toast.success("Decision gate registered");
       onOpenChange(false);
     } catch (e) {
       setError(operationsErrorMessage(e));
@@ -115,6 +161,26 @@ export function RegisterDecisionGateDialog({
             role="alert"
           >
             {error}
+          </div>
+        )}
+
+        {notice && (
+          <div
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm whitespace-pre-wrap break-words"
+            data-testid="gates-register-decision-notice"
+            data-ui-bridge-id="coord.gates-register-decision-notice"
+            role="status"
+          >
+            <p className="font-medium">{notice.headline}</p>
+            <p className="text-muted-foreground">Gate {notice.gateId}</p>
+            {notice.reason && <p>{notice.reason}</p>}
+            {notice.warnings.length > 0 && (
+              <ul className="list-disc pl-5">
+                {notice.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -176,7 +242,7 @@ export function RegisterDecisionGateDialog({
             disabled={submitting}
             data-ui-bridge-id="coord.gates-register-decision-cancel"
           >
-            Cancel
+            {notice ? "Close" : "Cancel"}
           </Button>
           <Button
             variant="brand-primary"
