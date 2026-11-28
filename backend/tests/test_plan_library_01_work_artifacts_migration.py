@@ -312,8 +312,24 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         assert "UNIQUE" in version_indexes["uq_work_artifact_versions_doc_version"]
 
         edge_indexes = _index_defs(engine, "work_artifact_edges")
-        assert "uq_work_artifact_edges_from_to_relation" in edge_indexes
-        assert "UNIQUE" in edge_indexes["uq_work_artifact_edges_from_to_relation"]
+        # ``plan_library_12_followup_identity_is_the_note`` replaced this
+        # revision's full pair index at head with one narrowed to every relation
+        # but the follow-up: a follow-up is identified by its note, not by the
+        # pair it connects. This revision's own ``downgrade`` is unchanged.
+        assert "uq_work_artifact_edges_from_to_relation" not in edge_indexes
+        pair = edge_indexes["uq_work_artifact_edges_from_to_relation_non_followup"]
+        assert "UNIQUE" in pair
+        assert "(from_id, to_id, relation)" in pair
+        assert "relation <> 'spawned_followup'" in pair
+        with engine.connect() as conn:
+            assert conn.execute(
+                text(
+                    "SELECT i.indisvalid FROM pg_index i "
+                    "JOIN pg_class c ON c.oid = i.indexrelid "
+                    "WHERE c.oid = to_regclass("
+                    "'agent.uq_work_artifact_edges_from_to_relation_non_followup')"
+                )
+            ).scalar_one(), "the narrowed pair index is INVALID"
 
         # CHECKs carry the explicit names, so nobody needs a discover-and-drop
         # loop to widen them later.
