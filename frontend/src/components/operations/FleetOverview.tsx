@@ -30,7 +30,11 @@ import {
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
-import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
+import {
+  DEVOPS_SOURCES,
+  deviceStatusReadAsOf,
+  latestInstant,
+} from "./devOpsHeadline";
 import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   resolveMachineVolumes,
@@ -289,6 +293,11 @@ function buildMachineGroups(
       // normalised to `{dark: false}`, which would be this join inventing a
       // measurement coord never made.
       credential_dark: device.credential_dark,
+      // Coord's runner-database verdict (plan
+      // `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+      // Phase 6), verbatim for the same reason: `undefined`/`null` is
+      // UNKNOWN, never `ok`.
+      runner_database: device.runner_database,
       // The runner's own reports (plan
       // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
       // Phase 5), carried through verbatim for the same reason as
@@ -678,8 +687,9 @@ export function FleetOverview({
   );
 
   // The as-of of the two reads whose bodies date their ROWS, not themselves:
-  // the newest disk measurement coord holds, and the newest device-status
-  // report. UNKNOWN (null) while a read has not answered or dates nothing.
+  // the newest disk measurement coord holds, and the device-status read
+  // (`deviceStatusReadAsOf`). UNKNOWN (null) while a read has not answered or
+  // dates nothing.
   const diskAsOf = useMemo(
     () =>
       volumes.state === "ok"
@@ -691,13 +701,7 @@ export function FleetOverview({
         : null,
     [volumes]
   );
-  const deviceStatusAsOf = useMemo(
-    () =>
-      latestInstant(
-        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
-      ),
-    [deviceStatus.byHostname]
-  );
+  const deviceStatusAsOf = deviceStatusReadAsOf(deviceStatus);
 
   // The presentation lens (plan `2026-10-23-console-presentation-spaces`
   // Phase 7). The section caption states the source and as-of of EVERY read

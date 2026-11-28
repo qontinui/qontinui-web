@@ -21,6 +21,12 @@
  * 7. **Each list row's GPUs render in its expanded capacity block** — model
  *    and VRAM per GPU, `none` for a measured `[]` — and only one row's block
  *    is open at a time.
+ * 8. **An OOM kill placed only in a slice reads `in <slice>`** on the detail
+ *    page's event row and the list row's last-event line, a placed scope reads
+ *    as that scope, and one with neither (or a blank slice) reads `no subject
+ *    reported` (plan
+ *    `2026-11-27-devops-oom-kills-inside-agent-build-slices-carry-no-victim`
+ *    Phase 5, test 30).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,6 +55,7 @@ import {
   computerFx,
   detailFx,
   DEVICE_ID,
+  eventFx,
   OTHER_COMPUTER_ID,
   laneFx,
   listFx,
@@ -652,6 +659,131 @@ describe("/admin/coord/computers/[computerId]", () => {
     expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
   });
 
+  it("labels a declared-host CI runner, and only that one — runner_name and absent add nothing", async () => {
+    const base = {
+      device_id: DEVICE_ID,
+      host_key: "merytshost",
+      repo: "qontinui/qontinui-web",
+      ci_runner_status: "idle",
+      last_seen_at: null,
+      registrar_fresh: true,
+      service_active_state: null,
+    };
+    const runners = [
+      {
+        ...base,
+        hostname: "gh-runner-declared@qontinui/qontinui-web",
+        runner_name: "declared-1",
+        service_unit: null,
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-paired@qontinui/qontinui-web",
+        runner_name: "paired-1",
+        service_unit: "actions.runner.qontinui.paired-1.service",
+        service_active_state: "active",
+        attributed_by: "runner_name" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-older@qontinui/qontinui-web",
+        runner_name: "older-coord-1",
+        service_unit: null,
+      },
+    ];
+    const fx = detailFx();
+    httpGet.mockResolvedValue({
+      ...fx,
+      ci_runners: runners,
+      workloads: { ...fx.workloads, ci_runners: runners },
+    });
+    render(<CoordComputerDetailPage />);
+    const rows = await screen.findAllByTestId("coord-computer-ci-runner-row");
+    expect(rows).toHaveLength(3);
+    expect(
+      within(rows[0]).getByTestId("coord-computer-ci-runner-declared-host")
+        .textContent
+    ).toBe("placed on machine (declared host), unit unknown");
+    expect(
+      within(rows[1]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
+    expect(
+      within(rows[2]).queryByTestId("coord-computer-ci-runner-declared-host")
+    ).toBeNull();
+  });
+
+  it("does not read as agreement for runners coord never compared — declared-host and older-coord rows alike", async () => {
+    const base = {
+      device_id: DEVICE_ID,
+      host_key: "merytshost",
+      repo: "qontinui/qontinui-web",
+      ci_runner_status: "idle",
+      last_seen_at: null,
+      registrar_fresh: true,
+      service_unit: null,
+      service_active_state: null,
+    };
+    const runners = [
+      {
+        ...base,
+        hostname: "gh-runner-declared-1@qontinui/qontinui-web",
+        runner_name: "declared-1",
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-declared-2@qontinui/qontinui-web",
+        runner_name: "declared-2",
+        attributed_by: "declared_host" as const,
+      },
+      {
+        ...base,
+        hostname: "gh-runner-older@qontinui/qontinui-web",
+        runner_name: "older-coord-1",
+      },
+    ];
+    const fx = detailFx();
+    const withRunners = {
+      ...fx,
+      ci_runners: runners,
+      workloads: { ...fx.workloads, ci_runners: runners },
+    };
+
+    // Empty divergence list: the none-message narrows to paired rows.
+    httpGet.mockResolvedValue(withRunners);
+    const { unmount } = render(<CoordComputerDetailPage />);
+    expect(
+      (await screen.findByTestId("coord-computer-divergence-none")).textContent
+    ).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners with no paired unit are not compared."
+    );
+    unmount();
+
+    // Non-empty divergence list: the same note sits beside it.
+    httpGet.mockResolvedValue({
+      ...withRunners,
+      divergence: [
+        {
+          kind: "reported_down_registrar_online",
+          unit: "actions.runner.qontinui.paired-1.service",
+          runner_name: "paired-1",
+          reported_active_state: "failed",
+          registrar_status: "online",
+          registrar_device_id: DEVICE_ID,
+        },
+      ],
+    });
+    render(<CoordComputerDetailPage />);
+    expect(
+      await screen.findByTestId("coord-computer-divergence-row")
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("coord-computer-divergence-not-compared").textContent
+    ).toBe("3 CI runners with no paired unit are not compared.");
+    expect(screen.queryByTestId("coord-computer-divergence-none")).toBeNull();
+  });
+
   it("says 'no disagreement found' — never 'agree' — when the registrar read succeeded", async () => {
     httpGet.mockResolvedValue(detailFx());
     render(<CoordComputerDetailPage />);
@@ -775,5 +907,95 @@ describe("/admin/coord/computers/[computerId]", () => {
     const unknown = await screen.findByTestId("coord-computer-unknown-banner");
     expect(unknown.getAttribute("data-issue")).toBe("route_unavailable");
     expect(unknown.textContent).toContain("UNKNOWN — ");
+  });
+});
+
+describe("/admin/coord/computers — an OOM kill's subject", () => {
+  const remainder = eventFx({
+    event_id: "1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b",
+    observed_age_secs: 60,
+    detail: {
+      victim_unit: null,
+      victim_slice: "agent-builds.slice",
+      victim_cgroup:
+        "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice",
+      slices: "read",
+      count: 1,
+      attribution: "slice_memory_events",
+    },
+  });
+  const placed = eventFx({
+    event_id: "2a3b4c5d-6e7f-4081-9a2b-3c4d5e6f7a8b",
+    observed_age_secs: 120,
+    detail: {
+      victim_unit: "agent-build-x.scope",
+      victim_slice: "agent-builds.slice",
+      victim_cgroup:
+        "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice/agent-build-x.scope",
+      slices: "read",
+      count: 1,
+      attribution: "cgroup_memory_events",
+    },
+  });
+  const neither = eventFx({
+    event_id: "3b4c5d6e-7f80-4192-8b3c-4d5e6f7a8b9c",
+    observed_age_secs: 180,
+  });
+  const blankSlice = eventFx({
+    event_id: "4c5d6e7f-8091-42a3-9c4d-5e6f7a8b9cad",
+    observed_age_secs: 240,
+    detail: {
+      victim_unit: null,
+      victim_slice: "",
+      count: 1,
+      attribution: "slice_memory_events",
+    },
+  });
+
+  function eventRow(id: string): HTMLElement {
+    const row = screen
+      .getAllByTestId("coord-computer-event-row")
+      .find((r) => r.getAttribute("data-row-key") === id);
+    if (!row) throw new Error(`no event row keyed ${id}`);
+    return row;
+  }
+
+  it("names the slice on a remainder event row, the scope on a placed one, and nothing on the rest", async () => {
+    httpGet.mockResolvedValue(
+      detailFx({ events: [neither, blankSlice, placed, remainder] })
+    );
+    render(<CoordComputerDetailPage />);
+    expect(
+      await screen.findAllByTestId("coord-computer-event-row")
+    ).toHaveLength(4);
+
+    expect(
+      within(eventRow("1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b")).getByText(
+        "in agent-builds.slice"
+      )
+    ).toBeTruthy();
+
+    const placedRow = eventRow("2a3b4c5d-6e7f-4081-9a2b-3c4d5e6f7a8b");
+    expect(within(placedRow).getByText("agent-build-x.scope")).toBeTruthy();
+    expect(within(placedRow).queryByText(/^in /)).toBeNull();
+
+    for (const id of [
+      "3b4c5d6e-7f80-4192-8b3c-4d5e6f7a8b9c",
+      "4c5d6e7f-8091-42a3-9c4d-5e6f7a8b9cad",
+    ]) {
+      const row = eventRow(id);
+      expect(within(row).getByText("no subject reported")).toBeTruthy();
+      expect(within(row).queryByText(/^in /)).toBeNull();
+    }
+  });
+
+  it("names the slice on the list row's last-event line", async () => {
+    httpGet.mockResolvedValue(listFx([computerFx({ last_event: remainder })]));
+    render(<CoordComputersPage />);
+    const [row] = await screen.findAllByTestId("coord-computer-row");
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    expect(
+      (await screen.findByTestId("coord-computer-last-event")).textContent
+    ).toContain("Last event: OOM kill (in agent-builds.slice), ");
   });
 });

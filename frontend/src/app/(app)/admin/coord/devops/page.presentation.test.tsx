@@ -63,7 +63,7 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
     fetch: async (url: string, init?: unknown) =>
-      /fleet\/health|resource-samples|worktree-slots|ci-runners|fault-to-visibility|dispatch-roles|coord\/audit/.test(
+      /fleet\/health|resource-samples|resource-stops|worktree-slots|ci-runners|fault-to-visibility|dispatch-roles|coord\/audit/.test(
         String(url)
       )
         ? new Response(JSON.stringify(await httpGet(url, init)), {
@@ -81,9 +81,14 @@ const deviceStatusRows = new Map<string, unknown>();
  * `everSeeded` false when no fleet read ever answered — the hook's own report
  * for a route that has failed from the start.
  */
-const deviceStatusState: { error: string | null; everSeeded: boolean } = {
+const deviceStatusState: {
+  error: string | null;
+  everSeeded: boolean;
+  answeredAtMs: number | null;
+} = {
   error: null,
   everSeeded: true,
+  answeredAtMs: Date.now(),
 };
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
@@ -92,6 +97,9 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
     error: deviceStatusState.error,
     seeded: true,
     everSeeded: deviceStatusState.everSeeded,
+    answeredAtMs: deviceStatusState.everSeeded
+      ? deviceStatusState.answeredAtMs
+      : null,
     refetch: vi.fn(),
   }),
 }));
@@ -150,6 +158,7 @@ import {
   DEVOPS_CAPTIONS,
   type DevOpsFixture,
   DISPLAY_NAME_A,
+  ENGINEERING_VOCABULARY,
   engineeringVocabularyOnPage,
   ERROR_DEVICE,
   ERROR_HOST,
@@ -187,6 +196,7 @@ function resetEnvironment() {
   deviceStatusRows.clear();
   deviceStatusState.error = null;
   deviceStatusState.everSeeded = true;
+  deviceStatusState.answeredAtMs = Date.now();
   window.localStorage.clear();
   window.sessionStorage.clear();
   sessionMachineAliases.reset();
@@ -454,6 +464,15 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       screen.getByTestId("coord-devops-conditions-domain-merge_train")
     ).toBeTruthy();
     expect(screen.getByTestId("coord-devops-f2v-badge")).toBeTruthy();
+    // Coord's runner-database tally carries a verdict newer than this build
+    // (`breaker_flapping`): in presentation mode it folds into "other". Read
+    // by name, because the badge ends the strip and `textContent` glues its
+    // last word onto the next element's, which the page scan cannot split.
+    const dbTally = screen.getByTestId("coord-devops-runner-database-badge");
+    expect(dbTally).toHaveTextContent(
+      "runner database 0 degraded · 0 unknown · 1 ok · 1 other"
+    );
+    expect(dbTally.textContent).not.toMatch(ENGINEERING_VOCABULARY);
     checkBehindEveryDisclosure(() => {
       expect(engineeringVocabularyOnPage()).toEqual([]);
     });
@@ -693,6 +712,66 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     );
   });
 
+  it("a device-status read that answered with no row is dated by that answer on both sections that show it, through a later failure; rows pushed before any read answered date nothing", async () => {
+    const chipKnown = (id: "dev-ops.health-strip" | "dev-ops.machines") =>
+      sectionChips(id)
+        .get(DEVOPS_SOURCES.deviceStatus)
+        ?.getAttribute("data-provenance-known");
+    const expectBoth = (known: "true" | "false") =>
+      waitFor(() => {
+        expect(chipKnown("dev-ops.health-strip")).toBe(known);
+        expect(chipKnown("dev-ops.machines")).toBe(known);
+      });
+
+    const expectBothDated = () =>
+      waitFor(() => {
+        for (const id of [
+          "dev-ops.health-strip",
+          "dev-ops.machines",
+        ] as const) {
+          expect(
+            sectionChips(id).get(DEVOPS_SOURCES.deviceStatus)
+          ).toHaveTextContent("as of 3m ago");
+        }
+      });
+
+    deviceStatusState.answeredAtMs = Date.now() - 180_000;
+    mockRoutes();
+    const answered = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    await expectBoth("true");
+    await expectBothDated();
+    answered.unmount();
+
+    deviceStatusState.error = "HTTP 500";
+    const stale = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    await expectBoth("true");
+    await expectBothDated();
+    stale.unmount();
+
+    // Rows kept through the failure: last-known words, safe to present.
+    seedDeviceStatus();
+    const lastKnown = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    expect(
+      await screen.findByTestId("device-status-last-known")
+    ).toBeInTheDocument();
+    expectPresentationSafe(lastKnown, { captions: DEVOPS_CAPTIONS });
+    lastKnown.unmount();
+
+    deviceStatusState.everSeeded = false;
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+    await expectBoth("false");
+  });
+
   it("a read that answered and then failed is dated UNKNOWN where its section shows nothing from it — drain, roles, the audit feed", async () => {
     // The hooks KEEP the last answer's date through a failed poll
     // (`devOpsAsOf.test.ts`), so only each section's own gate stops an
@@ -820,6 +899,7 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       "fleet-resource-error",
       "ci-run-error",
       "fleet-worktree-slots-error",
+      "fleet-resource-stops-error",
     ]) {
       await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy());
     }
@@ -886,6 +966,7 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       "fleet-resource-error",
       "ci-run-error",
       "fleet-worktree-slots-error",
+      "fleet-resource-stops-error",
     ]) {
       expect(screen.getByTestId(testId), testId).toHaveTextContent(
         FAILURE_REASON_WITHHELD

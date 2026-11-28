@@ -84,6 +84,7 @@ from app.core.refusal import (
     refusal_error,
 )
 from app.db.session import AsyncSessionLocal
+from app.middleware.upstream_refusal import upstream_http_exception
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -276,7 +277,7 @@ async def _coord_request(
             detail = resp.json()
         except ValueError:
             detail = resp.text
-        raise HTTPException(status_code=resp.status_code, detail=detail)
+        raise upstream_http_exception(resp, upstream="coord", detail=detail)
     if resp.is_success:
         try:
             return resp.json()
@@ -360,7 +361,7 @@ class AgentRegistryEntry(BaseModel):
     fanout_bound: int | str | None = None
     enabled: bool
     disposition: str = Field(..., description="block | degrade | warn_proceed")
-    source: str = Field(..., description="default | user_pref")
+    source: str = Field(..., description="default | user_pref | admin")
 
 
 class AgentRegistryResponse(BaseModel):
@@ -467,7 +468,25 @@ _ADMIN_DESCRIPTIVE: _DescriptiveSpec = {
     "model": (str, None),
     "effort": (str, None),
     "fanout_bound": (int, None),
+    # The tenant-admin ceiling's DETAIL (plan
+    # 2026-11-24-tenant-admins-switch-agent-spawns-off-per-agent-type): who
+    # switched spawns off, when, why, and with which disposition. Descriptive
+    # on purpose — the ceiling's on/off STATE is read from coord's catalog
+    # (`agent_registry_admin_switch.py`), not from these, and a coord that
+    # predates the columns serves none of them.
+    "admin_disposition": (str, None),
+    "admin_reason": (str, None),
+    "admin_disabled_by": (str, None),
+    "admin_disabled_at": (str, None),
 }
+
+#: The ceiling-detail names, read through the map above in one loop.
+_ADMIN_CEILING_DETAIL: tuple[str, ...] = (
+    "admin_disposition",
+    "admin_reason",
+    "admin_disabled_by",
+    "admin_disabled_at",
+)
 
 #: Descriptive fields that arrive as a LIST OF STRINGS, read through
 #: :func:`_string_list`. Fallback is always a fresh ``[]``, so this is a tuple
@@ -1052,6 +1071,10 @@ class AdminAgentRegistryRow(BaseModel):
     policy_required: bool
     allowed_dispositions: list[str] = []
     fanout_bound: int | None = None
+    admin_disposition: str | None = None
+    admin_reason: str | None = None
+    admin_disabled_by: str | None = None
+    admin_disabled_at: str | None = None
     #: Tenant members with a recorded pref row for this agent. They are exactly
     #: the population a change to ``default_enabled`` does NOT reach.
     pref_count: int
@@ -1306,6 +1329,10 @@ def _render_admin_rows(
                 # REPORTS what it dropped instead of dropping it in silence.
                 allowed_dispositions=string_lists["allowed_dispositions"],
                 fanout_bound=_descriptive(row, "fanout_bound", _ADMIN_DESCRIPTIVE),
+                **{
+                    field: _descriptive(row, field, _ADMIN_DESCRIPTIVE)
+                    for field in _ADMIN_CEILING_DETAIL
+                },
                 pref_count=len(rows_for_agent),
                 pref_differs_from_default_count=sum(
                     1

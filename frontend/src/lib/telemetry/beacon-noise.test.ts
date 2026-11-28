@@ -42,22 +42,35 @@ function clearOptOut() {
   });
 }
 
-/** Captures what the beacon transmits, so we can assert on incident count. */
+/**
+ * Captures what the beacon transmits, so we can assert on incident count. The
+ * beacon's live-page transport is an observed keepalive fetch to the ingest
+ * URL, so the transport spy is fed by the underlying fetch stub below.
+ */
 function armTransport() {
-  const sendBeacon = vi.fn(() => true);
-  Object.defineProperty(navigator, "sendBeacon", {
-    configurable: true,
-    value: sendBeacon,
-  });
-  return sendBeacon;
+  return vi.fn();
 }
 
-/** Installs a fake underlying fetch, then the beacon wraps it. */
+let transport: ReturnType<typeof armTransport> | null = null;
+
+/**
+ * Installs a fake underlying fetch, then the beacon wraps it. Requests to the
+ * ingest URL are the beacon's own sends: recorded on the transport spy and
+ * answered 200; everything else goes to `impl`.
+ */
 function stubUnderlyingFetch(impl: typeof fetch) {
+  const routed = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : String(input);
+    if (url.startsWith(INGEST_URL)) {
+      transport?.(url, init);
+      return new Response(null, { status: 200 });
+    }
+    return impl(input, init);
+  }) as typeof fetch;
   Object.defineProperty(window, "fetch", {
     configurable: true,
     writable: true,
-    value: impl,
+    value: routed,
   });
 }
 
@@ -66,7 +79,7 @@ function jsonResponse(status: number): Response {
 }
 
 describe("beacon noise gates", () => {
-  let sendBeacon: ReturnType<typeof armTransport>;
+  let ingestSend: ReturnType<typeof armTransport>;
 
   beforeEach(() => {
     uninstallBeacon();
@@ -75,7 +88,8 @@ describe("beacon noise gates", () => {
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED", "1");
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", INGEST_URL);
     vi.stubEnv("NEXT_PUBLIC_API_URL", API_URL);
-    sendBeacon = armTransport();
+    ingestSend = armTransport();
+    transport = ingestSend;
   });
 
   afterEach(() => {
@@ -90,7 +104,7 @@ describe("beacon noise gates", () => {
 
     await window.fetch(`${API_URL}/api/v1/auth/users/me`);
 
-    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(ingestSend).not.toHaveBeenCalled();
   });
 
   it("DOES report a 403 from the API host", async () => {
@@ -101,7 +115,7 @@ describe("beacon noise gates", () => {
 
     // 403 is "authenticated but not allowed" — a possible authz defect, and it
     // is not emitted on every anonymous load the way 401 is.
-    expect(sendBeacon).toHaveBeenCalled();
+    expect(ingestSend).toHaveBeenCalled();
   });
 
   it("does NOT report a 500 from a THIRD-party host", async () => {
@@ -110,7 +124,7 @@ describe("beacon noise gates", () => {
 
     await window.fetch("https://region1.google-analytics.com/g/collect");
 
-    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(ingestSend).not.toHaveBeenCalled();
   });
 
   it("does NOT report a thrown fetch to a third party, but still re-throws", async () => {
@@ -127,7 +141,7 @@ describe("beacon noise gates", () => {
     ).rejects.toBe(boom);
 
     // Observed, never swallowed — the app still sees its own error.
-    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(ingestSend).not.toHaveBeenCalled();
   });
 
   it("DOES report a thrown fetch to the API host", async () => {
@@ -140,7 +154,7 @@ describe("beacon noise gates", () => {
 
     await expect(window.fetch(`${API_URL}/api/v1/workflows`)).rejects.toThrow();
 
-    expect(sendBeacon).toHaveBeenCalled();
+    expect(ingestSend).toHaveBeenCalled();
   });
 });
 
@@ -170,20 +184,18 @@ describe("captureReactError", () => {
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED", "1");
     vi.stubEnv("NEXT_PUBLIC_TELEMETRY_INGEST_URL", INGEST_URL);
 
-    // Deliberately NO navigator.sendBeacon: jsdom's Blob has no `.text()`, so
-    // the beacon's sendBeacon path is unreadable from a test. Removing it makes
-    // the beacon fall back to fetch, where the body is a plain JSON string —
-    // the same technique beacon.test.ts uses for its transport assertions.
+    // The live-page transport is a keepalive fetch, whose body is a plain
+    // JSON string we can read. sendBeacon is removed so it cannot be used.
     Object.defineProperty(navigator, "sendBeacon", {
       configurable: true,
       value: undefined,
     });
     const sentBodies: string[] = [];
+    transport = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.body) sentBodies.push(String(init.body));
+    });
     stubUnderlyingFetch(
-      vi.fn(async (_input: unknown, init?: RequestInit) => {
-        if (init?.body) sentBodies.push(String(init.body));
-        return new Response("{}", { status: 200 });
-      }) as unknown as typeof fetch
+      vi.fn(async () => new Response("{}", { status: 200 })) as typeof fetch
     );
 
     expect(installBeacon()).toBe(true);

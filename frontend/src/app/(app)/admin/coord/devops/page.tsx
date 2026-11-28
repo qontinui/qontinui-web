@@ -71,11 +71,15 @@
  *
  * It does not recalculate a verdict. Pressure and `headroom` arrive
  * server-computed from coord, and the strip colours rows from `headroom`
- * alone — if the dashboard says a machine is red, the dispatcher must already
- * have stopped sending it work, and that is only true while both consumers
- * read one definition of the number AND the verdict.
+ * alone, so the dashboard and coord read one definition of the number AND of
+ * that grade. The grade is not one verdict every guard shares (qontinui-coord
+ * `HostMemory::refuses` holds work in a band this grade calls `warn`), and it is not
+ * a routing decision: a red row says a guard on that machine refuses what
+ * reaches it, not that work has stopped being sent, because coord's dispatchers
+ * rank machines by load and only prefer (`ci_dispatch.rs`).
  *
- * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * Beside the device-status stream's own reads, it opens SEVEN POLLS, each of a
+ * DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
  * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
@@ -161,7 +165,7 @@ import {
 import { DevOpsHeadlineStrip } from "@/components/operations/DevOpsHeadlineStrip";
 import {
   DEVOPS_SOURCES,
-  latestInstant,
+  deviceStatusReadAsOf,
 } from "@/components/operations/devOpsHeadline";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
@@ -183,6 +187,7 @@ import {
   buildResolvabilityBadge,
   faultToVisibilityBadge,
 } from "@/components/operations/fleetReadout";
+import { runnerDatabaseTallyBadge } from "@/components/operations/runnerReportStatus";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
@@ -212,8 +217,8 @@ export default function CoordDevOpsPage() {
   // rows can disagree about what is drained. Its `refresh` is handed down so a
   // drain or undrain is visible immediately rather than on the next tick.
   const drain = useFleetDrain();
-  // The live device-status stream. The hook opens a REST seed and a WebSocket
-  // PER CALL, so it is subscribed exactly once, here, and shared: the machine
+  // The live device-status stream. The hook opens a REST seed, a WebSocket and
+  // a slow re-read behind it PER CALL, so it is subscribed exactly once, here, and shared: the machine
   // list and its tile read it through `FleetOverview`, and the strip's
   // credential rollup below reads the same `details` bag the rows do.
   const deviceStatus = useDeviceStatusStream();
@@ -351,16 +356,9 @@ export default function CoordDevOpsPage() {
     ]
   );
 
-  // The device-status stream's as-of, for the strip's provenance: its body
-  // dates its ROWS, so it is the newest report's own time (style guide
+  // The device-status stream's as-of, for the strip's provenance (style guide
   // §3.11). The credential badges above count from these reports.
-  const deviceStatusAsOf = useMemo(
-    () =>
-      latestInstant(
-        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
-      ),
-    [deviceStatus.byHostname]
-  );
+  const deviceStatusAsOf = deviceStatusReadAsOf(deviceStatus);
 
   const credentialBadges = useMemo<HealthBadge[]>(() => {
     const badges: HealthBadge[] = [];
@@ -431,7 +429,8 @@ export default function CoordDevOpsPage() {
    * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
    * Phase 8, exit criteria 2 and 4): fault-to-visibility p90 WITH the share
    * of episodes whose onset is known, and the share of machines whose running
-   * build coord can name. Both always render — an absent figure reads
+   * build coord can name — plus the roster's runner-database verdicts. All
+   * three always render — an absent figure reads
    * "unknown — <reason>", never nothing, because a strip that silently drops
    * a readout is indistinguishable from one whose readout is fine.
    */
@@ -447,6 +446,12 @@ export default function CoordDevOpsPage() {
         { plainKinds: presenting }
       ),
       buildResolvabilityBadge(fleet.data, fleet.error),
+      // Coord's runner-database tally (plan
+      // `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+      // Phase 6): `unknown` is its own count, and an absent tally is UNKNOWN.
+      runnerDatabaseTallyBadge(fleet.data, fleet.error, {
+        presenting,
+      }),
     ],
     [
       faultToVisibility.data,

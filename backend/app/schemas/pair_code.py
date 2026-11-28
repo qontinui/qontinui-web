@@ -78,7 +78,8 @@ class PairCodeRedeemOut(BaseModel):
 
     Mirrors the canonical ``PairCompleteResponse`` shape that the
     runner's ``pair.rs::PairCompleteResponse`` decoder consumes:
-    ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.
+    ``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,
+    plus ``device_machine_key`` (the same additive field pair-cli returns).
     The runner uses the same decoder for both the paste-pair and the
     headless ``pair-cli`` paths.
     """
@@ -93,4 +94,14 @@ class PairCodeRedeemOut(BaseModel):
     device_token_jwt: str = Field(
         ...,
         description="Coord-issued device-token JWT.",
+    )
+    device_machine_key: str | None = Field(
+        default=None,
+        description=(
+            "Device machine key (``dmk_``) minted for this device at redeem, "
+            "returned exactly once — the cold-start credential the runner "
+            "exchanges for a device JWT with no user session. ``null`` when the "
+            "device already holds a key usable beyond the renewal window, its "
+            "key or credentials are revoked, or the best-effort mint failed."
+        ),
     )

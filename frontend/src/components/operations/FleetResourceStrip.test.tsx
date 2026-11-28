@@ -11,11 +11,17 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
-import { commitEtaReading } from "./fleetResources";
+import { commitEtaReading, HEADROOM_LABEL } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
   HistorySeries,
@@ -313,7 +319,7 @@ describe("§C1 — a host row's swap figure is coord's served `swap_ratio`", () 
     ).toHaveTextContent("set by swap");
     expect(
       within(row).getByTestId("fleet-resource-admission-verb")
-    ).toHaveTextContent("builds wait");
+    ).toHaveTextContent("builds may wait");
     // The swap ceiling it was graded against is now on this row's own axis.
     expect(
       within(row).queryByTestId("fleet-resource-floor-off-axis")
@@ -461,7 +467,7 @@ describe("§C3 — the Admission column names WHICH reading set a warn or breach
     renderStrip({ latest: [old], history: [] });
     expect(
       screen.getByTestId("fleet-resource-admission-verb")
-    ).toHaveTextContent("builds wait");
+    ).toHaveTextContent("builds may wait");
     expect(screen.queryByTestId("fleet-resource-headroom-source")).toBeNull();
   });
 
@@ -543,6 +549,17 @@ describe("§C3 — the WSL lane's headroom is shown coupled to the host", () => 
   });
 });
 
+describe("the admission verdict's hover card", () => {
+  it("does not say a red lane has stopped receiving work: coord ranks and only prefers", async () => {
+    renderStrip({ latest: [sample()], history: [] });
+    const verb = screen.getByTestId("fleet-resource-admission-verb");
+    fireEvent.focus(verb.parentElement as HTMLElement);
+    const card = await screen.findByRole("tooltip");
+    expect(card).toHaveTextContent(/coord ranks machines by load/);
+    expect(card.textContent).not.toMatch(/stopped sending/);
+  });
+});
+
 describe("§C3 — the effective floor, as coord reports it", () => {
   it("shows the floor's value, its provenance, and whether the lane defers or rejects", () => {
     renderStrip({ latest: [sample()], history: [] });
@@ -561,7 +578,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
 
   it("shows BOTH enforcers on a doubly-guarded column, with their verbs", () => {
     // §C3 is only really satisfied once both thresholds are on screen: the
-    // deferring one (work waits) and the rejecting one below it (work fails).
+    // deferring one (work may wait) and the rejecting one below it (work fails).
     renderStrip({ latest: [sample()], history: [] });
     const admission = screen.getByTestId("fleet-resource-admission");
     expect(admission.textContent).toMatch(/defers/);
@@ -942,6 +959,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const margin =
       screen.getByTestId("fleet-resource-warn-margin").textContent ?? "";
     expect(margin).toMatch(/byte floor/i);
+    expect(margin).toContain(HEADROOM_LABEL.warn);
     expect(margin).toMatch(/x1\.5/);
     expect(margin).toMatch(/pressure ceiling/i);
     expect(margin).toMatch(/no early band/i);
@@ -1025,8 +1043,8 @@ describe("§C3 — the pressure axis is rendered where the byte floor is null", 
 
   it("still prints a host-lane ceiling coord actually asserts", () => {
     // A host row that prints no swap figure (served `swap_ratio: null`) can
-    // still carry a swap ceiling coord reports. Withholding a rule the
-    // dispatcher enforces would be the inversion this column exists to stop,
+    // still carry a swap ceiling coord reports. Withholding a rule a
+    // guard enforces would be the inversion this column exists to stop,
     // so a REPORTED threshold prints even where the figure does not.
     renderStrip({
       latest: [
@@ -1138,7 +1156,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     expect(row.getAttribute("data-tone")).toBe("warn");
     expect(
       within(row).getByTestId("fleet-resource-admission").textContent
-    ).toMatch(/work waits/);
+    ).toMatch(/work may wait/);
   });
 
   it("renders ok as normal", () => {
@@ -1248,7 +1266,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     renderStrip({ latest: [sample({ headroom: "warn" })], history: [] });
     expect(
       screen.getByTestId("fleet-resource-admission-verb").textContent
-    ).toBe("builds wait");
+    ).toBe("builds may wait");
   });
 
   it("forces a stale row's verdict to unknown, whatever coord last said", () => {

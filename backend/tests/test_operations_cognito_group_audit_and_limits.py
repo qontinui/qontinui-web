@@ -612,6 +612,7 @@ class TestTheRateLimitKeyDoesNotLeakTheBearer:
 
         request = MagicMock()
         request.headers = {"authorization": "Bearer super-secret-token"}
+        request.cookies = {}
         key = get_authorization_identifier(request)
 
         assert key.startswith("bearer:")
@@ -623,6 +624,7 @@ class TestTheRateLimitKeyDoesNotLeakTheBearer:
         def _req(header: str) -> Any:
             request = MagicMock()
             request.headers = {"authorization": header}
+            request.cookies = {}
             return request
 
         a = get_authorization_identifier(_req("Bearer tok-1"))
@@ -631,10 +633,11 @@ class TestTheRateLimitKeyDoesNotLeakTheBearer:
         assert a == b
         assert a != c
 
-    def test_it_falls_back_to_the_client_ip(self):
+    def test_it_falls_back_to_the_peer(self):
         from app.middleware.rate_limit import get_authorization_identifier
 
         request = MagicMock()
         request.headers = {}
+        request.cookies = {}
         request.client.host = "203.0.113.7"
-        assert get_authorization_identifier(request) == "ip:203.0.113.7"
+        assert get_authorization_identifier(request) == "peer:203.0.113.7"

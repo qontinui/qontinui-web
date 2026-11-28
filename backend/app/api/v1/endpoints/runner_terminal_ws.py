@@ -5,6 +5,7 @@ Allows mobile clients to send terminal I/O to a runner identified by
 ``runner.id`` (UUID) and receive real-time terminal output.
 """
 
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -18,11 +19,24 @@ from app.config.redis_config import get_redis
 from app.db.session import AsyncSessionLocal
 from app.models.device import Device
 from app.models.user import User
+from app.services.runner import user_session_end
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS, reject
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+# Provenance stamp on every end/close/input frame this path forwards. The
+# fields of a forwarded frame are rebuilt below from a closed set, so a client
+# cannot supply its own ``origin``.
+ORIGIN_USER_SESSION = "user_session"
+_STAMPED_TYPES = frozenset({"terminal_end", "terminal_close", "terminal_input"})
+
+# Typed connect-time rejection codes (carried in the close reason's prefix and
+# as ``code`` in the error frame; see ``safe_send.reject``).
+CODE_AUTHENTICATION_REQUIRED = "authentication_required"
+CODE_AUTHENTICATION_FAILED = "authentication_failed"
+CODE_RUNNER_NOT_OWNED = "runner_not_owned"
 
 
 class TerminalMessage(BaseModel):
@@ -37,6 +51,9 @@ class TerminalMessage(BaseModel):
     working_dir: str | None = None
     request_id: str | None = None
     params: dict = Field(default_factory=dict)
+    # ``terminal_end`` only: the target session to end, and whether to force.
+    session_id: str | None = None
+    force: Any = None
 
 
 @router.websocket("/{runner_id}/terminal")
@@ -57,14 +74,22 @@ async def websocket_runner_terminal_endpoint(
     try:
         auth_token: str | None = token or websocket.cookies.get("access_token")
         if not auth_token:
-            await reject(websocket, "Authentication required.")
+            await reject(
+                websocket,
+                "Authentication required.",
+                error_code=CODE_AUTHENTICATION_REQUIRED,
+            )
             return
 
         try:
             user = await get_current_user_from_ws(auth_token)
         except Exception as e:
             logger.error("runner_terminal_ws_auth_failed", error=str(e))
-            await reject(websocket, "Authentication failed")
+            await reject(
+                websocket,
+                "Authentication failed",
+                error_code=CODE_AUTHENTICATION_FAILED,
+            )
             return
 
         async with AsyncSessionLocal() as db:
@@ -75,7 +100,11 @@ async def websocket_runner_terminal_endpoint(
             runner = result.scalar_one_or_none()
 
         if not runner:
-            await reject(websocket, "Runner not found or not owned by you")
+            await reject(
+                websocket,
+                "Runner not found or not owned by you",
+                error_code=CODE_RUNNER_NOT_OWNED,
+            )
             return
 
         redis = await get_redis()
@@ -133,7 +162,48 @@ async def websocket_runner_terminal_endpoint(
                     "request_id": message.request_id,
                     "timestamp": utc_now().isoformat(),
                 }
+                if message.type in _STAMPED_TYPES:
+                    msg_to_runner["origin"] = ORIGIN_USER_SESSION
+                if message.type == "terminal_end":
+                    if not message.request_id:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "code": "request_id_required",
+                                "message": "terminal_end requires a request_id.",
+                            }
+                        )
+                        continue
+                    msg_to_runner["session_id"] = message.session_id
+                    # Only the JSON literal ``true`` forces, as the remote
+                    # relay does: anything else fails toward the graceful end.
+                    msg_to_runner["force"] = message.force is True
+                    # Register BEFORE forwarding: the answer can race back on
+                    # the device socket before ``send_terminal`` returns.
+                    #
+                    # Deliberate: a ``terminal_ended`` arriving AFTER the TTL
+                    # expired its entry is no longer claimed here, so it falls
+                    # through to the device router's existing arms (the remote
+                    # relay). The asker already got ``end_reply_timeout`` and
+                    # that outcome is declared unknown; late answers are not
+                    # replayed to it.
+                    refused = user_session_end.register(
+                        runner_id, message.request_id, websocket
+                    )
+                    if refused is not None:
+                        # Nothing is forwarded: the end was not sent.
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "code": refused,
+                                "request_id": message.request_id,
+                                "message": "terminal_end not sent: " + refused,
+                            }
+                        )
+                        continue
                 sent = await manager.send_terminal(runner_id, msg_to_runner)
+                if not sent and message.type == "terminal_end":
+                    user_session_end.claim(runner_id, message.request_id, websocket)
                 if not sent:
                     await websocket.send_json(
                         {
@@ -166,6 +236,7 @@ async def websocket_runner_terminal_endpoint(
             error=str(e),
         )
     finally:
+        user_session_end.drop_socket(websocket)
         if manager:
             await manager.disconnect_mobile_terminal(runner_id, websocket)
         try:

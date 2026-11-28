@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     admin_dev,
     agent_commands,
     agent_registry,
+    agent_registry_admin_switch,
     agent_sessions,
     agent_text_units,
     ai_prompts,
@@ -507,6 +508,13 @@ api_router.include_router(fleet_targets.router, prefix="/fleet", tags=["fleet-ta
 # Agent-registry proxy — per-user agent enable/disposition prefs (coord-backed)
 api_router.include_router(
     agent_registry.router, prefix="/agent-registry", tags=["agent-registry"]
+)
+# Agent-registry catalog + tenant-admin spawn switch (plan
+# 2026-11-24-tenant-admins-switch-agent-spawns-off-per-agent-type Phase 7)
+api_router.include_router(
+    agent_registry_admin_switch.router,
+    prefix="/agent-registry",
+    tags=["agent-registry"],
 )
 # Scheduled workflow runs (cron-driven dispatch via celery-beat / redbeat)
 api_router.include_router(
