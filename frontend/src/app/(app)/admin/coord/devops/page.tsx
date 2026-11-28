@@ -187,6 +187,7 @@ import {
   buildResolvabilityBadge,
   faultToVisibilityBadge,
 } from "@/components/operations/fleetReadout";
+import { runnerDatabaseTallyBadge } from "@/components/operations/runnerReportStatus";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 // Stable identity: `?? []` would allocate a fresh array every render, which
@@ -428,7 +429,8 @@ export default function CoordDevOpsPage() {
    * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
    * Phase 8, exit criteria 2 and 4): fault-to-visibility p90 WITH the share
    * of episodes whose onset is known, and the share of machines whose running
-   * build coord can name. Both always render — an absent figure reads
+   * build coord can name — plus the roster's runner-database verdicts. All
+   * three always render — an absent figure reads
    * "unknown — <reason>", never nothing, because a strip that silently drops
    * a readout is indistinguishable from one whose readout is fine.
    */
@@ -444,6 +446,12 @@ export default function CoordDevOpsPage() {
         { plainKinds: presenting }
       ),
       buildResolvabilityBadge(fleet.data, fleet.error),
+      // Coord's runner-database tally (plan
+      // `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+      // Phase 6): `unknown` is its own count, and an absent tally is UNKNOWN.
+      runnerDatabaseTallyBadge(fleet.data, fleet.error, {
+        presenting,
+      }),
     ],
     [
       faultToVisibility.data,

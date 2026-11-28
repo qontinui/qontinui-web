@@ -14751,6 +14751,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/gates/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Register Decision Gate
+         * @description Register a decision gate: ``operator_approval`` anchored on a work unit.
+         *
+         *     1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the
+         *        unit id. A slug coord does not know in this tenant is coord's own error,
+         *        passed through.
+         *     2. ``POST /coord/gates/register`` with the predicate
+         *        ``{"kind": "operator_approval", "prompt": ...}``, anchor
+         *        ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and
+         *        the fixed ``gate_class`` above.
+         *
+         *     Returns coord's registration outcome (``gate_id``, ``warnings``, ...).
+         */
+        post: operations["api_v1_operations_gates_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/gates/list": {
         parameters: {
             query?: never;
@@ -19955,6 +19985,10 @@ export interface paths {
          *
          *     ``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when
          *     supplied together, set the class; omitted, the stored class is kept.
+         *     ``clear_size_class: true`` (default false) nulls both columns together —
+         *     only for a ``sweep``-set class (a ``declared`` one is a 422 with error
+         *     ``size_class_not_sweep_set``, row unchanged; an unclassified row reports
+         *     ``changed: false``) — and is a 422 beside ``size_class``.
          *
          *     This is the correction door for anchors: a wrong set is corrected by
          *     PUTting the right one. ``changed: false`` means the body restated what was
@@ -35110,6 +35144,27 @@ export interface components {
             name?: string | null;
         };
         /**
+         * DecisionGateRequest
+         * @description Body for ``POST /operations/gates/decision``.
+         *
+         *     ``extra="forbid"``: ``gate_class`` is deliberately not accepted (see above),
+         *     so a caller that sends it gets a typed 422 instead of a silent drop.
+         */
+        DecisionGateRequest: {
+            /**
+             * Clearance Audience
+             * @default operator
+             * @enum {string}
+             */
+            clearance_audience: "operator" | "agent";
+            /** Phase Name */
+            phase_name: string;
+            /** Prompt */
+            prompt: string;
+            /** Work Unit Slug */
+            work_unit_slug: string;
+        };
+        /**
          * DeferredQuestionBatch
          * @description Batch of deferred questions to sync.
          */
@@ -41189,11 +41244,19 @@ export interface components {
          *     carries no reason (it is cleared). ``size_class`` / ``size_class_source``
          *     are optional and travel together: supplied, they set the class; omitted,
          *     the stored class is kept — a caller correcting an anchor must not erase a
-         *     classification it never read.
+         *     classification it never read. ``clear_size_class: true`` is the one way to
+         *     erase a class: it nulls ``size_class`` and ``size_class_source`` together,
+         *     only where the stored source is ``sweep`` (a ``declared`` class is a 422
+         *     ``size_class_not_sweep_set``), and contradicts supplying either field.
          */
         FollowupAnchorsReplace: {
             /** Anchors */
             anchors: components["schemas"]["FollowupAnchorIn"][];
+            /**
+             * Clear Size Class
+             * @default false
+             */
+            clear_size_class: boolean;
             /** Size Class */
             size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** Size Class Source */
@@ -83511,6 +83574,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_gates_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionGateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyWhenGreenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
