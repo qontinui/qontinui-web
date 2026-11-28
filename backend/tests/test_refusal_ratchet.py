@@ -55,7 +55,15 @@ from pathlib import Path
 #: ``endpoints/historical.py`` left with the file when every
 #: ``/api/v1/testing/historical`` route was deleted. A deletion, not a
 #: conversion.
-BASELINE = 789
+#: 788 (from 789), plan 2026-11-08-save-per-tab-runner-session-lists-on-sessions-
+#: page-kept-14-days: the runner HTTP relay moved out of
+#: ``endpoints/device_bridge_ws.py`` into ``app/services/runner_relay.py``. That
+#: is NOT a conversion: the 413 "request body exceeds relay size cap" refusal is
+#: still free text, but it now reaches the response through
+#: ``InvalidRequest.detail``, a dataclass attribute this syntactic detector does
+#: not count (device_bridge_ws.py 8 -> 7, runner_relay.py 0). Moving it to
+#: ``refusal_error`` belongs in its own change.
+BASELINE = 788
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 

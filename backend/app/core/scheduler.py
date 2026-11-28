@@ -502,6 +502,14 @@ async def _job_file_cleanup() -> Any:
     return await cleanup_expired_files()
 
 
+async def _job_saved_session_lists_cleanup() -> Any:
+    from app.jobs.saved_session_lists_cleanup import (
+        cleanup_expired_saved_session_lists,
+    )
+
+    return await cleanup_expired_saved_session_lists()
+
+
 async def _job_render_log_retention() -> Any:
     from app.jobs.render_log_retention import run_render_log_retention
 
@@ -718,6 +726,19 @@ def install_default_tasks(service: SchedulerService) -> None:
         ScheduledTask(
             name="file_cleanup",
             coro=_job_file_cleanup,
+            interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+    # Saved per-tab session lists expire 14 days after capture (plan
+    # 2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days).
+    # Reads already hide an expired list; this hourly pass deletes it. At boot
+    # too, like the other hourly cleanups, and a database the migration has not
+    # reached logs the absence and returns rather than failing the task.
+    service.register(
+        ScheduledTask(
+            name="saved_session_lists_cleanup",
+            coro=_job_saved_session_lists_cleanup,
             interval_seconds=3600.0,
             run_at_boot=True,
         )

@@ -36,6 +36,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.api.v1.endpoints import device_bridge_ws
+from app.services import runner_relay
 from app.services.runner import RunnerCommandTimeoutError
 
 DEVICE_ID = "11111111-1111-1111-1111-111111111111"
@@ -101,6 +102,10 @@ def _install_manager(monkeypatch, *, dispatch) -> MagicMock:
     """Patch get_runner_websocket_manager + get_redis; return the relay mock.
 
     ``dispatch`` is the AsyncMock used for ``manager.relay.dispatch_and_wait``.
+    ``get_redis`` is patched where the relay reads it: the relay moved into
+    ``app/services/runner_relay.py`` (plan
+    2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days,
+    Phase 2).
     """
     relay = MagicMock()
     relay.dispatch_and_wait = dispatch
@@ -109,7 +114,7 @@ def _install_manager(monkeypatch, *, dispatch) -> MagicMock:
     import app.services.runner_websocket_manager as mgr_mod
 
     monkeypatch.setattr(
-        device_bridge_ws,
+        runner_relay,
         "get_redis",
         AsyncMock(return_value=MagicMock()),
         raising=True,
@@ -302,7 +307,7 @@ async def test_relay_oversize_request_body_maps_413(monkeypatch):
     dispatch = AsyncMock()
     _install_manager(monkeypatch, dispatch=dispatch)
 
-    big = b"x" * (device_bridge_ws.RELAY_MAX_BODY_BYTES + 1)
+    big = b"x" * (runner_relay.RELAY_MAX_BODY_BYTES + 1)
     request = _FakeRequest(
         method="POST",
         headers={"X-Qontinui-Device-Id": DEVICE_ID},
@@ -350,16 +355,20 @@ async def test_relay_runner_not_connected_when_ws_session_null_maps_503(monkeypa
 
 
 def _install_owned_device(monkeypatch, row, *, raises: Exception | None = None) -> None:
-    """Patch the full-row coord read the 503 branch uses for its liveness clocks."""
+    """Patch the full-row coord read the 503 branch uses for its liveness clocks.
 
-    async def _fake_get_owned_device(request, device_id, user_id):
+    The relay service reads it with the caller's bearer
+    (``coord_device.get_owned_device_with_bearer``), not from the request.
+    """
+
+    async def _fake_get_owned_device(device_id, *, bearer, user_id):
         if raises is not None:
             raise raises
         return row
 
     monkeypatch.setattr(
         device_bridge_ws.coord_device,
-        "get_owned_device",
+        "get_owned_device_with_bearer",
         _fake_get_owned_device,
         raising=True,
     )
@@ -701,7 +710,7 @@ async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch
     assert refusal["discriminator"] == "runner_never_registered"
     assert refusal["next_action"] == {
         "kind": "set_setting",
-        "target": device_bridge_ws._RELAY_SETTING_TARGET,
+        "target": runner_relay.RELAY_SETTING_TARGET,
     }
     assert refusal["next_action"]["kind"] != "pair_device"
     assert "start the runner on that device" in refusal["detail"]
@@ -772,3 +781,99 @@ async def test_relay_timeout_header_clamped(monkeypatch):
         request, "health", user=SimpleNamespace(id=USER_ID)
     )
     assert dispatch.await_args.kwargs["timeout_s"] == pytest.approx(120.0)
+
+
+class _BodyRecordingRequest(_FakeRequest):
+    """A request that records whether anything read its body."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.body_reads = 0
+
+    async def body(self) -> bytes:
+        self.body_reads += 1
+        return await super().body()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("row", "path", "expected_status"),
+    [
+        (None, "health", 404),
+        ({"device_id": DEVICE_ID, "ws_session_id": None}, "health", 503),
+        ({"device_id": DEVICE_ID, "ws_session_id": 12345}, "bad path?", 400),
+    ],
+    ids=["not-owned", "not-connected", "unsafe-path"],
+)
+async def test_a_refused_relay_request_never_reads_its_body(
+    monkeypatch, row, path, expected_status
+):
+    """The body is read only once the device is reachable and the path is safe.
+
+    Plan 2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days
+    moved the relay into ``app/services/runner_relay.py``; the route hands it
+    the body's reader, not the bytes, so a refused request is never buffered
+    (the order the inline relay always had).
+    """
+    _install_device_lookup(monkeypatch, row)
+    _install_owned_device(monkeypatch, {"device_id": DEVICE_ID})
+    dispatch = AsyncMock()
+    _install_manager(monkeypatch, dispatch=dispatch)
+
+    request = _BodyRecordingRequest(
+        method="POST",
+        headers={"X-Qontinui-Device-Id": DEVICE_ID},
+        body=b"x" * 1024,
+    )
+    response = await device_bridge_ws.runner_proxy(
+        request, path, user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == expected_status
+    assert request.body_reads == 0
+    dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_relay_request_reads_its_body_once(monkeypatch):
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
+    dispatch = AsyncMock(return_value={"status": 200, "headers": {}, "body_b64": ""})
+    _install_manager(monkeypatch, dispatch=dispatch)
+
+    request = _BodyRecordingRequest(
+        method="POST",
+        headers={"X-Qontinui-Device-Id": DEVICE_ID},
+        body=b'{"k": 1}',
+    )
+    response = await device_bridge_ws.runner_proxy(
+        request, "settings/general", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 200
+    assert request.body_reads == 1
+    assert base64.b64decode(dispatch.await_args.args[1]["body_b64"]) == b'{"k": 1}'
+
+
+@pytest.mark.asyncio
+async def test_relay_log_lines_name_runner_proxy_as_their_caller(monkeypatch):
+    """The relay service is shared with the saved-session-lists capture, so
+    every line it logs names its caller: runner-proxy traffic stays countable
+    on its own."""
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
+    dispatch = AsyncMock(return_value={"status": 200, "headers": {}, "body_b64": ""})
+    _install_manager(monkeypatch, dispatch=dispatch)
+    rec = _RecordingLogger()
+    monkeypatch.setattr(runner_relay, "logger", rec, raising=True)
+
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID}),
+        "health",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    assert rec.kw_for("runner_proxy_relay_dispatch")["caller"] == "runner_proxy"
+    assert rec.kw_for("runner_proxy_relay")["caller"] == "runner_proxy"
