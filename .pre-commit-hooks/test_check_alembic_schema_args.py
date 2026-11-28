@@ -315,3 +315,11 @@ def test_check_file_reports_unqualified_drop_index(tmp_path):
     assert len(violations) == 1
     assert "DROP INDEX" in violations[0]
     assert ":4:" in violations[0]
+
+
+def test_devenv_schema_qualified_raw_sql_passes():
+    # ``devenv`` must stay in ALLOWED_SCHEMAS: devenv_11 alters devenv.machines
+    # through a static op.execute literal. Dropping it makes this fail.
+    assert _audit(
+        "ALTER TABLE devenv.machines ADD COLUMN IF NOT EXISTS x INTEGER NULL"
+    ) == []
