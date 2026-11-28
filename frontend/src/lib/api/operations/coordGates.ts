@@ -218,15 +218,31 @@ export interface DecisionGateBody {
   clearance_audience: GateAudience;
 }
 
+/**
+ * Response of `POST /gates/decision` (backend `NotifyWhenGreenResponse`).
+ *
+ * A 200 is not "armed": coord evaluates the predicate once at registration and
+ * reports it as `initial_verdict`, and only `open` is a gate waiting for a
+ * decision. `null` / absent means coord reported no verdict (UNKNOWN, never
+ * defaulted to `open`). `warnings` carries coord's advisory notes verbatim,
+ * including the one saying a requested class was not stored.
+ */
+export interface DecisionGateOutcome {
+  gate_id: string;
+  warnings?: string[];
+  initial_verdict?: string | null;
+  initial_verdict_reason?: string | null;
+}
+
 /** `POST /gates/decision` — register an `operator_approval` gate on a work unit's phase. */
 export async function registerDecisionGate(
   body: DecisionGateBody
-): Promise<{ gate_id: string; warnings?: string[] }> {
+): Promise<DecisionGateOutcome> {
   const url = `${OPERATIONS_BASE}/gates/decision`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
     idempotent: false,
   });
-  return readJson<{ gate_id: string; warnings?: string[] }>(res, `POST ${url}`);
+  return readJson<DecisionGateOutcome>(res, `POST ${url}`);
 }
