@@ -129,7 +129,7 @@ build also reads ``false``), then run ``DROP INDEX CONCURRENTLY
 coord.idx_pr_events_merged_repo_created`` and re-run the CREATE below by hand.
 
 Revision ID: coord_pr_events_merged_repo_created_idx
-Revises: coord_wt_volume_read_only_01
+Revises: coord_second_tier_idx_01
 Create Date: 2026-11-28
 
 """
@@ -140,7 +140,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pr_events_merged_repo_created_idx"
-down_revision: str | None = "coord_wt_volume_read_only_01"
+down_revision: str | None = "coord_second_tier_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
