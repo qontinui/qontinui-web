@@ -103,7 +103,7 @@ the three point reads (as generic plans) and the ``LATERAL`` realizations shape 
 on the index.
 
 Revision ID: repo_branches_repo_pr_idx_01
-Revises: cinode_06_ci_node_directives
+Revises: coord_second_tier_idx_01
 Create Date: 2026-11-28
 
 """
@@ -114,7 +114,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "repo_branches_repo_pr_idx_01"
-down_revision: str | Sequence[str] | None = "cinode_06_ci_node_directives"
+down_revision: str | Sequence[str] | None = "coord_second_tier_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -61,7 +61,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "repo_branches_repo_pr_idx_01"
-_PARENT_REVISION_ID = "cinode_06_ci_node_directives"
+_PARENT_REVISION_ID = "coord_second_tier_idx_01"
 _REVISION_FILENAME = f"{_REVISION_ID}.py"
 _INDEX_NAME = "idx_repo_branches_repo_pr"
 _EXPECTED_DEFINITION = (
