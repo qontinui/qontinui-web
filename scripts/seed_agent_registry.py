@@ -667,20 +667,26 @@ def load_spawn_contract(
 
 def contract_names(contract: dict) -> set[str]:
     """Every agent name the spawn contract owns: its kind seeds (`operator_spawn`
-    among them), every class row (seeded or not) and every `spawn_path` value.
-    The last two are the runner's per-path fallback keys, so a row by one of
-    those names governs a whole spawn class. A contract missing any of the
-    three lists, or carrying one empty, is not one this seeder can trust to
-    protect anything."""
+    among them), every class row (seeded or not), every `spawn_path` value and
+    every `runner_keys` name. The class and path values are the runner's per-path
+    fallback keys, so a row by one of those names governs a whole spawn class; a
+    `runner_keys` name is one the runner authorizes a spawn under by name
+    (`runner-instance`, `orchestration-fix-agent`, the `/sessions/spawn` roles),
+    so a DISABLED row by that name would block every spawn under that key. A
+    contract missing any of the four lists, or carrying one empty, is not one
+    this seeder can trust to protect anything."""
     try:
         kinds = {k["agent_name"] for k in contract["kind_seeds"]}
         classes = {c["spawn_path"] for c in contract["class_seeds"]}
         paths = set(contract["spawn_paths"])
+        runner = {k["agent_name"] for k in contract["runner_keys"]}
     except (KeyError, TypeError) as e:
         raise UnprovenError(f"the spawn contract is missing {e}") from e
-    if not kinds or not classes or not paths:
-        raise UnprovenError("the spawn contract lists no kinds, classes or spawn paths")
-    return kinds | classes | paths
+    if not kinds or not classes or not paths or not runner:
+        raise UnprovenError(
+            "the spawn contract lists no kinds, classes, spawn paths or runner keys"
+        )
+    return kinds | classes | paths | runner
 
 
 def find_orphans(
