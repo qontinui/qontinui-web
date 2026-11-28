@@ -51,11 +51,13 @@ Postgres uses a partial index only when it can prove the query's predicate
 implies the index predicate. Change one side without the other — reword an arm,
 add a merged kind, change a state literal's case — and the planner silently
 falls back to ``idx_pr_events_event_kind`` and the intake starts timing out
-again. Coord pins this: Phase 3 of the plan adds the DB test
-``all_landed_win_ev_predicate_implies_the_merged_partial_index``, which EXPLAINs
-``ALL_LANDED_ARMING_SQL`` and ``TRAIN_ARMING_SQL`` against a copy of the table
-carrying only this index and reds if ``win_ev`` stops naming it; index presence
-rides coord's ``schema.manifest`` round-trip after the migrator pin bump.
+again. coord's Phase 3 test
+(``all_landed_win_ev_predicate_implies_the_merged_partial_index``, plan
+``2026-11-28-repo-intake-read-is-intermittent-and-step-0-47-proceeds-on-one-unknown``)
+pins this once it lands: it EXPLAINs ``ALL_LANDED_ARMING_SQL`` and
+``TRAIN_ARMING_SQL`` against a copy of the table carrying only this index and
+reds if ``win_ev`` stops naming it; index presence rides coord's
+``schema.manifest`` round-trip after the migrator pin bump.
 
 The same predicate is repeated by ``TRAIN_ARMING_SQL`` (``win_head``) and by the
 per-kind arms of ``ev_pr`` / ``ARMING_LIBRARY_LANDED_PRS_SQL``, so those reads
@@ -70,8 +72,28 @@ in-transaction build would take a write-blocking ``SHARE`` lock. CONCURRENTLY
 cannot run inside a transaction, hence ``op.get_context().autocommit_block()``
 — same precedent as ``coord_pr_events_hydration_head_idx`` and
 ``coord_pg_overload_idx_01``. On the CI fresh DB the table is empty, so the
-build is instant. Only merged events enter the index, a small fraction of the
-table's writes.
+build is instant there. **On production it is not:** CONCURRENTLY scans all of
+``coord.pr_events``, the fleet's largest append-only table, twice, and then
+waits for every transaction older than the build to finish. Its duration is not
+measured here; read ``pg_stat_progress_create_index`` while it runs. Only
+merged events enter the index, a small fraction of the table's writes.
+
+**A second migrator kills a live build.** It waits on the first's lock, the
+deadlock detector usually fires, and the FIRST dies while the second prints
+``already exists, skipping``, exits 0 and closes any open ``migration-failure``
+issue, leaving the index INVALID (reproduced on Postgres 16.13, per
+``pr_events_mergeability_head_idx_01``). ``.github/workflows/migrate.yml``'s
+concurrency group covers only its 900 s waiter, which never stops the task, so
+this needs a build that outlasts the waiter and a later run: its 03:00 UTC cron,
+a push touching ``backend/alembic/**``, ``backend/pyproject.toml`` or
+``backend/poetry.lock``, or coord's gate executor or a manual dispatch. Nothing
+in that workflow or in ``alembic/env.py`` takes an advisory lock, and a blocking
+one would not help: the session waiting on it holds a snapshot that the first
+build's last phase waits for, and the deadlock still fires. So **land this away
+from 03:00 UTC, merge no other PR touching those paths until
+``pg_stat_progress_create_index`` is empty, and read ``indisvalid`` after the
+deploy** (the plan's Phase 2 post-deploy step owns that read and the repair
+below).
 
 Additive / forward-only / expand-only: ``upgrade`` creates the index
 ``IF NOT EXISTS``; ``downgrade`` drops it ``IF EXISTS``. No table, column or

@@ -34,9 +34,11 @@ What is asserted
 7. Downgrade removes the index and leaves every row; a second upgrade
    re-applies.
 
-coord pins the same implication from its side: Phase 3 of the plan adds
-``all_landed_win_ev_predicate_implies_the_merged_partial_index``, which EXPLAINs
-the real statement. This test reddens if the revision's side moves.
+coord's Phase 3 test
+(``all_landed_win_ev_predicate_implies_the_merged_partial_index``, plan
+``2026-11-28-repo-intake-read-is-intermittent-and-step-0-47-proceeds-on-one-unknown``)
+pins the same implication from its side once it lands, by EXPLAINing the real
+statement. This test reddens if the revision's side moves.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable (``QONTINUI_TEST_PG`` points it
@@ -59,7 +61,12 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     ephemeral_database,
+    index_definition,
     index_exists,
+    index_oid,
+    index_state,
+    invalidate_index,
+    is_superuser,
     run_alembic,
     upgrade_execute_calls,
 )
@@ -109,9 +116,12 @@ _PARAMS: dict[str, Any] = {"repos": [_REPO], "cutoff": "now"}
 def _seed(engine: Engine) -> int:
     """A window of mostly non-merged events with a few merged ones per PR.
 
-    The shape the plan's §Why measured on production (most window events are
-    not merged, and ``repo`` / ``state`` are heap filters under the
-    ``event_kind`` index), at test scale: 64,000 non-merged events, one every
+    The shape the plan's §Why describes on production — most window events are
+    not merged, so without this index ``repo`` and ``state`` are heap filters —
+    at test scale. Here the no-index baseline plans as an Index Scan on
+    ``idx_pr_events_created_at`` with ``repo`` / ``state`` / ``event_kind`` as a
+    heap ``Filter`` (production's plan, on ``idx_pr_events_event_kind``, differs
+    in the index but not in the shape). 64,000 non-merged events, one every
     40 s, round-robin over four repos — ``_REPO`` and three others — so about
     15k fall in the 7-day window, about 3.8k of them ``_REPO``'s, interleaved
     row by row with the other repos' across the heap. Returns the number of
@@ -223,40 +233,6 @@ def _top_buffers(plan: str) -> int:
     return int(first.group(1) or 0) + int(first.group(2) or 0)
 
 
-def _index_is_valid(engine: Engine) -> bool:
-    with engine.connect() as conn:
-        return bool(
-            conn.execute(
-                text(
-                    """
-                    SELECT i.indisvalid FROM pg_index i
-                      JOIN pg_class c ON c.oid = i.indexrelid
-                     WHERE c.relname = :idx
-                    """
-                ),
-                {"idx": _INDEX_NAME},
-            ).scalar_one()
-        )
-
-
-def _index_definition(engine: Engine) -> str:
-    with engine.connect() as conn:
-        return str(
-            conn.execute(
-                text(f"SELECT pg_get_indexdef('coord.{_INDEX_NAME}'::regclass)")
-            ).scalar_one()
-        )
-
-
-def _index_oid(engine: Engine) -> int:
-    with engine.connect() as conn:
-        return int(
-            conn.execute(
-                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
-            ).scalar_one()
-        )
-
-
 def _row_count(engine: Engine) -> int:
     with engine.connect() as conn:
         return int(
@@ -298,15 +274,6 @@ _NEEDS_PG = pytest.mark.skipif(
 )
 
 
-def _is_superuser(engine: Engine) -> bool:
-    with engine.connect() as conn:
-        return bool(
-            conn.execute(
-                text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
-            ).scalar_one()
-        )
-
-
 @_NEEDS_PG
 def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
     root = backend_root()
@@ -326,11 +293,11 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
         # 3. Apply: valid, and exactly the definition win_ev relies on.
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert index_exists(engine, _INDEX_NAME)
-        assert _index_is_valid(engine), (
+        assert index_state(engine, _INDEX_NAME)[0], (
             "a killed CONCURRENTLY build leaves an INVALID index that "
             "IF NOT EXISTS would skip on re-run; existence is not enough"
         )
-        assert _index_definition(engine) == _EXPECTED_DEFINITION
+        assert index_definition(engine, _INDEX_NAME) == _EXPECTED_DEFINITION
         with engine.begin() as conn:
             conn.execute(text("ANALYZE coord.pr_events"))
 
@@ -377,14 +344,14 @@ def test_coord_pr_events_merged_repo_created_idx_lifecycle() -> None:
         _seed(engine)
         rows = _row_count(engine)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_is_valid(engine)
+        assert index_state(engine, _INDEX_NAME)[0]
 
         # 6. A re-run leaves the VALID index untouched...
-        oid_before = _index_oid(engine)
+        oid_before = index_oid(engine, _INDEX_NAME)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_is_valid(engine), "a re-run must leave a VALID index"
-        assert _index_oid(engine) == oid_before, (
+        assert index_state(engine, _INDEX_NAME)[0], "a re-run must leave a VALID index"
+        assert index_oid(engine, _INDEX_NAME) == oid_before, (
             "a re-run must leave a VALID index untouched, not drop and rebuild it"
         )
 
@@ -393,20 +360,11 @@ def test_coord_pr_events_merged_repo_created_idx_lifecycle() -> None:
         # revision's docstring), and it is why the post-deploy step reads
         # `indisvalid`. Marking the index INVALID takes a superuser, which CI's
         # database role is; elsewhere this step is skipped and the rest runs.
-        if _is_superuser(engine):
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        """
-                        UPDATE pg_index SET indisvalid = false
-                         WHERE indexrelid = CAST(:idx AS regclass)
-                        """
-                    ),
-                    {"idx": f"coord.{_INDEX_NAME}"},
-                )
+        if is_superuser(engine):
+            invalidate_index(engine, _INDEX_NAME)
             run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
             run_alembic(root, url, "upgrade", _REVISION_ID)
-            assert not _index_is_valid(engine), (
+            assert not index_state(engine, _INDEX_NAME)[0], (
                 "IF NOT EXISTS keeps an INVALID index and the upgrade reports "
                 "success: the post-deploy indisvalid read is what sees this"
             )
@@ -422,4 +380,4 @@ def test_coord_pr_events_merged_repo_created_idx_lifecycle() -> None:
         assert not index_exists(engine, _INDEX_NAME)
         assert _row_count(engine) == rows, "downgrade must not touch a row"
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_is_valid(engine), "re-applied index must be VALID"
+        assert index_state(engine, _INDEX_NAME)[0], "re-applied index must be VALID"
