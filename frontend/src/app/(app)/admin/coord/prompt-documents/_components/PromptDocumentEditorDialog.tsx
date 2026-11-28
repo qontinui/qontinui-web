@@ -27,6 +27,7 @@ import {
   validateBodyForKind,
 } from "../_lib/sessionBriefingBody";
 import { PromptDocumentClaims } from "./PromptDocumentClaims";
+import { InitiativeSchedulePanel } from "./InitiativeSchedulePanel";
 import { SUMMARY_INTENT_KINDS } from "@/app/(app)/overview/_lib/intent";
 
 /** Documents of these kinds are the ones the Summary page's reading-order
@@ -340,6 +341,19 @@ export function PromptDocumentEditorDialog({
                   ) : null}
                 </div>
               )}
+
+              {document.kind === "initiative" ? (
+                // Structured entry for the milestones, dates and forecast
+                // calendar the project Overview derives from this document
+                // (plan `2026-11-25-overview-timeline-and-milestones-derive-from-coord`,
+                // Phase 7). It edits `body` in place; the Save below is the
+                // page's one existing write path.
+                <InitiativeSchedulePanel
+                  body={body}
+                  onBodyChange={setBody}
+                  disabled={saving}
+                />
+              ) : null}
 
               <div className="space-y-2">
                 <Label htmlFor="doc-body">Body</Label>

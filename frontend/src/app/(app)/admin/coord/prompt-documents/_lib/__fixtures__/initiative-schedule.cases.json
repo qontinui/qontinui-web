@@ -1,0 +1,142 @@
+{
+  "_comment": "One fixture set, two parsers. backend/tests/test_overview_schedule.py (Python, what the overview READS) and _lib/initiativeSchedule.test.ts (TypeScript, what the panel PREVIEWS) both run every case and must agree. Plan 2026-11-25-overview-timeline-and-milestones-derive-from-coord Phase 7. Synthetic data only.",
+  "cases": [
+    {
+      "name": "frontmatter list, calendar with one unreadable break",
+      "text": "---\nstarts: 2026-10-19\nends: 2027-01-22\nprogramme: prog-plan\nmilestones:\n  - {id: M1, name: Pilot live, date: 2026-12-01, shown_by: the customer, work_unit: child-a}\n  - id: M2\n    name: Launch\n    date: 2027-01-22\n    gate: 00000000-0000-4000-8000-000000000009\n  - {id: M3, name: No date at all}\n  - {id: M4, name: Bad date, date: 2026-13-45}\ncalendar:\n  working_day_factor: 0.8\n  breaks:\n    - {start: 2026-12-24, end: 2027-01-02, label: Winter break}\n    - start: 2027-02-10\n      end: 2027-02-01\n      label: Backwards\n---\n# Initiative\n",
+      "expect": {
+        "programme": "prog-plan",
+        "milestones": [
+          {
+            "id": "M1",
+            "name": "Pilot live",
+            "date": "2026-12-01",
+            "shown_by": "the customer",
+            "work_unit": "child-a",
+            "gate": null
+          },
+          {
+            "id": "M2",
+            "name": "Launch",
+            "date": "2027-01-22",
+            "shown_by": "",
+            "work_unit": null,
+            "gate": "00000000-0000-4000-8000-000000000009"
+          }
+        ],
+        "milestones_unreadable": [
+          "id: M3, name: No date at all",
+          "id: M4, name: Bad date, date: 2026-13-45"
+        ],
+        "calendar": {
+          "working_day_factor": "0.8",
+          "breaks": [
+            {
+              "start": "2026-12-24",
+              "end": "2027-01-02",
+              "label": "Winter break"
+            }
+          ]
+        },
+        "calendar_unreadable": [
+          "start: 2027-02-10, end: 2027-02-01, label: Backwards"
+        ]
+      }
+    },
+    {
+      "name": "legacy markdown table only, no calendar",
+      "text": "---\nstarts: 2026-10-19\n---\n## Milestones in this cycle\n\n| Target date | Milestone | Shown by |\n|---|---|---|\n| 2026-11-16 | **V0** first slice | the team |\n| soon | V9 undated | nobody |\n",
+      "expect": {
+        "programme": null,
+        "milestones": [
+          {
+            "id": "V0",
+            "name": "V0 first slice",
+            "date": "2026-11-16",
+            "shown_by": "the team",
+            "work_unit": null,
+            "gate": null
+          }
+        ],
+        "milestones_unreadable": [
+          "| soon | V9 undated | nobody |"
+        ],
+        "calendar": null,
+        "calendar_unreadable": []
+      }
+    },
+    {
+      "name": "no frontmatter at all",
+      "text": "# just prose\n",
+      "expect": {
+        "programme": null,
+        "milestones": [],
+        "milestones_unreadable": [],
+        "calendar": null,
+        "calendar_unreadable": []
+      }
+    },
+    {
+      "name": "calendar without a usable working_day_factor is no calendar, not a guessed one",
+      "text": "---\ncalendar:\n  breaks:\n    - {start: 2026-12-24, end: 2027-01-02, label: Winter}\n---\nx\n",
+      "expect": {
+        "programme": null,
+        "milestones": [],
+        "milestones_unreadable": [],
+        "calendar": null,
+        "calendar_unreadable": [
+          "working_day_factor is missing"
+        ]
+      }
+    },
+    {
+      "name": "factor out of range is unreadable",
+      "text": "---\ncalendar:\n  working_day_factor: 1.7\n---\nx\n",
+      "expect": {
+        "programme": null,
+        "milestones": [],
+        "milestones_unreadable": [],
+        "calendar": null,
+        "calendar_unreadable": [
+          "working_day_factor: 1.7"
+        ]
+      }
+    },
+    {
+      "name": "calendar with a factor and no breaks is a calendar",
+      "text": "---\ncalendar:\n  working_day_factor: 1\n---\nx\n",
+      "expect": {
+        "programme": null,
+        "milestones": [],
+        "milestones_unreadable": [],
+        "calendar": {
+          "working_day_factor": "1",
+          "breaks": []
+        },
+        "calendar_unreadable": []
+      }
+    },
+    {
+      "name": "quoted comma, empty date falling through to target_date, apostrophe splits like the backend",
+      "text": "---\nmilestones:\n  - {id: Q1, date: , target_date: 2027-03-01, name: \"Bob, Inc launch\"}\n  - {id: Q2, name: Bob's launch, date: 2027-04-01}\n---\nx\n",
+      "expect": {
+        "programme": null,
+        "milestones": [
+          {
+            "id": "Q1",
+            "name": "Bob, Inc launch",
+            "date": "2027-03-01",
+            "shown_by": "",
+            "work_unit": null,
+            "gate": null
+          }
+        ],
+        "milestones_unreadable": [
+          "id: Q2, name: Bob's launch, date: 2027-04-01"
+        ],
+        "calendar": null,
+        "calendar_unreadable": []
+      }
+    }
+  ]
+}
