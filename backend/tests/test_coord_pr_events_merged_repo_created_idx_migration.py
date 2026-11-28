@@ -11,7 +11,11 @@ What is asserted
 ================
 
 1. The upgrade path is one static ``CREATE INDEX CONCURRENTLY IF NOT EXISTS``
-   literal in an autocommit block, and nothing else.
+   literal in an autocommit block, and nothing else: ``upgrade()`` touches no
+   ``op.<attr>`` but ``execute`` and ``get_context``, and the revision never
+   calls ``get_bind``. The downgrade path is likewise pinned to one static
+   ``DROP INDEX CONCURRENTLY IF EXISTS coord.idx_pr_events_merged_repo_created``
+   in an autocommit block.
 2. Nothing exists at the parent revision.
 3. After upgrade the index exists, is **``indisvalid``**, and is exactly the
    intended definition, the partial predicate included.
@@ -263,6 +267,36 @@ def test_the_upgrade_path_is_one_concurrent_create() -> None:
         if isinstance(node, ast.Attribute) and node.attr == "get_bind"
     ]
     assert not binds, f"get_bind anywhere in the revision, at lines {binds}"
+    # No other op.<attr> on the upgrade path either: a repair through
+    # op.drop_index (or any op the classifier would reject) reddens here, not
+    # only one spelled as raw SQL through op.execute.
+    upgrade = next(
+        n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
+    )
+    op_attrs = sorted(
+        {
+            node.attr
+            for node in ast.walk(upgrade)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "op"
+        }
+    )
+    assert op_attrs == ["execute", "get_context"], (
+        f"upgrade() may call only op.execute and op.get_context, got {op_attrs}"
+    )
+
+
+def test_the_downgrade_path_is_one_concurrent_drop() -> None:
+    """The rollback is one static, non-blocking, idempotent DROP of this index."""
+    path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+    calls = upgrade_execute_calls(path, function="downgrade")
+    assert len(calls) == 1, "one DROP INDEX, and nothing else on the downgrade path"
+    call = calls[0]
+    assert call.sql is not None, "the execute argument is one static literal"
+    assert call.in_autocommit_block, "CONCURRENTLY cannot run in a transaction"
+    drop = re.sub(r"\s+", " ", call.sql).strip()
+    assert drop == f"DROP INDEX CONCURRENTLY IF EXISTS coord.{_INDEX_NAME}", drop
 
 
 _NEEDS_PG = pytest.mark.skipif(

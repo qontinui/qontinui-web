@@ -78,22 +78,17 @@ waits for every transaction older than the build to finish. Its duration is not
 measured here; read ``pg_stat_progress_create_index`` while it runs. Only
 merged events enter the index, a small fraction of the table's writes.
 
-**A second migrator kills a live build.** It waits on the first's lock, the
-deadlock detector usually fires, and the FIRST dies while the second prints
-``already exists, skipping``, exits 0 and closes any open ``migration-failure``
-issue, leaving the index INVALID (reproduced on Postgres 16.13, per
-``pr_events_mergeability_head_idx_01``). ``.github/workflows/migrate.yml``'s
-concurrency group covers only its 900 s waiter, which never stops the task, so
-this needs a build that outlasts the waiter and a later run: its 03:00 UTC cron,
-a push touching ``backend/alembic/**``, ``backend/pyproject.toml`` or
-``backend/poetry.lock``, or coord's gate executor or a manual dispatch. Nothing
-in that workflow or in ``alembic/env.py`` takes an advisory lock, and a blocking
-one would not help: the session waiting on it holds a snapshot that the first
-build's last phase waits for, and the deadlock still fires. So **land this away
-from 03:00 UTC, merge no other PR touching those paths until
-``pg_stat_progress_create_index`` is empty, and read ``indisvalid`` after the
-deploy** (the plan's Phase 2 post-deploy step owns that read and the repair
-below).
+**A second migrator does not kill the build.** ``alembic/env.py`` takes a
+session-level advisory lock before upgrading (``app/db/migration_lock.py``,
+whose docstring explains it). A second migrator POLLS for that lock with
+``pg_try_advisory_lock`` and sleeps client-side, so it holds no snapshot the
+build's last phase would wait on, and it plans its upgrade only after this one
+has stamped. Because the poll can outlast ``.github/workflows/migrate.yml``'s
+waiter, a run whose task is still waiting may report outcome UNKNOWN rather than
+its real one. Since the build is long and unmeasured, read ``indisvalid`` after
+the deploy either way (the plan's Phase 2 post-deploy step owns that read and
+the repair below): a build can still die for other reasons, such as a cancelled
+task or a lost connection.
 
 Additive / forward-only / expand-only: ``upgrade`` creates the index
 ``IF NOT EXISTS``; ``downgrade`` drops it ``IF EXISTS``. No table, column or
