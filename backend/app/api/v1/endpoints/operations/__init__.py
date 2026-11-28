@@ -4436,6 +4436,8 @@ async def get_dev_action_detail(
 # - GET    /operations/plans/{slug}/history              — status history
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
 # - PATCH  /operations/plans/{slug}/schedule-metadata    — set phases / phase links
+# - POST|DELETE /operations/plans/{slug}/phase-attestations — attest / retract a phase
+# - POST|DELETE /operations/plans/{slug}/citations       — cite / uncite a PR
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
@@ -4851,6 +4853,10 @@ async def get_coord_plans_throughput(
 @router.get("/plans/{slug}")
 async def get_coord_plan(
     slug: str,
+    # Opt-in, forwarded as coord's own `?with_citations=1`: the unit's PR
+    # citations and its derived `delivery` view (phases delivered, attested and
+    # who attested when). Absent keeps the payload byte-identical.
+    with_citations: bool = Query(default=False),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # Optional for the same reason the list route's is — see there.
@@ -4865,7 +4871,11 @@ async def get_coord_plan(
     over a one-row page: the detail surface must not be able to disagree with
     the row the operator clicked to reach it.
     """
-    payload = await _proxy_coord_get(f"/coord/work-units/{slug}", tenant_id=tenant_id)
+    payload = await _proxy_coord_get(
+        f"/coord/work-units/{slug}",
+        tenant_id=tenant_id,
+        params={"with_citations": "1"} if with_citations else None,
+    )
     if isinstance(payload, dict) and isinstance(payload.get("work_unit"), dict):
         payload["body_signal"] = await _apply_body_signals(
             [payload["work_unit"]], db=db, user=actor, tenant_id=tenant_id
@@ -4983,6 +4993,124 @@ async def patch_coord_plan_schedule_metadata(
     return await _proxy_coord_post(
         f"/coord/work-units/{slug}/operator-schedule-metadata",
         coord_body,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+def _evidence_body(
+    body: dict[str, Any],
+    allowed: tuple[str, ...],
+    required: tuple[str, ...],
+    actor: UserModel | None,
+) -> dict[str, Any]:
+    """Assemble a closed coord body: only ``allowed`` keys of the browser's
+    body, ``required`` ones present, plus the authenticated operator as
+    ``by_actor`` (never the browser's)."""
+    missing = [k for k in required if body.get(k) is None]
+    if missing:
+        raise refusal_error(
+            422,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            f"missing required field(s): {', '.join(missing)}",
+            discriminator="evidence_body_missing_required",
+        )
+    out = {k: body[k] for k in allowed if body.get(k) is not None}
+    out["by_actor"] = _operator_actor_label(actor)
+    return out
+
+
+@router.post("/plans/{slug}/phase-attestations")
+async def post_coord_plan_phase_attestation(
+    slug: PlanSlug,
+    body: dict[str, Any] = Body(...),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
+) -> Any:
+    """Record a phase attestation on a work unit (tenant-scoped, admin-gated).
+
+    Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``
+    Phase 6: the person's door for "this phase is done and here is the
+    evidence", which the Project Overview shows as ``Confirmed done on <date>``.
+    Proxies coord ``POST /coord/work-units/{slug}/operator-phase-attestations``;
+    coord resolves the evidence (a finding or prompt-document id) within the
+    caller's tenant at write time. ``by_actor`` is the authenticated operator.
+    """
+    return await _proxy_coord_post(
+        f"/coord/work-units/{slug}/operator-phase-attestations",
+        _evidence_body(
+            body,
+            (
+                "phase_index",
+                "evidence_kind",
+                "evidence_ref",
+                "evidence_min_version",
+                "note",
+            ),
+            ("phase_index", "evidence_kind", "evidence_ref"),
+            actor,
+        ),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.delete("/plans/{slug}/phase-attestations")
+async def delete_coord_plan_phase_attestation(
+    slug: PlanSlug,
+    body: dict[str, Any] = Body(...),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
+) -> Any:
+    """Retract a phase attestation (the row stays, marked retracted)."""
+    return await _proxy_coord_delete(
+        f"/coord/work-units/{slug}/operator-phase-attestations",
+        body=_evidence_body(
+            body,
+            ("phase_index", "evidence_kind", "evidence_ref", "retraction_reason"),
+            ("phase_index", "evidence_kind", "evidence_ref"),
+            actor,
+        ),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/plans/{slug}/citations")
+async def post_coord_plan_citation(
+    slug: PlanSlug,
+    body: dict[str, Any] = Body(...),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
+) -> Any:
+    """Cite a PR as delivery evidence for a work unit (admin-gated).
+
+    Proxies coord ``POST /coord/work-units/{slug}/operator-citations``. A
+    citation only FEEDS coord's delivery check, which reads whether the PR
+    actually landed, so citing one cannot mark a unit shipped.
+    """
+    return await _proxy_coord_post(
+        f"/coord/work-units/{slug}/operator-citations",
+        _evidence_body(
+            body, ("repo", "pr_number", "source"), ("repo", "pr_number"), actor
+        ),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.delete("/plans/{slug}/citations")
+async def delete_coord_plan_citation(
+    slug: PlanSlug,
+    body: dict[str, Any] = Body(...),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
+) -> Any:
+    """Retract a manually recorded PR citation (coord-authored ones stay)."""
+    return await _proxy_coord_delete(
+        f"/coord/work-units/{slug}/operator-citations",
+        body=_evidence_body(body, ("repo", "pr_number"), ("repo", "pr_number"), actor),
         tenant_id=tenant_id,
         structured_errors=True,
     )

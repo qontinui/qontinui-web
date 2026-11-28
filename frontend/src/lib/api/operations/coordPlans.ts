@@ -308,3 +308,147 @@ export async function patchPlanScheduleMetadata(
   });
   return readJson<unknown>(res, `PATCH ${url}`);
 }
+
+/**
+ * `GET /plans/{slug}?with_citations=1` (`get_coord_plan`) — the unit with its
+ * PR citations and coord's derived `delivery` view, the read the Evidence
+ * panel renders. `citations_error` / `delivery_error` stand in for the key
+ * they replace when that read failed (coord's own contract), so a failed part
+ * is never an empty one.
+ */
+export interface PlanDeliveryResponse extends CoordPlanDetailResponse {
+  citations?: CitationRow[];
+  citations_error?: unknown;
+  delivery?: DeliveryView;
+  delivery_error?: unknown;
+}
+
+export async function fetchPlanDelivery(
+  slug: string,
+  options: HttpOptions = {}
+): Promise<PlanDeliveryResponse> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}?with_citations=1`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<PlanDeliveryResponse>(res, `GET ${url}`);
+}
+
+export interface AttestPhaseRequest {
+  phase_index: number;
+  evidence_kind: string;
+  evidence_ref: string;
+  evidence_min_version?: number;
+  note?: string;
+}
+
+export interface RetractAttestationRequest {
+  phase_index: number;
+  evidence_kind: string;
+  evidence_ref: string;
+  retraction_reason?: string;
+}
+
+export interface PlanCitationRequest {
+  repo: string;
+  pr_number: number;
+}
+
+/** `POST /plans/{slug}/phase-attestations` — record a phase attestation. */
+export async function attestPlanPhase(
+  slug: string,
+  request: AttestPhaseRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}/phase-attestations`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(request),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`);
+}
+
+/** `DELETE /plans/{slug}/phase-attestations` — retract one (the row stays). */
+export async function retractPlanPhaseAttestation(
+  slug: string,
+  request: RetractAttestationRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}/phase-attestations`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    body: JSON.stringify(request),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `DELETE ${url}`);
+}
+
+/** `POST /plans/{slug}/citations` — cite a PR as delivery evidence. */
+export async function addPlanCitation(
+  slug: string,
+  request: PlanCitationRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}/citations`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(request),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`);
+}
+
+/** `DELETE /plans/{slug}/citations` — retract a manually recorded citation. */
+export async function removePlanCitation(
+  slug: string,
+  request: PlanCitationRequest
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/plans/${encodeURIComponent(slug)}/citations`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    body: JSON.stringify(request),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `DELETE ${url}`);
+}
+
+// ---- Delivery evidence wire types (plan Phase 6) ----
+
+/** One row of the delivery view's `phase_attestations`. */
+export interface AttestationRow {
+  phase_index: number;
+  evidence_kind: string;
+  evidence_ref: string;
+  version?: number | null;
+  resolution: string;
+}
+
+/** One row of `phases_attested_detail` (coord that serves who and when). */
+export interface AttestationDetail {
+  phase_index: number;
+  attested_at?: string | null;
+  attested_by?: string | null;
+  evidence_kind: string;
+  resolution: string;
+}
+
+export interface DeliveryView {
+  shipped?: boolean;
+  evidence_complete?: boolean;
+  phases_declared_indices?: number[] | null;
+  phases_delivered?: number[];
+  phases_attested?: number[];
+  phases_remaining?: number[] | null;
+  phase_attestations?: AttestationRow[];
+  phases_attested_detail?: AttestationDetail[];
+}
+
+export interface CitationRow {
+  repo: string;
+  pr_number: number;
+  merged?: boolean | null;
+  closed_unmerged?: boolean | null;
+  observed?: boolean | null;
+  sources?: string[] | string | null;
+  cited_at?: string | null;
+}

@@ -15896,6 +15896,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/plans/{slug}/citations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Plan Citation
+         * @description Cite a PR as delivery evidence for a work unit (admin-gated).
+         *
+         *     Proxies coord ``POST /coord/work-units/{slug}/operator-citations``. A
+         *     citation only FEEDS coord's delivery check, which reads whether the PR
+         *     actually landed, so citing one cannot mark a unit shipped.
+         */
+        post: operations["api_v1_operations_plans_slug_citations_post"];
+        /**
+         * Delete Coord Plan Citation
+         * @description Retract a manually recorded PR citation (coord-authored ones stay).
+         */
+        delete: operations["api_v1_operations_plans_slug_citations_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/plans/{slug}/history": {
         parameters: {
             query?: never;
@@ -15913,6 +15941,37 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/plans/{slug}/phase-attestations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Plan Phase Attestation
+         * @description Record a phase attestation on a work unit (tenant-scoped, admin-gated).
+         *
+         *     Plan ``2026-11-25-overview-timeline-and-milestones-derive-from-coord``
+         *     Phase 6: the person's door for "this phase is done and here is the
+         *     evidence", which the Project Overview shows as ``Confirmed done on <date>``.
+         *     Proxies coord ``POST /coord/work-units/{slug}/operator-phase-attestations``;
+         *     coord resolves the evidence (a finding or prompt-document id) within the
+         *     caller's tenant at write time. ``by_actor`` is the authenticated operator.
+         */
+        post: operations["api_v1_operations_plans_slug_phase_attestations_post"];
+        /**
+         * Delete Coord Plan Phase Attestation
+         * @description Retract a phase attestation (the row stays, marked retracted).
+         */
+        delete: operations["api_v1_operations_plans_slug_phase_attestations_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -84906,7 +84965,9 @@ export interface operations {
     };
     api_v1_operations_plans_slug_get: {
         parameters: {
-            query?: never;
+            query?: {
+                with_citations?: boolean;
+            };
             header?: never;
             path: {
                 slug: string;
@@ -84914,6 +84975,80 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_plans_slug_citations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_plans_slug_citations_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -84945,6 +85080,80 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_plans_slug_phase_attestations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_plans_slug_phase_attestations_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
