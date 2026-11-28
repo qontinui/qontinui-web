@@ -293,6 +293,11 @@ function buildMachineGroups(
       // normalised to `{dark: false}`, which would be this join inventing a
       // measurement coord never made.
       credential_dark: device.credential_dark,
+      // Coord's runner-database verdict (plan
+      // `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+      // Phase 6), verbatim for the same reason: `undefined`/`null` is
+      // UNKNOWN, never `ok`.
+      runner_database: device.runner_database,
       // The runner's own reports (plan
       // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
       // Phase 5), carried through verbatim for the same reason as
