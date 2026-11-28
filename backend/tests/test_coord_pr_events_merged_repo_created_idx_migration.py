@@ -24,7 +24,13 @@ What is asserted
    index's), and a read whose merged filter differs from the index's — a
    lower-case ``'merged'`` on ``state_change``, the spelling coord does NOT
    use — cannot, so assertion 4 is measuring the partial predicate.
-6. A re-run leaves the VALID index untouched (same oid).
+   A no-index baseline of the same read is measured first and must be at
+   least 3x the indexed figure, so the bound is shown to separate.
+6. A re-run leaves the VALID index untouched (same oid), and KEEPS an INVALID
+   one while reporting success. There is deliberately no in-migration repair:
+   coord's migration classifier rejects ``op.get_bind().execute`` and a
+   ``DROP`` on the upgrade path, so assertion 1 also pins that none is added.
+   The post-deploy ``indisvalid`` read owns the repair.
 7. Downgrade removes the index and leaves every row; a second upgrade
    re-applies.
 
@@ -41,6 +47,7 @@ from __future__ import annotations
 
 import ast
 import re
+import warnings
 from typing import Any
 
 import pytest
@@ -102,10 +109,13 @@ _PARAMS: dict[str, Any] = {"repos": [_REPO], "cutoff": "now"}
 def _seed(engine: Engine) -> int:
     """A window of mostly non-merged events with a few merged ones per PR.
 
-    Production shape (2026-11-28): ~15.9k ingest/state_change rows in a 7-day
-    window for one repo, of which ~190 merged. Seeded here at that ratio,
-    interleaved in time order across several repos so a repo's rows are spread
-    across the heap. Returns the number of merged rows for ``_REPO``.
+    The shape the plan's §Why measured on production (most window events are
+    not merged, and ``repo`` / ``state`` are heap filters under the
+    ``event_kind`` index), at test scale: 64,000 non-merged events, one every
+    40 s, round-robin over four repos — ``_REPO`` and three others — so about
+    15k fall in the 7-day window, about 3.8k of them ``_REPO``'s, interleaved
+    row by row with the other repos' across the heap. Returns the number of
+    merged rows for ``_REPO``.
     """
     with engine.begin() as conn:
         conn.execute(
@@ -113,7 +123,7 @@ def _seed(engine: Engine) -> int:
                 """
                 INSERT INTO coord.pr_events
                     (repo, pr_number, event_kind, state, payload, created_at)
-                SELECT 'o/repo-' || (k % 4),
+                SELECT CASE WHEN k % 4 = 0 THEN :r ELSE 'o/repo-' || (k % 4) END,
                        k % 400,
                        CASE WHEN k % 3 = 0 THEN 'ingest' ELSE 'state_change' END,
                        CASE WHEN k % 3 = 0 THEN 'open' ELSE 'OPEN' END,
@@ -123,12 +133,7 @@ def _seed(engine: Engine) -> int:
                   FROM generate_series(1, 64000) AS k
                  ORDER BY k DESC
                 """
-            )
-        )
-        # Rename one repo of the four to the probe repo, so ~16k of its rows
-        # sit in the window.
-        conn.execute(
-            text("UPDATE coord.pr_events SET repo = :r WHERE repo = 'o/repo-0'"),
+            ),
             {"r": _REPO},
         )
         # The merged rows: one ingest/merged and one state_change/MERGED per PR.
@@ -284,13 +289,25 @@ def test_the_upgrade_path_is_one_concurrent_create() -> None:
     assert not binds, f"get_bind anywhere in the revision, at lines {binds}"
 
 
-@pytest.mark.skipif(
+_NEEDS_PG = pytest.mark.skipif(
     not can_connect(admin_database_url()),
     reason=(
         "Postgres not reachable at the conftest URL. CI provisions a postgres "
         "service; locally, set QONTINUI_TEST_PG to a reachable host:port."
     ),
 )
+
+
+def _is_superuser(engine: Engine) -> bool:
+    with engine.connect() as conn:
+        return bool(
+            conn.execute(
+                text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+            ).scalar_one()
+        )
+
+
+@_NEEDS_PG
 def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
     root = backend_root()
 
@@ -298,12 +315,13 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
         engine,
         url,
     ):
-        # 2. Parent revision: no index yet. Seed so the build runs over rows.
+        # 2. Parent revision: no index yet. Seed so the build runs over rows, and
+        #    measure win_ev without the index, the baseline assertion 4 beats.
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
         merged = _seed(engine)
-        rows = _row_count(engine)
         params = {**_PARAMS, "cutoff": _cutoff(engine)}
+        baseline = _top_buffers(_explain(engine, _WIN_EV, params))
 
         # 3. Apply: valid, and exactly the definition win_ev relies on.
         run_alembic(root, url, "upgrade", _REVISION_ID)
@@ -324,9 +342,15 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
             found = conn.execute(text(_WIN_EV), params).all()
         assert len(found) == merged, (len(found), merged)
         buffers = _top_buffers(plan)
-        assert buffers < 4 * merged, (
+        assert buffers < 2 * merged, (
             f"{buffers} buffers for {merged} merged rows: win_ev is not reading "
             f"only merged events:\n{plan}"
+        )
+        # The bound must separate: without the index the same read costs far
+        # more, or assertion 4 would pass on a seed too small to tell.
+        assert baseline >= 3 * buffers, (
+            f"baseline {baseline} buffers without the index vs {buffers} with "
+            "it: the seed does not exercise the heap-filter shape"
         )
 
         # 5. Implication: win_ev can use it with no alternative; a read whose
@@ -340,7 +364,22 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
             f"a lower-case state_change arm must NOT match this partial index:\n{plan}"
         )
 
-        # 6. A re-run leaves the VALID index untouched.
+
+@_NEEDS_PG
+def test_coord_pr_events_merged_repo_created_idx_lifecycle() -> None:
+    root = backend_root()
+
+    with ephemeral_database(admin_database_url(), "pr_events_merged_idx_lifecycle") as (
+        engine,
+        url,
+    ):
+        run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
+        _seed(engine)
+        rows = _row_count(engine)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _index_is_valid(engine)
+
+        # 6. A re-run leaves the VALID index untouched...
         oid_before = _index_oid(engine)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
@@ -349,7 +388,36 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
             "a re-run must leave a VALID index untouched, not drop and rebuild it"
         )
 
-        # 7. Downgrade removes the index; every row survives. Re-upgrade works.
+        # ...and KEEPS an INVALID one, reporting success. That is deliberate (no
+        # in-migration repair: coord's classifier rejects one, see the
+        # revision's docstring), and it is why the post-deploy step reads
+        # `indisvalid`. Marking the index INVALID takes a superuser, which CI's
+        # database role is; elsewhere this step is skipped and the rest runs.
+        if _is_superuser(engine):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE pg_index SET indisvalid = false
+                         WHERE indexrelid = CAST(:idx AS regclass)
+                        """
+                    ),
+                    {"idx": f"coord.{_INDEX_NAME}"},
+                )
+            run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+            run_alembic(root, url, "upgrade", _REVISION_ID)
+            assert not _index_is_valid(engine), (
+                "IF NOT EXISTS keeps an INVALID index and the upgrade reports "
+                "success: the post-deploy indisvalid read is what sees this"
+            )
+        else:
+            warnings.warn(
+                "not a superuser: the INVALID-index half of assertion 6 did not run",
+                stacklevel=1,
+            )
+
+        # 7. Downgrade removes the index (INVALID or not); every row survives.
+        #    Re-upgrade builds a VALID one.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
         assert _row_count(engine) == rows, "downgrade must not touch a row"

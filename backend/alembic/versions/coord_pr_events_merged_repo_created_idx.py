@@ -6,36 +6,26 @@ Phase 2 of plan
 
 What fails without it
 ------------------------------------------------------------------------------
-``coord_query_launch_budget repo=<r>`` serves a ``repo_intake`` verdict. On
-2026-11-28 the read for ``qontinui/qontinui-coord`` answered
-``UNKNOWN lands_unread`` on 3 of 7 calls in about 10 minutes. CloudWatch
-``/ecs/qontinui-staging/coord`` over 2026-11-26 05:11Z .. 2026-11-28 05:11Z held
-49 lines reading ``launch_budget: repo intake merged-PR read failed: SELECT all
-landed PRs (coord.pr_events merged) x coord.pr_labels arming rows: ... canceling
-statement due to statement timeout``. The statement is coord's
+``coord_query_launch_budget repo=<r>`` serves a ``repo_intake`` verdict, and on
+2026-11-28 it intermittently answered ``UNKNOWN lands_unread`` (coord finding
+``1d20f493-b715-4d31-8c43-6382667a4e35``). The failing statement is coord's
 ``ALL_LANDED_ARMING_SQL`` (``crates/coord/src/pr_merge/economics.rs``), run by
 ``all_landed_arming_rows_on`` under the intake's
-``INTAKE_STATEMENT_TIMEOUT_MS = 4000``. When it misses, ``land_counts`` answers
-``None`` for every repo and the verdict becomes ``lands_unread``.
+``INTAKE_STATEMENT_TIMEOUT_MS = 4000``; when it times out, ``land_counts``
+answers ``None`` for every repo and the verdict becomes ``lands_unread``.
 
-Measured on production
+Measured per the plan's §Why
 ------------------------------------------------------------------------------
-``EXPLAIN (ANALYZE, BUFFERS)`` of ``ALL_LANDED_ARMING_SQL`` with
-``repos = {qontinui/qontinui-coord}`` and ``cutoff = now() - 7 days``, two warm
-runs (read-only, 2026-11-28):
-
-* **388 ms and 365 ms**, every buffer a shared hit, **25,405 buffers** in total.
-* The ``win_ev`` CTE is a Bitmap Heap Scan over
-  ``idx_pr_events_event_kind (event_kind, created_at DESC)``. It reads 6,432
-  ``ingest`` and 9,469 ``state_change`` rows in the window, visits **14,875
-  heap blocks**, and keeps **187** rows (``Rows Removed by Filter: 15714``),
-  because ``repo`` and ``state`` can only be applied as a heap filter.
-* The ``ev_pr`` LATERAL adds about 4,000 buffers and the ``train`` CTE's
-  ``merge_proposals`` seq scan about 2,775.
-
-Warm, the statement fits in 4 s. Cold, about 25k random block reads from RDS
-storage do not, which is why the miss is intermittent and why a re-read seconds
-after a miss answers: the miss has just warmed the blocks.
+The CloudWatch warn-line counts and the production ``EXPLAIN (ANALYZE,
+BUFFERS)`` of that statement are recorded in the plan's §Why
+(qontinui-dev-notes ``plans/2026-11-28-repo-intake-read-is-intermittent-and-step-0-47-proceeds-on-one-unknown.md``)
+and in finding ``1d20f493``; they are cited there rather than copied here. In
+outline: the ``win_ev`` CTE is a Bitmap Heap Scan over
+``idx_pr_events_event_kind (event_kind, created_at DESC)`` that visits every
+``ingest`` and ``state_change`` row in the window and discards nearly all of
+them, because ``repo`` and ``state`` can only be applied as a heap filter. Warm,
+the statement fits its 4 s bound; cold, the random block reads do not, which is
+why the miss is intermittent.
 
 Index shape
 ------------------------------------------------------------------------------
@@ -47,8 +37,8 @@ Index shape
 
 ``win_ev`` filters ``repo = ANY($1) AND created_at >= $2 - interval '1 hour'``
 plus the merged-row predicate, so the key is exactly its two range columns and
-the predicate restricts the index to merged events — about 190 rows for that
-read instead of about 15k events over 14,875 blocks.
+the predicate restricts the index to merged events: the scan reads the asked
+repos' merged rows in the window, not every event in it.
 
 **The predicate must stay textually equivalent to ``win_ev``'s WHERE** in
 qontinui-coord ``crates/coord/src/pr_merge/economics.rs`` (``ALL_LANDED_ARMING_SQL``,
@@ -80,8 +70,8 @@ in-transaction build would take a write-blocking ``SHARE`` lock. CONCURRENTLY
 cannot run inside a transaction, hence ``op.get_context().autocommit_block()``
 — same precedent as ``coord_pr_events_hydration_head_idx`` and
 ``coord_pg_overload_idx_01``. On the CI fresh DB the table is empty, so the
-build is instant. Write amplification is negligible: only merged events —
-hundreds a day — enter the index.
+build is instant. Only merged events enter the index, a small fraction of the
+table's writes.
 
 Additive / forward-only / expand-only: ``upgrade`` creates the index
 ``IF NOT EXISTS``; ``downgrade`` drops it ``IF EXISTS``. No table, column or
@@ -89,10 +79,30 @@ existing index is altered, and no coord reader depends on a new column, so
 deploy order is not load-bearing for correctness — every reader is correct
 (just slower) without it.
 
-Note on a killed CONCURRENTLY build: a partial build leaves an INVALID index of
-the same name, which ``IF NOT EXISTS`` would then skip. If that happens,
-``DROP INDEX CONCURRENTLY`` the invalid index and re-run; the post-deploy check
-reads ``pg_index.indisvalid``.
+A killed CONCURRENTLY build — no in-migration repair, deliberately
+------------------------------------------------------------------------------
+A killed build leaves an INVALID index of the same name, which ``IF NOT EXISTS``
+then skips while alembic stamps the revision as applied. The usual repair (read
+``pg_index.indisvalid`` through ``op.get_bind().execute``, then ``DROP INDEX
+CONCURRENTLY`` before the CREATE) is NOT carried here, on the
+``pr_events_mergeability_head_idx_01`` / ``coord_iops_idx_01`` reasoning: coord's
+migration classifier (``pr_merge/migration_classifier.rs``) is fail-closed and
+rejects SQL run through ``op.get_bind().execute``, any ``DROP`` on the upgrade
+path, and ``REINDEX``. A ``Reject`` becomes ``MigrationDispositionOutcome::Blocked``
+(the ``migrations`` escalate path), so the repair would trade a rare failure for
+a certain escalation. ``tests/test_coord_pr_events_merged_repo_created_idx_migration.py``
+pins both the single-CREATE upgrade path and the "INVALID is kept" behaviour.
+
+So ``indisvalid`` is checked AFTER the deploy instead (Phase 2's post-deploy
+step)::
+
+    SELECT c.relname, i.indisvalid
+      FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+     WHERE c.relname = 'idx_pr_events_merged_repo_created';
+
+``false`` means: wait until ``pg_stat_progress_create_index`` is empty (a live
+build also reads ``false``), then run ``DROP INDEX CONCURRENTLY
+coord.idx_pr_events_merged_repo_created`` and re-run the CREATE below by hand.
 
 Revision ID: coord_pr_events_merged_repo_created_idx
 Revises: cinode_06_ci_node_directives
