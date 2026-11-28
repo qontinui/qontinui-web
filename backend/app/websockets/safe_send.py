@@ -134,6 +134,7 @@ async def reject(
     message: str,
     code: int = status.WS_1008_POLICY_VIOLATION,
     reason: str | None = None,
+    error_code: str | None = None,
 ) -> None:
     """Reject a handshake: send a standard error frame, then close.
 
@@ -150,13 +151,25 @@ async def reject(
     ``reason`` only when the close-frame text should differ from the error
     payload.
 
+    ``error_code`` is a typed machine-readable cause (e.g.
+    ``runner_not_owned``). It is repeated as ``code`` in the error frame AND
+    prefixed onto the close reason as ``"<error_code>: <text>"``, because the
+    error frame can be dropped while the close frame is what the client
+    reliably observes. The prefix is applied before the 123-byte truncation,
+    so the code always survives it.
+
     Sites whose error payload is NOT the standard ``{"type": "error",
     "message": ...}`` shape (e.g. those that use an ``"error"`` key, or carry
     extra fields) must call :func:`safe_send_json` + :func:`safe_close`
     directly to preserve their exact wire payload.
     """
-    await safe_send_json(websocket, {"type": "error", "message": message})
+    payload: dict[str, Any] = {"type": "error", "message": message}
+    if error_code is not None:
+        payload["code"] = error_code
+    await safe_send_json(websocket, payload)
     close_reason = reason if reason is not None else message
+    if error_code is not None:
+        close_reason = f"{error_code}: {close_reason}"
     # RFC 6455 caps the close-frame reason at 123 UTF-8 bytes; Starlette/uvicorn
     # pass it through unchecked, so truncate defensively.
     if len(close_reason.encode("utf-8")) > 123:

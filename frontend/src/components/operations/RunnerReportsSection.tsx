@@ -2,8 +2,17 @@
 
 /**
  * The runner's own reports on a Dev Ops machine row — open wedge incidents
- * first and prominently, then the capability doctor's verdicts grouped by
- * state, INOPERATIVE first.
+ * first and prominently, then coord's verdict on whether the runner has its
+ * DATABASE, then the capability doctor's verdicts grouped by state,
+ * INOPERATIVE first.
+ *
+ * The database row (plan
+ * `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord` Phase 6)
+ * sits beside the card's liveness `state`, never inside it: a runner whose
+ * database arm is dead still heartbeats, so `state` reads `healthy` while this
+ * row reads `degraded`. `degraded` shows the cause and the since-time;
+ * `unknown` shows its reason; `ok` shows the badge and nothing else — in
+ * particular never the breaker's `last_error`, which survives a close.
  *
  * Plan `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
  * Phase 8. Presentation only: every decision — what `null` means, which
@@ -16,21 +25,29 @@
  * report coord could not serve is the machine nothing measured.
  *
  * In presentation mode (plan `2026-10-23-console-presentation-spaces`
- * Phase 7) the section is two lines of counts — open stalls, and mechanisms
- * per state — with no mechanism badges and no `title` detail: the runner's own
+ * Phase 7) the section is three short lines — open stalls, the database
+ * verdict, and mechanisms per state — with no mechanism badges, no `title`
+ * detail and no database error text: the runner's own
  * reports quote paths and error text, which can name the machine (D3.3), and
  * an evaluator needs the verdict, not the inventory (density down). UNKNOWN
  * still reads "unknown — <reason>", the reason in plain words.
  */
 
-import { rowAccentClass, StatusBadge } from "@/components/console";
+import {
+  rowAccentClass,
+  rowAccentProps,
+  StatusBadge,
+} from "@/components/console";
 import { relativeTime } from "@/components/console/time";
 import { usePresentationMode } from "@/components/presentation";
 import {
   CAPABILITY_PALETTE,
+  DATABASE_PALETTE,
   presentedUnknownReason,
   WEDGE_PALETTE,
   type CapabilityKind,
+  type DatabaseKind,
+  type DatabaseView,
   type RunnerReportView,
   type ResolvedRunnerReports,
 } from "./runnerReportStatus";
@@ -93,6 +110,77 @@ function Provenance({
   );
 }
 
+/**
+ * The database row. Every arm renders something — an unknown verdict reads
+ * "unknown — <reason>", never nothing and never "ok".
+ */
+function DatabaseRow({ view, nowMs }: { view: DatabaseView; nowMs?: number }) {
+  return (
+    <div
+      data-testid="devops-runner-database"
+      data-runner-database-verdict={view.state}
+    >
+      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+        Database
+      </h4>
+      {view.state === "unknown" ? (
+        <UnknownLine view={view} testId="devops-runner-database-unknown" />
+      ) : view.state === "ok" ? (
+        <div
+          className="flex items-center gap-2 text-xs"
+          data-testid="devops-runner-database-ok"
+        >
+          <StatusBadge status={view.status} palette={DATABASE_PALETTE} />
+        </div>
+      ) : (
+        <div
+          {...rowAccentProps(
+            view.status,
+            "rounded-md border border-border bg-card/30 px-2 py-1 text-xs"
+          )}
+          data-testid="devops-runner-database-degraded"
+          data-status-kind={view.status.kind}
+        >
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <StatusBadge status={view.status} palette={DATABASE_PALETTE} />
+            <span data-testid="devops-runner-database-cause">{view.cause}</span>
+            <span
+              className="text-muted-foreground"
+              data-testid="devops-runner-database-since"
+            >
+              {view.since
+                ? `since ${relativeTime(view.since, { now: nowMs })}`
+                : "since unknown — the report named no onset"}
+            </span>
+          </div>
+          {view.lastError && (
+            <p
+              className="mt-0.5 truncate text-[11px] text-muted-foreground"
+              title={view.lastError}
+              data-testid="devops-runner-database-last-error"
+            >
+              last error: {view.lastError}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The words a presented database verdict uses (no coord token, no error
+ * text). There is no `unknown` entry: an unknown VIEW says its reason, and a
+ * `degraded` view of the `unknown` kind (a verdict coord would not page on,
+ * or a reason this build cannot name) says it is not working without saying
+ * how serious — see `databaseWords`.
+ */
+const PRESENTED_DATABASE: Record<Exclude<DatabaseKind, "unknown">, string> = {
+  no_database: "running without its database",
+  breaker_open: "not answering — the runner is retrying",
+  ok: "working",
+};
+
 /** The state words a presented capability count uses, worst first. */
 const PRESENTED_STATE: Record<CapabilityKind, string> = {
   inoperative: "inoperative",
@@ -107,9 +195,16 @@ function PresentedRunnerReports({
 }: {
   reports: ResolvedRunnerReports;
 }) {
-  const { wedge, capability } = reports;
+  const { wedge, capability, database } = reports;
   // An unknown report says why in plain words: coord's own reason is a token
   // (`no_publisher`) an outsider cannot read (`presentedUnknownReason`).
+  const databaseWords =
+    database.state === "unknown"
+      ? `unknown — ${presentedUnknownReason(database.reason)}`
+      : database.status.kind === "unknown"
+        ? // Coord measured an open breaker; only its severity is unknown.
+          "not working — how serious is not known"
+        : PRESENTED_DATABASE[database.status.kind];
   const stalls =
     wedge.state === "unknown"
       ? `unknown — ${presentedUnknownReason(wedge.reason)}`
@@ -133,6 +228,13 @@ function PresentedRunnerReports({
       <p data-testid="devops-runner-wedges-presented">
         <span className="text-muted-foreground">Runner stalls: </span>
         {stalls}
+      </p>
+      <p
+        data-testid="devops-runner-database-presented"
+        data-runner-database-verdict={database.state}
+      >
+        <span className="text-muted-foreground">Runner database: </span>
+        {databaseWords}
       </p>
       <p data-testid="devops-runner-capability-presented">
         <span className="text-muted-foreground">Runner capabilities: </span>
@@ -201,6 +303,8 @@ export function RunnerReportsSection({
           </>
         )}
       </div>
+
+      <DatabaseRow view={reports.database} nowMs={nowMs} />
 
       <div data-testid="devops-runner-capability">
         <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">

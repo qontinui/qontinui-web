@@ -599,6 +599,14 @@ class SearchResponse(BaseModel):
     results: list[SearchHit]
 
 
+#: Shared by both style routes' responses.
+UNMEASURED_CANDIDATES_DESCRIPTION = (
+    "How much of the corpus could not be compared: every candidate left out of "
+    "`results` because it has no measured token set (no capture, empty or "
+    "leafless tokens, or the stated-unknown sentinel). A count, not a verdict."
+)
+
+
 class SimilarByStyleRequest(_Strict):
     level: Literal["page", "component"] = "component"
     tokens: dict[str, Any]
@@ -620,6 +628,7 @@ class StyleHit(BaseModel):
 class SimilarByStyleResponse(BaseModel):
     style_arm: Literal["fingerprint", "tokens_only"]
     results: list[StyleHit]
+    unmeasured_candidates: int = Field(description=UNMEASURED_CANDIDATES_DESCRIPTION)
 
 
 class CompareSnapshot(_Strict):
@@ -654,6 +663,7 @@ class CompareHit(BaseModel):
 class CompareResponse(BaseModel):
     fidelity_arm: Literal["design_compare", "tokens_only"]
     results: list[CompareHit]
+    unmeasured_candidates: int = Field(description=UNMEASURED_CANDIDATES_DESCRIPTION)
 
 
 # ═════════════════════════════ judgements ═════════════════════════════

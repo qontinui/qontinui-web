@@ -15,6 +15,7 @@ from pydantic import (
     AnyHttpUrl,
     Field,
     PostgresDsn,
+    PrivateAttr,
     field_validator,
     model_validator,
 )
@@ -65,6 +66,18 @@ def derived_cognito_issuer(*, region: str, pool_id: str) -> str:
     if not pool_id or not region:
         return ""
     return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+
+# RATE_LIMIT_TRUSTED_PROXY_CIDRS defaults, by ENVIRONMENT.
+_LOCAL_TRUSTED_PROXY_CIDRS = ("127.0.0.0/8", "::1/128")
+_DEPLOYED_TRUSTED_PROXY_CIDRS = (
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "::1/128",
+    "fc00::/7",
+)
 
 
 class Settings(BaseSettings):
@@ -193,6 +206,38 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 600
+    # Socket peers whose X-Forwarded-For the rate-limit keys believe
+    # (comma-separated CIDRs). Application-level proxy trust, independent of
+    # uvicorn's FORWARDED_ALLOW_IPS: from a peer inside one of these the key is
+    # the rightmost X-Forwarded-For entry (what the proxy saw); from any other
+    # peer the header is the caller's own and the key is the socket peer. See
+    # app.middleware.rate_limit.peer_ip.
+    #
+    # Unset, the default depends on ENVIRONMENT (``_default_trusted_proxies``):
+    # - production or staging (production itself reports staging): loopback
+    #   plus EVERY RFC1918/ULA peer (10/8, 172.16/12, 192.168/16, fc00::/7).
+    #   That is correct only when the app is reachable SOLELY through a proxy
+    #   in those ranges. The hosted deployment is ASSUMED to be such a case
+    #   (tasks behind the ALB in private subnets); that is not verified from
+    #   this repo.
+    # - development: loopback only, because a local backend may be reached
+    #   directly from a LAN, a Docker bridge or a VPN.
+    # A production-posture deployment that is reachable DIRECTLY from a
+    # private network (LAN, VPN, Docker bridge) MUST set this explicitly: to
+    # its proxy's addresses, or to an empty value when there is no proxy.
+    # Otherwise any such client can forge X-Forwarded-For and pick its own
+    # rate-limit bucket. An explicit value always wins; empty trusts nothing.
+    # The effective ranges, and whether they are the default, are logged once
+    # at startup (app.middleware.rate_limit.log_trusted_proxy_ranges).
+    _trusted_proxy_cidrs_is_default: bool = PrivateAttr(default=False)
+    RATE_LIMIT_TRUSTED_PROXY_CIDRS: str | None = Field(
+        default=None,
+        description=(
+            "Comma-separated CIDRs of proxies whose X-Forwarded-For the rate "
+            "limiter trusts; unset picks a per-ENVIRONMENT default; empty "
+            "trusts none."
+        ),
+    )
 
     # Redis (for task queue) - Optional, will fall back to synchronous operations
     # Default is False for production since we don't have Redis in AWS yet
@@ -555,6 +600,50 @@ class Settings(BaseSettings):
         default=[],
         description="Allowed hosts for TrustedHostMiddleware in production. Empty list uses defaults.",
     )
+
+    @field_validator("RATE_LIMIT_TRUSTED_PROXY_CIDRS")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, v: str | None) -> str | None:
+        """Every entry must be a CIDR (no host bits set). A malformed entry
+        fails startup rather than silently trusting or distrusting a proxy.
+        ``None`` (unset) is filled per ENVIRONMENT after validation."""
+        if v is None:
+            return None
+        entries = [e.strip() for e in v.split(",")] if v.strip() else []
+        for entry in entries:
+            try:
+                ipaddress.ip_network(entry, strict=True)
+            except ValueError as exc:
+                raise ValueError(
+                    f"RATE_LIMIT_TRUSTED_PROXY_CIDRS entry {entry!r} is not a "
+                    f"CIDR network: {exc}"
+                ) from exc
+        return ",".join(entries)
+
+    @property
+    def rate_limit_trusted_proxy_cidrs_is_default(self) -> bool:
+        """True when RATE_LIMIT_TRUSTED_PROXY_CIDRS was unset and filled from
+        ENVIRONMENT, False when it was set explicitly (including empty)."""
+        return self._trusted_proxy_cidrs_is_default
+
+    @model_validator(mode="after")
+    def _default_trusted_proxies(self) -> "Settings":
+        """Fill an unset RATE_LIMIT_TRUSTED_PROXY_CIDRS from ENVIRONMENT
+        (see the setting's comment). Deployed means production or staging:
+        production reports ``environment: staging`` on ``/health``."""
+        self._trusted_proxy_cidrs_is_default = (
+            self.RATE_LIMIT_TRUSTED_PROXY_CIDRS is None
+        )
+        if self.RATE_LIMIT_TRUSTED_PROXY_CIDRS is None:
+            if self.ENVIRONMENT in ("production", "staging"):
+                self.RATE_LIMIT_TRUSTED_PROXY_CIDRS = ",".join(
+                    _DEPLOYED_TRUSTED_PROXY_CIDRS
+                )
+            else:
+                self.RATE_LIMIT_TRUSTED_PROXY_CIDRS = ",".join(
+                    _LOCAL_TRUSTED_PROXY_CIDRS
+                )
+        return self
 
     @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod

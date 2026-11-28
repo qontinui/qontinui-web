@@ -46,6 +46,7 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 import { MergeTrainActivity } from "./MergeTrainActivity";
+import { expectRowKeyedReveal } from "@/test/recordRowSlot";
 import {
   buildRepoTrainRows,
   buildTrainSummary,
@@ -528,6 +529,35 @@ describe("MergeTrainActivity candidate-CI churn", () => {
     expect(screen.getByTestId("train-base-move-discards")).toHaveTextContent(
       "13"
     );
+  });
+
+  it("drops the line's churn group by the ROW's width, and the detail repeats it", () => {
+    renderTab({ prs: [pr()], economics: { [WEB]: measured } });
+    const cluster = screen.getByTestId(`train-churn-${WEB}`);
+    // Keyed to the row line's own container, never the viewport: a narrowed
+    // column drops it too.
+    expectRowKeyedReveal(cluster, "@min-[64rem]/train-row:flex");
+    const line = within(screen.getByTestId(`train-row-${WEB}`)).getByRole(
+      "button"
+    );
+    expect(line.className.split(/\s+/)).toContain("@container/train-row");
+
+    // ...and the detail reads the same four values at every width, under its
+    // own testids, so a query for a line cell never matches two elements.
+    const detail = within(expandRow(WEB)).getByTestId(
+      `train-churn-detail-${WEB}`
+    );
+    for (const [id, text] of [
+      ["green-discarded", /^green discarded 15$/],
+      ["base-move-discards", /^base-move discards 13$/],
+      ["ci-minutes-per-land", /^CI min \/ land 47\.4$/],
+      ["proposal-age-at-land-p90", /^proposal→land p90 8h$/],
+    ] as const) {
+      expect(
+        within(detail).getByTestId(`churn-detail-${id}`)
+      ).toHaveTextContent(text);
+      expect(screen.getAllByTestId(`churn-${id}`)).toHaveLength(1);
+    }
   });
 
   it("partially unknown: the null repo reads — with its coverage note; the total names it", () => {

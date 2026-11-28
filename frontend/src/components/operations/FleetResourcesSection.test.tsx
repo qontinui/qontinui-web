@@ -95,6 +95,26 @@ vi.mock("./useFleetResourceSamples", () => ({
   useFleetResourceSamples: () => resources,
 }));
 
+// The pressure-stops table has its own poll and its own test
+// (`FleetResourceStopsSection.test.tsx`); here it reads an answered, empty table.
+vi.mock("./useFleetResourceStops", () => ({
+  useFleetResourceStops: () => ({
+    data: {
+      table_present: true,
+      count: 0,
+      stops: [],
+      bounded: false,
+      limit: 50,
+      limit_clamped: false,
+      summary: null,
+    },
+    loading: false,
+    error: null,
+    fetchedAtMs: Date.now(),
+    refresh: vi.fn(async () => {}),
+  }),
+}));
+
 // The CI panel reads the same rows but is not what this test is about.
 vi.mock("./CiRunPanel", () => ({ CiRunPanel: () => null }));
 

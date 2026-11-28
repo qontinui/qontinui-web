@@ -50,7 +50,7 @@ vi.mock("@/services/service-factory", () => ({
     // table as a parsed body, so each is served from there as a 200 Response,
     // and a rejection passes through exactly as `get`'s did.
     fetch: async (url: string, init?: unknown) =>
-      /fleet\/health|resource-samples|worktree-slots|ci-runners|fault-to-visibility/.test(
+      /fleet\/health|resource-samples|resource-stops|worktree-slots|ci-runners|fault-to-visibility/.test(
         String(url)
       )
         ? new Response(JSON.stringify(await httpGet(url, init)), {
@@ -98,6 +98,7 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
     error: deviceStatusStream.error,
     seeded: deviceStatusStream.seeded,
     everSeeded: deviceStatusStream.everSeeded,
+    answeredAtMs: deviceStatusStream.everSeeded ? 1_700_000_000_000 : null,
     refetch: vi.fn(),
   }),
 }));
@@ -318,6 +319,17 @@ function mockRoutes(fixture: Fixture) {
     const u = String(url);
     if (u.includes("resource-samples")) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
+    }
+    if (u.includes("resource-stops")) {
+      return Promise.resolve({
+        table_present: true,
+        count: 0,
+        stops: [],
+        bounded: false,
+        limit: 50,
+        limit_clamped: false,
+        summary: null,
+      });
     }
     if (u.includes("worktree-slots")) {
       return Promise.resolve(
@@ -3346,5 +3358,88 @@ describe("/admin/coord/devops — the presentation lens (plan 2026-10-23-console
 
     await screen.findByTestId("coord-devops-health-strip");
     expect(document.querySelector("[data-presentation-caption]")).toBeNull();
+  });
+});
+
+describe("CoordDevOpsPage — the runner-database tally (plan 2026-11-27-devops-runner-database-degraded-is-invisible-to-coord Phase 6)", () => {
+  it("shows coord's runner-database tally in the health strip with unknown as its own count", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      healthExtras: { by_runner_database: { ok: 1, degraded: 1, unknown: 2 } },
+    });
+    render(<CoordDevOpsPage />);
+    expect(
+      await screen.findByTestId("coord-devops-runner-database-badge")
+    ).toHaveTextContent("runner database 1 degraded · 2 unknown · 1 ok");
+  });
+});
+
+describe("CoordDevOpsPage — the runner-database verdict reaches the card (plan 2026-11-27-devops-runner-database-degraded-is-invisible-to-coord Phase 6)", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  it("carries a device's runner_database block through the fleet join: degraded beside a healthy state", async () => {
+    // nawa's served block (coord `RunnerDatabaseServed`, plan Phase 2):
+    // arm, breaker state / cause / since / failed_trials / trips and build
+    // verbatim from the plan's evidence; cause_class and reported_at
+    // illustrative.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "spaceship", "healthy", {
+          runner_database: {
+            verdict: "degraded",
+            reason: "boot_without_database",
+            since: "2026-11-24T16:03:53Z",
+            reading: {
+              arm: "degraded",
+              reachable: false,
+              schema_ok: null,
+              breaker: {
+                state: "open",
+                cause: "boot",
+                cause_class: "connect_refused",
+                since: "2026-11-24T16:03:53Z",
+                failed_trials: 14786,
+                trips: 1,
+                last_error: null,
+                open_for_ms: null,
+              },
+              embedded_data_root: null,
+              observed_at: null,
+              stale: false,
+              build_id: "4d524e71b",
+              reported_at: "2026-11-27T03:37:20Z",
+            },
+          },
+        }),
+      ],
+      runners: [runner("spaceship")],
+      samples: [],
+      healthExtras: { by_runner_database: { degraded: 1 } },
+    });
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-hostname="spaceship"]')
+      ).not.toBeNull()
+    );
+    const card = document.querySelector(
+      '[data-hostname="spaceship"]'
+    ) as HTMLElement;
+    const row = await within(card).findByTestId("devops-runner-database");
+    expect(row).toHaveAttribute("data-runner-database-verdict", "degraded");
+    expect(
+      within(card).getByTestId("devops-runner-database-degraded")
+    ).toHaveAttribute("data-status-kind", "no_database");
+    // A sibling of the liveness state, never a rung of it: the same card
+    // still reads coord's `healthy`.
+    expect(card.querySelector('[data-coord-state="healthy"]')).not.toBeNull();
   });
 });

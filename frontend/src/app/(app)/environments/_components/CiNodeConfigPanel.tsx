@@ -162,6 +162,19 @@ export interface DispatchRefusal {
    * connect. Rendered without the destructive tone.
    */
   deferred?: boolean;
+  /**
+   * True when the coordinator ACCEPTED the save (a 2xx) but did not send it:
+   * nothing was refused, so it is rendered without the destructive tone, and
+   * Apply stays off for an unchanged re-send while this verdict is shown. A
+   * reload loses the verdict (a GET carries no `dispatch_error`), after which
+   * the panel can only say the saved settings were not sent since.
+   */
+  notRefused?: boolean;
+  /**
+   * True for the one accepted-but-not-sent reason the coordinator names: a
+   * newer change for the same machine is held and will be used instead.
+   */
+  superseded?: boolean;
 }
 
 /**
@@ -208,6 +221,31 @@ export function dispatchRefusalCopy(
       fixableHere: false,
       detail,
       deferred: true,
+    };
+  }
+  if (state.dispatch_error === SUPERSEDED_BY_NEWER) {
+    // Coord answered 2xx but published nothing for THIS save: it already
+    // holds a newer change for the same machine (stored, not necessarily sent
+    // yet) and the machine converges on that. Not a refusal, and not a
+    // delivery to re-send: re-sending this one would undo the newer change.
+    return {
+      headline:
+        "Not sent: the coordinator holds a newer settings change for this machine and will use that instead.",
+      fixableHere: false,
+      detail,
+      notRefused: true,
+      superseded: true,
+    };
+  }
+  if (state.dispatch_error === NOT_DISPATCHED) {
+    // Coord answered 2xx with `dispatched: false` and no reason this app
+    // recognises: accepted, not refused, and not sent.
+    return {
+      headline:
+        "Not sent: the coordinator accepted these settings but did not send them.",
+      fixableHere: false,
+      detail,
+      notRefused: true,
     };
   }
   if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
@@ -266,6 +304,12 @@ export function dispatchRefusalCopy(
 /** The backend's `dispatch_error` when coord stored the settings but could not
  *  send them now: the machine applies them on its next connect. */
 export const STORED_FOR_NEXT_CONNECT = "stored_for_next_connect";
+/** The backend's `dispatch_error` when coord answered 2xx but sent nothing:
+ *  it already holds a newer change for the same machine and uses that. */
+export const SUPERSEDED_BY_NEWER = "superseded_by_newer";
+/** The backend's `dispatch_error` when coord answered 2xx with
+ *  `dispatched: false` and no reason the backend recognises. */
+export const NOT_DISPATCHED = "coord_not_dispatched";
 /** The backend's `dispatch_error` when coord did not echo `model_access` back. */
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
 /** The backend's `dispatch_error` when coord's answer could not confirm it. */
@@ -289,12 +333,18 @@ export function savedButUnsent(state: CiNodeConfigState): boolean {
  * model-access outcomes, a transport failure (coord never answered, so
  * `dispatch_status` is null and the copy says to try again shortly), or — read
  * (`dispatched === null`, after a reload) — settings saved but not sent since.
+ * Also for a save coord accepted but did not send for no named reason
+ * (`coord_not_dispatched`): no newer change is known that a re-send could
+ * undo. Never right after a superseded save, which a re-send would undo.
  * Never for a machine with no runner, and never right after a refusal coord
  * answered (an unchanged re-send would be refused again).
  */
 export function canResendUnchanged(state: CiNodeConfigState): boolean {
   if (state.reachability === "unlinked") return false;
   if (dispatchRefusalCopy(state)?.deferred) return true;
+  // Accepted but not sent for no named reason: no newer change is known to
+  // exist, so an unchanged re-send is not known to undo one.
+  if (state.dispatch_error === NOT_DISPATCHED) return true;
   if (
     state.dispatch_error === MODEL_ACCESS_NOT_RELAYED ||
     state.dispatch_error === MODEL_ACCESS_UNCONFIRMED
@@ -857,12 +907,13 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         {refusal && (
           <div
             className={
-              refusal.deferred
+              refusal.deferred || refusal.notRefused
                 ? "space-y-1 text-muted-foreground"
                 : "space-y-1 text-destructive"
             }
             data-testid="ci-node-dispatch-refusal"
             data-deferred={refusal.deferred ? "true" : "false"}
+            data-superseded={refusal.superseded ? "true" : "false"}
             data-dispatch-status={state.dispatch_status ?? ""}
             data-dispatch-error={state.dispatch_error ?? ""}
             data-fixable-here={refusal.fixableHere ? "true" : "false"}

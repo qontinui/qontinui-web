@@ -25,7 +25,7 @@ from app.api.deps import (
     get_current_active_user_async,
 )
 from app.db.session import AsyncSessionLocal
-from app.middleware.rate_limit import user_limiter
+from app.middleware.rate_limit import get_device_bearer_identifier, user_limiter
 from app.models.device import Device
 from app.models.phase_result import PhaseResult
 from app.models.user import User
@@ -105,7 +105,10 @@ _DEVICE_TOKEN_401 = {
         },
     },
 )
-@user_limiter.limit("120 per minute")
+# Device-token auth (HTTPBearer), so the bucket is the device bearer's: the
+# default user_limiter key reads the access_token cookie first, which this
+# route never accepts.
+@user_limiter.limit("120 per minute", key_func=get_device_bearer_identifier)
 async def ingest_workflow_event(
     *,
     request: Request,

@@ -12,6 +12,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlanCandidate, PlanCandidateResponse } from "./candidateStatus";
+import {
+  expectRowKeyedReveal,
+  expectYieldsBeforeLabel,
+} from "@/test/recordRowSlot";
 
 const get = vi.fn();
 
@@ -503,6 +507,114 @@ describe("a superseded read may not speak", () => {
 
     expect(screen.queryByTestId("coord-candidate-row")).toBeNull();
     expect(screen.getByTestId("coord-candidates-empty")).toBeInTheDocument();
+  });
+});
+
+describe("a candidate row's optional cells answer to the ROW, not the viewport", () => {
+  it("reveals each by RecordRow's container, and lets the texts yield to the label", async () => {
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({
+            status: "in_progress",
+            content_sha256: "ab".repeat(32),
+            status_currency: {
+              state: "fed_stale_ref",
+              as_of: "2026-09-20T09:00:00Z",
+              ref_sha: "c0ffee",
+              ref_age_secs: 40000,
+              detail: "every fresh reading is a floor",
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const status = await screen.findByTestId("coord-candidate-status");
+    expectRowKeyedReveal(status, "@min-[45rem]/record-row:inline");
+    expectYieldsBeforeLabel(status);
+    // It truncates, so its whole text rides in its title.
+    expect(status).toHaveAttribute("title", "in_progress");
+
+    const doc = screen.getByTestId("coord-candidate-document-state");
+    expectRowKeyedReveal(doc, "@min-[45rem]/record-row:inline");
+    expectYieldsBeforeLabel(doc);
+    // It truncates, so its title leads with its own value.
+    expect(doc.getAttribute("title")?.startsWith("doc: present — ")).toBe(true);
+
+    // The badge hides whole by its wrapper rather than shrinking.
+    const currency = screen.getByTestId("coord-candidate-currency");
+    expectRowKeyedReveal(
+      currency.parentElement as HTMLElement,
+      "@min-[45rem]/record-row:inline-flex"
+    );
+
+    // One rung up, where the reason widens.
+    const coord = screen.getByTestId("coord-candidate-coord");
+    expectRowKeyedReveal(coord, "@min-[53rem]/record-row:inline");
+    expectYieldsBeforeLabel(coord);
+    // The title carries the cell's own words as well as the detail.
+    expect(
+      coord.getAttribute("title")?.startsWith(`${coord.textContent}: `)
+    ).toBe(true);
+  });
+
+  it("repeats the status, doc and currency cells in the detail, readable at every width", async () => {
+    const user = userEvent.setup();
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({
+            status: "in_progress",
+            document_state: "unsynced",
+            content_sha256: "ab".repeat(32),
+            status_currency: {
+              state: "fed_stale_ref",
+              as_of: "2026-09-20T09:00:00Z",
+              ref_sha: "c0ffee",
+              ref_age_secs: 40000,
+              detail: "every fresh reading is a floor",
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const row = await screen.findByTestId("coord-candidate-row");
+    await user.click(within(row).getByRole("button"));
+    const cells = await screen.findByTestId("coord-candidate-detail-cells");
+    expect(cells).toHaveTextContent("Status: in_progress");
+    expect(cells).toHaveTextContent("doc: unsynced");
+    // Its own testid: the row's `coord-candidate-currency` stays unique.
+    expect(
+      within(cells).getByTestId("coord-candidate-currency-detail")
+    ).toHaveAttribute("data-state", "fed_stale_ref");
+    expect(screen.getAllByTestId("coord-candidate-currency")).toHaveLength(1);
+  });
+
+  it("names an unstated status and document_state in the detail, never a default", async () => {
+    const user = userEvent.setup();
+    get.mockResolvedValue(
+      response({
+        items: [
+          candidate({
+            status: "",
+            document_state: undefined,
+            id: null,
+            content_sha256: null,
+          }),
+        ],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const row = await screen.findByTestId("coord-candidate-row");
+    await user.click(within(row).getByRole("button"));
+    const cells = await screen.findByTestId("coord-candidate-detail-cells");
+    expect(cells).toHaveTextContent("Status: no status");
+    expect(cells).toHaveTextContent("doc: unstated");
   });
 });
 

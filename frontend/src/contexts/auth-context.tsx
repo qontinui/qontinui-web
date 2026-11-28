@@ -16,6 +16,7 @@ import { User } from "@/types/auth-types";
 import { isCoordAdminUser } from "@/lib/coord-admin";
 import { pageStateDB } from "@/stores/page-state";
 import { clearExtractionConfig } from "@/hooks/use-extraction-config";
+import { timeoutAbortReason } from "@/lib/abort-reasons";
 
 interface AuthContextType {
   user: User | null;
@@ -239,8 +240,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       attempt++
     ) {
       const controller = new AbortController();
+      // A typed TimeoutError reason: the telemetry beacon reports a timeout
+      // but drops a caller/navigation AbortError.
       const timer = setTimeout(
-        () => controller.abort(),
+        () => controller.abort(timeoutAbortReason()),
         BOOTSTRAP_USER_FETCH_TIMEOUT_MS
       );
       try {

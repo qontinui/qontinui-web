@@ -88,7 +88,15 @@ from app.core.refusal import (
     refusal_error,
 )
 from app.crud import runner_crud
-from app.middleware.rate_limit import get_authorization_identifier, user_limiter
+from app.middleware.rate_limit import (
+    get_authorization_identifier,
+    refusal_headers,
+    user_limiter,
+)
+from app.middleware.upstream_refusal import (
+    upstream_http_exception,
+    upstream_json_response,
+)
 from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
@@ -1239,8 +1247,9 @@ async def _proxy_coord_get(
         except httpx.TimeoutException as exc:
             raise _coord_timeout(CoordTransportUnavailable, write=False) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     return resp.json()
@@ -1615,8 +1624,9 @@ async def _proxy_coord_write(
             logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     if resp.status_code == 204 or not resp.content:
@@ -1789,7 +1799,7 @@ async def post_github_clone_credential(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- GitHub repo provisioning (new-project initiation) ---------------------
@@ -1874,14 +1884,13 @@ async def _proxy_coord_verbatim(
         content = {"detail": resp.text}
     # Only a real header string is echoed: anything else is no header at all.
     retry_after = resp.headers.get("retry-after")
-    return JSONResponse(
+    return upstream_json_response(
+        resp,
+        upstream="coord",
         content=content,
-        status_code=resp.status_code,
-        headers=(
-            {"Retry-After": retry_after}
-            if isinstance(retry_after, str) and retry_after.strip()
-            else None
-        ),
+        headers={"Retry-After": retry_after}
+        if isinstance(retry_after, str) and retry_after.strip()
+        else None,
     )
 
 
@@ -2701,7 +2710,7 @@ async def post_pr_merge_onboarding_connect_state(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 class OnboardingClaimRequest(BaseModel):
@@ -2838,7 +2847,7 @@ async def post_pr_merge_onboarding_claim(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Zero-touch onboarding: enroll an already-connected installation ------
@@ -2920,7 +2929,7 @@ async def post_pr_merge_onboarding_enroll(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Re-enroll (restore) a deliberately un-enrolled repo --------------------
@@ -2988,7 +2997,7 @@ async def post_pr_merge_onboarding_restore_repo(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    return upstream_json_response(resp, upstream="coord", content=content)
 
 
 # ---- Un-enroll ("stop governing") an enrolled repo --------------------------
@@ -3653,7 +3662,7 @@ async def _proxy_coord_passthrough(
         # honestly in coord's own `error` key, under coord's own status, rather
         # than inventing a shape the caller would mis-read as a coord code.
         payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
-    return JSONResponse(status_code=resp.status_code, content=payload)
+    return upstream_json_response(resp, upstream="coord", content=payload)
 
 
 @router.get("/pr-merge/{repo:path}/stuck-nudges")
@@ -3917,8 +3926,9 @@ async def _proxy_coord_post(
             )
             raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     try:
@@ -7207,6 +7217,94 @@ async def get_fleet_resource_samples(
     )
 
 
+# ---- Fleet pressure stops (Dev Ops "Pressure stops" table) ---------------
+#
+# Plan: `2026-11-24-pressure-stops-record-box-stats-in-coord` Phase 4. Backs
+# the "Pressure stops" table on `/admin/coord/devops`.
+#
+# Each row is one runner resource-guard refusal or deferral (coord table
+# `coord.resource_pressure_stop_events`, authored by alembic revision
+# `pressure_stops_01_resource_pressure_stop_events`). Web never reads that
+# table directly (`test_coord_schema_boundary_guard.py`); the rows come over
+# coord HTTP, routed through THIS backend so the operator bearer is forwarded
+# and tenant scoping stays server-side.
+#
+# **Honesty.** Coord answers `table_present: false` when the relation does
+# not exist yet, and an EMPTY `stops` list then means UNKNOWN, not "no
+# stops". Every nullable stat (session counts, CI runners) is null for
+# UNKNOWN, never 0. This proxy adds no defaults and fills no zeroes.
+
+
+@router.get("/fleet/resource-stops")
+async def get_fleet_resource_stops(
+    device_id: UUID | None = Query(
+        default=None,
+        description="Narrow to one device. Tenant scoping still applies on top.",
+    ),
+    lane: str | None = Query(
+        default=None,
+        description="Narrow to one metric lane: memory_free_commit | thread_pressure.",
+    ),
+    guard_lane: str | None = Query(
+        default=None,
+        description="Narrow to the pool that refused: host | wsl | threads.",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339 instant or UTC date; inclusive lower bound.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description="Page size. Coord clamps it and echoes `limit_clamped`.",
+    ),
+    summary: bool | None = Query(
+        default=None,
+        description="true adds coord's per-device roll-up.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched::
+
+        {"table_present": <bool>, "count": <int>, "stops": [StopRow, ...],
+         "bounded": <bool>, "limit": <int>, "limit_clamped": <bool>,
+         "summary": <object | null>}
+
+    ``table_present: false`` means the coord table does not exist yet — an
+    empty ``stops`` list is then UNKNOWN, never "no stops". ``bounded`` is
+    true when ``limit`` truncated the page. A ``StopRow`` carries
+    ``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that
+    refused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,
+    the nullable stats ``session_count_terminal``,
+    ``session_count_live_claude``, ``active_ci_runners`` and
+    ``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /
+    ``fleet_calibration`` objects as the runner recorded them.
+
+    Query params are forwarded verbatim WITHOUT local validation: coord
+    refuses a value outside its vocabulary (422) and clamps ``limit``, and a
+    local rewrite here would turn a refusal into a different, wider read.
+    """
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if lane is not None:
+        params["lane"] = lane
+    if guard_lane is not None:
+        params["guard_lane"] = guard_lane
+    if since is not None:
+        params["since"] = since
+    if limit is not None:
+        params["limit"] = limit
+    if summary is not None:
+        params["summary"] = summary
+    return await _proxy_coord_get(
+        "/coord/devices/resource-stops",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Volume free space (disk monitoring, Phase 1) ------------------------
 #
 # Plan: `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1 steps
@@ -7313,7 +7411,7 @@ async def get_fleet_volumes(
 # **Honesty.** `census_recent_rows == 0` means coord has no recent census hit
 # for that device within the narrow window, so `active_worktrees` for that
 # device could not be corroborated as live and MUST be rendered UNKNOWN by
-# the caller — never as an idle/empty machine and never as a healthy `0/8`.
+# the caller — never as an idle/empty machine and never as a healthy `0/<max>`.
 # This is a different, narrower-windowed field from the per-device door's
 # `census_rows_observed` (24h) and must not be confused with it.
 
@@ -7325,13 +7423,13 @@ async def get_fleet_worktree_slots(
     """Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
 
     Fleet-wide worktree-allocation-slot occupancy: how many of each device's
-    ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+    ``max_worktrees`` slots are occupied, and by what. Response shape
     is coord-authored and passed through untouched::
 
         {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
          "device_cap": 100, "census_window_secs": 900,
          "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
-             "active_worktrees": <int>, "max_worktrees": 8,
+             "active_worktrees": <int>, "max_worktrees": <int>,
              "census_recent_rows": <int>,
              "occupants": {"shown": 0, "total": 0, "truncated": false,
                             "rows": []}}]}
@@ -7340,7 +7438,7 @@ async def get_fleet_worktree_slots(
     that device within the narrow (``census_window_secs``, default 900s)
     window, so ``active_worktrees`` for that device could not be
     corroborated as live and the caller MUST render that row UNKNOWN — never
-    an idle/empty machine and never a healthy ``0/8`` — see the frontend
+    an idle/empty machine and never a healthy ``0/<max>`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
 
     Error answers pass through verbatim, status and JSON body, for the same
@@ -8377,8 +8475,9 @@ async def _proxy_coord_delete(
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
     if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=resp.status_code,
+        raise upstream_http_exception(
+            resp,
+            upstream="coord",
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -8937,8 +9036,10 @@ async def get_device_status(
     except httpx.TimeoutException as exc:
         raise _coord_timeout(write=False) from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code, detail=exc.response.text
+        raise upstream_http_exception(
+            exc.response,
+            upstream="coord",
+            detail=exc.response.text,
         ) from exc
 
 
@@ -9810,6 +9911,110 @@ async def post_ci_status_notify_when_green(
         }
     if body.gate_class is not None:
         register_body["gate_class"] = body.gate_class
+    return await _proxy_coord_post(
+        "/coord/gates/register", register_body, tenant_id=tenant_id
+    )
+
+
+# ---- Register a decision gate (project Overview, Phase 8) -----------------
+#
+# Plan `2026-11-25-overview-timeline-and-milestones-derive-from-coord`
+# Phase 8. The project Overview is DERIVED ONLY from coord (D5), so a decision
+# gate it shows must be enterable in coord, on the page that already holds
+# gates: `/admin/coord/gates`. The verdict is entered with the existing
+# approve / reject / reopen controls; this route only REGISTERS the gate.
+#
+# Coord's operator route `POST /coord/gates/register` (`gate_routes.rs`
+# `register_gate`, on `operator_or_service_writes`) already accepts an
+# `operator_approval` predicate anchored `(work_unit_id, phase_name)` and takes
+# the unit by id, so this proxy resolves the slug first. Two coord facts the
+# body below is shaped around:
+#   * coord DERIVES `gate_class = security-surface` for EVERY `operator_approval`
+#     gate that supplies none (`derive_gate_class`), and the Overview hides that
+#     class (D3). Explicit supply always wins, so this route sends
+#     `routine-review`. It is never client-selectable: an operator-chosen
+#     `security-surface` / `ops-confirm` would make the gate vanish from the
+#     very page it was registered for.
+#   * `register_gate_core` refuses another tenant's unit with
+#     `WorkUnitNotInTenant`; the slug read here is tenant-scoped too, so a
+#     foreign slug is refused by coord and never reaches the register call.
+
+DECISION_GATE_CLASS = "routine-review"
+_DECISION_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+
+
+class DecisionGateRequest(BaseModel):
+    """Body for ``POST /operations/gates/decision``.
+
+    ``extra="forbid"``: ``gate_class`` is deliberately not accepted (see above),
+    so a caller that sends it gets a typed 422 instead of a silent drop.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_unit_slug: str
+    phase_name: str
+    prompt: str
+    clearance_audience: Literal["operator", "agent"] = "operator"
+
+    @field_validator("work_unit_slug", "phase_name", "prompt")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        if len(stripped) > 500:
+            raise ValueError("must be at most 500 characters")
+        return stripped
+
+    @field_validator("work_unit_slug")
+    @classmethod
+    def _slug_shape(cls, v: str) -> str:
+        if not _DECISION_SLUG_RE.fullmatch(v):
+            raise ValueError("work_unit_slug is not a valid work unit slug")
+        return v
+
+
+@router.post("/gates/decision", response_model=NotifyWhenGreenResponse)
+async def post_register_decision_gate(
+    body: DecisionGateRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Register a decision gate: ``operator_approval`` anchored on a work unit.
+
+    1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the
+       unit id. A slug coord does not know in this tenant is coord's own error,
+       passed through.
+    2. ``POST /coord/gates/register`` with the predicate
+       ``{"kind": "operator_approval", "prompt": ...}``, anchor
+       ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and
+       the fixed ``gate_class`` above.
+
+    Returns coord's registration outcome (``gate_id``, ``warnings``, ...).
+    """
+    detail = await _proxy_coord_get(
+        f"/coord/work-units/{quote(body.work_unit_slug, safe='')}",
+        tenant_id=tenant_id,
+    )
+    unit = detail.get("work_unit") if isinstance(detail, dict) else None
+    unit_id = unit.get("id") if isinstance(unit, dict) else None
+    if not isinstance(unit_id, str) or not unit_id:
+        # A 2xx that does not name the unit is UNKNOWN, never a guess at an id.
+        raise refusal_error(
+            502,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "coord did not return a work unit id for that slug",
+            discriminator="coord_work_unit_id_missing",
+            glossary_terms=[GlossaryTerm.coord],
+        )
+    register_body: dict[str, Any] = {
+        "work_unit_id": unit_id,
+        "phase_name": body.phase_name,
+        "predicate": {"kind": "operator_approval", "prompt": body.prompt},
+        "clearance_audience": body.clearance_audience,
+        "gate_class": DECISION_GATE_CLASS,
+    }
     return await _proxy_coord_post(
         "/coord/gates/register", register_body, tenant_id=tenant_id
     )
@@ -10934,8 +11139,9 @@ async def stream_coord_session_events(
             async with client.stream("GET", url, headers=headers) as upstream:
                 if upstream.status_code >= 400:
                     body = await upstream.aread()
-                    raise HTTPException(
-                        status_code=upstream.status_code,
+                    raise upstream_http_exception(
+                        upstream,
+                        upstream="coord",
                         detail=body.decode("utf-8", "ignore"),
                     )
                 async for chunk in upstream.aiter_raw():
@@ -11029,8 +11235,9 @@ async def get_coord_session_restore_record(
             async with client.stream("GET", url, headers=headers) as upstream:
                 if upstream.status_code >= 400:
                     body = await upstream.aread()
-                    raise HTTPException(
-                        status_code=upstream.status_code,
+                    raise upstream_http_exception(
+                        upstream,
+                        upstream="coord",
                         detail=body.decode("utf-8", "ignore"),
                     )
                 lines = upstream.aiter_lines()
@@ -16774,8 +16981,13 @@ def _cognito_http_error(
             },
             # AWS's own hint when it sent one; 5s only when it did not. A
             # number we invented would be a guess presented as the service's
-            # answer.
-            headers={"Retry-After": exc.retry_after or "5"},
+            # answer. The lane is the pool's admin API quota, which every
+            # group route shares, so it names no route.
+            headers=refusal_headers(
+                "cognito:admin-api",
+                "upstream",
+                retry_after=exc.retry_after or "5",
+            ),
         )
     if isinstance(exc, CognitoConfigurationError):
         logger.error(
