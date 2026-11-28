@@ -136,6 +136,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop the index concurrently. No row changes."""
     with op.get_context().autocommit_block():
-        op.execute(
-            "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_repo_branches_repo_pr"
-        )
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS coord.idx_repo_branches_repo_pr")
