@@ -78,7 +78,7 @@ _COORD_LAND_EVENT_WHERE = (
     "event_kind = 'state_change' AND state = 'MERGED' AND "
     "COALESCE(payload->>'source','coord_land') = 'coord_land'"
 )
-# coord's `CHECK_RUN_NAME` (crates/coord/src/github_checks.rs).
+# coord's `CHECK_RUN_NAME` (crates/coord/src/pr_merge/github_checks.rs).
 _CHECK_RUN_NAME = "Qontinui merge gate"
 
 _EXPECTED_DEFINITIONS = {
@@ -108,6 +108,20 @@ _RANK7_PROBE = (
     "SELECT MAX(created_at) FROM coord.pr_events "
     f"WHERE repo = :repo AND {_COORD_LAND_EVENT_WHERE}"
 )
+# Rank 7's fleet twin, as coord's `last_coord_land_at_sql` sends its pr_events arm.
+_RANK7_TWIN_PROBE = (
+    f"SELECT MAX(created_at) FROM coord.pr_events WHERE {_COORD_LAND_EVENT_WHERE}"
+)
+# Rank 9 as coord sends it TODAY (`api/ci_routes.rs` `latest_details_url`), with
+# `CHECK_RUN_NAME` bound as $2. Prepared, so the custom-vs-generic plan is explicit.
+_RANK9_PREPARED = (
+    "PREPARE rank9_today(text, text) AS "
+    "SELECT details_url FROM coord.pr_check_runs "
+    "WHERE repo = $1 AND details_url IS NOT NULL "
+    "AND name IS DISTINCT FROM $2 "
+    "ORDER BY updated_at DESC LIMIT 1"
+)
+_RANK9_EXECUTE = f"EXECUTE rank9_today('x', '{_CHECK_RUN_NAME}')"
 # Rank 9, with `CHECK_RUN_NAME` inlined as a literal (Phase 3's shape).
 _RANK9_PROBE = (
     "SELECT details_url FROM coord.pr_check_runs "
@@ -124,6 +138,7 @@ _RANK10_PROBE = (
 
 _PROBES: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
     ("coord.pr_events", _LAND_INDEX, _RANK7_PROBE, {"repo": _REPO}),
+    ("coord.pr_events", _LAND_INDEX, _RANK7_TWIN_PROBE, {}),
     ("coord.pr_check_runs", _CHECK_INDEX, _RANK9_PROBE, {}),
     ("coord.error_observations", _ERROBS_INDEX, _RANK10_PROBE, {}),
 )
@@ -266,7 +281,12 @@ def _analyze(engine: Engine) -> None:
 
 
 def _plan_with_no_alternative(
-    engine: Engine, table: str, index: str, sql: str, params: dict[str, Any]
+    engine: Engine,
+    table: str,
+    index: str,
+    sql: str,
+    params: dict[str, Any],
+    prelude: tuple[str, ...] = (),
 ) -> str:
     """The plan of a read when ``index`` is the only useful path the planner has.
 
@@ -293,10 +313,15 @@ def _plan_with_no_alternative(
             for name in list(others):
                 conn.execute(text(f"DROP INDEX {name}"))
             conn.execute(text("SET LOCAL enable_seqscan = off"))
+            for stmt in prelude:
+                conn.exec_driver_sql(stmt)
             rows = conn.execute(text(f"EXPLAIN {sql}"), params).all()
             return "\n".join(str(r[0]) for r in rows)
         finally:
             tx.rollback()
+            if prelude:
+                # PREPARE is session state, not transactional: drop it explicitly.
+                conn.exec_driver_sql("DEALLOCATE ALL")
 
 
 def _row_counts(engine: Engine) -> tuple[int, int, int]:
@@ -366,6 +391,32 @@ def test_coord_second_tier_idx_01_serves_the_three_reads() -> None:
         )
         assert _CHECK_INDEX not in plan, (
             f"a read excluding another check name must NOT match the index:\n{plan}"
+        )
+
+        # 5b. Rank 9 as coord sends it today, with the gate name BOUND as $2: a
+        # custom plan folds $2 and proves the partial predicate; a generic plan
+        # cannot, which is why Phase 3 inlines the literal.
+        custom = _plan_with_no_alternative(
+            engine,
+            "coord.pr_check_runs",
+            _CHECK_INDEX,
+            _RANK9_EXECUTE,
+            {},
+            prelude=("SET LOCAL plan_cache_mode = force_custom_plan", _RANK9_PREPARED),
+        )
+        assert _CHECK_INDEX in custom, (
+            f"a custom plan of coord's bound-$2 read must use the index:\n{custom}"
+        )
+        generic = _plan_with_no_alternative(
+            engine,
+            "coord.pr_check_runs",
+            _CHECK_INDEX,
+            _RANK9_EXECUTE,
+            {},
+            prelude=("SET LOCAL plan_cache_mode = force_generic_plan", _RANK9_PREPARED),
+        )
+        assert _CHECK_INDEX not in generic, (
+            f"a generic plan cannot prove the predicate from a bound $2:\n{generic}"
         )
 
         # 6. A re-run leaves each VALID index untouched.
