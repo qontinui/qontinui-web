@@ -6,8 +6,8 @@ Locks the behavior that python-jose previously provided so the swap is
 verified by behavior, not by import success:
 
   * a valid refresh-token cookie buckets per-user (``refresh-user:<sub>``),
-  * a garbage / unsigned token falls back to IP keying,
-  * an expired token falls back to IP keying (PyJWT validates ``exp`` by
+  * a garbage / unsigned token falls back to peer keying,
+  * an expired token falls back to peer keying (PyJWT validates ``exp`` by
     default, same as python-jose did).
 """
 
@@ -29,7 +29,7 @@ def _mock_request(
     """A FastAPI Request stand-in: refresh_token cookie + a client IP."""
     request = MagicMock()
     request.cookies = {"refresh_token": cookie} if cookie else {}
-    # slowapi's get_remote_address reads request.client.host (no forwarded hdr)
+    # No X-Forwarded-For, so the peer fallback reads request.client.host.
     request.headers = {}
     request.client = SimpleNamespace(host=client_host)
     return request
@@ -49,22 +49,22 @@ def test_valid_token_buckets_per_user() -> None:
     assert _get_refresh_token_subject(request) == "refresh-user:user-abc-123"
 
 
-def test_garbage_token_falls_back_to_ip() -> None:
+def test_garbage_token_falls_back_to_peer() -> None:
     request = _mock_request(cookie="not-a-jwt", client_host="198.51.100.4")
 
-    assert _get_refresh_token_subject(request) == "ip:198.51.100.4"
+    assert _get_refresh_token_subject(request) == "peer:198.51.100.4"
 
 
-def test_expired_token_falls_back_to_ip() -> None:
+def test_expired_token_falls_back_to_peer() -> None:
     # exp 60s in the past -> PyJWT raises ExpiredSignatureError, caught by the
     # except-Exception fallback (same contract python-jose enforced).
     token = _make_token("user-xyz", exp_offset=-60)
     request = _mock_request(cookie=token, client_host="198.51.100.9")
 
-    assert _get_refresh_token_subject(request) == "ip:198.51.100.9"
+    assert _get_refresh_token_subject(request) == "peer:198.51.100.9"
 
 
-def test_wrong_signature_falls_back_to_ip() -> None:
+def test_wrong_signature_falls_back_to_peer() -> None:
     bad = jwt.encode(
         {"sub": "user-xyz", "exp": int(time.time()) + 3600},
         "a-totally-different-secret-key-not-the-app-one",
@@ -72,10 +72,10 @@ def test_wrong_signature_falls_back_to_ip() -> None:
     )
     request = _mock_request(cookie=bad, client_host="198.51.100.22")
 
-    assert _get_refresh_token_subject(request) == "ip:198.51.100.22"
+    assert _get_refresh_token_subject(request) == "peer:198.51.100.22"
 
 
-def test_no_cookie_falls_back_to_ip() -> None:
+def test_no_cookie_falls_back_to_peer() -> None:
     request = _mock_request(cookie=None, client_host="198.51.100.30")
 
-    assert _get_refresh_token_subject(request) == "ip:198.51.100.30"
+    assert _get_refresh_token_subject(request) == "peer:198.51.100.30"

@@ -34,6 +34,7 @@
 
 import type { DeviceCredentialDark } from "@/components/operations/coordCredentialStatus";
 import type { ResourceSamplesResponse } from "@/components/operations/fleetResources";
+import type { ResourceStopsResponse } from "@/components/operations/fleetResourceStops";
 import type {
   AggregatedTaskRuns,
   FleetStatus,
@@ -199,6 +200,26 @@ export interface FleetHealthDevice {
    * does not join it.
    */
   runner_reports?: RunnerReportsMeta | null;
+  /**
+   * **Is this runner running without its database?** — coord's verdict from
+   * the runner's own `details.runner_database` report (plan
+   * `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord` D3). A
+   * SIBLING of `state`, never a rung of it: `state` stays liveness, so a
+   * heartbeating runner whose database arm is dead reads `healthy` there and
+   * `degraded` here.
+   *
+   * Coord serves an object on every `/coord/fleet/health` row — `unknown` /
+   * `read_failed` when its device-status read failed, `unknown` /
+   * `build_nameable_key_absent` or `no_publisher` for a runner build that
+   * sends no report. `null` comes only from a path that does not join it, and
+   * absent is a coord predating the field. Both are UNKNOWN, never `ok`;
+   * `runnerReportStatus.ts` is the one place that turns any of it into words.
+   * Provenance rides `runner_reports.runner_database`.
+   *
+   * Matches qontinui-coord `fleet_health.rs` `DeviceHealthSnapshot::runner_database`
+   * (plan Phase 2).
+   */
+  runner_database?: RunnerDatabaseServed | null;
 }
 
 /**
@@ -305,7 +326,168 @@ export interface RunnerReportsMeta {
   wedge_incidents: RunnerReportMeta;
   capability: RunnerReportMeta;
   stale_after_secs: number;
+  /**
+   * Provenance of `devices[].runner_database.reading`: `absent_reason` is set
+   * exactly when that reading is `null`, and `error` carries the runner's own
+   * `runner_database_error` message. Optional because a coord predating the
+   * database report does not serve it (qontinui-coord `runner_reports.rs`
+   * `RunnerReportsMeta::runner_database`, plan Phase 2).
+   */
+  runner_database?: RunnerReportMeta;
 }
+
+// ----------------------------------------------------------------------------
+// The runner-database verdict — plan
+// `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord` D1/D3.
+//
+// Matched to qontinui-coord `crates/coord/src/runner_reports.rs` (plan
+// Phase 2), cited by file and symbol because its line numbers move.
+// Every Rust `Option<…>` there is serialized without `skip_serializing_if`,
+// so each field below is always PRESENT and may be `null` — never optional.
+// Field names are the structs' own snake_case (no serde rename).
+// ----------------------------------------------------------------------------
+
+/**
+ * `devices[].runner_database.verdict` — `runner_reports.rs` `DbVerdictKind`
+ * (serde snake_case). `unknown` is a value of its own, never folded into `ok`.
+ * The field is typed `string` so a verdict newer than this build renders as
+ * unknown instead of failing to parse; this list is what the derivation's
+ * tables are checked against (`runnerReportStatus.ts` `TALLY_RANK`, with
+ * `satisfies`, so a verdict added here without a place fails tsc).
+ */
+export const RUNNER_DATABASE_VERDICTS = ["ok", "degraded", "unknown"] as const;
+export type RunnerDatabaseVerdict = (typeof RUNNER_DATABASE_VERDICTS)[number];
+
+/**
+ * The `degraded` values of `devices[].runner_database.reason` —
+ * `runner_reports.rs` `DbVerdictReason` (serde snake_case).
+ */
+export const RUNNER_DATABASE_DEGRADED_REASONS = [
+  "boot_without_database",
+  "breaker_open",
+] as const;
+/**
+ * A `degraded` reason. `runnerReportStatus.ts` keys its cause-line words on
+ * it with `satisfies`, so a reason added here without words fails tsc.
+ */
+export type RunnerDatabaseDegradedReason =
+  (typeof RUNNER_DATABASE_DEGRADED_REASONS)[number];
+
+/**
+ * The `unknown` values of `devices[].runner_database.reason` — the rest of
+ * `DbVerdictReason`. `runnerReportStatus.ts` keys its explanation table on
+ * this list with `satisfies`, so a reason added here without words fails tsc.
+ *
+ * `runner_unobserved` (a closed breaker whose runner did not observe the
+ * database reachable, or whose observation is stale) and `since_in_future`
+ * (the breaker's onset or the report's own time is more than 60 s ahead of
+ * coord's receipt of it) are among the reasons coord's `verdict_of_reading`
+ * derives from the reading itself (qontinui-coord, plan Phase 2).
+ */
+export const RUNNER_DATABASE_UNKNOWN_REASONS = [
+  "build_nameable_key_absent",
+  "no_publisher",
+  "stale_report",
+  "unstamped",
+  "malformed",
+  "publisher_error",
+  "breaker_unreported",
+  "read_failed",
+  "runner_unobserved",
+  "since_in_future",
+] as const;
+export type RunnerDatabaseUnknownReason =
+  (typeof RUNNER_DATABASE_UNKNOWN_REASONS)[number];
+
+/**
+ * `devices[].runner_database.reason`. `null` exactly when the verdict is
+ * `ok`. Typed `string` on the field for the same reason as the verdict.
+ */
+export type RunnerDatabaseReason =
+  | RunnerDatabaseDegradedReason
+  | RunnerDatabaseUnknownReason;
+
+/** `runner_reports.rs` `RunnerDatabaseBreaker` — every field tolerated, so every field nullable. */
+export interface RunnerDatabaseBreaker {
+  /** `closed | open | half_open`, verbatim. */
+  state: string | null;
+  /** `boot` (the runner booted without its database) or `runtime`. */
+  cause: string | null;
+  cause_class: string | null;
+  /** When the breaker left `closed`; `null` on a closed breaker. RFC 3339. */
+  since: string | null;
+  failed_trials: number | null;
+  trips: number | null;
+  /**
+   * The last connect error, bounded by coord. It SURVIVES a breaker close, so
+   * it is current only beside a `degraded` verdict — never render it beside
+   * `ok`.
+   */
+  last_error: string | null;
+  /**
+   * How long the breaker has been open, in milliseconds, as the runner
+   * measured it; `null` when it did not say. One of coord's two sources for
+   * the alert's sustain (the other is the reading's `reported_at`): coord
+   * fires only on a known `since` AND one of them. A coord predating the
+   * field does not serve it, which every reader here treats as `null`.
+   */
+  open_for_ms: number | null;
+}
+
+/** `runner_reports.rs` `RunnerDatabaseReading` — a `null` the runner sent stays `null`. */
+export interface RunnerDatabaseReading {
+  /**
+   * `external | embedded-owned | embedded-attached | degraded | unknown`,
+   * verbatim. FIXED AT BOOT: a recovered degraded-arm runner still reads
+   * `degraded` here beside an `ok` verdict.
+   */
+  arm: string | null;
+  reachable: boolean | null;
+  schema_ok: boolean | null;
+  /** `null` = the runner reported no breaker: the verdict is `unknown`, never `ok`. */
+  breaker: RunnerDatabaseBreaker | null;
+  embedded_data_root: string | null;
+  observed_at: string | null;
+  stale: boolean | null;
+  build_id: string | null;
+  /**
+   * When the runner's publisher stamped this report, RFC 3339. Coord's
+   * fallback sustain source when the breaker carries no `open_for_ms`.
+   */
+  reported_at: string | null;
+}
+
+/** `devices[].runner_database` — `runner_reports.rs` `RunnerDatabaseServed`. */
+export interface RunnerDatabaseServed {
+  /** One of {@link RunnerDatabaseVerdict}. */
+  verdict: string;
+  /** One of {@link RunnerDatabaseReason}; `null` exactly when `verdict` is `ok`. */
+  reason: string | null;
+  /**
+   * The onset coord judged, on a `degraded` verdict; `null` otherwise. It is
+   * the runner's `breaker.since` unless that runs more than 60 s ahead of the
+   * onset `open_for_ms` dates (`reported_at - open_for_ms`, else
+   * `received_at - open_for_ms`), in which case coord serves the dated onset.
+   * Read this field, never `reading.breaker.since`.
+   */
+  since: string | null;
+  /**
+   * The validated report whenever coord could parse one — a stale report
+   * included; `null` when absent, superseded by the error sibling, malformed,
+   * or not read.
+   */
+  reading: RunnerDatabaseReading | null;
+}
+
+/**
+ * `by_runner_database` on the fleet-health body — `runner_reports.rs`
+ * `by_runner_database`, served by `fleet_health.rs` over its judged
+ * population (`DeviceHealthSnapshot::in_judged_population`). A SPARSE tally of
+ * `devices[].runner_database.verdict`: a key only where a device is, so an
+ * absent key beside a served tally is a measured 0. Keyed by `string` so a
+ * verdict newer than this build is still counted, not dropped.
+ */
+export type RunnerDatabaseTally = Readonly<Record<string, number>>;
 
 /**
  * `build_resolvability` on the fleet-health body: the share of the roster's
@@ -470,6 +652,14 @@ export interface FleetHealthPayload {
   runner_reports_scrape_up?: boolean;
   /** See {@link FleetBuildResolvability}. Absent on a coord predating it. */
   build_resolvability?: FleetBuildResolvability | null;
+  /**
+   * The roster's runner-database verdicts, tallied — see
+   * {@link RunnerDatabaseTally}. `null` = coord's device-status read failed
+   * (every row then reads `unknown` / `read_failed`), never "no machine is
+   * degraded"; absent = a coord predating the field. Rendered by
+   * `runnerDatabaseTallyBadge`, with `unknown` as its own count.
+   */
+  by_runner_database?: RunnerDatabaseTally | null;
   /**
    * When coord's read was true (`fleet_health.rs` `"as_of": now`), RFC 3339.
    * The console dates this read by it (`servedAsOfMs`); absent on an older
@@ -784,6 +974,23 @@ export async function fetchFleetResourceSamples(
     idempotent: true,
   });
   return readJson<ResourceSamplesResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/resource-stops?limit=` (`get_fleet_resource_stops`) — the runner's
+ * recorded resource-guard refusals and deferrals, newest first.
+ */
+export async function fetchFleetResourceStops(
+  limit: number,
+  options: HttpOptions = {}
+): Promise<ResourceStopsResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/resource-stops?limit=${encodeURIComponent(String(limit))}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ResourceStopsResponse>(res, `GET ${url}`);
 }
 
 /**

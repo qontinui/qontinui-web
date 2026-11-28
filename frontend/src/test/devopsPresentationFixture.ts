@@ -276,6 +276,42 @@ export function mockDevOpsRoutes(
         history: [],
       });
     }
+    if (u.includes("resource-stops")) {
+      return Promise.resolve({
+        table_present: true,
+        count: 1,
+        stops: [
+          {
+            event_id: "e5e5e5e5-0000-4000-8000-0000000000e1",
+            device_id: DEV_A,
+            client_event_id: "stop-1",
+            observed_at: NOW_ISO(),
+            recorded_at: NOW_ISO(),
+            stop_kind: "refused_spawn",
+            lane: "memory_free_commit",
+            guard_lane: "host",
+            severity: "critical",
+            what_class: "terminal_spawn",
+            observed: 3_221_225_472,
+            limit_value: 4_294_967_296,
+            reason: null,
+            session_count_terminal: 4,
+            session_count_live_claude: null,
+            active_ci_runners: 1,
+            ci_jobs_queued: null,
+            calibration: {},
+            fleet_calibration: null,
+            suppressed_count: 0,
+            dropped_before: 0,
+            box_stats: {},
+          },
+        ],
+        bounded: false,
+        limit: 50,
+        limit_clamped: false,
+        summary: null,
+      });
+    }
     if (u.includes("worktree-slots")) {
       if (fixture.worktreeSlotsFail) {
         return Promise.reject(new Error("worktree slots unavailable"));
@@ -470,6 +506,9 @@ export function mockDevOpsRoutes(
         total: 3,
         degradable_dropped: 0,
         row_cap: { soft: 1000, hard: 10_000 },
+        // Coord's runner-database tally, carrying a verdict newer than this
+        // build: its snake_case key must reach the strip only as "other".
+        by_runner_database: { ok: 1, breaker_flapping: 1 },
         ...fixture.healthExtras,
         devices: [
           {

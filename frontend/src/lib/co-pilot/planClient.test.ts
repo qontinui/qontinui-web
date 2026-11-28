@@ -133,6 +133,36 @@ describe("requestPlan transport", () => {
     expect(relayFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("the client deadline aborts the in-flight request with a TimeoutError reason, and reads as a planning timeout", async () => {
+    // The typed reason lets the telemetry beacon report this timeout instead
+    // of dropping it as a caller/navigation abort.
+    let seen: AbortSignal | undefined;
+    relayFetch.mockImplementation(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init?.signal ?? undefined;
+          seen?.addEventListener("abort", () => reject(seen?.reason));
+        })
+    );
+    vi.useFakeTimers();
+    try {
+      const pending = requestPlan({
+        prompt: "go home",
+        target: target("not_local"),
+        explain: false,
+      }).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      const err = (await pending) as PlanError;
+      expect(err.reason).toBe("runner-unreachable");
+      expect(err.message).toMatch(/Planning timed out/);
+      expect((seen?.reason as { name?: string } | undefined)?.name).toBe(
+        "TimeoutError"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a relay path refusal is planning-failed with the needs-local message", async () => {
     relayFetch.mockResolvedValue(
       jsonResponse(

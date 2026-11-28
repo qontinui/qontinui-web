@@ -15,6 +15,13 @@
  * 4. **`services_reported: false` makes coord's `services_failed: 0` UNKNOWN.**
  * 5. **Coord's `down` flag decides a service row**, not a second reading.
  * 6. **The two 404s, the two 403s, and schema_pending are told apart.**
+ *
+ * Plan `2026-11-27-devops-oom-kills-inside-agent-build-slices-carry-no-victim`
+ * Phase 5 (test 30):
+ *
+ * 7. **An OOM kill placed only in a slice names the slice** (`in <slice>`),
+ *    after `unit` / `victim_unit` and before `hostname`; a blank or absent
+ *    `victim_slice` names nothing, so the event still reads unsubjected.
  */
 
 import { describe, expect, it } from "vitest";
@@ -28,13 +35,18 @@ import {
   SERVICE_ATTENTION_BY_KIND,
   SERVICE_PALETTE,
   buildComputerRows,
+  ciRunnerAttributionText,
   ciRunnerStatusText,
   classifyComputersError,
+  uncomparedRunnerCount,
+  divergenceNoneText,
+  divergenceNotComparedText,
   computerFreshness,
   computerStatus,
   deriveComputerDetailHealth,
   deriveComputersHealth,
   emptyLanesText,
+  eventSubject,
   gpuText,
   gpuTitle,
   gpusNote,
@@ -59,6 +71,7 @@ import {
 import {
   computerFx,
   detailFx,
+  eventFx,
   laneFx,
   listFx,
   serviceFx,
@@ -504,6 +517,104 @@ describe("ciRunnerStatusText", () => {
   });
 });
 
+describe("ciRunnerAttributionText", () => {
+  const row = {
+    device_id: "d",
+    hostname: "gh-runner-merytshost-1@qontinui/qontinui-web",
+    runner_name: "merytshost-1",
+    host_key: "merytshost-1",
+    repo: "qontinui/qontinui-web",
+    ci_runner_status: "idle",
+    last_seen_at: null,
+    registrar_fresh: true,
+    service_unit: null,
+    service_active_state: null,
+  };
+
+  it("notes a declared-host row as placed on the machine with its unit unknown", () => {
+    expect(
+      ciRunnerAttributionText({ ...row, attributed_by: "declared_host" })
+    ).toBe("placed on machine (declared host), unit unknown");
+  });
+
+  it("adds nothing for the normal runner-name pairing", () => {
+    expect(
+      ciRunnerAttributionText({
+        ...row,
+        service_unit: "actions.runner.qontinui.merytshost-1.service",
+        attributed_by: "runner_name",
+      })
+    ).toBeNull();
+  });
+
+  it("claims neither value when coord did not say (absent or null)", () => {
+    // An older coord omits the field: UNKNOWN, never read as declared_host
+    // even though `service_unit` is null exactly as on a declared-host row.
+    expect(ciRunnerAttributionText(row)).toBeNull();
+    expect(ciRunnerAttributionText({ ...row, attributed_by: null })).toBeNull();
+  });
+});
+
+describe("divergence wording with uncompared rows", () => {
+  const row = {
+    device_id: "d",
+    hostname: "gh-runner-merytshost-1@qontinui/qontinui-web",
+    runner_name: "merytshost-1",
+    host_key: "merytshost-1",
+    repo: "qontinui/qontinui-web",
+    ci_runner_status: "idle",
+    last_seen_at: null,
+    registrar_fresh: true,
+    service_unit: null,
+    service_active_state: null,
+  };
+
+  it("counts every row with no paired unit, whatever attributed_by says", () => {
+    const paired = {
+      ...row,
+      service_unit: "actions.runner.qontinui.x.service",
+    };
+    expect(
+      uncomparedRunnerCount([
+        { ...row, attributed_by: "declared_host" },
+        // runner_name but coord could not pair a unit: not compared either.
+        { ...row, attributed_by: "runner_name" },
+        // an older coord that omits the field: compared only if paired.
+        row,
+        { ...paired, attributed_by: "runner_name" },
+        paired,
+      ])
+    ).toBe(3);
+    expect(uncomparedRunnerCount([])).toBe(0);
+    expect(uncomparedRunnerCount(null)).toBe(0);
+  });
+
+  it("keeps today's empty-list text exactly when every row was compared", () => {
+    expect(divergenceNoneText(0)).toBe(
+      "No disagreement found among fresh registrar rows."
+    );
+    expect(divergenceNotComparedText(0)).toBeNull();
+  });
+
+  it("narrows the empty-list text and counts one uncompared runner in the singular", () => {
+    expect(divergenceNotComparedText(1)).toBe(
+      "1 CI runner with no paired unit is not compared."
+    );
+    expect(divergenceNoneText(1)).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 1 CI runner with no paired unit is not compared."
+    );
+  });
+
+  it("counts several uncompared runners in the plural", () => {
+    expect(divergenceNotComparedText(3)).toBe(
+      "3 CI runners with no paired unit are not compared."
+    );
+    expect(divergenceNoneText(3)).toBe(
+      "No disagreement found among fresh registrar rows paired with a unit. 3 CI runners with no paired unit are not compared."
+    );
+  });
+});
+
 describe("the three palettes agree with their attention tables", () => {
   it.each([
     ["computer", COMPUTER_ATTENTION_BY_KIND, COMPUTER_PALETTE],
@@ -755,6 +866,41 @@ describe("deriveComputerDetailHealth", () => {
     expect(h.badges.map((b) => b.label)).toContain("divergence –");
   });
 
+  it("qualifies the divergence badge when some rows were not compared", () => {
+    const base = {
+      computer: n,
+      freshness: f,
+      status: computerStatus(n, f, { fetchedAtMs: NOW, nowMs: NOW }),
+      issue: null,
+      services: [],
+      events: [],
+      divergence: [],
+      registrarReadOk: true,
+    };
+    const badge = (h: ReturnType<typeof deriveComputerDetailHealth>) =>
+      h.badges.find((b) => b.key === "divergence");
+    const qualified = badge(
+      deriveComputerDetailHealth({ ...base, uncomparedRunners: 2 })
+    );
+    expect(qualified?.label).toBe("divergence 0 (2 not compared)");
+    expect(qualified?.title).toContain(
+      "2 CI runners with no paired unit are not compared."
+    );
+    const plain = badge(deriveComputerDetailHealth(base));
+    expect(plain?.label).toBe("divergence 0");
+    expect(plain?.title).not.toContain("not compared");
+    // An unconfirmed registrar read stays a dash, never a qualified count.
+    expect(
+      badge(
+        deriveComputerDetailHealth({
+          ...base,
+          registrarReadOk: false,
+          uncomparedRunners: 2,
+        })
+      )?.label
+    ).toBe("divergence –");
+  });
+
   it("headlines not-found even when a computer from an earlier read is passed in", () => {
     const h = deriveComputerDetailHealth({
       computer: n,
@@ -985,5 +1131,90 @@ describe("readGpus — null is UNKNOWN, [] is a measured none", () => {
         computeCapability: null,
       })
     ).toBe("vendor: nvidia · driver: 999.10 · compute capability: unknown");
+  });
+});
+
+describe("eventSubject — an OOM kill names its slice when no unit was established", () => {
+  const subjectOf = (detail: Record<string, unknown>) =>
+    eventSubject(eventFx({ detail }, NOW));
+
+  it("names a slice-remainder kill `in <victim_slice>`", () => {
+    expect(
+      subjectOf({
+        victim_unit: null,
+        victim_slice: "agent-builds.slice",
+        victim_cgroup:
+          "user.slice/user-1000.slice/user@1000.service/agent.slice/agent-builds.slice",
+        slices: "read",
+        count: 1,
+        attribution: "slice_memory_events",
+      })
+    ).toBe("in agent-builds.slice");
+  });
+
+  it("names the scope, not the slice that contains it, when the unit was placed", () => {
+    // A B or C event carries both: the slice whose counter moved and the child
+    // it was attributed to. The narrower subject wins.
+    for (const attribution of [
+      "cgroup_memory_events",
+      "user_journal_unit_oom",
+    ]) {
+      expect(
+        subjectOf({
+          victim_unit: "agent-build-x.scope",
+          victim_slice: "agent-builds.slice",
+          slices: "read",
+          count: 1,
+          attribution,
+        })
+      ).toBe("agent-build-x.scope");
+    }
+    // Key order only, not a wire shape the runner emits: `unit` outranks a
+    // slice when both are present.
+    expect(
+      subjectOf({
+        unit: "qontinui-runner.service",
+        victim_slice: "qontinui-runner.slice",
+      })
+    ).toBe("qontinui-runner.service");
+  });
+
+  it("reports no subject when neither a unit nor a slice was established", () => {
+    // The default fixture is today's residual vmstat event.
+    expect(eventSubject(eventFx({}, NOW))).toBeNull();
+    // Slices read, kill outside every watched slice: still no subject.
+    expect(
+      subjectOf({ victim_unit: null, victim_slice: null, slices: "read" })
+    ).toBeNull();
+  });
+
+  it("never renders a blank or non-string victim_slice as `in `", () => {
+    for (const victim_slice of ["", "   ", 7, true, {}]) {
+      const subject = subjectOf({ victim_unit: null, victim_slice });
+      expect(subject).toBeNull();
+    }
+    // A padded slice is named trimmed.
+    expect(subjectOf({ victim_slice: "  agent-builds.slice " })).toBe(
+      "in agent-builds.slice"
+    );
+    // A whitespace-only unit or victim_unit names nothing either, so the
+    // slice is still the subject.
+    expect(
+      subjectOf({
+        unit: " ",
+        victim_unit: "  ",
+        victim_slice: "agent-builds.slice",
+      })
+    ).toBe("in agent-builds.slice");
+    // A blank slice falls through to the next key rather than stopping there.
+    expect(subjectOf({ victim_slice: "", hostname: "merytshost" })).toBe(
+      "merytshost"
+    );
+  });
+
+  it("puts the slice before the hostname", () => {
+    expect(
+      subjectOf({ victim_slice: "agent-builds.slice", hostname: "merytshost" })
+    ).toBe("in agent-builds.slice");
   });
 });

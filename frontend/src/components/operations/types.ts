@@ -11,6 +11,7 @@ import type { Runner } from "@qontinui/shared-types";
 import type { DeviceCredentialDark } from "./coordCredentialStatus";
 import type {
   RunnerCapabilityRecord,
+  RunnerDatabaseServed,
   RunnerReportsMeta,
   RunnerWedgeIncident,
 } from "@/lib/api/operations/coordFleet";
@@ -801,6 +802,15 @@ export type CoordHealthJoin =
       wedge_incidents?: RunnerWedgeIncident[] | null;
       capability?: RunnerCapabilityRecord[] | null;
       runner_reports?: RunnerReportsMeta | null;
+      /**
+       * Coord's runner-database verdict for this device, carried through
+       * verbatim (plan
+       * `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+       * Phase 6). `null`/absent is UNKNOWN, never `ok`; `MachineCard` renders
+       * it through `resolveRunnerReports`, which is the only place that
+       * decision is made.
+       */
+      runner_database?: RunnerDatabaseServed | null;
       /**
        * The fleet-health BODY's `runner_reports_scrape_up`, copied onto each
        * row so a row whose reports are `null` can say whether that is coord's

@@ -320,6 +320,9 @@ import {
   CAPABILITY_ATTENTION_BY_STATE,
   CAPABILITY_AUTHOR_GLYPH_KINDS,
   CAPABILITY_BADGE_CLASS,
+  DATABASE_ATTENTION_BY_STATE,
+  DATABASE_AUTHOR_GLYPH_KINDS,
+  DATABASE_BADGE_CLASS,
   WEDGE_ATTENTION_BY_STATE,
   WEDGE_AUTHOR_GLYPH_KINDS,
   WEDGE_BADGE_CLASS,
@@ -735,6 +738,25 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: WEDGE_BADGE_CLASS,
       authorGlyphKinds: WEDGE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Coord's runner-database verdict on the same machine rows — plan
+    // `2026-11-27-devops-runner-database-degraded-is-invisible-to-coord`
+    // Phase 6. Red only on coord's `boot_without_database` reason with a
+    // known onset and a sustain source, as coord fires (the degraded arm,
+    // breaker opened at boot): on its placeholder-DSN boot
+    // paths the runner cannot recover in-process, and coord keys its critical
+    // alert on that reason, as this kind does (two degraded-arm boot paths
+    // hold a real URL and recover once the database answers). A breaker that
+    // opened at runtime, on either arm, is amber (its own trial closes it);
+    // `unknown` amber by floor.
+    surface: "runner database (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: DATABASE_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: DATABASE_BADGE_CLASS,
+      authorGlyphKinds: DATABASE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

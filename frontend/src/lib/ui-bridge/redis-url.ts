@@ -27,9 +27,16 @@
  * percent-encoded.
  */
 
-/** The one fixed line logged for a refused URL. Carries NO value. */
+/**
+ * The one fixed line logged for a refused URL. Carries NO value — and, on
+ * purpose, no `@` and no `://` either: the grammar it used to quote
+ * (`[redis[s]://][user:password@]host[:port]`) matched the `//user:pw@` shape
+ * the deployed-log leak check greps for, so a deployment that leaked nothing
+ * read as a leak until each hit was checked by hand (finding f25c2655). The
+ * exact grammar lives in this module's header, which the line points to.
+ */
 export const REDIS_URL_UNPARSEABLE_MESSAGE =
-  "UI_BRIDGE_RELAY_REDIS_URL is not a parseable Redis URL (expected [redis[s]://][user:password@]host[:port]); a reserved character in the password probably needs percent-encoding, or the value carries a stray prefix, quotes or a non-redis scheme";
+  "UI_BRIDGE_RELAY_REDIS_URL is not a parseable Redis URL (expected an optional redis or rediss scheme, an optional user and password, a host and an optional port; grammar in frontend/src/lib/ui-bridge/redis-url.ts); a reserved character in the password probably needs percent-encoding, or the value carries a stray prefix, quotes or a non-redis scheme";
 
 /** RFC 3986 userinfo characters minus `:` (unreserved, sub-delims, %XX). */
 const USER = String.raw`(?:[A-Za-z0-9\-._~!$&()*+,;=]|%[0-9A-Fa-f]{2})*`;
