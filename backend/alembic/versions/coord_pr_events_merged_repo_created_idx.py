@@ -73,7 +73,7 @@ cannot run inside a transaction, hence ``op.get_context().autocommit_block()``
 — same precedent as ``coord_pr_events_hydration_head_idx`` and
 ``coord_pg_overload_idx_01``. On the CI fresh DB the table is empty, so the
 build is instant there. **On production it is not:** CONCURRENTLY scans all of
-``coord.pr_events``, the fleet's largest append-only table, twice, and then
+``coord.pr_events``, a hot append-only table, twice, and then
 waits for every transaction older than the build to finish. Its duration is not
 measured here; read ``pg_stat_progress_create_index`` while it runs. Only
 merged events enter the index, a small fraction of the table's writes.
@@ -85,7 +85,11 @@ whose docstring explains it). A second migrator POLLS for that lock with
 build's last phase would wait on, and it plans its upgrade only after this one
 has stamped. Because the poll can outlast ``.github/workflows/migrate.yml``'s
 waiter, a run whose task is still waiting may report outcome UNKNOWN rather than
-its real one. Since the build is long and unmeasured, read ``indisvalid`` after
+its real one. The same holds for the run doing the build: if the build
+outlasts that waiter (900 s by default, 960 s at most; ``migrate.yml``'s
+``wait_deadline_secs`` input), the run reports outcome UNKNOWN and its
+``POST /coord/schema/applications`` step is skipped, which is not a failure.
+Since the build is long and unmeasured, read ``indisvalid`` after
 the deploy either way (the plan's Phase 2 post-deploy step owns that read and
 the repair below): a build can still die for other reasons, such as a cancelled
 task or a lost connection.

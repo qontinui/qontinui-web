@@ -11,11 +11,12 @@ What is asserted
 ================
 
 1. The upgrade path is one static ``CREATE INDEX CONCURRENTLY IF NOT EXISTS``
-   literal in an autocommit block, and nothing else: ``upgrade()`` touches no
-   ``op.<attr>`` but ``execute`` and ``get_context``, and the revision never
-   calls ``get_bind``. The downgrade path is likewise pinned to one static
+   literal in an autocommit block, and nothing else: every call in
+   ``upgrade()`` is pinned (the block, ``op.execute``, nothing more), and the
+   revision never calls ``get_bind``. The downgrade path is likewise pinned to one static
    ``DROP INDEX CONCURRENTLY IF EXISTS coord.idx_pr_events_merged_repo_created``
-   in an autocommit block.
+   in an autocommit block, with every call in ``downgrade()`` pinned the same
+   way.
 2. Nothing exists at the parent revision.
 3. After upgrade the index exists, is **``indisvalid``**, and is exactly the
    intended definition, the partial predicate included.
@@ -23,13 +24,13 @@ What is asserted
    body from coord's ``crates/coord/src/pr_merge/economics.rs``. With every
    other index present and the table ANALYZEd, its plan names this index and
    its buffers stay bounded by the merged rows, not by the window's events.
+   A no-index baseline of the same read is measured first and must be at
+   least 3x the indexed figure, so the bound is shown to separate.
 5. **Implication, not cost.** With every other index dropped and sequential
    scans priced out, ``win_ev`` still plans on it (its predicate implies the
    index's), and a read whose merged filter differs from the index's — a
    lower-case ``'merged'`` on ``state_change``, the spelling coord does NOT
    use — cannot, so assertion 4 is measuring the partial predicate.
-   A no-index baseline of the same read is measured first and must be at
-   least 3x the indexed figure, so the bound is shown to separate.
 6. A re-run leaves the VALID index untouched (same oid), and KEEPS an INVALID
    one while reporting success. There is deliberately no in-migration repair:
    coord's migration classifier rejects ``op.get_bind().execute`` and a
@@ -54,6 +55,7 @@ from __future__ import annotations
 import ast
 import re
 import warnings
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -244,6 +246,22 @@ def _row_count(engine: Engine) -> int:
         )
 
 
+#: The only calls either function may make, as ``ast.unparse`` renders them:
+#: the autocommit block, and the one ``op.execute`` inside it.
+_ONLY_CALLS = ["op.execute", "op.get_context", "op.get_context().autocommit_block"]
+
+
+def _calls_in(path: Path, function: str) -> list[str]:
+    """Every call in ``function``, each callee unparsed, sorted."""
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    body = next(
+        n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == function
+    )
+    return sorted(
+        ast.unparse(n.func) for n in ast.walk(body) if isinstance(n, ast.Call)
+    )
+
+
 def test_the_upgrade_path_is_one_concurrent_create() -> None:
     """One static CREATE INDEX CONCURRENTLY in an autocommit block, nothing else."""
     path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
@@ -267,24 +285,10 @@ def test_the_upgrade_path_is_one_concurrent_create() -> None:
         if isinstance(node, ast.Attribute) and node.attr == "get_bind"
     ]
     assert not binds, f"get_bind anywhere in the revision, at lines {binds}"
-    # No other op.<attr> on the upgrade path either: a repair through
-    # op.drop_index (or any op the classifier would reject) reddens here, not
-    # only one spelled as raw SQL through op.execute.
-    upgrade = next(
-        n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
-    )
-    op_attrs = sorted(
-        {
-            node.attr
-            for node in ast.walk(upgrade)
-            if isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "op"
-        }
-    )
-    assert op_attrs == ["execute", "get_context"], (
-        f"upgrade() may call only op.execute and op.get_context, got {op_attrs}"
-    )
+    # Every call in upgrade(), not only op.execute: a repair through
+    # op.drop_index, or raw SQL through
+    # op.get_context().connection.exec_driver_sql(...), reddens here.
+    assert _calls_in(path, "upgrade") == _ONLY_CALLS, _calls_in(path, "upgrade")
 
 
 def test_the_downgrade_path_is_one_concurrent_drop() -> None:
@@ -297,6 +301,7 @@ def test_the_downgrade_path_is_one_concurrent_drop() -> None:
     assert call.in_autocommit_block, "CONCURRENTLY cannot run in a transaction"
     drop = re.sub(r"\s+", " ", call.sql).strip()
     assert drop == f"DROP INDEX CONCURRENTLY IF EXISTS coord.{_INDEX_NAME}", drop
+    assert _calls_in(path, "downgrade") == _ONLY_CALLS, _calls_in(path, "downgrade")
 
 
 _NEEDS_PG = pytest.mark.skipif(
