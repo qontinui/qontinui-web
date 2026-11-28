@@ -50,7 +50,12 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     ephemeral_database,
+    index_definition,
     index_exists,
+    index_oid,
+    index_state,
+    invalidate_index,
+    is_superuser,
     run_alembic,
     upgrade_execute_calls,
 )
@@ -137,9 +142,10 @@ _REPO_ONLY = """
 
 
 def _seed(engine: Engine) -> None:
-    """Production's size and shape: ~30k PR rows across a dozen repos, interleaved in
-    time so each PR's rows are spread across the heap, a PR occasionally on two
-    branches, and a tail of branches that never had a PR.
+    """Production's row count (about 34k here against 32,332), not its distribution:
+    PR rows across a dozen repos, interleaved in time so each PR's rows are spread
+    across the heap, a PR occasionally on two branches, and a tail of branches that
+    never had a PR.
     """
     with engine.begin() as conn:
         conn.execute(
@@ -266,49 +272,6 @@ def _top_buffers(plan: str) -> int:
     return int(first.group(1) or 0) + int(first.group(2) or 0)
 
 
-def _index_is_valid(engine: Engine) -> bool:
-    with engine.connect() as conn:
-        return bool(
-            conn.execute(
-                text(
-                    """
-                    SELECT i.indisvalid FROM pg_index i
-                      JOIN pg_class c ON c.oid = i.indexrelid
-                     WHERE c.relname = :idx
-                    """
-                ),
-                {"idx": _INDEX_NAME},
-            ).scalar_one()
-        )
-
-
-def _index_definition(engine: Engine) -> str:
-    with engine.connect() as conn:
-        return str(
-            conn.execute(
-                text(f"SELECT pg_get_indexdef('coord.{_INDEX_NAME}'::regclass)")
-            ).scalar_one()
-        )
-
-
-def _index_oid(engine: Engine) -> int:
-    with engine.connect() as conn:
-        return int(
-            conn.execute(
-                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
-            ).scalar_one()
-        )
-
-
-def _is_superuser(engine: Engine) -> bool:
-    with engine.connect() as conn:
-        return bool(
-            conn.execute(
-                text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
-            ).scalar_one()
-        )
-
-
 def _row_count(engine: Engine) -> int:
     with engine.connect() as conn:
         return int(
@@ -384,19 +347,21 @@ def test_repo_branches_repo_pr_idx_01_serves_the_pr_reads() -> None:
         _seed(engine)
         rows = _row_count(engine)
 
-        # Before: no realizations shape can name the index.
+        # Before: the per-citation probe can narrow only by `repo` (the primary key's
+        # prefix), so it reads every row of the repo. Measured for comparison below.
         targets = {"repos": [_HOT_REPO] * 3, "prs": [7, 1201, 2499]}
-        before = _explain(engine, _REALIZATIONS_LATERAL, targets)
-        assert _INDEX_NAME not in before
+        buffers_before = _top_buffers(
+            _explain(engine, _REALIZATIONS_LATERAL, targets, analyze=True)
+        )
 
         # 3. Apply: valid, and exactly the definition the reads rely on.
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert index_exists(engine, _INDEX_NAME)
-        assert _index_is_valid(engine), (
+        assert index_state(engine, _INDEX_NAME)[0], (
             "a killed CONCURRENTLY build leaves an INVALID index that "
             "IF NOT EXISTS would skip on re-run; existence is not enough"
         )
-        assert _index_definition(engine) == _EXPECTED_DEFINITION
+        assert index_definition(engine, _INDEX_NAME) == _EXPECTED_DEFINITION
         with engine.begin() as conn:
             conn.execute(text("ANALYZE coord.repo_branches"))
 
@@ -435,6 +400,10 @@ def test_repo_branches_repo_pr_idx_01_serves_the_pr_reads() -> None:
             f"{buffers} buffers for {len(targets['prs'])} citations: the LATERAL "
             f"probe is not index-bounded:\n{plan}"
         )
+        assert buffers * 5 < buffers_before, (
+            f"{buffers} buffers with the index against {buffers_before} without it: "
+            f"the index is not what makes the probe cheap:\n{plan}"
+        )
         # Not asserted, recorded: on PostgreSQL 16 the plain LEFT JOIN coord sends
         # today (`_REALIZATIONS_JOIN`) stays a hash join over a sequential scan of the
         # live half, because a join clause is not pushed into a UNION ALL member that
@@ -448,11 +417,11 @@ def test_repo_branches_repo_pr_idx_01_serves_the_pr_reads() -> None:
         )
 
         # 6. A re-run leaves the VALID index untouched...
-        oid_before = _index_oid(engine)
+        oid_before = index_oid(engine, _INDEX_NAME)
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_is_valid(engine), "a re-run must leave a VALID index"
-        assert _index_oid(engine) == oid_before, (
+        assert index_state(engine, _INDEX_NAME)[0], "a re-run must leave a VALID index"
+        assert index_oid(engine, _INDEX_NAME) == oid_before, (
             "a re-run must leave a VALID index untouched, not drop and rebuild it"
         )
 
@@ -460,20 +429,11 @@ def test_repo_branches_repo_pr_idx_01_serves_the_pr_reads() -> None:
         # tells a reader to check `indisvalid` after the deploy. Marking the index
         # INVALID takes a superuser, which CI's database role is; elsewhere this step is
         # skipped and the rest still runs.
-        if _is_superuser(engine):
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        """
-                        UPDATE pg_index SET indisvalid = false
-                         WHERE indexrelid = CAST(:idx AS regclass)
-                        """
-                    ),
-                    {"idx": f"coord.{_INDEX_NAME}"},
-                )
+        if is_superuser(engine):
+            invalidate_index(engine, _INDEX_NAME)
             run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
             run_alembic(root, url, "upgrade", _REVISION_ID)
-            assert not _index_is_valid(engine), (
+            assert not index_state(engine, _INDEX_NAME)[0], (
                 "IF NOT EXISTS keeps an INVALID index and the upgrade reports success: "
                 "the post-deploy indisvalid read is the only thing that sees this"
             )
@@ -488,4 +448,4 @@ def test_repo_branches_repo_pr_idx_01_serves_the_pr_reads() -> None:
         assert not index_exists(engine, _INDEX_NAME)
         assert _row_count(engine) == rows, "downgrade must not touch a row"
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        assert _index_is_valid(engine), "re-applied index must be VALID"
+        assert index_state(engine, _INDEX_NAME)[0], "re-applied index must be VALID"
