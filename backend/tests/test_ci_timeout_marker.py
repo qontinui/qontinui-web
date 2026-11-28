@@ -40,6 +40,7 @@ green tests attesting to a body that never executed.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -73,6 +74,23 @@ MARKER_WORKFLOWS = [
 ]
 
 TRIPWIRE_STEP_NAME = "Warn if the job is approaching its budget"
+
+#: The one non-literal job budget: e2e-playwright-stack.yml's dispatch-only
+#: design-guide sweep raises it (plan
+#: 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check,
+#: Phase 8). `design_guide_sweep` defaults false under workflow_call, so every
+#: CALLED run's budget is the `||` arm.
+_SWEEP_BUDGET = re.compile(
+    r"^\$\{\{ inputs\.design_guide_sweep && (?P<sweep>\d+) \|\| (?P<called>\d+) \}\}$"
+)
+
+
+def _called_budget(timeout_minutes: object) -> str:
+    """A job's `timeout-minutes` as the minutes a called (non-sweep) run gets."""
+    text = str(timeout_minutes)
+    match = _SWEEP_BUDGET.match(text)
+    return match.group("called") if match else text
+
 
 # The tripwire is carried by both jobs that run this backend suite: the
 # non-gating producer it was written for and `backend-ci`'s `test` job, the
@@ -937,8 +955,8 @@ def test_every_carrier_routes_identically_against_its_own_budget(tmp_path):
     """
     for workflow in MARKER_WORKFLOWS:
         _, job, step = _find_step(workflow, MARKER_STEP_NAME)
-        budget = str(job["timeout-minutes"])
-        assert step["env"]["JOB_TIMEOUT_MINUTES"] == budget
+        assert str(step["env"]["JOB_TIMEOUT_MINUTES"]) == str(job["timeout-minutes"])
+        budget = _called_budget(job["timeout-minutes"])
 
         at_budget = _run_marker(
             tmp_path,
@@ -958,6 +976,43 @@ def test_every_carrier_routes_identically_against_its_own_budget(tmp_path):
         )
         assert TITLE_JOB_TIMEOUT in at_budget, workflow
         assert TITLE_EXTERNAL_CANCEL in short, workflow
+
+
+@requires_bash
+def test_the_sweep_budget_arm_routes_against_its_own_budget(tmp_path):
+    """The dispatch-only design-guide sweep runs on the `&&` arm's budget.
+
+    The test above exercises only a called run's `||` arm. In a sweep run the
+    marker's JOB_TIMEOUT_MINUTES renders as the sweep arm, so a cancel at that
+    budget must read as a job timeout, and one past the CALLED budget but
+    short of the sweep's must not.
+    """
+    _, job, step = _find_step("e2e-playwright-stack.yml", MARKER_STEP_NAME)
+    match = _SWEEP_BUDGET.match(str(job["timeout-minutes"]))
+    assert match, f"no sweep arm in {job['timeout-minutes']!r}"
+    assert str(step["env"]["JOB_TIMEOUT_MINUTES"]) == str(job["timeout-minutes"])
+    sweep, called = int(match.group("sweep")), int(match.group("called"))
+    assert sweep == 180 and called == 60
+
+    at_budget = _run_marker(
+        tmp_path,
+        job_status="cancelled",
+        apt_outcomes=APT_CLEAN,
+        elapsed_minutes=sweep,
+        job_timeout_minutes=str(sweep),
+        workflow="e2e-playwright-stack.yml",
+    )
+    past_called_only = _run_marker(
+        tmp_path,
+        job_status="cancelled",
+        apt_outcomes=APT_CLEAN,
+        elapsed_minutes=called + 5,
+        job_timeout_minutes=str(sweep),
+        workflow="e2e-playwright-stack.yml",
+    )
+    assert TITLE_JOB_TIMEOUT in at_budget
+    assert TITLE_JOB_TIMEOUT not in past_called_only
+    assert TITLE_EXTERNAL_CANCEL in past_called_only
 
 
 # --- the budget tripwire ----------------------------------------------------

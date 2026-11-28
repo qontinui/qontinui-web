@@ -1179,6 +1179,8 @@ REPORTERS: dict[tuple[str, str], list[str]] = {
         "Save Playwright apt font cache",
         "Upload Playwright report",
         "Upload test results",
+        # Dispatch-only (`design_guide_sweep`): uploads the sweep's report.
+        "Upload design-guide sweep report",
         "Upload test artifacts (screenshots, videos)",
         EXPLAINER_STEP,
         DECLARER_STEP,

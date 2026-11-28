@@ -2243,8 +2243,10 @@ not through a human clicking Merge: a non-required red check leaves the PR at
 there. GitHub would accept a manual merge; coord will not propose one. So the gate
 binds through the merge train, and promoting it to a required GitHub check is a
 separate, deliberate decision this guide does not make. (Mechanism and a worked
-example:
-`qontinui-claude-config/knowledge-base/qontinui-specific/coord-merge-train.md:256-265`.)
+example: `qontinui-claude-config/knowledge-base/qontinui-specific/coord-merge-train.md`,
+section "Direct merges: when the train cannot land a PR" -> "`--admin` — what is
+actually known", the paragraph on not conflating a coord-predicate hold with a
+ruleset block.)
 
 **The trap:** `routes.json` is a deliberate three-route seed set whose own
 `$comment` says it expands _"after burn-in once the capture+baseline loop is proven

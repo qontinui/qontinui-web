@@ -12,6 +12,31 @@ const STYLE_GATE_VIEWPORT = { width: 1280, height: 800 } as const;
 const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
 
 /**
+ * Matches only the design-guide route sweep (tests/e2e/design-guide-sweep.spec.ts),
+ * which runs under its own `design-guide-sweep` project and no other. Every
+ * authed project lists it in `testIgnore`; scripts/ci/list_changed_e2e_specs.py
+ * mirrors that so the changed-specs lane never hands it to `--project=chromium`.
+ */
+// Anchored on the file name (either separator: Playwright matches the absolute
+// path, which is `\`-separated on Windows), the same file the classifier skips.
+const DESIGN_GUIDE_SWEEP_TEST_MATCH = /(^|[\\/])design-guide-sweep\.spec\.ts$/;
+
+/**
+ * The sweep project exists only when DESIGN_GUIDE_SWEEP=1 (set by
+ * e2e-playwright-stack.yml's sweep mode), so a bare `playwright test` or
+ * `npm run test:e2e` never runs its ~270 tests. Asking for
+ * `--project design-guide-sweep` without it is Playwright's own
+ * "project not found" error, not a silent empty run.
+ */
+const DESIGN_GUIDE_SWEEP_ENABLED = process.env.DESIGN_GUIDE_SWEEP === "1";
+
+// One id per `playwright test` invocation, set in the main process before any
+// worker forks (workers inherit it; `??=` keeps it when a worker re-reads this
+// file). The design-guide sweep stamps its per-route records with it, so its
+// final report never aggregates a record left by an earlier run.
+process.env.DESIGN_GUIDE_SWEEP_RUN_ID ??= `${Date.now()}-${process.pid}`;
+
+/**
  * Which frontend the suite runs against — `PLAYWRIGHT_WEB_SERVER`.
  *
  *   `prod` (the DEFAULT, and what CI runs): a PRODUCTION BUILD. `next start`
@@ -211,9 +236,14 @@ export default defineConfig({
       },
       dependencies: ["setup"],
       // Exclude login tests - they need to test the unauthenticated -> authenticated flow.
-      // Exclude the style-gate capture spec - it runs under its own dedicated
-      // `style-gate` project (below), not the general cross-browser sweep.
-      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+      // Exclude the style-gate capture spec and the design-guide route sweep -
+      // each runs under its own dedicated project (below), not the general
+      // cross-browser suite.
+      testIgnore: [
+        /login\.spec\.ts/,
+        STYLE_GATE_TEST_MATCH,
+        DESIGN_GUIDE_SWEEP_TEST_MATCH,
+      ],
     },
 
     {
@@ -223,7 +253,11 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+      testIgnore: [
+        /login\.spec\.ts/,
+        STYLE_GATE_TEST_MATCH,
+        DESIGN_GUIDE_SWEEP_TEST_MATCH,
+      ],
     },
 
     {
@@ -233,7 +267,11 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+      testIgnore: [
+        /login\.spec\.ts/,
+        STYLE_GATE_TEST_MATCH,
+        DESIGN_GUIDE_SWEEP_TEST_MATCH,
+      ],
     },
 
     // === UNAUTHENTICATED PROJECTS ===
@@ -265,7 +303,11 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+      testIgnore: [
+        /login\.spec\.ts/,
+        STYLE_GATE_TEST_MATCH,
+        DESIGN_GUIDE_SWEEP_TEST_MATCH,
+      ],
     },
     {
       name: "Mobile Safari",
@@ -274,7 +316,11 @@ export default defineConfig({
         storageState: STORAGE_STATE_PATH,
       },
       dependencies: ["setup"],
-      testIgnore: [/login\.spec\.ts/, STYLE_GATE_TEST_MATCH],
+      testIgnore: [
+        /login\.spec\.ts/,
+        STYLE_GATE_TEST_MATCH,
+        DESIGN_GUIDE_SWEEP_TEST_MATCH,
+      ],
     },
 
     // === STYLE-GATE CAPTURE PROJECT (Phase 1 of the CI style-gating plan) ===
@@ -316,6 +362,34 @@ export default defineConfig({
         viewport: STYLE_GATE_VIEWPORT,
       },
     },
+
+    // === DESIGN-GUIDE ROUTE SWEEP (plan
+    // 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check,
+    // Phase 8) ===
+    // One test per static route of src/app, each running `design-kit
+    // validate-guide --storage-state <this project's state>` against the
+    // production server. A measurement: rule failures and UNKNOWNs pass. The
+    // spec's last test writes the report, which needs the file's tests in
+    // declaration order on one worker, hence `fullyParallel: false` and
+    // `workers: 1` (one wrapper browser per route also keeps routes from
+    // competing for the CI box). Dispatched through e2e-playwright-stack.yml's
+    // `design_guide_sweep` input; see the spec's header. Present only under
+    // DESIGN_GUIDE_SWEEP=1 (see DESIGN_GUIDE_SWEEP_ENABLED above).
+    ...(DESIGN_GUIDE_SWEEP_ENABLED
+      ? [
+          {
+            name: "design-guide-sweep",
+            testMatch: DESIGN_GUIDE_SWEEP_TEST_MATCH,
+            dependencies: ["setup"],
+            fullyParallel: false,
+            workers: 1,
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState: STORAGE_STATE_PATH,
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start the frontend before the tests — a production build by default,

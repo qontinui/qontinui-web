@@ -3,34 +3,34 @@
   "name": "qontinui-web",
   "groups": {
     "color": {
-      "state": "resolved",
-      "leaves": 52,
+      "state": "mixed",
+      "leaves": 54,
       "counts": {
         "declared": 0,
         "resolved": 52,
         "authored": 0,
         "derived": 0,
-        "undeclared": 0
+        "undeclared": 2
       }
     },
     "type": {
       "state": "mixed",
-      "leaves": 24,
+      "leaves": 25,
       "counts": {
         "declared": 0,
-        "resolved": 6,
-        "authored": 17,
+        "resolved": 19,
+        "authored": 5,
         "derived": 0,
         "undeclared": 1
       }
     },
     "space": {
       "state": "authored",
-      "leaves": 30,
+      "leaves": 33,
       "counts": {
         "declared": 0,
         "resolved": 0,
-        "authored": 15,
+        "authored": 18,
         "derived": 15,
         "undeclared": 0
       }
@@ -181,6 +181,14 @@
     {
       "path": "color.role.text",
       "reason": "identity role not stated or imported; renders as a platform keyword"
+    },
+    {
+      "path": "color.text.disabled",
+      "reason": "no role in @qontinui/design-tokens; qontinui-web theme.ts renders #52525B (theme.ts:57); owner decision pending (plan 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check Phase 8)"
+    },
+    {
+      "path": "color.text.tertiary",
+      "reason": "no role in @qontinui/design-tokens; qontinui-web theme.ts renders #A1A1AA (theme.ts:55); owner decision pending (plan 2026-11-21-design-kit-compiler-gaps-and-the-unrequired-design-guide-check Phase 8)"
     },
     {
       "path": "type.family.mono",
@@ -471,6 +479,30 @@
       "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
     },
     {
+      "path": "type.leading.loose",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.leading.none",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.leading.normal",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.leading.relaxed",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.leading.snug",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.leading.tight",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
       "path": "type.scale.body",
       "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
     },
@@ -492,6 +524,34 @@
     },
     {
       "path": "type.scale.title",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.tracking.normal",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.tracking.wide",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.tracking.wider",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.tracking.widest",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.weight.bold",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.weight.regular",
+      "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
+    },
+    {
+      "path": "type.weight.semibold",
       "source": "resolved(@qontinui/design-tokens@415be4535ac4deae2201ed4601084b4a948eef10)"
     }
   ],
@@ -668,21 +728,21 @@
       "band": "1.2..1.45 ratio"
     },
     {
-      "path": "type.leading.loose",
-      "check": "line-height",
-      "value": 2,
-      "band": "1.2..1.45 ratio"
-    },
-    {
       "path": "type.leading.none",
       "check": "line-height",
       "value": 1,
       "band": "1.2..1.45 ratio"
     },
     {
-      "path": "type.leading.relaxed",
+      "path": "type.leading.snug",
       "check": "line-height",
-      "value": 1.625,
+      "value": 1.15,
+      "band": "1.2..1.45 ratio"
+    },
+    {
+      "path": "type.leading.tight",
+      "check": "line-height",
+      "value": 1.1,
       "band": "1.2..1.45 ratio"
     }
   ],
