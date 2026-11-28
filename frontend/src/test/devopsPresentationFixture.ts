@@ -506,6 +506,9 @@ export function mockDevOpsRoutes(
         total: 3,
         degradable_dropped: 0,
         row_cap: { soft: 1000, hard: 10_000 },
+        // Coord's runner-database tally, carrying a verdict newer than this
+        // build: its snake_case key must reach the strip only as "other".
+        by_runner_database: { ok: 1, breaker_flapping: 1 },
         ...fixture.healthExtras,
         devices: [
           {

@@ -158,6 +158,7 @@ import {
   DEVOPS_CAPTIONS,
   type DevOpsFixture,
   DISPLAY_NAME_A,
+  ENGINEERING_VOCABULARY,
   engineeringVocabularyOnPage,
   ERROR_DEVICE,
   ERROR_HOST,
@@ -463,6 +464,15 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       screen.getByTestId("coord-devops-conditions-domain-merge_train")
     ).toBeTruthy();
     expect(screen.getByTestId("coord-devops-f2v-badge")).toBeTruthy();
+    // Coord's runner-database tally carries a verdict newer than this build
+    // (`breaker_flapping`): in presentation mode it folds into "other". Read
+    // by name, because the badge ends the strip and `textContent` glues its
+    // last word onto the next element's, which the page scan cannot split.
+    const dbTally = screen.getByTestId("coord-devops-runner-database-badge");
+    expect(dbTally).toHaveTextContent(
+      "runner database 0 degraded · 0 unknown · 1 ok · 1 other"
+    );
+    expect(dbTally.textContent).not.toMatch(ENGINEERING_VOCABULARY);
     checkBehindEveryDisclosure(() => {
       expect(engineeringVocabularyOnPage()).toEqual([]);
     });
