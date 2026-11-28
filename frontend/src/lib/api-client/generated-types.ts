@@ -14731,6 +14731,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/gates/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Register Decision Gate
+         * @description Register a decision gate: ``operator_approval`` anchored on a work unit.
+         *
+         *     1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the
+         *        unit id. A slug coord does not know in this tenant is coord's own error,
+         *        passed through.
+         *     2. ``POST /coord/gates/register`` with the predicate
+         *        ``{"kind": "operator_approval", "prompt": ...}``, anchor
+         *        ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and
+         *        the fixed ``gate_class`` above.
+         *
+         *     Returns coord's registration outcome (``gate_id``, ``warnings``, ...).
+         */
+        post: operations["api_v1_operations_gates_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/gates/list": {
         parameters: {
             query?: never;
@@ -35106,6 +35136,27 @@ export interface components {
             description?: string | null;
             /** Name */
             name?: string | null;
+        };
+        /**
+         * DecisionGateRequest
+         * @description Body for ``POST /operations/gates/decision``.
+         *
+         *     ``extra="forbid"``: ``gate_class`` is deliberately not accepted (see above),
+         *     so a caller that sends it gets a typed 422 instead of a silent drop.
+         */
+        DecisionGateRequest: {
+            /**
+             * Clearance Audience
+             * @default operator
+             * @enum {string}
+             */
+            clearance_audience: "operator" | "agent";
+            /** Phase Name */
+            phase_name: string;
+            /** Prompt */
+            prompt: string;
+            /** Work Unit Slug */
+            work_unit_slug: string;
         };
         /**
          * DeferredQuestionBatch
@@ -83533,6 +83584,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_gates_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionGateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyWhenGreenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
