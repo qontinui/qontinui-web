@@ -470,9 +470,11 @@ def test_the_downgrade_drops_exactly_the_tables_and_columns() -> None:
         f"DROP TABLE IF EXISTS coord.{_OPS}",
         f"DROP TABLE IF EXISTS coord.{_INVENTORY}",
         f"DROP TABLE IF EXISTS coord.{_EXPOSURE}",
+        # Parent first: coord's write lock order (see
+        # test_fleet_runtime_policy_ddl_lock_order.py).
+        f"ALTER TABLE coord.fleet_runtime_policy DROP COLUMN IF EXISTS {_DEVICE_COLUMN}",
         "ALTER TABLE coord.fleet_runtime_policy_versions "
         f"DROP COLUMN IF EXISTS {_DEVICE_COLUMN}",
-        f"ALTER TABLE coord.fleet_runtime_policy DROP COLUMN IF EXISTS {_DEVICE_COLUMN}",
     ]
 
 
