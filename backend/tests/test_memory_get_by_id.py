@@ -39,6 +39,7 @@ from app.api.v1.endpoints import memory as memory_ep
 from app.services.coord_jwks import CoordJWKSClient
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import (
+    _FIXTURE_DEVICE_ID,
     _SETUP_SQL,
     MemoryClient,
     _exec,
@@ -117,8 +118,11 @@ class TestGetRecordById:
             "the receipt read-back resolves by id",
             title="receipt",
             kind="observation",
+            # The fixture device's OWN agent partition — the only agent
+            # ref a device principal may write (plan 2026-11-04-web-memory-
+            # agent-scope-accepts-any-device-scope-ref).
             scope="agent",
-            scope_ref="agent-xyz",
+            scope_ref=str(_FIXTURE_DEVICE_ID),
             importance=0.75,
         )
 
@@ -133,7 +137,7 @@ class TestGetRecordById:
         assert body["content"] == "the receipt read-back resolves by id"
         assert body["kind"] == "observation"
         assert body["scope"] == "agent"
-        assert body["scope_ref"] == "agent-xyz"
+        assert body["scope_ref"] == str(_FIXTURE_DEVICE_ID)
         assert body["importance"] == pytest.approx(0.75)
         datetime.fromisoformat(body["created_at"])
         assert body["state"] == "live"
