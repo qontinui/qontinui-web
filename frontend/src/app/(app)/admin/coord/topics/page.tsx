@@ -186,16 +186,20 @@ export default function CoordTopicsPage() {
       >
         Subprojects that belong to no topic:{" "}
         <span className="font-mono text-foreground">
-          {countText(state.list?.unassigned_subprojects)}
+          {countText(
+            tablesNotReady ? null : state.list?.unassigned_subprojects
+          )}
         </span>{" "}
         {state.failure && !state.list
           ? `— could not be read (${topicReadFailureWords(state.failure)}).`
           : state.list === null
             ? "— not read yet."
-            : state.list.unassigned_subprojects === null ||
-                state.list.unassigned_subprojects === undefined
-              ? "— coord did not count them (unknown, not zero)."
-              : ""}
+            : tablesNotReady
+              ? "— coord's topic tables are not ready (unknown, not zero)."
+              : state.list.unassigned_subprojects === null ||
+                  state.list.unassigned_subprojects === undefined
+                ? "— coord did not count them (unknown, not zero)."
+                : ""}
         {state.list ? (
           <>
             {" "}
@@ -216,7 +220,7 @@ export default function CoordTopicsPage() {
         ) : null}
       </p>
 
-      {state.list?.tables_ready === false && (
+      {tablesNotReady && (
         <p
           className="m-0 text-xs text-amber-200"
           role="status"
