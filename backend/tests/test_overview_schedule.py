@@ -2018,3 +2018,166 @@ class TestNoOverlayVocabulary:
         assert set(get_args(ResolvedState)) == {"known", "unknown"}
         assert "entered" not in get_args(SourceKind)
         assert {"basis", "disagreement_count"}.isdisjoint(ScheduleEnvelope.model_fields)
+
+
+# ===========================================================================
+# Phase 6 of the overview-derives-from-coord plan: an attestation's date
+# ===========================================================================
+
+ATTESTED_AT = "2026-11-20T10:00:00Z"
+
+
+def _attested_data(detail: Any, *, attested: list[int] | None = None) -> dict[str, Any]:
+    data = make_coord_data()
+    d = data["delivery"]["prog-plan"]["delivery"]
+    d["phases_attested"] = [2] if attested is None else attested
+    if detail is not _MISSING:
+        d["phases_attested_detail"] = detail
+    return data
+
+
+_MISSING = object()
+
+
+def _detail(
+    phase: int = 2,
+    *,
+    resolution: str = "resolved",
+    at: str | None = ATTESTED_AT,
+    by: str | None = "operator:ops@example.com",
+) -> dict[str, Any]:
+    return {
+        "phase_index": phase,
+        "attested_at": at,
+        "attested_by": by,
+        "evidence_kind": "finding",
+        "resolution": resolution,
+    }
+
+
+class TestAttestedEnd:
+    """A phase done by attestation shows WHEN IT WAS CONFIRMED, labelled as
+    such; never when the work finished, and never today's date."""
+
+    def test_a_resolved_attestation_dates_the_end_and_says_so(self):
+        d = DeliveryFacts.from_payload(
+            {
+                "delivery": _attested_data([_detail()])["delivery"]["prog-plan"][
+                    "delivery"
+                ]
+            }
+        )
+        out = phase_state(2, None, d)
+        assert out.state == "done"
+        assert out.actual_end == dt.datetime(2026, 11, 20, 10, 0, tzinfo=dt.UTC)
+        assert out.end_basis == "attested"
+        assert out.end_reason is None
+
+    def test_a_retracted_attestation_is_unknown_and_not_done(self):
+        payload = _attested_data([_detail(resolution="retracted")], attested=[])
+        d = DeliveryFacts.from_payload(
+            {"delivery": payload["delivery"]["prog-plan"]["delivery"]}
+        )
+        out = phase_state(2, None, d)
+        assert out.state == "not_confirmed"
+        assert out.actual_end is None
+        assert out.end_reason == "attestation_retracted"
+
+    def test_no_detail_from_an_older_coord_is_not_recorded_never_a_date(self):
+        payload = _attested_data(_MISSING)
+        d = DeliveryFacts.from_payload(
+            {"delivery": payload["delivery"]["prog-plan"]["delivery"]}
+        )
+        assert d.attestations is None, "absent is not an empty mapping"
+        out = phase_state(2, None, d)
+        assert out.state == "done"
+        assert out.actual_end is None and out.end_reason == "not_recorded"
+        assert out.end_basis is None
+
+    def test_a_live_attestation_without_a_time_is_not_recorded(self):
+        payload = _attested_data([_detail(at=None)])
+        d = DeliveryFacts.from_payload(
+            {"delivery": payload["delivery"]["prog-plan"]["delivery"]}
+        )
+        out = phase_state(2, None, d)
+        assert out.actual_end is None and out.end_reason == "not_recorded"
+
+    def test_the_latest_live_attestation_wins_and_a_retracted_one_is_ignored(self):
+        payload = _attested_data(
+            [
+                _detail(at="2026-11-01T00:00:00Z"),
+                _detail(at="2026-11-18T00:00:00Z"),
+                _detail(resolution="retracted", at="2026-11-25T00:00:00Z"),
+            ]
+        )
+        d = DeliveryFacts.from_payload(
+            {"delivery": payload["delivery"]["prog-plan"]["delivery"]}
+        )
+        assert phase_state(2, None, d).actual_end == dt.datetime(
+            2026, 11, 18, tzinfo=dt.UTC
+        )
+
+    def test_a_linked_phase_keeps_its_shipped_end(self):
+        d = DeliveryFacts.from_payload(
+            {
+                "delivery": _attested_data(
+                    [_detail(1, at="2026-11-25T00:00:00Z")], attested=[1]
+                )["delivery"]["prog-plan"]["delivery"]
+            }
+        )
+        out = phase_state(1, [_facts(status="shipped", first_shipped_at=D2)], d)
+        assert out.end_basis == "shipped"
+        assert out.actual_end == D2, "the attestation date must not override it"
+
+    def test_an_attestation_beside_a_landed_pr_does_not_date_the_end(self):
+        # Phase 1 is in phases_delivered (a landed PR) AND attested: the PR is
+        # the delivery evidence, and its end is not recorded here.
+        data = _attested_data([_detail(1)], attested=[1])
+        d = DeliveryFacts.from_payload(
+            {"delivery": data["delivery"]["prog-plan"]["delivery"]}
+        )
+        assert 1 in d.delivered and 1 in d.attested
+        out = phase_state(1, None, d)
+        assert out.state == "done"
+        assert out.actual_end is None and out.end_reason == "not_recorded"
+        assert out.end_basis is None
+
+    def test_a_retracted_attestation_does_not_unsay_a_pr_delivered_phase(self):
+        data = _attested_data([_detail(1, resolution="retracted")], attested=[])
+        d = DeliveryFacts.from_payload(
+            {"delivery": data["delivery"]["prog-plan"]["delivery"]}
+        )
+        assert 1 in d.delivered
+        out = phase_state(1, None, d)
+        assert out.state == "done"
+        assert out.end_reason == "not_recorded", "still done on the PR evidence"
+
+    @pytest.mark.asyncio
+    async def test_the_envelope_labels_the_attested_end(self, monkeypatch):
+        monkeypatch.setattr(
+            cs, "_proxy_coord_get", FakeCoord(_attested_data([_detail()]))
+        )
+        env, _ = await build()
+        p2 = env.phases.value[1]
+        assert p2.state.value == "done"
+        assert p2.actual_end.state == "known"
+        assert p2.actual_end.value == dt.date(2026, 11, 20)
+        assert p2.actual_end.source.kind == "coord_delivery"
+        assert p2.actual_end_basis == "attested"
+
+    @pytest.mark.asyncio
+    async def test_the_envelope_says_retracted_and_not_recorded(self, monkeypatch):
+        for detail, attested, reason in (
+            ([_detail(resolution="retracted")], [], "attestation_retracted"),
+            (_MISSING, [2], "not_recorded"),
+        ):
+            monkeypatch.setattr(
+                cs,
+                "_proxy_coord_get",
+                FakeCoord(_attested_data(detail, attested=attested)),
+            )
+            env, _ = await build()
+            p2 = env.phases.value[1]
+            assert p2.actual_end.state == "unknown"
+            assert p2.actual_end.unknown_reason == reason
+            assert p2.actual_end_basis is None

@@ -22,6 +22,7 @@ import {
   figureDay,
   gateVerdictWord,
   milestoneLane,
+  phaseEndWord,
   phaseStateWord,
   scheduleDays,
   type LaneMilestone,
@@ -202,10 +203,20 @@ export function SchedulePhaseList({ phases }: { phases: PhaseView[] }) {
             </p>
             <p className="text-xs text-muted-foreground">
               {start.kind === "unknown" ? (
-                <UnknownFigure
-                  figure={p.actual_start}
-                  uiBridgeId={`overview.schedule.list.phase.${p.code}.start`}
-                />
+                <>
+                  <UnknownFigure
+                    figure={p.actual_start}
+                    uiBridgeId={`overview.schedule.list.phase.${p.code}.start`}
+                  />
+                  {end.kind !== "unknown" && (
+                    <span
+                      data-ui-bridge-id={`overview.schedule.list.phase.${p.code}.end`}
+                    >
+                      {" · "}
+                      {phaseEndWord(p.actual_end_basis)} {formatDay(end.day)}
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   Started {formatDay(start.day)}
@@ -218,7 +229,10 @@ export function SchedulePhaseList({ phases }: { phases: PhaseView[] }) {
                       />
                     </>
                   ) : (
-                    <> · Finished {formatDay(end.day)}</>
+                    <>
+                      {" · "}
+                      {phaseEndWord(p.actual_end_basis)} {formatDay(end.day)}
+                    </>
                   )}
                 </>
               )}

@@ -39,6 +39,7 @@ export const UNKNOWN_REASONS = [
   "not_declared",
   "not_recorded",
   "ship_retracted",
+  "attestation_retracted",
   "tenant_mismatch",
   "unparseable",
   "truncated",
@@ -96,6 +97,13 @@ export interface PhaseView {
   state: Resolved<SchedulePhaseState>;
   actual_start: Resolved<string>;
   actual_end: Resolved<string>;
+  /**
+   * What `actual_end` is the date of. `attested` is the day a person confirmed
+   * the phase done (shown as "Confirmed done on"), not the day the work
+   * finished; `shipped` is a linked unit's first shipped time. Absent on a
+   * backend that predates the field, which reads as `shipped`.
+   */
+  actual_end_basis?: "shipped" | "attested" | null;
   planned_end: Resolved<string>;
   milestone_id: string | null;
 }

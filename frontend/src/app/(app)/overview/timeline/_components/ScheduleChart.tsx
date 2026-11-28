@@ -15,6 +15,7 @@
 import { cn } from "@/lib/utils";
 import {
   figureDay,
+  phaseEndWord,
   phaseStateWord,
   type LaneMilestone,
   type LaneTone,
@@ -176,10 +177,21 @@ function PhaseRow({
         {!span && (
           <span className="absolute inset-y-0 left-2 flex items-center text-xs">
             {start.kind === "unknown" ? (
-              <UnknownFigure
-                figure={phase.actual_start}
-                uiBridgeId={`${id}.dates`}
-              />
+              <>
+                <UnknownFigure
+                  figure={phase.actual_start}
+                  uiBridgeId={`${id}.dates`}
+                />
+                {end.kind !== "unknown" && (
+                  <span
+                    className="text-muted-foreground"
+                    data-ui-bridge-id={`${id}.end`}
+                  >
+                    {" · "}
+                    {phaseEndWord(phase.actual_end_basis)} {formatDay(end.day)}
+                  </span>
+                )}
+              </>
             ) : (
               <span className="text-muted-foreground">
                 Started {formatDay(start.day)}

@@ -705,6 +705,17 @@ class UnitFacts:
 
 
 @dataclass(frozen=True)
+class AttestationFact:
+    """One row of coord's ``phases_attested_detail``: who attested a phase, when,
+    and what that attestation reads as now (``resolved`` is the only value that
+    counts; ``retracted`` stays readable as retracted)."""
+
+    attested_at: dt.datetime | None
+    attested_by: str | None
+    resolution: str
+
+
+@dataclass(frozen=True)
 class DeliveryFacts:
     """The programme's delivery axis: a floor, not a ceiling (D2)."""
 
@@ -712,6 +723,10 @@ class DeliveryFacts:
     attested: frozenset[int]
     complete_scope: bool
     evidence_complete: bool | None
+    #: Attestation rows by phase index. ``None`` means coord served NO
+    #: ``phases_attested_detail`` at all (an older coord): who and when are then
+    #: unknown, which is not the same as an empty mapping ("no attestations").
+    attestations: dict[int, tuple[AttestationFact, ...]] | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> DeliveryFacts:
@@ -732,10 +747,55 @@ class DeliveryFacts:
             attested=ints("phases_attested"),
             complete_scope=d.get("phases_complete_scope") is True,
             evidence_complete=ec if isinstance(ec, bool) else None,
+            attestations=_attestation_detail(d.get("phases_attested_detail")),
         )
 
     def is_done(self, index: int) -> bool:
         return self.complete_scope or index in self.delivered or index in self.attested
+
+    def attested_end(self, index: int) -> tuple[dt.datetime | None, str | None]:
+        """``(confirmed_at, reason)`` for a phase's attestation(s).
+
+        The date is when a person recorded the attestation ("Confirmed done
+        on"), never when the work finished. ``reason`` explains an absent date:
+        ``attestation_retracted`` (the only attestations are retracted),
+        ``not_recorded`` (coord serves no detail, or none with a time) or
+        ``None`` when there is no attestation to speak of."""
+        if self.attestations is None:
+            return None, "not_recorded" if index in self.attested else None
+        rows = self.attestations.get(index, ())
+        live = [r for r in rows if r.resolution == "resolved"]
+        if live:
+            times = [r.attested_at for r in live if r.attested_at is not None]
+            return (max(times), None) if times else (None, "not_recorded")
+        if any(r.resolution == "retracted" for r in rows):
+            return None, "attestation_retracted"
+        return None, None
+
+
+def _attestation_detail(
+    raw: object,
+) -> dict[int, tuple[AttestationFact, ...]] | None:
+    """Parse ``phases_attested_detail``; ``None`` when the key is absent or not a
+    list, so a coord that predates it is never read as "no attestations"."""
+    if not isinstance(raw, list):
+        return None
+    by_phase: dict[int, list[AttestationFact]] = {}
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        idx = row.get("phase_index")
+        if not isinstance(idx, int) or isinstance(idx, bool):
+            continue
+        by = row.get("attested_by")
+        by_phase.setdefault(idx, []).append(
+            AttestationFact(
+                attested_at=parse_instant(row.get("attested_at")),
+                attested_by=by if isinstance(by, str) and by else None,
+                resolution=str(row.get("resolution") or ""),
+            )
+        )
+    return {i: tuple(rows) for i, rows in by_phase.items()}
 
 
 PhaseStateValue = Literal["planned", "in_progress", "done", "not_confirmed"]
@@ -750,6 +810,10 @@ class PhaseOutcome:
     actual_end: dt.datetime | None
     start_reason: str | None
     end_reason: str | None
+    #: What ``actual_end`` is the date of: ``shipped`` (a linked unit's first
+    #: shipped time) or ``attested`` (when a person confirmed the phase done,
+    #: never when the work finished). ``None`` when there is no end.
+    end_basis: Literal["shipped", "attested"] | None = None
 
 
 def phase_state(
@@ -775,8 +839,38 @@ def phase_state(
     units = list(linked or [])
     if not units:
         if delivery is not None and delivery.is_done(index):
-            return PhaseOutcome("done", None, None, "not_declared", "not_recorded")
-        return PhaseOutcome("not_confirmed", None, None, "not_declared", "not_declared")
+            # An attestation dates the end only when it is the SOLE evidence the
+            # phase is done: beside a landed PR (or a complete delivery scope) it
+            # is redundant, and the PR is the stronger evidence, whose end this
+            # read does not have ("not recorded"). A retracted attestation says
+            # nothing then, because the phase is still done on the other evidence.
+            attestation_only = (
+                index in delivery.attested
+                and index not in delivery.delivered
+                and not delivery.complete_scope
+            )
+            confirmed_at, why = (
+                delivery.attested_end(index) if attestation_only else (None, None)
+            )
+            if confirmed_at is not None:
+                return PhaseOutcome(
+                    "done", None, confirmed_at, "not_declared", None, "attested"
+                )
+            return PhaseOutcome(
+                "done", None, None, "not_declared", why or "not_recorded"
+            )
+        # Not done by anything coord holds. A RETRACTED attestation is the one
+        # thing worth saying about the end: it was once confirmed, and is not now.
+        _, why = delivery.attested_end(index) if delivery is not None else (None, None)
+        return PhaseOutcome(
+            "not_confirmed",
+            None,
+            None,
+            "not_declared",
+            "attestation_retracted"
+            if why == "attestation_retracted"
+            else "not_declared",
+        )
     done = all(u.shipped for u in units)
     started = any(u.started for u in units)
     state: PhaseStateValue = "done" if done else "in_progress" if started else "planned"
@@ -793,7 +887,12 @@ def phase_state(
         else:
             end_reason = "not_recorded"
     return PhaseOutcome(
-        state, start, end, None if start else "not_recorded", end_reason
+        state,
+        start,
+        end,
+        None if start else "not_recorded",
+        end_reason,
+        "shipped" if end is not None else None,
     )
 
 

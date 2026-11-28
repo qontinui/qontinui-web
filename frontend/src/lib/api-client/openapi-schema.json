@@ -43896,6 +43896,21 @@
           "actual_end": {
             "$ref": "#/components/schemas/Resolved_date_"
           },
+          "actual_end_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shipped",
+                  "attested"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End Basis"
+          },
           "actual_start": {
             "$ref": "#/components/schemas/Resolved_date_"
           },
@@ -52025,6 +52040,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52106,6 +52122,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52193,6 +52210,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52281,6 +52299,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52362,6 +52381,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52445,6 +52465,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52530,6 +52551,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",
@@ -52615,6 +52637,7 @@
                   "not_declared",
                   "not_recorded",
                   "ship_retracted",
+                  "attestation_retracted",
                   "tenant_mismatch",
                   "unparseable",
                   "truncated",

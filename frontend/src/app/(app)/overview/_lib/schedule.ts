@@ -71,6 +71,8 @@ export const UNKNOWN_REASON_WORDS: Readonly<Record<UnknownReason, string>> = {
   not_declared: "the project record does not say",
   not_recorded: "it was not recorded",
   ship_retracted: "a delivery was withdrawn after it was recorded",
+  attestation_retracted:
+    "the confirmation that this phase was done was withdrawn",
   tenant_mismatch: "the record belongs to a different project",
   unparseable: "the record could not be read",
   truncated: "the record was too large to read completely",
@@ -78,6 +80,15 @@ export const UNKNOWN_REASON_WORDS: Readonly<Record<UnknownReason, string>> = {
   no_phases: "the project has no phases yet",
   no_calendar: "the project record declares no working calendar",
 };
+
+/**
+ * The word in front of a phase's end date. An attested end is the day someone
+ * confirmed the phase done, which says nothing about when the work finished, so
+ * it is never worded "Finished".
+ */
+export function phaseEndWord(basis: "shipped" | "attested" | null | undefined) {
+  return basis === "attested" ? "Confirmed done on" : "Finished";
+}
 
 export const SOURCE_KIND_WORDS: Readonly<Record<SourceKind, string>> = {
   coord_work_unit: "Project record",
