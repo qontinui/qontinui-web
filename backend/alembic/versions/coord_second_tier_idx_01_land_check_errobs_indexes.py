@@ -73,8 +73,12 @@ Write cost: ``error_observations`` takes about 266 inserts an hour, no updates.
 Order against coord
 ------------------------------------------------------------------------------
 This revision may land at any time. Rank 7's readers use the index as they
-stand; ranks 9 and 10 need Phase 3's coord change to plan on it, and are exactly
-as fast as before until then.
+stand. Rank 9 plans on the index whenever the planner builds a CUSTOM plan with
+``$2`` folded to a constant, which coord's tokio-postgres per-call prepare gets
+today (the migration test pins both arms: custom plan uses it, a generic plan
+cannot); Phase 3's inlined literal makes it hold for generic plans too. Rank 10's
+``= ANY`` form may gain an index qual on ``(surface, fingerprint)``; only Phase 3's
+``LATERAL`` rewrite gets the one-entry walk per fingerprint.
 
 Building on busy tables
 ------------------------------------------------------------------------------
