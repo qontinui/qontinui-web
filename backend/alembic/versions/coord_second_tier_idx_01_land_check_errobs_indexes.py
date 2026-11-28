@@ -36,8 +36,10 @@ holds a literal copy of coord's constant and reddens if this side moves.
 
 Write cost: ``pr_events`` takes about 5,345 inserts and 19,576 updates an hour
 (none HOT). This index is partial, so it is maintained only for the coord-land
-``state_change`` / ``MERGED`` rows, a small fraction of the inserts; its columns
-are not updated after insert.
+``state_change`` / ``MERGED`` rows, a small fraction of the inserts. Because no
+``pr_events`` update is HOT, any update of a matching row adds an entry whichever
+column changed (coord does update ``payload`` by ``event_id``, a predicate column);
+land rows are rarely updated, so the cost stays small.
 
 Rank 9: ``latest_details_url``
 ------------------------------------------------------------------------------
@@ -54,8 +56,8 @@ of the plan inlines ``CHECK_RUN_NAME`` as a literal so the predicate is provable
 in every plan.
 
 Write cost: ``pr_check_runs`` takes about 975 inserts and 3,233 updates an hour,
-3,021 of them HOT. Because ``updated_at`` becomes an indexed column, about 3.2k
-updates an hour stop being HOT. Recorded in D2a and accepted there.
+3,021 of them HOT. Because ``updated_at`` becomes an indexed column, about 3.0k
+updates an hour (those 3,021 HOT ones) stop being HOT. Recorded in D2a and accepted there.
 
 Rank 10: ``first_seen_by_fingerprint``
 ------------------------------------------------------------------------------

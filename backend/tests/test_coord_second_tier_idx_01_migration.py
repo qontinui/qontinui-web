@@ -21,8 +21,12 @@ What is asserted
    **``indisvalid``**, and is exactly the intended definition (columns, order,
    predicate) as Postgres renders it.
 4. **A representative probe of each read plans on its index**: rank 7 as coord sends
-   it today, rank 9 with the gate name inlined as a literal (Phase 3's shape), rank 10
-   as the per-fingerprint ``LATERAL`` over ``unnest`` (Phase 3's shape).
+   it today, and its fleet-wide twin; rank 9 with the gate name inlined as a literal
+   (Phase 3's shape); rank 10 as the per-fingerprint ``LATERAL`` over ``unnest``
+   (Phase 3's shape).
+   Rank 9 as coord sends it TODAY, with the gate name bound as ``$2`` in a prepared
+   statement: a custom plan uses the index, a generic plan cannot (why Phase 3
+   inlines the literal).
 5. **Sensitivity**: a rank-7 read carrying another ``source`` and a rank-9 read
    excluding another check name cannot use their partial indexes, so assertion 4 is
    measuring the predicates.
@@ -42,12 +46,14 @@ non-default host:port).
 from __future__ import annotations
 
 import ast
+import contextlib
 import re
 from typing import Any
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import DBAPIError
 
 from tests._alembic_harness import (
     admin_database_url,
@@ -131,9 +137,10 @@ _RANK9_PROBE = (
 )
 # Rank 10, as the per-fingerprint LATERAL probe Phase 3 ships.
 _RANK10_PROBE = (
-    "SELECT f, (SELECT window_start FROM coord.error_observations "
-    "WHERE surface = 'x' AND fingerprint = f ORDER BY window_start LIMIT 1) "
-    "FROM unnest(ARRAY['a','b']) f"
+    "SELECT u.f, w.window_start FROM unnest(ARRAY['a','b']) AS u(f) "
+    "LEFT JOIN LATERAL (SELECT window_start FROM coord.error_observations "
+    "WHERE surface = 'x' AND fingerprint = u.f ORDER BY window_start LIMIT 1) w "
+    "ON true"
 )
 
 _PROBES: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
@@ -287,6 +294,7 @@ def _plan_with_no_alternative(
     sql: str,
     params: dict[str, Any],
     prelude: tuple[str, ...] = (),
+    prepared: str | None = None,
 ) -> str:
     """The plan of a read when ``index`` is the only useful path the planner has.
 
@@ -319,9 +327,11 @@ def _plan_with_no_alternative(
             return "\n".join(str(r[0]) for r in rows)
         finally:
             tx.rollback()
-            if prelude:
-                # PREPARE is session state, not transactional: drop it explicitly.
-                conn.exec_driver_sql("DEALLOCATE ALL")
+            if prepared:
+                # PREPARE is session state, not transactional: drop it explicitly,
+                # without letting a failure here mask the original exception.
+                with contextlib.suppress(DBAPIError):
+                    conn.exec_driver_sql(f"DEALLOCATE {prepared}")
 
 
 def _row_counts(engine: Engine) -> tuple[int, int, int]:
@@ -403,6 +413,7 @@ def test_coord_second_tier_idx_01_serves_the_three_reads() -> None:
             _RANK9_EXECUTE,
             {},
             prelude=("SET LOCAL plan_cache_mode = force_custom_plan", _RANK9_PREPARED),
+            prepared="rank9_today",
         )
         assert _CHECK_INDEX in custom, (
             f"a custom plan of coord's bound-$2 read must use the index:\n{custom}"
@@ -414,6 +425,7 @@ def test_coord_second_tier_idx_01_serves_the_three_reads() -> None:
             _RANK9_EXECUTE,
             {},
             prelude=("SET LOCAL plan_cache_mode = force_generic_plan", _RANK9_PREPARED),
+            prepared="rank9_today",
         )
         assert _CHECK_INDEX not in generic, (
             f"a generic plan cannot prove the predicate from a bound $2:\n{generic}"
