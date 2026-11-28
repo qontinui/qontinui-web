@@ -2582,6 +2582,10 @@
                 "type": "string"
               },
               {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2624,6 +2628,10 @@
                   "role_closes_agent_lane",
                   "at_capacity"
                 ],
+                "type": "string"
+              },
+              {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -2674,6 +2682,10 @@
                 "type": "string"
               },
               {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -2717,6 +2729,10 @@
                   "role_closes_agent_lane",
                   "at_capacity"
                 ],
+                "type": "string"
+              },
+              {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -38044,6 +38060,10 @@
                 "type": "string"
               },
               {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -44056,16 +44076,24 @@
             "type": "string"
           },
           "reason": {
-            "enum": [
-              "not_a_paired_device",
-              "offline",
-              "missing_capabilities",
-              "drained",
-              "role_closes_agent_lane",
-              "at_capacity"
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
+                ],
+                "type": "string"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              }
             ],
-            "title": "Reason",
-            "type": "string"
+            "title": "Reason"
           }
         },
         "required": [
@@ -51930,6 +51958,10 @@
                   "role_closes_agent_lane",
                   "at_capacity"
                 ],
+                "type": "string"
+              },
+              {
+                "minLength": 1,
                 "type": "string"
               },
               {

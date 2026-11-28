@@ -232,7 +232,7 @@ describe("RunnerStatusLine resolver state", () => {
         status: "resolved",
         deviceId: DESK.id,
         via: "pool",
-        pinReleased: { reason: "offline", detail: null },
+        pinReleased: { reason: "offline", rawReason: "offline", detail: null },
       },
     });
     renderLine();
