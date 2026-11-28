@@ -79,6 +79,9 @@
   --ease-exit: var(--dk-motion-easing-exit);
   --ease-linear: var(--dk-motion-easing-linear);
   --ease-standard: var(--dk-motion-easing-standard);
+  --shadow-glow-primary: var(--dk-space-depth-glow-primary);
+  --shadow-glow-secondary: var(--dk-space-depth-glow-secondary);
+  --shadow-glow-success: var(--dk-space-depth-glow-success);
   --shadow-lg: var(--dk-space-depth-lg);
   --shadow-md: var(--dk-space-depth-md);
   --shadow-none: var(--dk-space-depth-none);
@@ -98,6 +101,7 @@
   --leading-body: var(--dk-type-leading-body);
   --leading-loose: var(--dk-type-leading-loose);
   --leading-none: var(--dk-type-leading-none);
+  --leading-normal: var(--dk-type-leading-normal);
   --leading-relaxed: var(--dk-type-leading-relaxed);
   --leading-snug: var(--dk-type-leading-snug);
   --leading-tight: var(--dk-type-leading-tight);
