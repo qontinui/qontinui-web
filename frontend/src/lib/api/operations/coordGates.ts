@@ -205,3 +205,28 @@ export async function setGateAudience(
   });
   return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
 }
+
+/**
+ * Body of `POST /gates/decision` — `DecisionGateRequest`. There is no
+ * `gate_class` here on purpose: the backend fixes it (coord would otherwise
+ * derive `security-surface`, which the project Overview hides).
+ */
+export interface DecisionGateBody {
+  work_unit_slug: string;
+  phase_name: string;
+  prompt: string;
+  clearance_audience: GateAudience;
+}
+
+/** `POST /gates/decision` — register an `operator_approval` gate on a work unit's phase. */
+export async function registerDecisionGate(
+  body: DecisionGateBody
+): Promise<{ gate_id: string; warnings?: string[] }> {
+  const url = `${OPERATIONS_BASE}/gates/decision`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<{ gate_id: string; warnings?: string[] }>(res, `POST ${url}`);
+}

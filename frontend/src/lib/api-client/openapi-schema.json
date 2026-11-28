@@ -987,6 +987,50 @@
       "AdminAgentRegistryRow": {
         "description": "One raw ``coord.agent_registry`` row, plus its pref-override counts.",
         "properties": {
+          "admin_disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled At"
+          },
+          "admin_disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disabled By"
+          },
+          "admin_disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Disposition"
+          },
+          "admin_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Reason"
+          },
           "agent_name": {
             "title": "Agent Name",
             "type": "string"
@@ -1346,6 +1390,45 @@
           "subscription_tier"
         ],
         "title": "AdminUserData",
+        "type": "object"
+      },
+      "AgentAdminSwitchRequest": {
+        "additionalProperties": false,
+        "description": "Client body for the tenant-admin spawn switch.\n\n``disposition`` is the admin's pick from the row's\n``allowed_dispositions`` and only means something with ``disabled: true``\n(coord answers 422 ``disposition_requires_disabled`` otherwise). Neither\nrule is copied here \u2014 coord's refusal is forwarded verbatim, and a web-side\ncopy of the disposition set would drift from the row it is checked\nagainst.",
+        "properties": {
+          "disabled": {
+            "title": "Disabled",
+            "type": "boolean"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "block | degrade | warn_proceed (from the row's set)",
+            "title": "Disposition"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why; recorded on the row and shown to every member in the catalog",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "title": "AgentAdminSwitchRequest",
         "type": "object"
       },
       "AgentCommandCreate": {
@@ -1739,7 +1822,7 @@
             "type": "string"
           },
           "source": {
-            "description": "default | user_pref",
+            "description": "default | user_pref | admin",
             "title": "Source",
             "type": "string"
           },
@@ -11175,11 +11258,17 @@
             },
             "title": "Results",
             "type": "array"
+          },
+          "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "fidelity_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "CompareResponse",
         "type": "object"
@@ -16937,6 +17026,40 @@
           }
         },
         "title": "DatasetUpdate",
+        "type": "object"
+      },
+      "DecisionGateRequest": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/gates/decision``.\n\n``extra=\"forbid\"``: ``gate_class`` is deliberately not accepted (see above),\nso a caller that sends it gets a typed 422 instead of a silent drop.",
+        "properties": {
+          "clearance_audience": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "agent"
+            ],
+            "title": "Clearance Audience",
+            "type": "string"
+          },
+          "phase_name": {
+            "title": "Phase Name",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "title": "Work Unit Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_unit_slug",
+          "phase_name",
+          "prompt"
+        ],
+        "title": "DecisionGateRequest",
         "type": "object"
       },
       "DeferredQuestionBatch": {
@@ -29632,7 +29755,7 @@
       },
       "FollowupAnchorsReplace": {
         "additionalProperties": false,
-        "description": "``PUT /plan-library/edges/{edge_id}/anchors``.\n\n``anchors`` and ``unanchored_reason`` REPLACE what is stored: an empty\n``anchors`` must say why (``unanchored_reason``), and a non-empty one\ncarries no reason (it is cleared). ``size_class`` / ``size_class_source``\nare optional and travel together: supplied, they set the class; omitted,\nthe stored class is kept \u2014 a caller correcting an anchor must not erase a\nclassification it never read.",
+        "description": "``PUT /plan-library/edges/{edge_id}/anchors``.\n\n``anchors`` and ``unanchored_reason`` REPLACE what is stored: an empty\n``anchors`` must say why (``unanchored_reason``), and a non-empty one\ncarries no reason (it is cleared). ``size_class`` / ``size_class_source``\nare optional and travel together: supplied, they set the class; omitted,\nthe stored class is kept \u2014 a caller correcting an anchor must not erase a\nclassification it never read. ``clear_size_class: true`` is the one way to\nerase a class: it nulls ``size_class`` and ``size_class_source`` together,\nonly where the stored source is ``sweep`` (a ``declared`` class is a 422\n``size_class_not_sweep_set``), and contradicts supplying either field.",
         "properties": {
           "anchors": {
             "items": {
@@ -29641,6 +29764,11 @@
             "maxItems": 100,
             "title": "Anchors",
             "type": "array"
+          },
+          "clear_size_class": {
+            "default": false,
+            "title": "Clear Size Class",
+            "type": "boolean"
           },
           "size_class": {
             "anyOf": [
@@ -30429,6 +30557,74 @@
         "title": "ForecastUnavailable",
         "type": "object"
       },
+      "ForecastValue": {
+        "properties": {
+          "current_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchedulePhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forecast_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Finish"
+          },
+          "next_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchedulePhaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "planned_finish": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Finish"
+          },
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "slip_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slip Days"
+          }
+        },
+        "required": [
+          "position"
+        ],
+        "title": "ForecastValue",
+        "type": "object"
+      },
       "ForkSkillRequest": {
         "properties": {
           "new_name": {
@@ -30819,6 +31015,82 @@
           }
         },
         "title": "GateRejectRequest",
+        "type": "object"
+      },
+      "GateView": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Slug"
+          },
+          "verdict": {
+            "enum": [
+              "pending",
+              "passed",
+              "failed"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "verdict"
+        ],
+        "title": "GateView",
+        "type": "object"
+      },
+      "GatesSection": {
+        "properties": {
+          "items": {
+            "$ref": "#/components/schemas/Resolved_list_GateView__"
+          },
+          "other_checks_not_shown": {
+            "$ref": "#/components/schemas/OtherChecks"
+          },
+          "read": {
+            "$ref": "#/components/schemas/ReadExtent"
+          },
+          "withdrawn_not_shown": {
+            "default": 0,
+            "title": "Withdrawn Not Shown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "other_checks_not_shown",
+          "read"
+        ],
+        "title": "GatesSection",
         "type": "object"
       },
       "GenerateDescriptionRequest": {
@@ -32055,6 +32327,38 @@
           }
         },
         "title": "InferenceConfigSchema",
+        "type": "object"
+      },
+      "InitiativeView": {
+        "properties": {
+          "ends": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "starts": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name",
+          "starts",
+          "ends"
+        ],
+        "title": "InitiativeView",
         "type": "object"
       },
       "InstallEventAck": {
@@ -37805,6 +38109,69 @@
         "title": "MilestoneUpdate",
         "type": "object"
       },
+      "MilestoneView": {
+        "properties": {
+          "decision_record": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Record"
+          },
+          "decision_record_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Record Version"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "met_at": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shown_by": {
+            "default": "",
+            "title": "Shown By",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Resolved_Literal__met____not_met____not_confirmed___"
+          },
+          "target_date": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          }
+        },
+        "required": [
+          "name",
+          "target_date",
+          "status",
+          "met_at"
+        ],
+        "title": "MilestoneView",
+        "type": "object"
+      },
       "MilestonesItem": {
         "properties": {
           "can_edit": {
@@ -37857,6 +38224,25 @@
           "can_edit"
         ],
         "title": "MilestonesList",
+        "type": "object"
+      },
+      "MilestonesSection": {
+        "properties": {
+          "items": {
+            "$ref": "#/components/schemas/Resolved_list_MilestoneView__"
+          },
+          "unreadable_rows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MilestonesSection",
         "type": "object"
       },
       "MockExecutionRequest": {
@@ -39780,6 +40166,25 @@
           }
         },
         "title": "OrganizationUpdate",
+        "type": "object"
+      },
+      "OtherChecks": {
+        "description": "Gates that are execution plumbing, counted so the omission is visible.",
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "OtherChecks",
         "type": "object"
       },
       "Outcome": {
@@ -41949,13 +42354,25 @@
         "type": "object"
       },
       "PairCodeRedeemOut": {
-        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
+        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,\nplus ``device_machine_key`` (the same additive field pair-cli returns).\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
         "properties": {
           "device_id": {
             "description": "The runner's device UUID.",
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Device machine key (``dmk_``) minted for this device at redeem, returned exactly once \u2014 the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.",
+            "title": "Device Machine Key"
           },
           "device_token_jwt": {
             "description": "Coord-issued device-token JWT.",
@@ -43472,6 +43889,61 @@
           "title"
         ],
         "title": "PhaseTaskWrite",
+        "type": "object"
+      },
+      "PhaseView": {
+        "properties": {
+          "actual_end": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "actual_start": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "milestone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_end": {
+            "$ref": "#/components/schemas/Resolved_date_"
+          },
+          "state": {
+            "$ref": "#/components/schemas/Resolved_Literal__planned____in_progress____done____not_confirmed___"
+          }
+        },
+        "required": [
+          "index",
+          "code",
+          "name",
+          "linked",
+          "state",
+          "actual_start",
+          "actual_end",
+          "planned_end"
+        ],
+        "title": "PhaseView",
         "type": "object"
       },
       "PhaseWrite": {
@@ -48036,6 +48508,36 @@
         "title": "RatingRead",
         "type": "object"
       },
+      "ReadExtent": {
+        "description": "How much of a bounded read was made (D8): never a silent cap.",
+        "properties": {
+          "read": {
+            "title": "Read",
+            "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "read"
+        ],
+        "title": "ReadExtent",
+        "type": "object"
+      },
       "ReconciliationAxisA": {
         "description": "Axis A \u2014 coord's STORED ``work_units.status``.\n\n``present`` is \"a coord work unit exists for this stem\". ``status`` is as\nOPAQUE here as everywhere else in this module: coord accepts an\noff-vocabulary status deliberately (its Free transition tier), so a word in\nno vocabulary reads as OPEN rather than as an error.\n\n``status_class`` is that status's derived class (coord's five-member\nvocabulary), forwarded verbatim from coord's list row. It is ``None``\n(UNKNOWN) when axis A is unreadable, no unit exists for the stem, coord's\nrow omitted the field or carried a word outside the five, or the row\ncarried no ``status`` string at all \u2014 a missing status is never given a\nconfident class.\n\n``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness\nverdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),\nforwarded from coord's list row. ``None`` is UNKNOWN \u2014 never checked, a\ncoord that predates the field, or an unreadable freshness surface \u2014 and\nnever \"fresh\".\n\n``live_sessions`` / ``custody_resolved`` are populated only when the\nrequest asked for ``include_custody``. ``live_sessions`` is ``None`` when\nnot requested or when coord did not answer the field for this unit\n(UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord\nechoed ``resolve_session_names: true`` on every page it read \u2014 ``False``\nmeans an older coord (or a failed live-session join) on at least one page,\nand EVERY ``custody`` in the response is then ``None``, including those\nfrom pages that did echo, so no row reads as resolved when the read as a\nwhole was not; the ``live_sessions`` rows themselves are kept. ``None``\nmeans custody was not requested.",
         "properties": {
@@ -51452,6 +51954,717 @@
         "title": "ResolvedOutcome",
         "type": "object"
       },
+      "ResolvedSource": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "coord_work_unit",
+              "coord_delivery",
+              "coord_document",
+              "coord_gates",
+              "derived"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "ResolvedSource",
+        "type": "object"
+      },
+      "Resolved_ForecastValue_": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForecastValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[ForecastValue]",
+        "type": "object"
+      },
+      "Resolved_Literal__met____not_met____not_confirmed___": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "enum": [
+                  "met",
+                  "not_met",
+                  "not_confirmed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[Literal['met', 'not_met', 'not_confirmed']]",
+        "type": "object"
+      },
+      "Resolved_Literal__planned____in_progress____done____not_confirmed___": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planned",
+                  "in_progress",
+                  "done",
+                  "not_confirmed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[Literal['planned', 'in_progress', 'done', 'not_confirmed']]",
+        "type": "object"
+      },
+      "Resolved_UnitRef_": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[UnitRef]",
+        "type": "object"
+      },
+      "Resolved_date_": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[date]",
+        "type": "object"
+      },
+      "Resolved_list_GateView__": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GateView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[list[GateView]]",
+        "type": "object"
+      },
+      "Resolved_list_MilestoneView__": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MilestoneView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[list[MilestoneView]]",
+        "type": "object"
+      },
+      "Resolved_list_PhaseView__": {
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ResolvedSource"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coord_unreachable",
+                  "coord_denied",
+                  "coord_stale",
+                  "no_programme",
+                  "ambiguous_programme",
+                  "not_declared",
+                  "not_recorded",
+                  "ship_retracted",
+                  "tenant_mismatch",
+                  "unparseable",
+                  "truncated",
+                  "phase_dates_missing",
+                  "no_phases",
+                  "no_calendar"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Reason"
+          },
+          "unknown_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Since"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PhaseView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "observed_at"
+        ],
+        "title": "Resolved[list[PhaseView]]",
+        "type": "object"
+      },
       "ResourceCatalog": {
         "properties": {
           "resources": {
@@ -54032,6 +55245,100 @@
           "unmeasured_device_ids"
         ],
         "title": "ScanRootSourceRollup",
+        "type": "object"
+      },
+      "ScheduleEnvelope": {
+        "properties": {
+          "door": {
+            "enum": [
+              "operator",
+              "device"
+            ],
+            "title": "Door",
+            "type": "string"
+          },
+          "forecast": {
+            "$ref": "#/components/schemas/Resolved_ForecastValue_"
+          },
+          "gates": {
+            "$ref": "#/components/schemas/GatesSection"
+          },
+          "initiative": {
+            "$ref": "#/components/schemas/InitiativeView"
+          },
+          "milestones": {
+            "$ref": "#/components/schemas/MilestonesSection"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "phases": {
+            "$ref": "#/components/schemas/Resolved_list_PhaseView__"
+          },
+          "programme": {
+            "$ref": "#/components/schemas/Resolved_UnitRef_"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceStamp"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "unreadable_phases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Phases",
+            "type": "array"
+          },
+          "work_units": {
+            "$ref": "#/components/schemas/ReadExtent"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "door",
+          "observed_at",
+          "programme",
+          "initiative",
+          "phases",
+          "milestones",
+          "gates",
+          "forecast",
+          "work_units"
+        ],
+        "title": "ScheduleEnvelope",
+        "type": "object"
+      },
+      "SchedulePhaseRef": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "SchedulePhaseRef",
         "type": "object"
       },
       "ScheduledWorkflowRunCreate": {
@@ -57704,11 +59011,17 @@
             ],
             "title": "Style Arm",
             "type": "string"
+          },
+          "unmeasured_candidates": {
+            "description": "How much of the corpus could not be compared: every candidate left out of `results` because it has no measured token set (no capture, empty or leafless tokens, or the stated-unknown sentinel). A count, not a verdict.",
+            "title": "Unmeasured Candidates",
+            "type": "integer"
           }
         },
         "required": [
           "style_arm",
-          "results"
+          "results",
+          "unmeasured_candidates"
         ],
         "title": "SimilarByStyleResponse",
         "type": "object"
@@ -59404,6 +60717,48 @@
           "key"
         ],
         "title": "SourcePart",
+        "type": "object"
+      },
+      "SourceStamp": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "coord_work_unit",
+              "coord_delivery",
+              "coord_document",
+              "coord_gates",
+              "derived"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "observed_at"
+        ],
+        "title": "SourceStamp",
         "type": "object"
       },
       "SpawnLaunchSettingPut": {
@@ -69924,6 +71279,30 @@
         "title": "UninstallRequest",
         "type": "object"
       },
+      "UnitRef": {
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "title": "UnitRef",
+        "type": "object"
+      },
       "UnknownOutcome": {
         "description": "Coord answered a 200 with an ``outcome`` tag this build does not know.\n\nNot ``malformed_response``: coord spoke the contract's envelope, it just\nhas an arm this build predates. ``raw_outcome`` is coord's tag verbatim so\nthe gap is named, not swallowed. Names no device \u2014 never a pick.",
         "properties": {
@@ -78154,6 +79533,90 @@
           }
         ],
         "summary": "Put Admin Agent Registry Row",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/admin/registry/{agent_name}/switch": {
+      "put": {
+        "description": "ADMIN: switch spawns of one agent type off (or back on) tenant-wide.\n\nGated in the WEB tier as well as in coord (``rbac::require_role(\"admin\")``),\nso a non-admin gets the renderable ``not_coord_tenant_admin`` and no coord\ncall is made. The forwarded body carries only what the admin set: an\nomitted ``disposition`` / ``reason`` is absent, not ``null``.",
+        "operationId": "api_v1_agent_registry_admin_registry_agent_name_switch_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "title": "Agent Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAdminSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Agent Admin Switch Api V1 Agent Registry Admin Registry  Agent Name  Switch Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Agent Admin Switch",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/catalog": {
+      "get": {
+        "description": "Every agent type the tenant's spawns may be authorized under.\n\nReadable by ANY member: the page shows members what is switched off and\nwhy, read-only. Coord resolves the tenant from the forwarded bearer.",
+        "operationId": "api_v1_agent_registry_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Catalog Api V1 Agent Registry Catalog Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Agent Catalog",
         "tags": [
           "agent-registry"
         ]
@@ -94251,7 +95714,7 @@
     },
     "/api/v1/devices/{device_id}/authorize-redeem": {
       "post": {
-        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* deletes a REVOKED machine-key row so the runner's ``/self-mint`` can\n  enrol a fresh key (a usable key is left alone).\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
+        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* removes machine-key rows that must not outlive the authorization\n  (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):\n  when the device WAS under a deny, its key row whatever its state (any\n  key predating the re-arm is suspect); otherwise only a REVOKED row. A\n  usable key on a never-revoked device is kept \u2014 it is how a runner\n  offline past its JWT grace recovers on its own (``/exchange``).\n\nWhat re-keys a device whose row was removed is its next pairing, which\nmints a fresh key because no row exists: an operator pair code or\n``pair-cli``, or the bound code minted here IF the runner collects it\nthrough ``/pending-redeem`` (a runner build without that poller never\ndoes). ``/self-mint`` also enrols one, given a live paired device JWT.\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
         "operationId": "api_v1_devices_device_id_authorize_redeem_post",
         "parameters": [
           {
@@ -113489,6 +114952,149 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/resource-stops": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/resource-stops`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched::\n\n    {\"table_present\": <bool>, \"count\": <int>, \"stops\": [StopRow, ...],\n     \"bounded\": <bool>, \"limit\": <int>, \"limit_clamped\": <bool>,\n     \"summary\": <object | null>}\n\n``table_present: false`` means the coord table does not exist yet \u2014 an\nempty ``stops`` list is then UNKNOWN, never \"no stops\". ``bounded`` is\ntrue when ``limit`` truncated the page. A ``StopRow`` carries\n``stop_kind``, ``lane`` (metric class), ``guard_lane`` (the pool that\nrefused), ``severity``, ``what_class``, ``observed`` / ``limit_value``,\nthe nullable stats ``session_count_terminal``,\n``session_count_live_claude``, ``active_ci_runners`` and\n``ci_jobs_queued`` (null is UNKNOWN, never 0), and the ``calibration`` /\n``fleet_calibration`` objects as the runner recorded them.\n\nQuery params are forwarded verbatim WITHOUT local validation: coord\nrefuses a value outside its vocabulary (422) and clamps ``limit``, and a\nlocal rewrite here would turn a refusal into a different, wider read.",
+        "operationId": "api_v1_operations_fleet_resource_stops_get",
+        "parameters": [
+          {
+            "description": "Narrow to one device. Tenant scoping still applies on top.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one device. Tenant scoping still applies on top.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one metric lane: memory_free_commit | thread_pressure.",
+              "title": "Lane"
+            }
+          },
+          {
+            "description": "Narrow to the pool that refused: host | wsl | threads.",
+            "in": "query",
+            "name": "guard_lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to the pool that refused: host | wsl | threads.",
+              "title": "Guard Lane"
+            }
+          },
+          {
+            "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339 instant or UTC date; inclusive lower bound.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord clamps it and echoes `limit_clamped`.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "true adds coord's per-device roll-up.",
+            "in": "query",
+            "name": "summary",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true adds coord's per-device roll-up.",
+              "title": "Summary"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Resource Stops Api V1 Operations Fleet Resource Stops Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Fleet Resource Stops",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/runners/{runner_id}": {
       "delete": {
         "description": "Manually remove a runner from the cross-machine beacon registry.",
@@ -113887,7 +115493,7 @@
     },
     "/api/v1/operations/fleet/worktree-slots": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).\n\nFleet-wide worktree-allocation-slot occupancy: how many of each device's\n``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape\nis coord-authored and passed through untouched::\n\n    {\"tenant_id\": \"<uuid>\", \"device_count\": <int>, \"truncated\": false,\n     \"device_cap\": 100, \"census_window_secs\": 900,\n     \"devices\": [{\"device_id\": \"<uuid>\", \"hostname\": \"<string>|null\",\n         \"active_worktrees\": <int>, \"max_worktrees\": 8,\n         \"census_recent_rows\": <int>,\n         \"occupants\": {\"shown\": 0, \"total\": 0, \"truncated\": false,\n                        \"rows\": []}}]}\n\n``census_recent_rows == 0`` means coord has no recent census hit for\nthat device within the narrow (``census_window_secs``, default 900s)\nwindow, so ``active_worktrees`` for that device could not be\ncorroborated as live and the caller MUST render that row UNKNOWN \u2014 never\nan idle/empty machine and never a healthy ``0/8`` \u2014 see the frontend\nhook and `FleetResourceStrip`'s existing honesty rules.\n\nError answers pass through verbatim, status and JSON body, for the same\nreason as :func:`get_fleet_volumes`: the section renders coord's\n``503 deadline`` and ``404 route_disabled`` bodies specifically.",
+        "description": "Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).\n\nFleet-wide worktree-allocation-slot occupancy: how many of each device's\n``max_worktrees`` slots are occupied, and by what. Response shape\nis coord-authored and passed through untouched::\n\n    {\"tenant_id\": \"<uuid>\", \"device_count\": <int>, \"truncated\": false,\n     \"device_cap\": 100, \"census_window_secs\": 900,\n     \"devices\": [{\"device_id\": \"<uuid>\", \"hostname\": \"<string>|null\",\n         \"active_worktrees\": <int>, \"max_worktrees\": <int>,\n         \"census_recent_rows\": <int>,\n         \"occupants\": {\"shown\": 0, \"total\": 0, \"truncated\": false,\n                        \"rows\": []}}]}\n\n``census_recent_rows == 0`` means coord has no recent census hit for\nthat device within the narrow (``census_window_secs``, default 900s)\nwindow, so ``active_worktrees`` for that device could not be\ncorroborated as live and the caller MUST render that row UNKNOWN \u2014 never\nan idle/empty machine and never a healthy ``0/<max>`` \u2014 see the frontend\nhook and `FleetResourceStrip`'s existing honesty rules.\n\nError answers pass through verbatim, status and JSON body, for the same\nreason as :func:`get_fleet_volumes`: the section renders coord's\n``503 deadline`` and ``404 route_disabled`` bodies specifically.",
         "operationId": "api_v1_operations_fleet_worktree_slots_get",
         "responses": {
           "200": {
@@ -113902,6 +115508,48 @@
           }
         },
         "summary": "Get Fleet Worktree Slots",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/gates/decision": {
+      "post": {
+        "description": "Register a decision gate: ``operator_approval`` anchored on a work unit.\n\n1. ``GET /coord/work-units/{slug}`` (operator bearer, active tenant) for the\n   unit id. A slug coord does not know in this tenant is coord's own error,\n   passed through.\n2. ``POST /coord/gates/register`` with the predicate\n   ``{\"kind\": \"operator_approval\", \"prompt\": ...}``, anchor\n   ``(work_unit_id, phase_name)``, ``clearance_audience`` from the form and\n   the fixed ``gate_class`` above.\n\nReturns coord's registration outcome (``gate_id``, ``warnings``, ...).",
+        "operationId": "api_v1_operations_gates_decision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionGateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyWhenGreenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Register Decision Gate",
         "tags": [
           "operations"
         ]
@@ -118982,7 +120630,7 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains four fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains five fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"withheld_by_filter\": n,\n      \"lifecycle_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta},\n      \"agent_half\": {\"read\": \"ok\", \"bound\": BoundedReadMeta}\n                    | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every\nkey always present, ``null`` a value) describing the coord READ behind\nthat half \u2014 plan\n`2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`\nPhase 3. Both reads stop at 500 rows: the lifecycle half at coord's own\n``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the\nagent half at the 500 it asks ``/coord/agent-sessions`` for (the most\nrecently seen). ``bound`` comes in three arms:\n\n* below its ceiling \u2014 ``bound_kind: \"complete\"`` with ``truncated:\n  false``: the half holds every row the read matched;\n* a FULL half, ``shown >= limit`` \u2014 ``\"unknown\"`` with ``truncated`` and\n  ``total`` null: more rows may exist, and nothing coord sent says\n  whether they do, so a count over it is a floor;\n* a 200 whose body carries no ``sessions`` list \u2014 ``\"unknown\"`` over\n  ``shown: 0``: nothing countable was served, so the half's SIZE is\n  unknown. ``shown < limit`` is what tells it from a full half, and no\n  count over it is a total or a floor \u2014 not even a floor of zero.\n\n``shown`` counts the rows coord SERVED, before this route's own\n``device`` / ``status`` / ``q`` narrowing, so it need not equal\n``count``. A failed agent read carries no ``bound`` \u2014 there is no page to\nbound.\n\n``agent_only`` is a set difference against the lifecycle rows coord\nserved, so it is established only while ``lifecycle_half.bound.truncated``\nis ``false``. Beyond the ceiling it means \"no ``coord.sessions`` row among\nthe ones served\" \u2014 one may exist past it \u2014 and the row keeps its real\nagent half either way.\n\n``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter\nhid although their agent half matched it \u2014 the two halves disagree (e.g.\nlifecycle ``active``, agent ``stale``). They are not rows of any class, so\nthey sit beside ``row_class_counts`` rather than in it (its values still\nsum to ``count``).\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {
@@ -125052,6 +126700,36 @@
         ]
       }
     },
+    "/api/v1/overview/schedule": {
+      "get": {
+        "description": "The project's phases, milestones, decision gates and forecast, derived\nfrom coord and nothing else: no typed row is read (plan D5).\n\nA figure coord could not give is ``state: unknown`` with a reason, never an\nempty list or a default. Cached per tenant and door for 60 s; after a coord\nfailure the last good read is served ``stale`` for up to 10 minutes.",
+        "operationId": "api_v1_overview_schedule_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Schedule",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/settings": {
       "get": {
         "description": "The project's settings, or the documented defaults when none are saved.\n\nNever 404 and never ``{}``: a project with no saved settings still HAS\nsettings, and ``is_default`` is what tells the reader nobody has chosen\nthem yet.",
@@ -125837,7 +127515,7 @@
     },
     "/api/v1/plan-library/edges/{edge_id}/anchors": {
       "put": {
-        "description": "Say which files a follow-up is about \u2014 or why it names none.\n\n``anchors`` REPLACES the stored set: each is ``owner/name`` + a\nrepo-relative file path (forward slashes, no leading ``/``, no ``.`` /\n``..`` segment, not a directory), with optional ``line_start`` /\n``line_end`` / ``symbol`` hints. Matching is exact on ``(repo, path)``;\nlines drift and are hints only. An EMPTY set needs ``unanchored_reason``\n(an unanchored follow-up is visibly unanchored, never silently\nunmatchable); a non-empty one clears it.\n\n``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when\nsupplied together, set the class; omitted, the stored class is kept.\n\nThis is the correction door for anchors: a wrong set is corrected by\nPUTting the right one. ``changed: false`` means the body restated what was\nstored and nothing was written. Works on any ``spawned_followup`` \u2014 open,\nresolved or claimed \u2014 because what a follow-up is ABOUT does not change\nwith how it was closed.",
+        "description": "Say which files a follow-up is about \u2014 or why it names none.\n\n``anchors`` REPLACES the stored set: each is ``owner/name`` + a\nrepo-relative file path (forward slashes, no leading ``/``, no ``.`` /\n``..`` segment, not a directory), with optional ``line_start`` /\n``line_end`` / ``symbol`` hints. Matching is exact on ``(repo, path)``;\nlines drift and are hints only. An EMPTY set needs ``unanchored_reason``\n(an unanchored follow-up is visibly unanchored, never silently\nunmatchable); a non-empty one clears it.\n\n``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when\nsupplied together, set the class; omitted, the stored class is kept.\n``clear_size_class: true`` (default false) nulls both columns together \u2014\nonly for a ``sweep``-set class (a ``declared`` one is a 422 with error\n``size_class_not_sweep_set``, row unchanged; an unclassified row reports\n``changed: false``) \u2014 and is a 422 beside ``size_class``.\n\nThis is the correction door for anchors: a wrong set is corrected by\nPUTting the right one. ``changed: false`` means the body restated what was\nstored and nothing was written. Works on any ``spawned_followup`` \u2014 open,\nresolved or claimed \u2014 because what a follow-up is ABOUT does not change\nwith how it was closed.",
         "operationId": "api_v1_plan_library_edges_edge_id_anchors_put",
         "parameters": [
           {

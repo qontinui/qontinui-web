@@ -44,6 +44,7 @@ import {
   type RunnerRouteState,
   type RunnerTarget,
 } from "./target";
+import { timeoutAbortReason } from "@/lib/abort-reasons";
 
 export type { RunnerTarget, RunnerRoute } from "./target";
 
@@ -254,7 +255,7 @@ export interface RunnerRequestInit extends RequestInit {
    * The caller's budget — the ONE deadline concept for a runner request.
    * Over loopback: the deadline for the whole exchange, headers AND the
    * caller's body read (a body still being read when it expires rejects with
-   * an AbortError). Over the relay: `relayWaitMs(budget)` (floored at
+   * the deadline's TimeoutError). Over the relay: `relayWaitMs(budget)` (floored at
    * RELAY_FLOOR_WAIT_MS, clamped to the backend's [1 s, 120 s]) is sent as
    * `X-Qontinui-Timeout-Ms` and the client gives up RELAY_DEADLINE_MARGIN_MS
    * after it, so the backend's structured 504 arrives first. Omitted: no
@@ -346,14 +347,14 @@ export async function runnerRequest(
       ? undefined
       : setTimeout(() => {
           timedOut = true;
-          controller.abort();
+          controller.abort(timeoutAbortReason());
         }, timeoutMs);
   try {
     // The budget covers the WHOLE loopback exchange, body included: the
     // timer is deliberately NOT cleared when the headers arrive, so a runner
     // that sends headers and then stalls the body cannot hang a caller's
-    // `res.json()` / `res.text()` — the read rejects with an AbortError once
-    // the budget is spent. A body read to completion inside the budget makes
+    // `res.json()` / `res.text()` — the read rejects with the deadline's
+    // TimeoutError once the budget is spent. A body read to completion inside the budget makes
     // the later abort a no-op. Likewise the caller's abort stays linked after
     // the headers (`once` detaches it on abort).
     return await fetch(url, { ...rest, signal: controller.signal });
@@ -433,7 +434,7 @@ export async function runnerFetch<T>(
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
-    controller.abort();
+    controller.abort(timeoutAbortReason());
   }, timeoutMs);
   const timeoutError = () =>
     new RunnerApiError(

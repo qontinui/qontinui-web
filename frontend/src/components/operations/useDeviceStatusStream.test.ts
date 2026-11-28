@@ -20,6 +20,8 @@
  * 4. The hook owns ONE socket. A connect attempt overtaken while awaiting its
  *    token creates nothing, and a socket the hook no longer owns cannot reach
  *    state — under StrictMode's double-invoked effects and after a reconnect.
+ * 5. While the socket is open the fleet is still re-read, slowly: coord's frames
+ *    are not a complete feed. That read adds nothing while a retry is armed.
  *
  * Driven through the real hook: `httpClient.fetch` answers from a queue (a
  * queued promise or thunk is a slow response), `WebSocket` is a fake the test
@@ -41,7 +43,10 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 import { useDeviceStatusStream } from "./useDeviceStatusStream";
-import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
+import {
+  DEVICE_STATUS_LIVE_REREAD_MS,
+  DEVICE_STATUS_POLL_FALLBACK_MS,
+} from "./utils";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -161,6 +166,17 @@ async function openLatestSocket() {
   return ws;
 }
 
+/**
+ * The retry, poll and reconnect timers: every timer except the slow re-read,
+ * which runs for as long as a socket is open and has its own tests.
+ */
+function timersBesideLiveReread() {
+  const open = FakeWebSocket.instances.some(
+    (s) => s.readyState === FakeWebSocket.OPEN
+  );
+  return vi.getTimerCount() - (open ? 1 : 0);
+}
+
 /** Sockets the hook created and has not closed. */
 function unclosedSockets() {
   return FakeWebSocket.instances.filter((s) => !s.closedByClient);
@@ -189,6 +205,7 @@ describe("useDeviceStatusStream", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
     Reflect.deleteProperty(document, "hidden");
@@ -231,6 +248,144 @@ describe("useDeviceStatusStream", () => {
       await flush();
       expect(hook.result.current.error).toBe("HTTP 502");
       expect(hook.result.current.everSeeded).toBe(true);
+      hook.unmount();
+    });
+  });
+
+  describe("answeredAtMs dates only a fleet read's answer", () => {
+    it("stays null through a failed read and a frame", async () => {
+      queue = [fail(500), fail(500)];
+      const hook = await mount();
+      const ws = await openLatestSocket();
+      expect(hook.result.current.answeredAtMs).toBeNull();
+
+      await act(async () => {
+        ws.push(deviceRow("d-1", "msi"));
+      });
+      await flush();
+      expect(hook.result.current.answeredAtMs).toBeNull();
+      hook.unmount();
+    });
+
+    it("is stamped by an answer, even an empty one, and neither a later failure nor a frame moves it", async () => {
+      const stamp = vi.spyOn(Date, "now").mockReturnValue(1_000);
+      queue = [ok([]), fail(502)];
+      const hook = await mount();
+      expect(hook.result.current.answeredAtMs).toBe(1_000);
+      stamp.mockReturnValue(2_000);
+
+      const ws = await openLatestSocket();
+      expect(hook.result.current.error).toBe("HTTP 502");
+      await act(async () => {
+        ws.push(deviceRow("d-1", "msi"));
+      });
+      await flush();
+      expect(hook.result.current.answeredAtMs).toBe(1_000);
+      hook.unmount();
+    });
+  });
+
+  describe("the slow re-read behind an open socket", () => {
+    it("picks up a report no frame delivered, and moves the answer's date", async () => {
+      const stamp = vi.spyOn(Date, "now").mockReturnValue(1_000);
+      queue = [ok(), ok(), ok([deviceRow("d-1", "msi")])];
+      const hook = await mount();
+      await openLatestSocket();
+      expect(calls).toBe(2);
+      expect(hook.result.current.answeredAtMs).toBe(1_000);
+
+      stamp.mockReturnValue(2_000);
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(3);
+      expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
+      expect(hook.result.current.answeredAtMs).toBe(2_000);
+      hook.unmount();
+    });
+
+    it("runs only while the socket is open", async () => {
+      queue = [ok()];
+      fallback = () => ok();
+      const hook = await mount();
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(1);
+
+      await openLatestSocket();
+      hook.unmount();
+      const after = calls;
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(after);
+    });
+
+    it("stops while the tab is hidden and resumes on return", async () => {
+      fallback = () => ok();
+      let hidden = false;
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => hidden,
+      });
+      const hook = await mount();
+      await openLatestSocket();
+
+      hidden = true;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await flush();
+      const whileHidden = calls;
+      await advance(3 * DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(whileHidden);
+
+      hidden = false;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await flush();
+      await openLatestSocket();
+      const onReturn = calls;
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(onReturn + 1);
+      hook.unmount();
+    });
+
+    it("a frame that lands during a read survives that read's older snapshot, and only that read", async () => {
+      const slow = deferred<Resp>();
+      const older = deviceRow("d-1", "msi");
+      const newer = { ...older, updated_at: "2026-09-14T10:05:00Z" };
+      queue = [ok([older]), ok([older]), slow.promise, ok([])];
+      const hook = await mount();
+      const ws = await openLatestSocket();
+
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(3);
+      await act(async () => {
+        ws.push(newer);
+      });
+      await act(async () => {
+        slow.resolve(ok([older]));
+      });
+      await flush();
+      expect(hook.result.current.byHostname.get("msi")?.updated_at).toBe(
+        newer.updated_at
+      );
+
+      // The next read owes that frame nothing: a row it no longer serves goes.
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(4);
+      expect(hook.result.current.byHostname.size).toBe(0);
+      hook.unmount();
+    });
+
+    it("adds no read while a failed read's retry is armed", async () => {
+      queue = [ok(), fail(503)];
+      fallback = () => fail(503);
+      const hook = await mount();
+      await openLatestSocket();
+      expect(calls).toBe(2);
+
+      // The retry backs off to its one-a-minute ceiling: 5s, 10s, 20s, 40s,
+      // then every 60s. Five minutes of that is seven reads and no more.
+      await advance(5 * DEVICE_STATUS_LIVE_REREAD_MS);
+      expect(calls).toBe(2 + 7);
       hook.unmount();
     });
   });
@@ -334,12 +489,12 @@ describe("useDeviceStatusStream", () => {
       });
       expect(calls).toBe(4);
       expect(hook.result.current.error).toBe("HTTP 500");
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.byHostname.has("recovered")).toBe(true);
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
       hook.unmount();
     });
   });
@@ -351,17 +506,23 @@ describe("useDeviceStatusStream", () => {
       await openLatestSocket();
       expect(hook.result.current.error).toBe("HTTP 503");
       expect(calls).toBe(2);
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(calls).toBe(3);
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
 
-      // Once a read succeeds nothing keeps re-reading behind the live socket.
-      expect(vi.getTimerCount()).toBe(0);
-      await advance(5 * 60_000);
+      // Once a read succeeds the retry is done: only the slow re-read remains.
+      expect(timersBesideLiveReread()).toBe(0);
+      fallback = () => ok();
+      await advance(
+        DEVICE_STATUS_LIVE_REREAD_MS - DEVICE_STATUS_POLL_FALLBACK_MS - 1
+      );
       expect(calls).toBe(3);
+      // The retry's end hands back to the slow re-read.
+      await advance(1);
+      expect(calls).toBe(4);
       hook.unmount();
     });
 
@@ -380,10 +541,10 @@ describe("useDeviceStatusStream", () => {
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(calls).toBe(4);
       expect(hook.result.current.error).toBe("HTTP 503");
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       hook.unmount();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
       await advance(10 * 60_000);
       expect(calls).toBe(4);
     });
@@ -393,7 +554,7 @@ describe("useDeviceStatusStream", () => {
       const hook = await mount();
       await openLatestSocket();
       expect(hook.result.current.error).toBeNull();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
 
       await act(async () => {
         await hook.result.current.refetch();
@@ -401,12 +562,12 @@ describe("useDeviceStatusStream", () => {
       await flush();
       expect(hook.result.current.error).toBe("HTTP 500");
       // The trigger is the failure, not the path it came from.
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(calls).toBe(4);
       expect(hook.result.current.error).toBeNull();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
       hook.unmount();
     });
 
@@ -428,9 +589,9 @@ describe("useDeviceStatusStream", () => {
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.everSeeded).toBe(true);
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
       const before = calls;
-      await advance(10 * 60_000);
+      await advance(DEVICE_STATUS_LIVE_REREAD_MS - 1);
       expect(calls).toBe(before);
       hook.unmount();
     });
@@ -443,14 +604,14 @@ describe("useDeviceStatusStream", () => {
       const ws1 = await openLatestSocket();
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // retry fires; read pending
       expect(calls).toBe(3);
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
 
       // ws1 drops: polling + a 1s reconnect take over.
       await act(async () => {
         ws1.serverClose();
       });
       await flush();
-      expect(vi.getTimerCount()).toBe(2);
+      expect(timersBesideLiveReread()).toBe(2);
 
       await advance(1_000); // reconnect → ws2
       const ws2 = FakeWebSocket.instances.at(-1)!;
@@ -468,18 +629,18 @@ describe("useDeviceStatusStream", () => {
       expect(calls).toBe(4);
       expect(hook.result.current.error).toBe("HTTP 503");
       // Polling stopped on open; exactly the one retry is armed.
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       // ws2 drops: its retry goes with it; only poll + reconnect remain.
       await act(async () => {
         ws2.serverClose();
       });
       await flush();
-      expect(vi.getTimerCount()).toBe(2);
+      expect(timersBesideLiveReread()).toBe(2);
 
       hook.unmount();
       await flush();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
 
     it("(D) an on-open read that resolves after unmount arms nothing", async () => {
@@ -489,27 +650,27 @@ describe("useDeviceStatusStream", () => {
       await openLatestSocket();
       hook.unmount();
       await flush();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
 
       await act(async () => {
         lateOpenRead.resolve(fail(503));
       });
       await flush();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
 
     it("never runs beside polling: a socket closing with a retry pending leaves only poll and reconnect", async () => {
       queue = [ok(), fail(503)];
       const hook = await mount();
       const ws = await openLatestSocket();
-      expect(vi.getTimerCount()).toBe(1); // the retry
+      expect(timersBesideLiveReread()).toBe(1); // the retry
 
       await act(async () => {
         ws.serverClose();
       });
       await flush();
       // The retry is gone; the poll interval and the reconnect timeout remain.
-      expect(vi.getTimerCount()).toBe(2);
+      expect(timersBesideLiveReread()).toBe(2);
 
       // Past the retry's due time: the reconnect fires (its socket stays
       // unopened) and the poll ticks once. That poll read fails, and with
@@ -517,9 +678,9 @@ describe("useDeviceStatusStream", () => {
       const before = calls;
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(calls - before).toBe(1);
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
       hook.unmount();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
 
     it("is idempotent: a second failure while a retry is pending neither re-arms it nor steps the backoff", async () => {
@@ -534,7 +695,7 @@ describe("useDeviceStatusStream", () => {
       ];
       const hook = await mount();
       await openLatestSocket();
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       await advance(2_000);
       await act(async () => {
@@ -542,14 +703,14 @@ describe("useDeviceStatusStream", () => {
       });
       await flush();
       expect(hook.result.current.error).toBe("HTTP 500");
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       // Still the first step (5s from the on-open failure) — not re-armed at
       // 10s from the Refresh.
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS - 2_000);
       expect(calls).toBe(4);
       expect(hook.result.current.error).toBe("HTTP 502");
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       // The duplicate failure did not step the backoff either: after two
       // counted failures the next retry is step 2 (10s), NOT step 3 (20s),
@@ -560,7 +721,7 @@ describe("useDeviceStatusStream", () => {
       await advance(1_000);
       expect(calls).toBe(5);
       expect(hook.result.current.error).toBeNull();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
 
       // And nothing is still waiting to fire at the 20s mark.
       await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS);
@@ -604,7 +765,7 @@ describe("useDeviceStatusStream", () => {
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
       hook.unmount();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
 
     /** The signal the hook handed `httpClient.fetch` on its `n`th read (1-based). */
@@ -660,10 +821,10 @@ describe("useDeviceStatusStream", () => {
       const signal = signalOfRead(1);
       expect(signal?.aborted).toBe(false);
       // The body deadline plus the poll interval.
-      expect(vi.getTimerCount()).toBe(2);
+      expect(timersBesideLiveReread()).toBe(2);
 
       hook.unmount();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
       expect(signal?.aborted).toBe(true);
     });
 
@@ -677,7 +838,7 @@ describe("useDeviceStatusStream", () => {
 
       hook.unmount();
       expect(signal?.aborted).toBe(true);
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
   });
 
@@ -700,7 +861,7 @@ describe("useDeviceStatusStream", () => {
           (s) => s.readyState === FakeWebSocket.OPEN && !s.closedByClient
         )
       ).toHaveLength(0);
-      expect(vi.getTimerCount()).toBe(0);
+      expect(timersBesideLiveReread()).toBe(0);
     });
 
     it("a frame from a socket that was replaced after a reconnect is not applied", async () => {
@@ -737,14 +898,14 @@ describe("useDeviceStatusStream", () => {
       await advance(1_000); // reconnect → ws2
       const ws2 = await openLatestSocket();
       expect(hook.result.current.connected).toBe(true);
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       await act(async () => {
         ws1.serverClose(); // a duplicate close event from the old socket
       });
       await flush();
       expect(hook.result.current.connected).toBe(true);
-      expect(vi.getTimerCount()).toBe(1);
+      expect(timersBesideLiveReread()).toBe(1);
 
       const sockets = FakeWebSocket.instances.length;
       await advance(1_200); // past any reconnect it might have scheduled

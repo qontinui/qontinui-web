@@ -9,6 +9,7 @@ import type {
   ExtractionConfig,
   PatternSession,
 } from "@/types/pattern-optimization";
+import { isAbortOrTimeout, timeoutAbortReason } from "@/lib/abort-reasons";
 
 function extractRegion(dataUrl: string, region: Region): Promise<string> {
   return new Promise((resolve) => {
@@ -132,7 +133,7 @@ export function usePatternExtraction(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
           logger.error("Aborting request due to timeout");
-          controller.abort();
+          controller.abort(timeoutAbortReason());
         }, 60000); // 60 second timeout
 
         let response;
@@ -160,7 +161,7 @@ export function usePatternExtraction(
             "Error stack:",
             fetchError instanceof Error ? fetchError.stack : ""
           );
-          if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          if (isAbortOrTimeout(fetchError)) {
             throw new Error("Request timed out after 60 seconds");
           }
           throw fetchError;
@@ -245,7 +246,7 @@ export function usePatternExtraction(
       } catch (error: unknown) {
         logger.error("Extraction failed:", error);
 
-        if (error instanceof Error && error.name === "AbortError") {
+        if (isAbortOrTimeout(error)) {
           logger.error("Request timed out after 60 seconds");
         }
 

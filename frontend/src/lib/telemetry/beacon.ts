@@ -21,13 +21,15 @@
  *    wrapper (fetch/CORS/network failures), and a ``securitypolicyviolation``
  *    (CSP) listener;
  *  - on each incident: scrub (§3.2) → build a ClientTelemetryEvent → enqueue;
- *  - transmits via ``navigator.sendBeacon`` / ``fetch(keepalive:true)`` to a
+ *  - transmits via an OBSERVED ``fetch(keepalive:true)`` (``navigator.sendBeacon``
+ *    only while the page is hiding, where a fetch may not complete) to a
  *    DEDICATED, hardcoded ingest origin from ``NEXT_PUBLIC_TELEMETRY_INGEST_URL``
  *    — CRITICAL: a SEPARATE env var, NEVER derived from ``NEXT_PUBLIC_API_URL``
  *    (the worked-example bug WAS a wrong API URL; the sensor must not share the
  *    failure mode it observes — §3.3 / real-user-observation §4 sensor
  *    integrity);
- *  - applies client-side sampling + rate-limit + circuit-breaker;
+ *  - applies client-side sampling + rate-limit + circuit-breaker, a
+ *    per-signature burst throttle, and the ingest's own 429 rate-limit window;
  *  - honors GPC (``navigator.globalPrivacyControl === true``) + DNT
  *    (``navigator.doNotTrack === "1"``) → sets ``opt_out`` and drops at source;
  *  - filters to OWN-bundle frames only (carve-out: drops third-party /
@@ -49,6 +51,10 @@ import {
   toSentryEnvelope,
 } from "./sentry-envelope";
 import { getSessionHash } from "./session-hash";
+import {
+  createSignatureThrottle,
+  type SignatureThrottle,
+} from "./signature-throttle";
 import type { ClientTelemetryEvent, ClientTelemetryFrame } from "./types";
 
 // --- configuration knobs (conservative defaults) ----------------------------
@@ -63,6 +69,23 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 /** Top N stack frames to keep. */
 const MAX_FRAMES = 10;
+/**
+ * Window within which a second incident with the same signature is dropped.
+ * A burst of identical failures (11 ``/operations/*`` 504s on one load, coord
+ * finding 687e0dbd) is one incident, not eleven envelopes.
+ */
+const SIGNATURE_THROTTLE_MS = 60_000;
+/** Bound on remembered signatures, so the throttle map cannot grow unbounded. */
+const SIGNATURE_THROTTLE_MAX = 200;
+/**
+ * Backoff applied to a 429 whose rate-limit headers are absent or unreadable —
+ * including the case where CORS hides them from this page, which has not been
+ * measured against the live ingest either way — and to a send whose outcome is
+ * unknown (a rejected keepalive fetch).
+ */
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
+/** Upper bound on any ingest-requested backoff, however long it asks for. */
+const MAX_RATE_LIMIT_BACKOFF_MS = 60 * 60_000;
 
 // --- module state ------------------------------------------------------------
 
@@ -83,11 +106,19 @@ interface BeaconState {
   // circuit breaker
   consecutiveFailures: number;
   tripped: boolean;
+  /** Epoch ms before which nothing is sent: the ingest's own 429 window. */
+  rateLimitedUntil: number;
+  /** Per-incident-signature burst throttle. */
+  throttle: SignatureThrottle;
+  /** True between ``pagehide`` and ``pageshow``: only sendBeacon can still deliver. */
+  pageHiding: boolean;
   // teardown handles
   prevOnError: OnErrorEventHandler | null;
   prevOnRejection: ((ev: PromiseRejectionEvent) => void) | null;
   originalFetch: typeof fetch | null;
   cspListener: ((ev: SecurityPolicyViolationEvent) => void) | null;
+  pageHideListener: (() => void) | null;
+  pageShowListener: (() => void) | null;
 }
 
 let state: BeaconState | null = null;
@@ -228,13 +259,35 @@ function withinRateLimit(): boolean {
   return state.sentTimestamps.length < RATE_LIMIT_MAX;
 }
 
+/**
+ * Identity of an incident for the burst throttle: what makes two "the same".
+ * The top scrubbed frame and the route keep distinct errors of one class
+ * apart; an HTTP-status failure has no frames, so a burst of one status on one
+ * path from one route still collapses.
+ */
+function signatureOf(event: ClientTelemetryEvent): string {
+  const top = event.stack_top[0];
+  return [
+    event.kind,
+    event.http_status ?? "",
+    event.request_host ?? "",
+    event.request_path_tmpl ?? "",
+    event.error_message_norm ?? "",
+    event.route_template,
+    top ? `${top.symbol ?? ""}@${top.file ?? ""}:${top.line ?? ""}` : "",
+  ].join("|");
+}
+
 function transmit(event: ClientTelemetryEvent): void {
   if (!state) return;
   if (state.tripped) return; // circuit breaker open
+  const now = Date.now();
+  if (now < state.rateLimitedUntil) return; // ingest told us to back off
   if (!withinRateLimit()) return;
   if (Math.random() > state.sampleRate) return; // sampling
+  if (!state.throttle.admit(signatureOf(event), now)) return; // identical burst
 
-  state.sentTimestamps.push(Date.now());
+  state.sentTimestamps.push(now);
   // DSN-mode: serialize a Sentry envelope sent as text/plain (CORS-safelisted →
   // no preflight; auth rides in the envelope header's dsn field). Generic mode:
   // the raw scrubbed-event JSON to the configured ingest URL (the §3.3 contract).
@@ -245,39 +298,66 @@ function transmit(event: ClientTelemetryEvent): void {
   const contentType = dsnMode ? "text/plain;charset=UTF-8" : "application/json";
   const url = state.transmitUrl;
 
-  let ok = false;
-  try {
-    if (
-      typeof navigator !== "undefined" &&
-      typeof navigator.sendBeacon === "function"
-    ) {
-      const blob = new Blob([body], { type: contentType });
-      ok = navigator.sendBeacon(url, blob);
-    }
-  } catch {
-    ok = false;
-  }
+  // While the page is hiding a fetch may never complete, so hand the envelope
+  // to sendBeacon. Its ``true`` means only "queued": the ingest's answer is
+  // unobservable, so it is neither success nor failure for the breaker.
+  if (state.pageHiding && queueViaSendBeacon(url, body, contentType)) return;
 
-  if (!ok) {
-    // Fallback to keepalive fetch. We do NOT await — best-effort.
-    try {
-      void fetchKeepalive(url, body, contentType)
-        .then(() => onTransmitSuccess())
-        .catch(() => onTransmitFailure());
-      return;
-    } catch {
-      onTransmitFailure();
-      return;
-    }
+  // The live-page transport: a keepalive fetch whose answer we read, so
+  // Sentry's 429 reaches the rate limiter and a non-2xx reaches the breaker.
+  // A rejection is an UNKNOWN outcome: the network or the keepalive body quota
+  // may have stopped the request before it left, but a CORS-blocked read of an
+  // answer the ingest already accepted rejects with the same TypeError, and
+  // the two cannot be told apart. So it is never re-sent (that could duplicate
+  // an event), it opens the conservative backoff window, and it counts toward
+  // the breaker so a sustained outage stops the beacon. The trailing catch
+  // keeps a throw in our own handlers from becoming an unhandled rejection
+  // that this beacon would then capture about itself.
+  try {
+    fetchKeepalive(url, body, contentType)
+      .then(onIngestResponse, onUnknownOutcome)
+      .catch(() => {
+        /* never let the beacon's own bookkeeping surface as an incident */
+      });
+  } catch {
+    onUnknownOutcome();
   }
-  onTransmitSuccess();
+}
+
+/** A send whose outcome could not be observed: back off, and count it. */
+function onUnknownOutcome(): void {
+  if (!state) return;
+  state.rateLimitedUntil = Math.max(
+    state.rateLimitedUntil,
+    Date.now() + DEFAULT_RATE_LIMIT_BACKOFF_MS
+  );
+  onTransmitFailure();
+}
+
+/** Hand an envelope to sendBeacon; true when the browser queued it. Unobserved. */
+function queueViaSendBeacon(
+  url: string,
+  body: string,
+  contentType: string
+): boolean {
+  if (
+    typeof navigator === "undefined" ||
+    typeof navigator.sendBeacon !== "function"
+  ) {
+    return false;
+  }
+  try {
+    return navigator.sendBeacon(url, new Blob([body], { type: contentType }));
+  } catch {
+    return false;
+  }
 }
 
 function fetchKeepalive(
   url: string,
   body: string,
   contentType: string
-): Promise<unknown> {
+): Promise<Response> {
   // Use the ORIGINAL fetch (captured before we wrapped it) so our own beacon
   // POST never re-enters the fetch wrapper / observes itself.
   const f = state?.originalFetch ?? fetch;
@@ -285,12 +365,78 @@ function fetchKeepalive(
     method: "POST",
     body,
     keepalive: true,
+    // text/plain (DSN mode) is a CORS-safelisted content type, so this POST
+    // is a "simple" request — no preflight against the ingest. Whether the
+    // ingest's CORS answer exposes its rate-limit headers to this page is
+    // unmeasured; when it does not, a 429 falls back to the 60 s default.
     headers: { "Content-Type": contentType },
     // No credentials — the ingest origin is decoupled from the app (§3.3) and
     // we never want to attach app cookies to telemetry.
     credentials: "omit",
     mode: "cors",
   });
+}
+
+/**
+ * Classify the ingest's answer. A rate-limit signal opens the backoff window
+ * whatever the status. A 2xx is success; a 429 is neither (the ingest is up
+ * and told us to wait, which the window already honours); any other status
+ * is a failure for the breaker.
+ */
+function onIngestResponse(res: Response): void {
+  if (!state) return;
+  const backoffMs = rateLimitBackoffMs(res);
+  if (backoffMs !== null) {
+    state.rateLimitedUntil = Math.max(
+      state.rateLimitedUntil,
+      Date.now() + Math.min(backoffMs, MAX_RATE_LIMIT_BACKOFF_MS)
+    );
+  }
+  if (res.status === 429) return;
+  if (res.status >= 200 && res.status < 300) onTransmitSuccess();
+  else onTransmitFailure();
+}
+
+/**
+ * How long the ingest asked us to stop, in ms, or ``null`` for no limit.
+ *
+ * ``X-Sentry-Rate-Limits`` (format
+ * ``<retry_after>:<categories>:<scope>[:<reason>[:<namespaces>]]``, groups
+ * comma-separated, categories semicolon-separated, empty categories = all)
+ * wins when present; else on a 429 ``Retry-After`` (delta-seconds or an
+ * HTTP-date); else on a 429 a conservative 60 s default, which also covers a
+ * 429 whose headers CORS hides from this page. The beacon sends only error
+ * events, so only groups that cover the ``error`` category (or every
+ * category) apply. The precedence follows Sentry's documented header format;
+ * it has not been measured against the live ingest. The caller caps the
+ * result at an hour.
+ */
+function rateLimitBackoffMs(res: Response): number | null {
+  const limits = res.headers.get("X-Sentry-Rate-Limits");
+  if (limits) {
+    let maxMs: number | null = null;
+    for (const group of limits.split(",")) {
+      const [retryAfter = "", categories = ""] = group.trim().split(":");
+      const seconds = Number.parseInt(retryAfter, 10);
+      const delayMs = (Number.isNaN(seconds) ? 60 : seconds) * 1000;
+      const cats = categories.split(";").filter(Boolean);
+      if (cats.length === 0 || cats.includes("error")) {
+        maxMs = Math.max(maxMs ?? 0, delayMs);
+      }
+    }
+    return maxMs;
+  }
+  if (res.status !== 429) return null;
+  return parseRetryAfterMs(res.headers.get("Retry-After"));
+}
+
+function parseRetryAfterMs(header: string | null): number {
+  if (!header) return DEFAULT_RATE_LIMIT_BACKOFF_MS;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isNaN(seconds)) return seconds * 1000;
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return DEFAULT_RATE_LIMIT_BACKOFF_MS;
 }
 
 function onTransmitSuccess(): void {
@@ -550,6 +696,11 @@ function installFetchWrapper(): void {
       // tracking-protection block, not our defect. Re-throw either way — we
       // observe, we never swallow the app's error.
       if (isIgnoredHost(host)) throw err;
+      // An aborted request (AbortController, or the navigation that tore it
+      // down) is the caller's decision, not a failure. Capturing it emitted a
+      // Sentry envelope on every navigation clicked right after load (coord
+      // finding 687e0dbd).
+      if (isAborted(err, input, init)) throw err;
       capture({
         kind: crossOrigin ? "cors_failure" : "fetch_failure",
         error_name: e?.name ?? "TypeError",
@@ -566,6 +717,34 @@ function installFetchWrapper(): void {
     }
   };
   window.fetch = wrapped;
+}
+
+/**
+ * Was this request aborted by its caller rather than failed? A timeout is a
+ * failure even though it aborts through the same signal: the app's own client
+ * timeouts abort with a ``TimeoutError`` reason (``lib/abort-reasons.ts``'s
+ * ``timeoutAbortReason``, or ``AbortSignal.timeout``), and those stay incidents.
+ * Otherwise an ``AbortError`` rejection, or a signal aborted with an
+ * ``AbortError`` reason (the default for ``controller.abort()`` and for a
+ * navigation), is the caller's decision. A rejection once the page is hiding
+ * is the document being torn down, not a defect.
+ */
+function isAborted(
+  err: unknown,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined
+): boolean {
+  const nameOf = (x: unknown) => (x as { name?: unknown } | null)?.name;
+  const signal =
+    init?.signal ?? (input instanceof Request ? input.signal : undefined);
+  const reason = signal?.aborted ? signal.reason : undefined;
+  if (nameOf(err) === "TimeoutError" || nameOf(reason) === "TimeoutError") {
+    return false;
+  }
+  if (nameOf(err) === "AbortError" || nameOf(reason) === "AbortError") {
+    return true;
+  }
+  return state?.pageHiding === true;
 }
 
 function requestUrlOf(input: RequestInfo | URL): string {
@@ -632,10 +811,18 @@ export function installBeacon(): boolean {
     sentTimestamps: [],
     consecutiveFailures: 0,
     tripped: false,
+    rateLimitedUntil: 0,
+    throttle: createSignatureThrottle({
+      windowMs: SIGNATURE_THROTTLE_MS,
+      max: SIGNATURE_THROTTLE_MAX,
+    }),
+    pageHiding: false,
     prevOnError: window.onerror ?? null,
     prevOnRejection: null,
     originalFetch: null,
     cspListener: null,
+    pageHideListener: null,
+    pageShowListener: null,
   };
 
   // window.onerror — chain to any previous handler.
@@ -674,6 +861,19 @@ export function installBeacon(): boolean {
   state.cspListener = cspListener;
   document.addEventListener("securitypolicyviolation", cspListener);
 
+  // Page lifecycle: while hiding, only sendBeacon can still deliver; a
+  // bfcache restore (pageshow) returns to the observed fetch transport.
+  const pageHideListener = () => {
+    if (state) state.pageHiding = true;
+  };
+  const pageShowListener = () => {
+    if (state) state.pageHiding = false;
+  };
+  state.pageHideListener = pageHideListener;
+  state.pageShowListener = pageShowListener;
+  window.addEventListener("pagehide", pageHideListener);
+  window.addEventListener("pageshow", pageShowListener);
+
   // fetch wrapper (fetch / CORS / network failures)
   installFetchWrapper();
 
@@ -695,6 +895,10 @@ export function uninstallBeacon(): void {
         "securitypolicyviolation",
         state.cspListener
       );
+    if (state.pageHideListener)
+      window.removeEventListener("pagehide", state.pageHideListener);
+    if (state.pageShowListener)
+      window.removeEventListener("pageshow", state.pageShowListener);
     window.onerror = state.prevOnError;
   }
   state = null;

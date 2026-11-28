@@ -5698,6 +5698,20 @@ async def _fresh_end(
         )
 
 
+async def test_source_sent_door_and_origin_never_reach_the_target(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The forwarded end is rebuilt: a device-socket ``door`` / ``origin`` dies."""
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(
+        relay, ws, manager, _claims(), door="operator_single", origin="user_session"
+    )
+    (frame,) = _forwarded_ends(manager)
+    assert "door" not in frame
+    assert "origin" not in frame
+
+
 async def test_remote_terminal_end_is_a_source_frame() -> None:
     assert rtr.is_source_frame("remote_terminal_end") is True
     assert rtr.is_remote_only_target_frame({"type": "terminal_ended"}) is True

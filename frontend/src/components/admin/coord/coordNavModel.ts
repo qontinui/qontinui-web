@@ -859,8 +859,11 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-members",
       },
       {
-        // The tenant DEFAULT for each agent — what a member with no recorded
-        // preference gets. A member's own preference lives at
+        // Every agent type a spawn is authorized under (coord's catalog), its
+        // tenant DEFAULT — what a member with no recorded preference gets —
+        // and the tenant-admin "Spawns: On / Off" ceiling. Deliberately not
+        // `coordAdminOnly`: a member reads it read-only, to see what is
+        // switched off and why. A member's own preference lives at
         // /settings/agents, which is not a console surface.
         href: "/admin/coord/agent-registry",
         label: "Agent Registry",
