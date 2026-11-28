@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "cinode_06_ci_node_directives"
+_PARENT_REVISION_ID = "coord_wt_volume_read_only_01"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
