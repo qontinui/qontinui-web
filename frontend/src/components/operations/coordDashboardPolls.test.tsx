@@ -186,6 +186,7 @@ function FleetOverviewHost(): ReactElement {
         error: null,
         seeded: false,
         everSeeded: false,
+        answeredAtMs: null,
         refetch: noop,
       }}
       nowMs={0}

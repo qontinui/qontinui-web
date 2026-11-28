@@ -29,10 +29,18 @@
  * admins — in Phase 2 of plan
  * 2026-08-22-agent-registry-prefs-are-admin-only-and-the-tenant-default-has-no-ui).
  * The tenant DEFAULT behind these rows is edited at /admin/coord/agent-registry.
+ *
+ * An agent whose spawns the tenant admin switched OFF (`source: "admin"`, the
+ * ceiling of plan 2026-11-24-tenant-admins-switch-agent-spawns-off-per-agent-type)
+ * renders LOCKED: "Turned off by your tenant admin", with no toggle. Coord
+ * would accept a member's pref write there but never let it widen the
+ * ceiling, so a working-looking switch would be a control that does nothing.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Bot, Loader2, Lock, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import { createReadSequence } from "@/components/console";
@@ -128,7 +136,19 @@ const DENIAL_COPY: Record<
   },
 };
 
+/** Spawns switched off by the tenant admin: no member preference widens it. */
+function isAdminLocked(entry: AgentRegistryEntry): boolean {
+  return entry.source === "admin";
+}
+
 function recordedLine(entry: AgentRegistryEntry): string {
+  if (isAdminLocked(entry)) {
+    return (
+      `Turned off by your tenant admin — disposition: ` +
+      `${dispositionLabel(entry.disposition)}. Your own preference cannot ` +
+      `turn it back on.`
+    );
+  }
   const state = entry.enabled
     ? "enabled"
     : `disabled — disposition: ${dispositionLabel(entry.disposition)}`;
@@ -325,6 +345,8 @@ export default function AgentsSettingsPage() {
   };
 
   const handleToggle = (entry: AgentRegistryEntry) => {
+    // No write coord would refuse to honour: the ceiling binds this member.
+    if (isAdminLocked(entry)) return;
     if (entry.enabled && entry.policy_required) {
       // Disabling a policy-required agent: disposition choice is required
       // BEFORE anything is saved.
@@ -418,8 +440,14 @@ export default function AgentsSettingsPage() {
           const picker = pickers[entry.agent_name];
           const saving = savingAgents.has(entry.agent_name);
           const denial = denials[entry.agent_name];
+          const locked = isAdminLocked(entry);
           return (
-            <div className="card" key={entry.agent_name}>
+            <div
+              className="card"
+              key={entry.agent_name}
+              data-testid={`agent-pref-row-${entry.agent_name}`}
+              data-locked={locked}
+            >
               <div className="card-content flex items-start justify-between gap-4">
                 <div className="space-y-2 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -434,17 +462,27 @@ export default function AgentsSettingsPage() {
                         {entry.spawn_path}
                       </span>
                     )}
-                    <span
-                      className={
-                        entry.enabled
-                          ? "badge badge-success"
-                          : "badge badge-danger"
-                      }
-                    >
-                      {entry.enabled
-                        ? "Enabled"
-                        : `Disabled · ${dispositionLabel(entry.disposition)}`}
-                    </span>
+                    {locked ? (
+                      <Badge
+                        variant="outline"
+                        data-testid={`agent-pref-locked-${entry.agent_name}`}
+                      >
+                        <Lock />
+                        Turned off by your tenant admin
+                      </Badge>
+                    ) : (
+                      <span
+                        className={
+                          entry.enabled
+                            ? "badge badge-success"
+                            : "badge badge-danger"
+                        }
+                      >
+                        {entry.enabled
+                          ? "Enabled"
+                          : `Disabled · ${dispositionLabel(entry.disposition)}`}
+                      </span>
+                    )}
                   </div>
                   {entry.purpose && (
                     <p className="text-sm text-muted-foreground">
@@ -467,19 +505,43 @@ export default function AgentsSettingsPage() {
                   <p className="text-xs text-muted-foreground italic">
                     {recordedLine(entry)}
                   </p>
+                  {locked && (
+                    <p className="text-xs text-muted-foreground">
+                      Only a tenant administrator can turn it back on. Why it
+                      was switched off is on{" "}
+                      <Link
+                        href="/admin/coord/agent-registry"
+                        className="underline underline-offset-2"
+                      >
+                        the tenant&apos;s agent registry
+                      </Link>
+                      .
+                    </p>
+                  )}
                 </div>
-                <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm">
-                  {saving && <Loader2 className="size-4 animate-spin" />}
-                  <input
-                    type="checkbox"
-                    className="checkbox"
-                    checked={entry.enabled}
-                    disabled={saving || Boolean(picker)}
-                    onChange={() => handleToggle(entry)}
-                    aria-label={`Toggle ${entry.agent_name}`}
-                  />
-                  {entry.enabled ? "On" : "Off"}
-                </label>
+                {locked ? (
+                  <span
+                    className="flex items-center gap-1.5 shrink-0 text-sm text-muted-foreground"
+                    data-testid={`agent-pref-locked-control-${entry.agent_name}`}
+                    title="Turned off by your tenant admin"
+                  >
+                    <Lock className="size-4" />
+                    Off
+                  </span>
+                ) : (
+                  <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm">
+                    {saving && <Loader2 className="size-4 animate-spin" />}
+                    <input
+                      type="checkbox"
+                      className="checkbox"
+                      checked={entry.enabled}
+                      disabled={saving || Boolean(picker)}
+                      onChange={() => handleToggle(entry)}
+                      aria-label={`Toggle ${entry.agent_name}`}
+                    />
+                    {entry.enabled ? "On" : "Off"}
+                  </label>
+                )}
               </div>
 
               {denial && (

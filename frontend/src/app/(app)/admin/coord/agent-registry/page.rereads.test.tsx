@@ -28,6 +28,12 @@ vi.mock("@/lib/api/agent-registry", async () => {
     listAdminAgentRegistry: (...a: unknown[]) => listAdminAgentRegistry(...a),
     putAgentRegistryDefaults: (...a: unknown[]) =>
       putAgentRegistryDefaults(...a),
+    // The catalog is read beside the rows; these tests are about the rows.
+    getAgentCatalog: async () => ({
+      agents: [],
+      sources_unread: [],
+      declared_skipped: [],
+    }),
   };
 });
 

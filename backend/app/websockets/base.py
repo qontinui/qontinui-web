@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_from_ws
 from app.db.session import AsyncSessionLocal
+from app.middleware.rate_limit import peer_ip
 from app.models.user import User
 from app.websockets.rate_limiter import RateLimiter
 from app.websockets.safe_send import safe_send_json
@@ -114,7 +115,10 @@ class BaseWebSocketHandler(ABC):
             **kwargs: Additional arguments passed to setup methods.
         """
         # Check connection rate limit
-        client_ip = websocket.client.host if websocket.client else "unknown"
+        # The rightmost X-Forwarded-For (what the ALB saw), as the HTTP rate-limit
+        # keys use: behind the ALB websocket.client.host is the ALB node, which
+        # would put every caller reaching that node into one connection bucket.
+        client_ip = peer_ip(websocket)
         if not RateLimiter.check_connection_rate_limit(
             client_ip,
             limit=self.connection_rate_limit,

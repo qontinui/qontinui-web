@@ -645,3 +645,15 @@ describe("MachineCard — coord state badge for CI registrations", () => {
     );
   });
 });
+
+describe("MachineCard — the runner database verdict (plan 2026-11-27-devops-runner-database-degraded-is-invisible-to-coord Phase 6)", () => {
+  it("renders the database verdict UNKNOWN for a matched device whose coord row carries no runner_database block", () => {
+    const { getByTestId } = renderCard(
+      baseGroup({ coordHealth: { matched: true, device_id: "d-1" } })
+    );
+    expect(getByTestId("devops-runner-database")).toHaveAttribute(
+      "data-runner-database-verdict",
+      "unknown"
+    );
+  });
+});

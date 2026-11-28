@@ -23,6 +23,7 @@ import type {
   ReconciliationRowData,
 } from "@/components/admin/coord/planReconciliationStatus";
 import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
+import { expectRowKeyedReveal } from "@/test/recordRowSlot";
 
 const get = vi.fn();
 /**
@@ -182,6 +183,20 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
     expect(url).not.toContain("cursor=");
     expect(url).toContain("limit=25");
     expect(url).not.toContain("/operations/plans");
+  });
+
+  it("drops the axis cells by the ROW's width, never the viewport's", async () => {
+    // RecordRow's root is `@container/record-row`: the cells hide below a
+    // 45rem row like the row's own reason, so a narrowed column drops them
+    // too, and the detail carries all three.
+    get.mockResolvedValue(healthy());
+    render(<CoordPlansListPage />);
+
+    const row0 = await screen.findByTestId("coord-plan-reconciliation-row");
+    expectRowKeyedReveal(
+      within(row0).getByTestId("coord-plan-axes"),
+      "@min-[45rem]/record-row:inline-flex"
+    );
   });
 
   it("renders the stem, the three axes, the class, the verdict and the reason", async () => {

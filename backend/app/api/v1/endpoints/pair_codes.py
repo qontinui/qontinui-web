@@ -42,6 +42,7 @@ from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
 from app.services.coord_service_account import coord_service_account
 from app.services.device_credential_deny import refuse_if_credential_revoked
+from app.services.device_machine_key_automint import automint_on_pairing
 
 logger = structlog.get_logger(__name__)
 
@@ -249,6 +250,21 @@ async def redeem_pair_code_endpoint(
     # honest 503 + Retry-After when coord stays unavailable. Safe here:
     # the code is only marked redeemed after coord succeeds, and the
     # row lock from get_redeemable() serializes concurrent attempts.
+    #
+    # That row lock is held across this call, and coord's pair-cli upserts
+    # the device's coord.devices row on its own connection. An operator's
+    # revoke or authorize-redeem, which lock that device row before the
+    # pair-code rows, can therefore wait on this redeem — but only when this
+    # code is BOUND to that device, because their ``cancel_pending_for_device``
+    # touches bound codes only. An unbound code's redeem shares no pair-code
+    # lock with them; its auto-mint serializes with them on the device row
+    # instead (FOR SHARE; see ``revoke_device_credentials``). When coord is
+    # blocked on that row it has received the request, so the call is not
+    # retried: it ends after one 10 s read timeout with a 504. Postgres sees
+    # no cycle, so it is a bounded stall, not an aborted deadlock. (When coord
+    # is unreachable, connect failures are retried — up to 3 x 10 s plus
+    # backoff, ~32 s, then 503 — and the operator path waits that long.) See
+    # ``revoke_device_credentials`` for what the 504 leaves behind in coord.
     resp = await post_to_coord(
         "/coord/devices/pair-cli",
         headers=headers,
@@ -335,7 +351,29 @@ async def redeem_pair_code_endpoint(
     # get_redeemable() guarantees this is the single successful
     # consume; concurrent attempts will have failed at that gate.
     await pair_code_crud.mark_redeemed(db, row=row, device_id=coord_device_id)
+
+    # Hand the box a device machine key (``dmk_``) exactly as pair-cli does,
+    # so a pair-code-paired runner can recover a device JWT with no user
+    # session (plan ``2026-11-03-pair-code-pairing-mints-no-device-machine-key``).
+    # Minted under the code's burned-in issuer + tenant, in a SAVEPOINT, before
+    # the single commit: the code's consumption and the key's issuance commit
+    # together under the row lock, and a mint failure rolls back only the key
+    # row — it never fails the redeem (the key is then simply ``None``).
+    device_machine_key = await automint_on_pairing(
+        db,
+        device_id=coord_device_id,
+        owner_user_id=row.issued_by_user_id,
+        tenant_id=row.tenant_id,
+        door="pair_code_redeem",
+        # Lock the device row only for an UNBOUND code: a bound code's row
+        # lock (held here) already serializes this redeem with the operator
+        # paths, which would deadlock against a device-row request.
+        lock_device_row=row.bound_device_id is None,
+    )
     await db.commit()
+    # The auto-mint's own outcome line is pre-commit (a ``minted`` outcome
+    # carries ``committed=false``); ``dmk_minted`` on ``pair_code_redeemed``
+    # below is the committed record.
 
     expires_at_raw = coord_body.get("exp")
     from datetime import datetime as _dt
@@ -350,6 +388,7 @@ async def redeem_pair_code_endpoint(
         tenant_id=str(row.tenant_id),
         device_id=str(coord_device_id),
         issued_by=str(row.issued_by_user_id),
+        dmk_minted=device_machine_key is not None,
     )
     return PairCodeRedeemOut(
         user_id=row.issued_by_user_id,
@@ -357,4 +396,5 @@ async def redeem_pair_code_endpoint(
         device_id=coord_device_id,
         expires_at=expires_at_dt,
         device_token_jwt=str(coord_token),
+        device_machine_key=device_machine_key,
     )
