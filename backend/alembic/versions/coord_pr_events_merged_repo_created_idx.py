@@ -60,9 +60,9 @@ reds if ``win_ev`` stops naming it; index presence rides coord's
 ``schema.manifest`` round-trip after the migrator pin bump.
 
 The same predicate is repeated by ``TRAIN_ARMING_SQL`` (``win_head``) and by the
-per-kind arms of ``ev_pr`` / ``ARMING_LIBRARY_LANDED_PRS_SQL``, so those reads
-may also benefit; that is to be confirmed by the post-deploy EXPLAIN, not
-claimed here.
+per-kind arms of ``ev_pr`` / ``ARMING_LIBRARY_LANDED_PRS_SQL``. Those per-PR
+probes may also benefit, or may be moved off
+``idx_pr_events_repo_pr_kind_created``; the post-deploy EXPLAIN confirms which.
 
 Mechanics
 ------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ cannot run inside a transaction, hence ``op.get_context().autocommit_block()``
 — same precedent as ``coord_pr_events_hydration_head_idx`` and
 ``coord_pg_overload_idx_01``. On the CI fresh DB the table is empty, so the
 build is instant there. **On production it is not:** CONCURRENTLY scans all of
-``coord.pr_events``, a hot append-only table, twice, and then
+``coord.pr_events``, a hot append-heavy table, twice, and then
 waits for every transaction older than the build to finish. Its duration is not
 measured here; read ``pg_stat_progress_create_index`` while it runs. Only
 merged events enter the index, a small fraction of the table's writes.
@@ -83,12 +83,15 @@ session-level advisory lock before upgrading (``app/db/migration_lock.py``,
 whose docstring explains it). A second migrator POLLS for that lock with
 ``pg_try_advisory_lock`` and sleeps client-side, so it holds no snapshot the
 build's last phase would wait on, and it plans its upgrade only after this one
-has stamped. Because the poll can outlast ``.github/workflows/migrate.yml``'s
+has stamped. It gives up after ``DEFAULT_WAIT_SECS`` (3600 s, overridable by
+``QONTINUI_MIGRATION_LOCK_WAIT_SECS``) with ``MigrationLockTimeout`` and applies
+nothing. Because the poll can outlast ``.github/workflows/migrate.yml``'s
 waiter, a run whose task is still waiting may report outcome UNKNOWN rather than
 its real one. The same holds for the run doing the build: if the build
 outlasts that waiter (900 s by default, 960 s at most; ``migrate.yml``'s
-``wait_deadline_secs`` input), the run reports outcome UNKNOWN and its
-``POST /coord/schema/applications`` step is skipped, which is not a failure.
+``wait_deadline_secs`` input), the run goes red with outcome UNKNOWN (that arm of
+the migrator step exits 1) and its ``POST /coord/schema/applications`` step is
+skipped. That is not a failed apply: the task keeps running and may succeed.
 Since the build is long and unmeasured, read ``indisvalid`` after
 the deploy either way (the plan's Phase 2 post-deploy step owns that read and
 the repair below): a build can still die for other reasons, such as a cancelled

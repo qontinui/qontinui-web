@@ -348,7 +348,7 @@ def test_coord_pr_events_merged_repo_created_idx_serves_win_ev() -> None:
             found = conn.execute(text(_WIN_EV), params).all()
         assert len(found) == merged, (len(found), merged)
         buffers = _top_buffers(plan)
-        assert buffers < 2 * merged, (
+        assert buffers < merged + 20, (
             f"{buffers} buffers for {merged} merged rows: win_ev is not reading "
             f"only merged events:\n{plan}"
         )
